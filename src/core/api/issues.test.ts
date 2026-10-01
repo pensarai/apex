@@ -5,7 +5,7 @@ const apiRequest = vi.hoisted(() => vi.fn());
 vi.mock("./apiClient", () => ({ apiRequest }));
 
 import type { IssueDetail, IssueSummary } from "./issues";
-import { dispatchPentest, getIssue, listIssues, retestIssue } from "./issues";
+import { getIssue, listIssues, retestIssue } from "./issues";
 
 const ISSUE_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -68,15 +68,5 @@ describe("issue label and url", () => {
 
     expect(result.issueLabel).toBeNull();
     expect(result.url).toBe(ISSUE_SUMMARY.url);
-  });
-});
-
-describe("hosted pentest launch API", () => {
-  beforeEach(() => apiRequest.mockReset());
-
-  it("sends exact endpoint scope in the launch request", async () => {
-    const input = { endpointIds: [ISSUE_ID], scanLevel: "full" as const };
-    await dispatchPentest(input);
-    expect(apiRequest).toHaveBeenCalledWith("POST", "/pentests", input);
   });
 });

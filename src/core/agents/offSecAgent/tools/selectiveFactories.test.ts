@@ -140,7 +140,7 @@ describe("createAllTools (full construction)", () => {
     // One construction per retained key — no discarded duplicates.
     expect(counts.toolCtor).toBe(74);
     expect(counts.browserGroupRouter).toBe(1);
-    expect(counts.sandboxBrowserFactories).toBe(1);
+    expect(counts.sandboxBrowserFactories).toBe(0);
     expect(counts.emailGroup).toBe(0);
   });
 
@@ -169,13 +169,13 @@ describe("createToolsForNames selective construction", () => {
     expect(counts.emailGroup).toBe(0);
   });
 
-  it("one browser member (sandbox routing): one construction, zero siblings", () => {
+  it("one browser member (backend routing): one construction, zero siblings", () => {
     reset();
     const selected = createToolsForNames(makeCtx(), ["browser_click"]);
     expect(Object.keys(selected)).toEqual(["browser_click"]);
     expect(counts.toolCtor).toBe(1);
     expect(counts.browserGroupRouter).toBe(1);
-    expect(counts.sandboxBrowserFactories).toBe(1);
+    expect(counts.sandboxBrowserFactories).toBe(0);
     expect(counts.emailGroup).toBe(0);
   });
 
@@ -231,7 +231,7 @@ describe("createToolsForNames selective construction", () => {
       "browser_click",
     ]);
     expect(counts.toolCtor).toBe(2);
-    expect(counts.sandboxBrowserFactories).toBe(1);
+    expect(counts.sandboxBrowserFactories).toBe(0);
   });
 
   it("credentialManager browser_fill: wrapper is lazy — 1 construction without fill, 2 with", () => {

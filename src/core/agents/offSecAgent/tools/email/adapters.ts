@@ -59,6 +59,25 @@ export interface EmailAdapter {
 // Factory
 // ---------------------------------------------------------------------------
 
+/**
+ * Lets a host supply an adapter for an inbox that has no transport of its own.
+ * Returning null falls through to {@link createEmailAdapter}.
+ */
+export type EmailAdapterResolver = (
+  inbox: EmailInboxConfig,
+) => EmailAdapter | null;
+
+/**
+ * The single place an adapter is chosen. Prefers the host's resolver, falls
+ * back to the config-driven factory.
+ */
+export function resolveEmailAdapter(
+  inbox: EmailInboxConfig,
+  resolver?: EmailAdapterResolver,
+): EmailAdapter {
+  return resolver?.(inbox) ?? createEmailAdapter(inbox);
+}
+
 export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
   switch (inbox.provider) {
     case "gmail":
@@ -80,6 +99,12 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
       return new ImapAdapter(inbox);
     case "http":
       return new HttpAdapter(inbox);
+    case "pensar-managed":
+      // Reaching the factory means no host resolver was supplied. Fail loudly
+      // rather than returning an inbox that silently reads nothing.
+      throw new Error(
+        `Inbox ${inbox.id} is pensar-managed; the host must supply an email adapter for it.`,
+      );
     default:
       throw new Error(
         `Unsupported email provider: ${(inbox as { provider: string }).provider}`,

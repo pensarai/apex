@@ -2,7 +2,8 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ToolBackends } from "../../../tools/backends/types";
 import { type GitDiffResult, gitDiff } from "./gitDiff";
 import { type GitStatusResult, gitStatus } from "./gitStatus";
 import { PerCommandShell } from "./perCommandShell";
@@ -41,7 +42,7 @@ describe("git_status / git_diff", () => {
       expect(result.success).toBe(true);
       expect(result.status).toMatch(/a\.ts/);
     } finally {
-      await ctx.commandShell?.dispose();
+      ctx.commandShell?.dispose();
     }
   });
 
@@ -58,129 +59,58 @@ describe("git_status / git_diff", () => {
       expect(result.diff).toContain("-export const a = 1;");
       expect(result.diff).toContain("+export const a = 2;");
     } finally {
-      await ctx.commandShell?.dispose();
+      ctx.commandShell?.dispose();
     }
   });
 });
 
-// Truncation at the tool boundary: a 1 MiB runner capture prefix must never
-// masquerade as the complete porcelain list — especially never "(clean)".
-describe("git_status truncated capture evidence", () => {
-  type RunnerOutcome = {
-    exitCode: number;
-    stdout: string;
-    stderr: string;
-    stdoutTruncated: boolean;
-  };
+describe("git_status / git_diff backend injection", () => {
+  it("gitStatus calls the injected fs backend", async () => {
+    const git = vi.fn().mockResolvedValue({
+      success: true,
+      stdout: " M injected.ts",
+      stderr: "",
+      cwd: "/sandbox",
+    });
+    const backends = { fs: { git } } as unknown as ToolBackends;
+    const ctx = {
+      agentCwd: "/sandbox",
+      session: { id: "ses_test", rootPath: "/sandbox" },
+      backends,
+    } as ToolContext;
 
-  function stubCtx(runner: RunnerOutcome): ToolContext {
-    return {
-      agentCwd: "/workspace/session",
-      session: { id: "ses_test", rootPath: "/workspace/session" },
-      commandShell: {
-        execute: async () => ({
-          ...runner,
-          timedOut: false,
-          stderrTruncated: false,
-          cleanupUnconfirmed: false,
-        }),
-      },
-    } as unknown as ToolContext;
-  }
-
-  const call = async (ctx: ToolContext) =>
-    (await gitStatus(ctx).execute?.(
+    const tool = gitStatus(ctx);
+    const result = (await tool.execute?.(
       { toolCallDescription: "status" },
       { toolCallId: "t1", messages: [] },
     )) as GitStatusResult;
 
-  it("reports incomplete evidence for a truncated nonempty prefix", async () => {
-    const result = await call(
-      stubCtx({
-        exitCode: 0,
-        stdout: "M a.ts\nM b.ts\n",
-        stderr: "",
-        stdoutTruncated: true,
-      }),
-    );
-    expect(result.success).toBe(true);
-    // The partial list is kept as evidence…
-    expect(result.status).toContain("M a.ts");
-    // …and explicitly labeled incomplete — never a clean complete status.
-    expect(result.status).toContain("INCOMPLETE");
-    expect(result.error).toContain("INCOMPLETE");
-    expect(result.error).toContain("truncated");
+    expect(git).toHaveBeenCalledWith("status");
+    expect(result.status).toBe("M injected.ts");
+    expect(result.cwd).toBe("/sandbox");
   });
 
-  it("never reports (clean) for a truncated empty prefix", async () => {
-    const result = await call(
-      stubCtx({
-        exitCode: 0,
-        stdout: "",
-        stderr: "",
-        stdoutTruncated: true,
-      }),
-    );
-    // An empty 1 MiB prefix can hide any number of entries past the cap.
-    expect(result.status).not.toBe("(clean)");
-    expect(result.status).not.toContain("(clean)");
-    expect(result.status).toContain("INCOMPLETE");
-    expect(result.error).toContain("INCOMPLETE");
-  });
-
-  it("preserves failure when git fails with a truncated capture", async () => {
-    const result = await call(
-      stubCtx({
-        exitCode: 128,
-        stdout: "M partial\n",
-        stderr: "fatal: not a git repository",
-        stdoutTruncated: true,
-      }),
-    );
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("fatal: not a git repository");
-    expect(result.error).toContain("INCOMPLETE");
-    expect(result.status).toContain("M partial");
-  });
-
-  it("ordinary clean status is unchanged for a complete capture", async () => {
-    const result = await call(
-      stubCtx({
-        exitCode: 0,
-        stdout: "",
-        stderr: "",
-        stdoutTruncated: false,
-      }),
-    );
-    expect(result.success).toBe(true);
-    expect(result.error).toBe("");
-    expect(result.status).toBe("(clean)");
-  });
-
-  it("git_diff keeps its preview semantics over the extended runGit result", async () => {
-    // The runner-level truncation flag must not alter git_diff's behavior:
-    // its own character preview decides the truncation message.
+  it("gitDiff calls the injected fs backend with path/staged args", async () => {
+    const git = vi.fn().mockResolvedValue({
+      success: true,
+      stdout: "injected diff",
+      stderr: "",
+      cwd: "/sandbox",
+    });
+    const backends = { fs: { git } } as unknown as ToolBackends;
     const ctx = {
-      agentCwd: "/workspace/session",
-      session: { id: "ses_test", rootPath: "/workspace/session" },
-      commandShell: {
-        execute: async () => ({
-          exitCode: 0,
-          stdout: "-removed\n+added\n",
-          stderr: "",
-          stdoutTruncated: false,
-          timedOut: false,
-          stderrTruncated: false,
-          cleanupUnconfirmed: false,
-        }),
-      },
-    } as unknown as ToolContext;
-    const result = (await gitDiff(ctx).execute?.(
-      { toolCallDescription: "diff" },
+      agentCwd: "/sandbox",
+      session: { id: "ses_test", rootPath: "/sandbox" },
+      backends,
+    } as ToolContext;
+
+    const tool = gitDiff(ctx);
+    const result = (await tool.execute?.(
+      { toolCallDescription: "test", path: "a.ts", staged: true },
       { toolCallId: "t1", messages: [] },
     )) as GitDiffResult;
-    expect(result.success).toBe(true);
-    expect(result.error).toBe("");
-    expect(result.diff).toContain("+added");
+
+    expect(git).toHaveBeenCalledWith("diff", { path: "a.ts", staged: true });
+    expect(result.diff).toBe("injected diff");
   });
 });

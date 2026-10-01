@@ -63,7 +63,6 @@ export {
   createFile,
   createReportErrorTool,
   createResponseTool,
-  createSandboxBrowserTools,
   createTask,
   createToolsForNames,
   createWorkspaceApp,
@@ -111,6 +110,7 @@ export {
   readSkill,
   runAttackSurface,
   runPentestWorkflow,
+  SandboxBrowserBackend,
   ScopeViolationError,
   SEND_EMAIL_TOOL_NAME,
   SKILL_TOOL_NAMES,
@@ -149,6 +149,7 @@ export type {
 // ---------------------------------------------------------------------------
 export { StepTraceWriter } from "./trace";
 export {
+  type AgentHooks,
   type AgentMode,
   ApexFindingObject,
   type CommandCancelHandle,

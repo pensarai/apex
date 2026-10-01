@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionInfo } from "../session";
+import type { CommandBackend } from "../tools/backends/types";
 import { writeWhiteboxArtifact } from "./artifacts";
-import { runSpawnBounded } from "./boundedProcess";
+import { runCommandBounded } from "./boundedProcess";
 import type { RepoProfile, ScanKind, ScanRunResult } from "./types";
 
 const MAX_SCAN_OUTPUT = 2 * 1024 * 1024;
@@ -228,15 +229,14 @@ export async function runScanAdapter(input: {
   profile: RepoProfile;
   session: SessionInfo;
   timeoutSeconds: number;
+  command: CommandBackend | undefined;
 }): Promise<ScanRunResult> {
-  const command = input.adapter.buildCommand(input.profile);
+  const argv = input.adapter.buildCommand(input.profile);
   const startedAt = Date.now();
-  const raw = await runSpawnBounded({
-    command,
+  const raw = await runCommandBounded(input.command, argv, {
     cwd: input.profile.rootPath,
     timeoutSeconds: input.timeoutSeconds,
     maxTotalBytes: MAX_SCAN_OUTPUT,
-    detached: false,
   });
   const duration = Date.now() - startedAt;
 
@@ -260,7 +260,7 @@ export async function runScanAdapter(input: {
 
   return {
     scanner: input.adapter.id,
-    command,
+    command: argv,
     exitCode: raw.exitCode,
     findings: input.adapter.parseSummary(raw.stdout),
     artifact,

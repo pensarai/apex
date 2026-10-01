@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { runGit } from "./gitStatus";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const gitDiffInputSchema = z.object({
@@ -37,17 +37,14 @@ Optionally pass path to limit output to one file/directory.
 Does not commit, stage, push, or open a PR.`,
     inputSchema: gitDiffInputSchema,
     execute: async ({ path, staged = false }): Promise<GitDiffResult> => {
-      const args = ["diff"];
-      if (staged) args.push("--cached");
-      if (path) args.push("--", path);
-
-      const result = await runGit(ctx, args);
+      const { fs } = resolveBackends(ctx);
+      const result = await fs.git("diff", { path, staged });
       if (!result.success) {
         return {
           success: false,
           error: result.stderr || "git diff failed",
           diff: result.stdout,
-          cwd: ctx.agentCwd,
+          cwd: result.cwd,
         };
       }
 
@@ -61,7 +58,7 @@ Does not commit, stage, push, or open a PR.`,
         diff: truncated
           ? `${raw.slice(0, MAX_DIFF)}\n\n(truncated)`
           : raw || "(no changes)",
-        cwd: ctx.agentCwd,
+        cwd: result.cwd,
       };
     },
   });

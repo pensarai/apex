@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const gitStatusInputSchema = z.object({
@@ -17,33 +18,31 @@ export type GitStatusResult = {
   cwd: string;
 };
 
-async function runGit(
+/**
+ * Run a git command against `ctx.sandbox` / `ctx.commandShell`. Shared
+ * low-level primitive: `LocalBackends.fs.git` (design §3.2) imports this
+ * directly as its `status`/`diff` implementation, so it stays here rather
+ * than being duplicated. Neither `gitStatus` nor `gitDiff` calls it anymore
+ * — both route through the backend.
+ */
+export async function runGit(
   ctx: ToolContext,
   args: string[],
-): Promise<{
-  success: boolean;
-  stdout: string;
-  stderr: string;
-  stdoutTruncated: boolean;
-}> {
+): Promise<{ success: boolean; stdout: string; stderr: string }> {
   const command = `git ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`;
+  const full = `cd "${ctx.agentCwd}" && ${command}`;
 
   if (ctx.sandbox) {
-    const result = await ctx.sandbox.execute(command, {
-      timeout: 30,
-      cwd: ctx.agentCwd,
-    });
+    const result = await ctx.sandbox.execute(full, { timeout: 30 });
     return {
       success: result.success,
       stdout: result.stdout,
       stderr: result.stderr,
-      stdoutTruncated: false,
     };
   }
 
   if (ctx.commandShell) {
-    const result = await ctx.commandShell.execute(command, {
-      cwd: ctx.agentCwd,
+    const result = await ctx.commandShell.execute(full, {
       timeoutSeconds: 30,
       abortSignal: ctx.abortSignal,
     });
@@ -51,7 +50,6 @@ async function runGit(
       success: result.exitCode === 0,
       stdout: result.stdout,
       stderr: result.stderr,
-      stdoutTruncated: result.stdoutTruncated,
     };
   }
 
@@ -59,7 +57,6 @@ async function runGit(
     success: false,
     stdout: "",
     stderr: "No shell or sandbox available",
-    stdoutTruncated: false,
   };
 }
 
@@ -71,39 +68,22 @@ Use this to self-check which files you changed before finalizing.
 Does not commit, stage, push, or open a PR.`,
     inputSchema: gitStatusInputSchema,
     execute: async (): Promise<GitStatusResult> => {
-      const result = await runGit(ctx, ["status", "--porcelain"]);
-      // A capped capture is partial evidence: keep the prefix, label it
-      // INCOMPLETE — an empty prefix can still hide entries past the cap,
-      // so it must never read as "(clean)".
-      const truncNote = result.stdoutTruncated
-        ? "git status capture truncated at the byte limit — the porcelain list is INCOMPLETE, not the full status"
-        : "";
+      const { fs } = resolveBackends(ctx);
+      const result = await fs.git("status");
       if (!result.success) {
-        const baseError = result.stderr || "git status failed";
         return {
           success: false,
-          error: truncNote ? `${baseError}; ${truncNote}` : baseError,
+          error: result.stderr || "git status failed",
           status: result.stdout,
-          cwd: ctx.agentCwd,
-        };
-      }
-      if (result.stdoutTruncated) {
-        return {
-          success: true,
-          error: truncNote,
-          status: `${result.stdout.trim()}\n${truncNote}`,
-          cwd: ctx.agentCwd,
+          cwd: result.cwd,
         };
       }
       return {
         success: true,
         error: "",
         status: result.stdout.trim() || "(clean)",
-        cwd: ctx.agentCwd,
+        cwd: result.cwd,
       };
     },
   });
 }
-
-// Re-export helper for git_diff tool
-export { runGit };

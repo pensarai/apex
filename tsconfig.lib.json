@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // Fetch types (RequestInfo, HeadersInit, ...) used in public signatures
+    // (core/ai/utils, core/http/targetHeaders) are DOM-lib types; consumers
+    // like console already have "dom" in their own lib array.
+    "lib": ["ESNext", "DOM"],
+    "rootDir": "src",
+    "outDir": "build/lib",
+    "tsBuildInfoFile": ".cache/tsc.lib.tsbuildinfo"
+  },
+  "include": [
+    "src/index.ts",
+    "src/core/**/*.ts",
+    "src/lib/**/*.ts",
+    "src/util/**/*.ts"
+  ],
+  "exclude": [
+    "build",
+    "dist",
+    "node_modules",
+    "coverage",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+}

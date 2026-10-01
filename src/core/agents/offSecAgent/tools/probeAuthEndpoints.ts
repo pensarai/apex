@@ -1,11 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { targetFetch } from "../../../http/targetHeaders";
-import {
-  assertUrlInScope,
-  resolverSessionFromCtx,
-  ScopeViolationError,
-} from "./scopeGuard";
+import { resolveBackends } from "../../../tools/backends";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const AUTH_ENDPOINT_PATTERNS = {
@@ -108,6 +104,7 @@ Returns discovered endpoints and recommended login approach.`,
         throw e;
       }
 
+      const backends = resolveBackends(ctx);
       const discoveredEndpoints: Array<{
         path: string;
         methods: string[];
@@ -147,15 +144,15 @@ Returns discovered endpoints and recommended login approach.`,
 
         // Try GET
         try {
-          const getResult = await targetFetch(
-            resolverSessionFromCtx(ctx),
-            url,
-            {
-              method: "GET",
-              signal: ctx.abortSignal,
-            },
+          const getResult = await backends.http.request(
+            { url, method: "GET", followRedirects: true },
+            { abortSignal: ctx.abortSignal },
           );
-          if (getResult.status !== 404 && getResult.status !== 0) {
+          if (
+            getResult.success &&
+            getResult.status !== 404 &&
+            getResult.status !== 0
+          ) {
             methods.push("GET");
             if (getResult.status === 401)
               authIndicators.push("requires auth (401)");
@@ -164,7 +161,7 @@ Returns discovered endpoints and recommended login approach.`,
             if (getResult.status === 403)
               authIndicators.push("forbidden (403)");
 
-            const wwwAuth = getResult.headers.get("www-authenticate");
+            const wwwAuth = getResult.headers["www-authenticate"];
             if (wwwAuth) {
               if (wwwAuth.toLowerCase().includes("basic"))
                 authIndicators.push("HTTP Basic Auth");
@@ -178,19 +175,23 @@ Returns discovered endpoints and recommended login approach.`,
 
         // Try POST with empty JSON
         try {
-          const postResult = await targetFetch(
-            resolverSessionFromCtx(ctx),
-            url,
+          const postResult = await backends.http.request(
             {
+              url,
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: "{}",
-              signal: ctx.abortSignal,
+              followRedirects: true,
             },
+            { abortSignal: ctx.abortSignal },
           );
-          if (postResult.status !== 404 && postResult.status !== 0) {
+          if (
+            postResult.success &&
+            postResult.status !== 404 &&
+            postResult.status !== 0
+          ) {
             methods.push("POST");
-            const body = await postResult.text();
+            const body = postResult.body;
             if (postResult.status === 400)
               authIndicators.push("expects body (400)");
             if (postResult.status === 401)

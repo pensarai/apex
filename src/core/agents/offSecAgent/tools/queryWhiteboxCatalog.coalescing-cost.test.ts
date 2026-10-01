@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ profileCalls: 0, readdirCalls: 0 }));
+const state = vi.hoisted(() => ({ profileCalls: 0, commandCalls: 0 }));
 
 vi.mock("../../../whitebox", async () => {
   const actual =
@@ -18,23 +18,30 @@ vi.mock("../../../whitebox", async () => {
     );
   return {
     ...actual,
-    profileCodebase: async (rootPath: string) => {
+    profileCodebase: async (
+      rootPath: string,
+      command?: Parameters<typeof actual.profileCodebase>[1],
+    ) => {
       state.profileCalls++;
-      return actual.profileCodebase(rootPath);
+      return actual.profileCodebase(rootPath, command);
     },
   };
 });
 
-vi.mock("node:fs/promises", async () => {
-  const actual =
-    await vi.importActual<typeof import("node:fs/promises")>(
-      "node:fs/promises",
-    );
+// profileCodebase walks the tree by shelling out through runCommandBounded
+// (so it works against a sandbox command backend), not node:fs — count those
+// executions to prove the wave coalesces into a single walk.
+vi.mock("../../../whitebox/boundedProcess", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../whitebox/boundedProcess")
+  >("../../../whitebox/boundedProcess");
   return {
     ...actual,
-    readdir: async (...args: Parameters<typeof actual.readdir>) => {
-      state.readdirCalls++;
-      return actual.readdir(...args);
+    runCommandBounded: async (
+      ...args: Parameters<typeof actual.runCommandBounded>
+    ) => {
+      state.commandCalls++;
+      return actual.runCommandBounded(...args);
     },
   };
 });
@@ -79,7 +86,7 @@ function invoke(sessionId: string): Promise<unknown> {
 describe("queryWhiteboxCatalog profile coalescing cost", () => {
   it("profiles a real fixture once for sixteen concurrent requests", async () => {
     state.profileCalls = 0;
-    state.readdirCalls = 0;
+    state.commandCalls = 0;
     const single = (await invoke("cost-calibration")) as {
       success: boolean;
       data: { records: unknown[] };
@@ -87,18 +94,18 @@ describe("queryWhiteboxCatalog profile coalescing cost", () => {
 
     expect(single.success).toBe(true);
     expect(state.profileCalls).toBe(1);
-    const singleReaddirCalls = state.readdirCalls;
-    expect(singleReaddirCalls).toBeGreaterThan(0);
+    const singleCommandCalls = state.commandCalls;
+    expect(singleCommandCalls).toBeGreaterThan(0);
 
     state.profileCalls = 0;
-    state.readdirCalls = 0;
+    state.commandCalls = 0;
     const wave = await Promise.all(
       Array.from({ length: 16 }, () => invoke("cost-wave")),
     );
 
-    // One profile attempt and one directory-read pass for the whole wave.
+    // One profile attempt and one filesystem-walk pass for the whole wave.
     expect(state.profileCalls).toBe(1);
-    expect(state.readdirCalls).toBe(singleReaddirCalls);
+    expect(state.commandCalls).toBe(singleCommandCalls);
     for (const output of wave) {
       expect(output).toEqual(single);
     }
