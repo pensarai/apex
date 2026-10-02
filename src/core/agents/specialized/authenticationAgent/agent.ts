@@ -17,7 +17,7 @@ import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { type AgentHooks, OffensiveSecurityAgent } from "../../offSecAgent";
 import type { StreamIdFactory } from "../../offSecAgent/types";
 import {
   browserEngineForGoogleSignIn,
@@ -34,7 +34,7 @@ const log = scopedLogger(() => createLogger("authentication-agent"));
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AuthenticationAgentInput {
+export interface AuthenticationAgentInput extends AgentHooks {
   /** The target requiring authentication */
   target: string;
 

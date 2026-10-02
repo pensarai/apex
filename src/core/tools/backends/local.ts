@@ -26,6 +26,7 @@ import { grepImpl } from "../../agents/offSecAgent/tools/grepImpl";
 import { listFilesImpl } from "../../agents/offSecAgent/tools/listFilesImpl";
 import { createPlaywrightBrowserBackend } from "../../agents/offSecAgent/tools/playwrightMcp";
 import { readFileImpl } from "../../agents/offSecAgent/tools/readFileImpl";
+import { SandboxBrowserBackend } from "../../agents/offSecAgent/tools/sandboxPlaywright";
 import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuard";
 import { HttpSmsInbox } from "../../agents/offSecAgent/tools/smsInbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
@@ -292,15 +293,17 @@ export function LocalBackends(
     | ReturnType<typeof createPlaywrightBrowserBackend>
     | undefined;
   function browserTransport() {
-    localBrowser ??= createPlaywrightBrowserBackend(
-      join(ctx.session.rootPath, "evidence"),
-      undefined,
-      ctx.abortSignal,
-      undefined,
-      undefined,
-      undefined,
-      ctx.browserSession,
-    );
+    localBrowser ??= ctx.sandbox
+      ? SandboxBrowserBackend(ctx, policy)
+      : createPlaywrightBrowserBackend(
+          join(ctx.session.rootPath, "evidence"),
+          undefined,
+          ctx.abortSignal,
+          undefined,
+          undefined,
+          undefined,
+          ctx.browserSession,
+        );
     return localBrowser;
   }
   async function browserExec<T>(
@@ -308,7 +311,7 @@ export function LocalBackends(
     input: unknown,
     execute: () => Promise<T>,
   ): Promise<T> {
-    await checkPolicy("browser", op, input);
+    if (!ctx.sandbox) await checkPolicy("browser", op, input);
     return execute();
   }
   const browser: ToolBackends["browser"] = {
