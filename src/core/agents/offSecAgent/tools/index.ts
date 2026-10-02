@@ -51,6 +51,14 @@ export { listFiles } from "./listFiles";
 export { listMemories } from "./listMemories";
 export { listPromptInjections } from "./listPromptInjections";
 export { listTasksTool } from "./listTasks";
+// Pure patch primitives — reused by the durable runtime's sandbox backend to
+// run apex-faithful apply_patch orchestration worker-side (no format drift).
+export {
+  applyFileDiff,
+  type EolAdaptation,
+  PatchApplyError,
+} from "./patchApply";
+export { type ParsedFileDiff, parseUnifiedDiff } from "./patchParse";
 // Per-command executor — one fresh process group per tool invocation.
 export {
   PerCommandShell,

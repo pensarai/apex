@@ -14,6 +14,7 @@ import { generateText, stepCountIs } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyToolResultBudget } from "../../../ai/contextManagement";
+import { LocalBackends } from "../../../tools/backends/local";
 import { executeCommand } from "./executeCommand";
 import { grep } from "./grep";
 import { type ReadFileResult, readFile } from "./readFile";
@@ -129,12 +130,22 @@ describe("bounded model output", () => {
     }
   });
 
-  it("reads and searches owned host artifacts from a sandbox worker without widening ordinary file access", async () => {
+  it.each([
+    "sandbox",
+    "injected",
+  ])("reads and searches owned host artifacts with %s execution without widening ordinary file access", async (transport) => {
     const ctx = await context();
     const remote = vi.fn(async () => {
       throw new Error("artifact retrieval must stay on host");
     });
     ctx.sandbox = { type: "windows", execute: remote };
+    if (transport === "injected") {
+      const backend = LocalBackends(ctx);
+      ctx.backends = {
+        ...backend,
+        fs: { ...backend.fs, read: remote, grep: remote },
+      };
+    }
     const output = {
       success: true,
       error: "",
@@ -180,7 +191,7 @@ describe("bounded model output", () => {
         options,
       ),
     ).toMatchObject({ success: false });
-    const local = { ...ctx, sandbox: undefined };
+    const local = { ...ctx, sandbox: undefined, backends: undefined };
     await writeFile(join(ctx.agentCwd, "outside.txt"), "private");
     expect(
       await readFile(local).execute?.(
