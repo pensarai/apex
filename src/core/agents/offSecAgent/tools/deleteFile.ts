@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { deleteWorkspaceFile, resolveFilePath } from "./fileWorkspace";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const deleteFileInputSchema = z.object({
@@ -23,19 +23,15 @@ Missing files, directories, binary files, and files larger than 1 MiB fail expli
 If contents change while preparing the deletion, re-read before retrying.`,
     inputSchema: deleteFileInputSchema,
     execute: async ({ path }): Promise<DeleteFileResult> => {
-      let resolved = path;
+      const { fs } = resolveBackends(ctx);
       try {
-        resolved = await resolveFilePath(ctx, path, {
-          confineToCwd: true,
-          followFinal: false,
-        });
-        await deleteWorkspaceFile(ctx, resolved);
-        return { success: true, error: "", path: resolved };
+        await fs.delete(path);
+        return { success: true, error: "", path };
       } catch (error: unknown) {
         return {
           success: false,
           error: error instanceof Error ? error.message : String(error),
-          path: resolved,
+          path,
         };
       }
     },

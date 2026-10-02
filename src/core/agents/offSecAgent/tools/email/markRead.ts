@@ -1,7 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../../tools/backends/resolve";
 import type { ToolContext } from "../types";
-import { createEmailAdapter } from "./adapters";
+import { resolveEmailAdapter } from "./adapters";
 
 /**
  * Tool: email_mark_read
@@ -36,7 +37,10 @@ Sets the read/seen flag on a message so it no longer appears as unread.`,
       }
 
       try {
-        const adapter = createEmailAdapter(inbox);
+        const adapter = resolveEmailAdapter(
+          inbox,
+          resolveBackends(ctx).inbox.email,
+        );
         await adapter.markAsRead(messageId, folder);
         return {
           success: true,
