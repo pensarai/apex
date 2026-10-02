@@ -56,7 +56,7 @@ function buildHooks() {
   } as unknown as Required<AgentHooks> & Record<string, any>;
 }
 
-describe("AgentRuntime — hook forwarding (design doc §3.5)", () => {
+describe("AgentRuntime — hook forwarding", () => {
   it("spreads every AgentHooks field from opts into the OffensiveSecurityAgent constructor", () => {
     constructorCalls.length = 0;
     const hooks = buildHooks();
@@ -175,7 +175,7 @@ describe("AgentRuntime — hook forwarding (design doc §3.5)", () => {
   });
 });
 
-describe("assembleAgentHooks — compile-time completeness (design doc §3.5, Appendix F)", () => {
+describe("assembleAgentHooks — compile-time completeness", () => {
   it("returns every AgentHooks field at runtime", () => {
     const hooks = buildHooks();
     const assembled = assembleAgentHooks(hooks);

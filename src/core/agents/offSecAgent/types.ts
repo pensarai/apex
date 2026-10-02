@@ -124,7 +124,7 @@ export type StreamIdFactoryContext =
 export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
 
 /**
- * The hooks a host injects to control agent execution (design doc §3.5): tool
+ * The hooks a host injects to control agent execution: tool
  * backends, the sub-agent fan-out seam, model-call middleware/telemetry, the
  * inbound-message transports, and the abort/extra-tools/sandbox escape
  * hatches. Every specialized agent input extends this ONE type instead of
@@ -515,7 +515,7 @@ export type CommandCancelHandle = {
  * Extends {@link AgentHooks} rather than re-declaring `backends` /
  * `subagentSpawner` / `languageModelMiddleware` / `usageRecorder` /
  * `streamIdFactory` / `smsInbox` / `emailAdapterFor` / `abortSignal` /
- * `extraTools` / `sandbox` — that was the drop bug (design doc §3.5): a
+ * `extraTools` / `sandbox` — that was the drop bug: a
  * hand-rolled copy of this list silently omitted a field, and every hook
  * lived past the constructor that forgot to forward it.
  */

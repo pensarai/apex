@@ -254,7 +254,7 @@ export interface SpawnedPentestWorkerInput {
  * Construct one {@link TargetedPentestAgent} from a spawn spec and consume it —
  * the exact mapping `spawn_pentest_agent`'s in-process worker path uses today,
  * pulled out so a durable caller can run a spawned pentest worker as its own
- * child workflow instead of hand-rolling the construction (design doc A13).
+ * child workflow instead of hand-rolling the construction.
  */
 export async function runSpawnedPentestWorker(
   spec: SpawnedPentestWorkerSpec,

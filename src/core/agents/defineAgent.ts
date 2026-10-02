@@ -14,8 +14,7 @@ import type {
 import type { GrpcPentestContext } from "./specialized/attackSurface/grpcSchema";
 
 /**
- * A specialized agent as data, not a hand-written constructor (design doc
- * §3.5, Appendix F): the prompt builder, tool roster builder, response
+ * A specialized agent as data, not a hand-written constructor: the prompt builder, tool roster builder, response
  * schema, stop rules and any per-agent step hooks, parameterized over the
  * agent's own input type `TOpts` (which must extend {@link SpecializedAgentInput}
  * — and therefore {@link AgentHooks} — so every hook is always in scope).
@@ -49,7 +48,7 @@ export interface AgentDefinition<
   /** User prompt builder — the only required builder. */
   prompt: (opts: TOpts, state: TState) => string;
 
-  /** Tool roster builder (design doc §3.2: fixed at session start). */
+  /** Tool roster builder (fixed at session start). */
   activeTools: (opts: TOpts, state: TState) => string[];
 
   /** Structured-output schema, when this agent captures a typed result via the `response` tool. */
@@ -88,7 +87,7 @@ export interface AgentDefinition<
   agentCwd?: (opts: TOpts, state: TState) => string | undefined;
 
   /**
-   * Scopes the native file tools' path resolution (canary #1099). A pentest
+   * Scopes the native file tools' path resolution. A pentest
    * worker gets its own helper root so it can build scratch helper scripts
    * without reaching target source; orchestrators leave it unset (no file tools).
    */

@@ -175,7 +175,7 @@ describe("extractJavascriptEndpointsFromHtml", () => {
 describe("extractJavascriptEndpoints (fetching helper)", () => {
   const html = `<script>fetch('/api/via-fetch');</script>`;
 
-  // The page fetch routes through the tool http backend (design §3.2), never
+  // The page fetch routes through the tool http backend, never
   // a bare global fetch — so the test injects a fake backend on the context.
   function ctxWith(
     request: (...args: unknown[]) => Promise<HttpResponse>,

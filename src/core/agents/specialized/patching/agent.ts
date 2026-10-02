@@ -119,7 +119,7 @@ export const patchingAgentDefinition = defineAgent<
   activeTools: () => [...PATCHING_ACTIVE_TOOLS],
   responseSchema: () => PatchResultSchema,
   // Sandbox runs read the repo's own AGENTS.md via read_file at runtime rather
-  // than inlining a host file (canary #1099); the cwd is the agent's working
+  // than inlining a host file; the cwd is the agent's working
   // directory so commands and relative file-tool paths resolve at the repo.
   prompt: (opts) =>
     buildPatchingPrompt(

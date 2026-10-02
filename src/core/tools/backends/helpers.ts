@@ -1,9 +1,6 @@
 /**
- * Shared backend helpers, consolidated here once (design §3.2). Today these are
- * copied across `applyPatch` / `deleteFile` / `glob` (containment),
- * `executeCommand` / `httpRequest` / `browserTools` (redaction, spill, timeout),
- * and ~6 sites (the base64 sandbox write). A2–A4 delete their copies and import
- * from here.
+ * Shared backend helpers: path containment, output spill, and the base64
+ * sandbox write.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -12,39 +9,13 @@ import { agentLogsDir } from "../../agents/offSecAgent/tools/agentScratch";
 import type { UnifiedSandbox } from "../../agents/offSecAgent/tools/sandbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 
-/**
- * Per-verb caps, in one place (design §3.3). Byte-identical to today's
- * scattered literals.
- */
+/** Readability extract caps, chars / ms. */
 export const CAPS = {
-  /** Max chars returned by `read_file`. */
-  READ_MAX_CHARS: 100_000,
-  /** Max entries listed by a recursive `list_files`. */
-  LIST_MAX_RECURSIVE: 200,
-  /** Max entries listed by a non-recursive `list_files`. */
-  LIST_MAX_NON_RECURSIVE: 500,
-  /** Max chars returned by `grep`. */
-  GREP_MAX_CHARS: 50_000,
-  /** Inline cap before command / http output spills to a file. */
-  EXEC_MAX_INLINE: 50_000,
-  /** Max matches returned by `glob`. */
-  GLOB_MAX_RESULTS: 200,
-  /** `grep` wall-clock cap, seconds. */
-  GREP_TIMEOUT_SECONDS: 30,
-  /** `glob` / `git` sandbox command cap, seconds. */
-  GLOB_TIMEOUT_SECONDS: 30,
-  GIT_TIMEOUT_SECONDS: 30,
-  /** Default browser-script cap, seconds. */
-  BROWSER_TIMEOUT_SECONDS: 60,
-  /** Readability extract cap, chars / ms. */
   READABILITY_MAX_CHARS: 50_000,
   READABILITY_TIMEOUT_MS: 30_000,
+  /** Inline cap before command / http output spills to a file. */
+  EXEC_MAX_INLINE: 50_000,
 } as const;
-
-/** Resolve `target` against `root`; absolute paths pass through unchanged. */
-export function resolveAgentPath(root: string, target: string): string {
-  return isAbsolute(target) ? target : resolve(root, target);
-}
 
 /**
  * Resolve `target` against `root` and assert it stays under it. Lexical only —

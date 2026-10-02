@@ -17,7 +17,7 @@ import { updateFile } from "./updateFile";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
- * The ten file tools migrated onto `FsBackend` (design §3.2, §9 A2). Each
+ * The ten file tools migrated onto `FsBackend`. Each
  * factory + its source filename, so the same table drives both the
  * whole-file I/O-purity check and the per-tool `execute`-closure check.
  */
@@ -41,7 +41,7 @@ function makeCtx(): ToolContext {
   } as ToolContext;
 }
 
-// Forbidden per design §3.2: a tool is describe + validate + call backend.
+// Forbidden: a tool is describe + validate + call backend.
 // None of these ten files may reach `node:fs`/`node:child_process` directly,
 // spawn a process, or do a base64 sandbox echo-write — the backend owns all
 // of that now.

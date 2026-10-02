@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Library build (design §3.6): emits ESM + .d.ts for every package.json
+ * Library build: emits ESM + .d.ts for every package.json
  * `exports` subpath under build/lib, mirroring src/ 1:1. Entrypoints are
  * derived from package.json so it can't drift from the exports map.
  * Separate from `bun run build` (the CLI bundle) — that script still

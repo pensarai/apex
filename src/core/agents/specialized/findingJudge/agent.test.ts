@@ -42,7 +42,7 @@ function makeOpts(
   };
 }
 
-describe("findingJudgeDefinition — golden prompt/toolset (design doc §3.5)", () => {
+describe("findingJudgeDefinition — golden prompt/toolset", () => {
   it("keeps the fixed judge toolset for a given input", () => {
     const opts = makeOpts();
     expect(findingJudgeDefinition.activeTools(opts, undefined)).toEqual([
@@ -84,7 +84,7 @@ describe("findingJudgeDefinition — golden prompt/toolset (design doc §3.5)", 
   });
 });
 
-describe("FindingJudgeAgent hook forwarding (design doc §3.5)", () => {
+describe("FindingJudgeAgent hook forwarding", () => {
   it("forwards extraTools, subagentSpawner, smsInbox and emailAdapterFor — the hooks the pre-A7 constructor dropped", () => {
     constructorCalls.length = 0;
 

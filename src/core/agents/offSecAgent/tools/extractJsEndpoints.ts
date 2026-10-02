@@ -7,7 +7,7 @@ import type { ToolContext } from "./types";
  * Factory for the `extract_js_endpoints` tool.
  *
  * Thin wrapper around the existing jsExtraction helper, which routes its page
- * fetch through `ctx`'s tool backend (design §3.2) — no bare host `fetch`.
+ * fetch through `ctx`'s tool backend — no bare host `fetch`.
  */
 export function extractJsEndpoints(ctx: ToolContext) {
   return tool({

@@ -20,7 +20,7 @@ export type GitStatusResult = {
 
 /**
  * Run a git command against `ctx.sandbox` / `ctx.commandShell`. Shared
- * low-level primitive: `LocalBackends.fs.git` (design §3.2) imports this
+ * low-level primitive: `LocalBackends.fs.git` imports this
  * directly as its `status`/`diff` implementation, so it stays here rather
  * than being duplicated. Neither `gitStatus` nor `gitDiff` calls it anymore
  * — both route through the backend.

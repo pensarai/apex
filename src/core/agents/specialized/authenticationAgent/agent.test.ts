@@ -28,7 +28,7 @@ function makeOpts(
   };
 }
 
-describe("authenticationAgentDefinition — golden prompt/toolset (design doc §3.5)", () => {
+describe("authenticationAgentDefinition — golden prompt/toolset", () => {
   it("keeps the fixed auth toolset and target for a given input", () => {
     const opts = makeOpts();
     const activeTools = authenticationAgentDefinition.activeTools(
@@ -77,7 +77,7 @@ describe("authenticationAgentDefinition — golden prompt/toolset (design doc §
   });
 });
 
-describe("AuthenticationAgent hook forwarding (design doc §3.5)", () => {
+describe("AuthenticationAgent hook forwarding", () => {
   it("forwards sandbox, subagentSpawner, smsInbox and emailAdapterFor — the hooks the pre-A7 constructor dropped", () => {
     constructorCalls.length = 0;
 

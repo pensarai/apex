@@ -1,5 +1,5 @@
 /**
- * Tool backend layer (design §3.2, Appendix B, Appendix M).
+ * Tool backend layer.
  *
  * `ToolBackends` is the host- and engine-neutral surface every tool composes
  * over; `LocalBackends` is the apex CLI/TUI implementation; `defaultPolicy` is
