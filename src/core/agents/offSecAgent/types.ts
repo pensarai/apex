@@ -31,6 +31,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { ToolBackends } from "../../tools/backends/types";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type {
@@ -39,6 +40,9 @@ import type {
   ToolName,
   UnifiedSandbox,
 } from "./tools";
+
+import type { EmailAdapterResolver } from "./tools/email/adapters";
+import type { SmsInbox } from "./tools/smsInbox";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -121,6 +125,9 @@ export type StreamIdFactoryContext =
 export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
+  emailAdapterFor?: EmailAdapterResolver;
+  smsInbox?: SmsInbox;
+  backends?: ToolBackends;
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
 

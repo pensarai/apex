@@ -32,6 +32,39 @@ function fixture() {
 }
 
 describe("PerCommandShell Windows termination", () => {
+  it("passes a native script path as argv without cmd interpreting it", async () => {
+    const { child, shell } = fixture();
+    const path = String.raw`C:\Users\Ada O'Neil\My POCs\proof & %PATH% !.js`;
+    const pending = shell.executeArgv("node", [path]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      "node",
+      [path],
+      expect.objectContaining({
+        detached: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    );
+    child.stdout.write("native output");
+    child.emit("close", 0);
+    await expect(pending).resolves.toMatchObject({
+      stdout: "native output",
+      exitCode: 0,
+    });
+    await shell.dispose();
+  });
+
+  it("does not spawn a native program after cancellation", async () => {
+    const { shell } = fixture();
+    await expect(
+      shell.executeArgv("node", ["proof.js"], {
+        abortSignal: AbortSignal.abort(),
+      }),
+    ).resolves.toMatchObject({ exitCode: 130 });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    await shell.dispose();
+  });
+
   it("settles a natural failure as soon as its output closes", async () => {
     const { child, shell } = fixture();
     const finished = vi.fn();

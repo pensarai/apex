@@ -99,7 +99,11 @@ async function scopedLocal(
 export async function resolveFilePath(
   ctx: ToolContext,
   input: string,
-  options: { confineToCwd?: boolean; followFinal?: boolean } = {},
+  options: {
+    confineToCwd?: boolean;
+    followFinal?: boolean;
+    timeoutSeconds?: number;
+  } = {},
 ): Promise<string> {
   ctx.abortSignal?.throwIfAborted();
   if (!input || input.includes("\0"))
@@ -117,13 +121,17 @@ export async function resolveFilePath(
   const root =
     ctx.fileWorkspaceRoot ?? (options.confineToCwd ? ctx.agentCwd : undefined);
   if (ctx.sandbox) {
-    const result = await remoteFileOperation(ctx, {
-      action: "resolve",
-      path: file,
-      root,
-      followFinal: options.followFinal,
-      createRoot: ctx.fileWorkspaceRoot !== undefined,
-    });
+    const result = await remoteFileOperation(
+      ctx,
+      {
+        action: "resolve",
+        path: file,
+        root,
+        followFinal: options.followFinal,
+        createRoot: ctx.fileWorkspaceRoot !== undefined,
+      },
+      options.timeoutSeconds,
+    );
     if (typeof result.path !== "string")
       throw new Error("Sandbox returned no resolved file path");
     return result.path;
@@ -151,7 +159,10 @@ function decodeText(bytes: Uint8Array): string {
   }
 }
 
-async function readLocal(file: string): Promise<string> {
+async function readLocal(
+  file: string,
+  maxBytes = MAX_FILE_BYTES,
+): Promise<string> {
   const handle = await open(
     file,
     constants.O_RDONLY |
@@ -161,9 +172,9 @@ async function readLocal(file: string): Promise<string> {
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new Error(`Not an ordinary file: ${file}`);
-    if (info.size > MAX_FILE_BYTES)
+    if (info.size > maxBytes)
       throw new Error(
-        `Text mutation limit is ${MAX_FILE_BYTES} bytes; use a bounded read and a smaller file`,
+        `Text mutation limit is ${maxBytes} bytes; use a bounded read and a smaller file`,
       );
     const buffer = Buffer.alloc(info.size + 1);
     let captured = 0;
@@ -188,6 +199,7 @@ async function readLocal(file: string): Promise<string> {
 export async function readWorkspaceFile(
   ctx: ToolContext,
   file: string,
+  maxBytes = MAX_FILE_BYTES,
 ): Promise<string> {
   ctx.abortSignal?.throwIfAborted();
   if (ctx.sandbox) {
@@ -199,7 +211,7 @@ export async function readWorkspaceFile(
       throw new Error("Sandbox returned no file content");
     return decodeText(Buffer.from(result.content, "base64"));
   }
-  return readLocal(await scopedLocal(ctx, file));
+  return readLocal(await scopedLocal(ctx, file), maxBytes);
 }
 
 export async function withWorkspaceFileLock<T>(
@@ -244,10 +256,13 @@ function digest(content: string) {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-export function validateWorkspaceFileContent(content: string): void {
+export function validateWorkspaceFileContent(
+  content: string,
+  maxBytes = MAX_FILE_BYTES,
+): void {
   const bytes = Buffer.from(content, "utf8");
-  if (bytes.length > MAX_FILE_BYTES)
-    throw new Error(`Text mutation limit is ${MAX_FILE_BYTES} bytes`);
+  if (bytes.length > maxBytes)
+    throw new Error(`Text mutation limit is ${maxBytes} bytes`);
   decodeText(bytes);
 }
 
@@ -275,22 +290,31 @@ export async function writeWorkspaceFile(
   ctx: ToolContext,
   file: string,
   content: string,
-  options: { expected?: string | null } = {},
+  options: {
+    expected?: string | null;
+    timeoutSeconds?: number;
+    maxBytes?: number;
+    permissions?: number;
+  } = {},
 ): Promise<void> {
   const bytes = Buffer.from(content, "utf8");
-  validateWorkspaceFileContent(content);
+  validateWorkspaceFileContent(content, options.maxBytes);
   await withWorkspaceFileLock(ctx, file, async () => {
     if (ctx.sandbox) {
-      await remoteFileOperation(ctx, {
-        action: "write",
-        path: file,
-        content: bytes.toString("base64"),
-        exclusive: options.expected === null,
-        expectedHash:
-          typeof options.expected === "string"
-            ? digest(options.expected)
-            : undefined,
-      });
+      await remoteFileOperation(
+        ctx,
+        {
+          action: "write",
+          path: file,
+          content: bytes.toString("base64"),
+          exclusive: options.expected === null,
+          expectedHash:
+            typeof options.expected === "string"
+              ? digest(options.expected)
+              : undefined,
+        },
+        options.timeoutSeconds,
+      );
       return;
     }
     const target = await scopedLocal(ctx, file);
@@ -302,11 +326,12 @@ export async function writeWorkspaceFile(
       throw new Error(`Not an ordinary file: ${target}`);
     if (info && options.expected === null)
       throw new Error(`File already exists: ${target}`);
-    if (info && options.expected === undefined) await readLocal(target);
+    if (info && options.expected === undefined)
+      await readLocal(target, options.maxBytes);
     const checkExpected = async () => {
       if (
         typeof options.expected === "string" &&
-        (await readLocal(target)) !== options.expected
+        (await readLocal(target, options.maxBytes)) !== options.expected
       ) {
         throw new Error(
           "File changed since it was read; re-read it and prepare the edit again",
@@ -324,11 +349,13 @@ export async function writeWorkspaceFile(
       const handle = await open(
         temporary,
         "wx",
-        info ? info.mode & 0o777 : 0o666,
+        options.permissions ?? (info ? info.mode & 0o777 : 0o666),
       );
       try {
         await handle.writeFile(bytes);
-        if (info) await handle.chmod(info.mode & 0o777);
+        if (options.permissions !== undefined)
+          await handle.chmod(options.permissions);
+        else if (info) await handle.chmod(info.mode & 0o777);
       } finally {
         await handle.close();
       }
@@ -373,4 +400,35 @@ export async function deleteWorkspaceFile(
     ctx.abortSignal?.throwIfAborted();
     await unlink(target);
   });
+}
+
+/** Host session artifacts retain append semantics across independent agent processes. */
+export async function appendLocalWorkspaceFile(
+  ctx: ToolContext,
+  file: string,
+  header: string,
+  entry: string,
+): Promise<void> {
+  const resolved = await resolveFilePath(ctx, file);
+  await mkdir(path.dirname(resolved), { recursive: true });
+  const flags =
+    constants.O_WRONLY | constants.O_APPEND | (constants.O_NOFOLLOW ?? 0);
+  let handle: Awaited<ReturnType<typeof open>>;
+  let content = entry;
+  try {
+    handle = await open(
+      resolved,
+      flags | constants.O_CREAT | constants.O_EXCL,
+      0o644,
+    );
+    content = header + entry;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    handle = await open(resolved, flags);
+  }
+  try {
+    await handle.writeFile(content, "utf8");
+  } finally {
+    await handle.close();
+  }
 }
