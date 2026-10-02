@@ -1,5 +1,5 @@
 /**
- * Host- and engine-neutral tool backend layer (design doc §3.2, Appendix B).
+ * Host- and engine-neutral tool backend layer.
  *
  * A tool becomes `describe + validate + call backend`: it never touches
  * `fs`, `spawn`, `fetch`, a base64-echo write, or `ctx.sandbox`. `ToolBackends`
@@ -77,7 +77,7 @@ export interface ReadOpts {
   startLine?: number;
   endLine?: number;
   /**
-   * Byte-window mode (canary #1098): 0-based UTF-8 codepoint-aligned offset,
+   * Byte-window mode: 0-based UTF-8 codepoint-aligned offset,
    * paired with {@link byteCount}. Mutually exclusive with startLine/endLine.
    * The result carries `stoppedAtByte` as the continuation cursor.
    */
@@ -103,7 +103,7 @@ export interface GlobOpts {
 export type WriteMode = "create" | "overwrite";
 
 /**
- * Write options (canary #1095 scoped-workspace mutations). `mode` keeps the
+ * Write options. `mode` keeps the
  * create-vs-overwrite intent; `expected` layers optimistic concurrency on top:
  * `null` = exclusive create (one winner via `link`), a string = the content the
  * caller last read (rejected if the file changed since), `undefined` = no check.
@@ -114,7 +114,7 @@ export interface WriteOpts {
 }
 
 /**
- * Delete options (canary #1095). `confineToCwd` scopes resolution to the agent
+ * Delete options. `confineToCwd` scopes resolution to the agent
  * cwd when no file-workspace root is set; `expected` (a hash/content) rejects a
  * delete if the file changed since it was read.
  */
@@ -153,7 +153,7 @@ export interface FsBackend {
 
 /**
  * One streamed command event. `stdout`/`stderr` carry a monotonic `seq` so a
- * surviving executor can reattach by offset (design §3.3); `end` carries the
+ * surviving executor can reattach by offset; `end` carries the
  * final exit code and whether a timeout fired.
  */
 export type CommandEvent =
@@ -189,7 +189,7 @@ export interface HttpRequest {
   headers?: Record<string, string>;
   body?: string;
   followRedirects?: boolean;
-  /** `get_page` folds into `http_request` here (design §5.4, Appendix L). */
+  /** `get_page` folds into `http_request` here. */
   extract?: "readability";
 }
 
@@ -228,7 +228,7 @@ export interface BrowserCookiesResult {
   error?: string;
 }
 
-/** Today's `sandboxPlaywright` surface (design §3.2). */
+/** Today's `sandboxPlaywright` surface. */
 export interface BrowserBackend {
   navigate(url: string): Promise<BrowserNavigateResult>;
   snapshot(): Promise<BrowserSnapshotResult>;
@@ -244,7 +244,7 @@ export interface BrowserBackend {
   getCookies(o?: { urls?: string[] }): Promise<BrowserCookiesResult>;
 }
 
-/** The #1051 inbox seams, relocated (design §3.2). */
+/** The #1051 inbox seams, relocated. */
 export interface InboxBackend {
   email: EmailAdapterResolver;
   sms: SmsInbox;

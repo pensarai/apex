@@ -9,7 +9,7 @@ export interface ExtractJavascriptEndpointsParams {
   url: string;
   sessionCookie?: string;
   includeExternalJS?: boolean;
-  /** Routes the page fetch through the caller's tool backend (design §3.2) — no bare `fetch`. */
+  /** Routes the page fetch through the caller's tool backend — no bare `fetch`. */
   ctx: ToolContext;
 }
 

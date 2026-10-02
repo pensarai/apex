@@ -18,7 +18,7 @@ import type { StreamIdFactory } from "./offSecAgent/types";
  * `| undefined`). Hand-listed, not mapped from {@link AgentHooks}, so that
  * adding a field there without updating this type — and {@link assembleAgentHooks}
  * below — fails `tsc` instead of a review: the compile-time guarantee behind
- * "dropping a hook is a type error" (design doc §3.5, Appendix F).
+ * "dropping a hook is a type error".
  */
 export interface RequiredAgentHooks {
   backends: ToolBackends | undefined;
@@ -72,8 +72,8 @@ function mergeExtraTools(
  * subclassing {@link OffensiveSecurityAgent}, spreads {@link assembleAgentHooks}
  * plus the rest of `opts` into the base harness in a single `super()` call —
  * no specialized agent hand-copies fields into its own constructor, so no
- * specialized agent can silently drop one (the bug design doc §3.5
- * documents: `AuthenticationAgent` dropped five hooks, `FindingJudgeAgent`
+ * specialized agent can silently drop one (the bug where
+ * `AuthenticationAgent` dropped five hooks, `FindingJudgeAgent`
  * four, `BenchmarkComparisonAgent` eight, and `VulnerabilityReproductionAgent`
  * accepted `smsInbox`/`emailAdapterFor` by type and dropped them anyway).
  *

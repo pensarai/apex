@@ -99,7 +99,7 @@ async function measure(
   let run: () => Promise<unknown>;
   if (mode === "fetched") {
     const helper = extraction.extractJavascriptEndpoints;
-    // The page fetch routes through the tool http backend (design §3.2), so
+    // The page fetch routes through the tool http backend, so
     // the benchmark injects a backend that returns the fixture body.
     const ctx = {
       backends: {

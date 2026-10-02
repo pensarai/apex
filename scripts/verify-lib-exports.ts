@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Resolution test for the package.json `exports` map (design §3.6). Imports
+ * Resolution test for the package.json `exports` map. Imports
  * every subpath through the package specifier itself — the same resolution
  * path a real consumer (console) goes through — plus a sample deep `src/**`
  * passthrough import, which must keep working until console's migration is

@@ -46,7 +46,7 @@ function makeOpts(): BenchmarkComparisonAgentInput {
   };
 }
 
-describe("benchmarkComparisonDefinition — golden prompt/toolset (design doc §3.5)", () => {
+describe("benchmarkComparisonDefinition — golden prompt/toolset", () => {
   it("exposes only the single comparison-results tool", () => {
     const opts = makeOpts();
     expect(benchmarkComparisonDefinition.activeTools(opts, undefined)).toEqual([
@@ -64,7 +64,7 @@ describe("benchmarkComparisonDefinition — golden prompt/toolset (design doc §
   });
 });
 
-describe("BenchmarkComparisonAgent hook forwarding (design doc §3.5)", () => {
+describe("BenchmarkComparisonAgent hook forwarding", () => {
   it("forwards every AgentHooks field the pre-A7 constructor dropped", () => {
     constructorCalls.length = 0;
 

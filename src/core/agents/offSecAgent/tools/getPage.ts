@@ -25,7 +25,7 @@ export interface GetPageResponse {
 
 /**
  * `get_page` — a thin alias over `http_request` with `extract: 'readability'`
- * (design §5.4, Appendix L: the one safe tool-name merge). Kept as its own
+ * (the one safe tool-name merge). Kept as its own
  * model-facing name because prompts and `activeTools` lists across the agent
  * definitions still reference it by name; the fetch/extraction logic itself
  * lives once in `LocalBackends.http` (`src/core/tools/backends/local.ts`).

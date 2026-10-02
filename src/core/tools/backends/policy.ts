@@ -1,5 +1,5 @@
 /**
- * Tool policy hook (design Appendix M): deterministic code at the exec
+ * Tool policy hook: deterministic code at the exec
  * boundary, consulted before every backend call. It composes today's
  * engagement-scope checks (`assertCommandInScope` / `assertUrlInScope`) and the
  * destructive-action block (`assertCommandActionAllowed` /
@@ -55,7 +55,7 @@ interface HttpPolicyArgs {
   url: string;
   body?: string;
   headers?: Record<string, string>;
-  /** `get_page`'s readability fetch: never scope- or destructive-checked (design §5.4, Appendix L). */
+  /** `get_page`'s readability fetch: never scope- or destructive-checked. */
   extract?: "readability";
 }
 

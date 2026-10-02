@@ -297,7 +297,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         inject.status === "injected" ? inject.command : command;
 
       // Engagement scope and the destructive-action block run inside the
-      // backend's ToolPolicy (design §3.2, Appendix M) — the header-injected
+      // backend's ToolPolicy — the header-injected
       // command is what gets checked, matching a method-override header
       // added by the session/credential layer.
       const backends = resolveBackends(ctx);
