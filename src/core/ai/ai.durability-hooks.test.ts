@@ -1,4 +1,5 @@
 import type {
+  LanguageModel,
   LanguageModelMiddleware,
   StreamTextOnStepFinishCallback,
   ToolSet,
@@ -21,7 +22,9 @@ const mocks = vi.hoisted(() => {
     wrappedModel,
     streamText: vi.fn(),
     generateText: vi.fn(),
-    wrapLanguageModel: vi.fn(() => wrappedModel),
+    wrapLanguageModel: vi.fn<typeof import("ai")["wrapLanguageModel"]>(
+      () => wrappedModel,
+    ),
     getProviderModel: vi.fn(() => baseModel),
   };
 });
@@ -120,6 +123,12 @@ function streamCall(index: number) {
     maxRetries: number;
     onStepFinish: StreamTextOnStepFinishCallback<ToolSet>;
   };
+}
+
+function generateCall(index: number) {
+  const call = mocks.generateText.mock.calls[index];
+  if (!call) throw new Error(`Missing generateText call ${index}`);
+  return call[0] as { model: unknown };
 }
 
 describe("streamResponse durability hooks", () => {
@@ -337,6 +346,71 @@ describe("generateObjectResponse usageRecorder", () => {
       cacheReadTokens: 4,
       cacheWriteTokens: 2,
     });
+  });
+});
+
+describe("generateObjectResponse languageModelMiddleware", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getProviderModel.mockReturnValue(mocks.baseModel);
+    mocks.wrapLanguageModel.mockReturnValue(mocks.wrappedModel);
+    mocks.generateText.mockResolvedValue(objectResult(11, 7));
+  });
+
+  it("passes the raw model through and never wraps when unset", async () => {
+    await generateObjectResponse({
+      model: "test-model",
+      schema: objectSchema,
+      prompt: "hi",
+    });
+    expect(mocks.wrapLanguageModel).not.toHaveBeenCalled();
+    expect(generateCall(0).model).toBe(mocks.baseModel);
+  });
+
+  it("wraps the model with the middleware when set", async () => {
+    const middleware: LanguageModelMiddleware = { specificationVersion: "v3" };
+    await generateObjectResponse({
+      model: "test-model",
+      schema: objectSchema,
+      prompt: "hi",
+      languageModelMiddleware: middleware,
+    });
+    expect(mocks.wrapLanguageModel).toHaveBeenCalledOnce();
+    expect(mocks.wrapLanguageModel).toHaveBeenCalledWith({
+      model: mocks.baseModel,
+      middleware,
+    });
+    expect(generateCall(0).model).toBe(mocks.wrappedModel);
+  });
+
+  it("routes the structured call through the middleware's wrapGenerate", async () => {
+    const actual = await vi.importActual<typeof import("ai")>("ai");
+    mocks.wrapLanguageModel.mockImplementation(actual.wrapLanguageModel);
+    mocks.baseModel.doGenerate.mockResolvedValue({
+      content: [],
+      finishReason: "stop",
+      usage: {},
+      warnings: [],
+    });
+    const wrapGenerate = vi.fn<
+      NonNullable<LanguageModelMiddleware["wrapGenerate"]>
+    >(({ doGenerate }) => doGenerate());
+    mocks.generateText.mockImplementation(
+      async ({ model }: { model: Exclude<LanguageModel, string> }) => {
+        await model.doGenerate({ prompt: [] });
+        return objectResult(11, 7);
+      },
+    );
+
+    await generateObjectResponse({
+      model: "test-model",
+      schema: objectSchema,
+      prompt: "hi",
+      languageModelMiddleware: { specificationVersion: "v3", wrapGenerate },
+    });
+
+    expect(wrapGenerate).toHaveBeenCalledOnce();
+    expect(mocks.baseModel.doGenerate).toHaveBeenCalledOnce();
   });
 });
 

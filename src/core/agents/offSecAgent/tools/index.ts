@@ -124,6 +124,7 @@ export {
   ensureSandboxBrowser,
   ensureSandboxPlaywright,
   installSandboxPlaywright,
+  SandboxBrowserBackend,
 } from "./sandboxPlaywright";
 // Scope guard utilities
 export {

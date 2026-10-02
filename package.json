@@ -266,6 +266,11 @@
       "import": "./build/lib/core/workflows/pentest.js",
       "types": "./build/lib/core/workflows/pentest.d.ts"
     },
+    "./workflows/seams": {
+      "default": "./build/lib/core/workflows/seams.js",
+      "import": "./build/lib/core/workflows/seams.js",
+      "types": "./build/lib/core/workflows/seams.d.ts"
+    },
     "./workflows/whiteboxAttackSurface": {
       "default": "./build/lib/core/workflows/whiteboxAttackSurface.js",
       "import": "./build/lib/core/workflows/whiteboxAttackSurface.js",
