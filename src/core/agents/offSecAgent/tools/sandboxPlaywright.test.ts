@@ -2,8 +2,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createBrowserToolset } from "./browserTools";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
-import { SandboxBrowserBackend } from "./sandboxPlaywright";
+import {
+  createSandboxBrowserTools,
+  SandboxBrowserBackend,
+} from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
 
 const RESULT_START = "__PW_RESULT__";
@@ -56,6 +60,33 @@ describe("SandboxBrowserBackend", () => {
   afterEach(() => {
     rmSync(rootPath, { recursive: true, force: true });
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    "public",
+    "harness",
+  ] as const)("%s tool factory uses the sandbox backend for screenshot evidence", async (entry) => {
+    const png = Buffer.from("shared-factory-evidence");
+    const { sandbox, commands } = makeFakeSandbox({
+      success: true,
+      data: png.toString("base64"),
+    });
+    const ctx = makeCtx(sandbox, rootPath);
+    const tools =
+      entry === "public"
+        ? createSandboxBrowserTools(ctx)
+        : createBrowserToolset(ctx);
+    const result = await tools.browser_screenshot.execute?.(
+      { filename: "proof", toolCallDescription: "capture" },
+      { toolCallId: "proof", messages: [] },
+    );
+    if (!result || Symbol.asyncIterator in result || !result.path)
+      throw new Error("missing evidence result");
+    expect(result.path.startsWith(join(rootPath, "evidence"))).toBe(true);
+    expect(readFileSync(result.path)).toEqual(png);
+    expect(commands.some((command) => command.includes("pw_action.js"))).toBe(
+      true,
+    );
   });
 
   it("navigates through the sandbox and never calls the host network", async () => {

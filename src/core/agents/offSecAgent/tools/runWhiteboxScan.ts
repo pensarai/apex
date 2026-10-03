@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
 import type { ScanKind } from "../../../whitebox";
 import {
   profileCodebase,
@@ -74,7 +75,8 @@ calling document_vulnerability.`,
       }
 
       try {
-        const profile = await profileCodebase(rootPath);
+        const backend = resolveWhiteboxBackend(ctx);
+        const profile = await profileCodebase(rootPath, backend.profile);
         const { adapters, unknownScannerIds } = selectScanAdaptersWithMeta({
           profile,
           kind: kind as ScanKind | undefined,
@@ -114,6 +116,7 @@ calling document_vulnerability.`,
               profile,
               session: ctx.session,
               timeoutSeconds,
+              run: backend.run,
             }),
           );
         }

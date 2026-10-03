@@ -3,8 +3,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { PerCommandShell } from "../agents/offSecAgent/tools/perCommandShell";
+import type { ToolContext } from "../agents/offSecAgent/tools/types";
 import type { SessionInfo } from "../session";
+import { LocalBackends } from "../tools/backends";
+import type { CommandBackend } from "../tools/backends/types";
 import { readTextPrefix } from "./artifacts";
+import { runCommandBounded } from "./boundedProcess";
 import {
   createWhiteboxCandidate,
   listWhiteboxCandidates,
@@ -104,6 +109,23 @@ async function waitForJob(
   return pollWhiteboxJob(id);
 }
 
+/** A real, disposable `command` backend rooted at `root` for `profileCodebase`. */
+function commandBackendFor(root: string): {
+  command: CommandBackend;
+  dispose: () => void;
+} {
+  const shell = new PerCommandShell({ cwd: root });
+  const ctx = {
+    agentCwd: root,
+    session: mockSession(root),
+    commandShell: shell,
+  } as ToolContext;
+  return {
+    command: LocalBackends(ctx).command,
+    dispose: () => shell.dispose(),
+  };
+}
+
 describe("whitebox catalog", () => {
   it("returns focused sink records without requiring the whole playbook", () => {
     const records = queryWhiteboxCatalog({
@@ -128,7 +150,8 @@ describe("profileCodebase", () => {
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(join(root, "src", "routes.ts"), "app.get('/x', handler);");
 
-    const profile = await profileCodebase(root);
+    const { command, dispose } = commandBackendFor(root);
+    const profile = await profileCodebase(root, command).finally(dispose);
 
     expect(profile.languages).toContain("typescript");
     expect(profile.packageManagers).toContain("npm");
@@ -647,7 +670,8 @@ describe("selectScanAdaptersWithMeta", () => {
   it("reports unknown scanner ids separately", async () => {
     const root = await tempDir("apex-whitebox-scanmeta-");
     await writeFile(join(root, "go.mod"), "module x\ngo 1.22\n");
-    const profile = await profileCodebase(root);
+    const { command, dispose } = commandBackendFor(root);
+    const profile = await profileCodebase(root, command).finally(dispose);
     const { adapters, unknownScannerIds } = selectScanAdaptersWithMeta({
       profile,
       scannerIds: ["gosec", "definitely-not-a-scanner"],
@@ -678,6 +702,24 @@ describe("whitebox jobs", () => {
     expect(log.content).toContain("whitebox-job-ok");
   });
 
+  it("preserves quoted executable and JavaScript shell metacharacters", async () => {
+    const root = await tempDir("apex-whitebox-job-quotes-");
+    const session = mockSession(root);
+    const record = startWhiteboxJob({
+      session,
+      cwd: root,
+      command: `"${process.execPath}" -e "process.stdout.write(['literal > output', 'literal & value', 'literal | pipe', (() => 'arrow')()].join('|'))"`,
+      timeoutSeconds: 5,
+      name: "quoted-command",
+    });
+    const polled = await waitForJob(record.id);
+    const log = readWhiteboxJobLog(record.id);
+    expect(polled?.status, log.content).toBe("completed");
+    expect(log.content).toContain(
+      "\n\nliteral > output|literal & value|literal | pipe|arrow",
+    );
+  });
+
   it("marks long-running jobs as timed out", async () => {
     const root = await tempDir("apex-whitebox-job-timeout-");
     const session = mockSession(root);
@@ -689,6 +731,44 @@ describe("whitebox jobs", () => {
       name: "slow",
     });
     const polled = await waitForJob(record.id);
-    expect(polled?.status).toBe("timed_out");
+    expect(polled?.status, readWhiteboxJobLog(record.id).content).toBe(
+      "timed_out",
+    );
+  });
+});
+
+describe("runCommandBounded without an injected backend", () => {
+  it("spawns on the host: empty output stays empty and a missing binary has no exit code", async () => {
+    const opts = { cwd: tmpdir(), timeoutSeconds: 5, maxTotalBytes: 1_024 };
+    const empty = await runCommandBounded(undefined, ["true"], opts);
+    expect(empty).toMatchObject({ stdout: "", exitCode: 0 });
+    const missing = await runCommandBounded(
+      undefined,
+      ["apex-no-such-binary"],
+      opts,
+    );
+    expect(missing.exitCode).toBeNull();
+  });
+});
+
+describe("runCommandBounded with an injected backend", () => {
+  it("preserves upstream truncation when the captured prefix fits locally", async () => {
+    const command: CommandBackend = {
+      async *run() {
+        yield { type: "stdout", seq: 0, bytes: "prefix" };
+        yield {
+          type: "end",
+          exitCode: 0,
+          timedOut: false,
+          stdoutTruncated: true,
+        };
+      },
+    };
+    const result = await runCommandBounded(command, ["scanner"], {
+      cwd: "/repo",
+      timeoutSeconds: 5,
+      maxTotalBytes: 1024,
+    });
+    expect(result).toMatchObject({ stdout: "prefix", outputTruncated: true });
   });
 });
