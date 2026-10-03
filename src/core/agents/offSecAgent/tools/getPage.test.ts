@@ -1092,3 +1092,41 @@ describe("getPage preview-limit vs producer failure", () => {
     expect(cancelled).toBe(true);
   }, 5_000);
 });
+
+describe("getPage backend routing", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("fetches and extracts the page in a configured sandbox without host fetch", async () => {
+    const hostFetch = vi.fn(() => {
+      throw new Error("host fetch must not run");
+    });
+    vi.stubGlobal("fetch", hostFetch);
+    const execute = vi.fn(async (command: string) => {
+      const marker = command.match(/__APEX_[a-f0-9]+_CURL_EXIT_/)?.[0];
+      if (!marker) throw new Error("Expected bounded sandbox HTTP transport");
+      const response = `HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<title>Remote page</title><p>Sandbox evidence</p>\n${marker}0\n`;
+      return {
+        success: true,
+        exitCode: 0,
+        stderr: "",
+        stdout: Buffer.from(response).toString("base64"),
+      };
+    });
+    const result = await getPage(
+      makeCtx({ sandbox: { type: "linux", execute } }),
+    ).execute?.(
+      {
+        url: "https://example.com/page",
+        toolCallDescription: "Read remote page",
+      },
+      { toolCallId: "page", messages: [] },
+    );
+    expect(result).toMatchObject({
+      success: true,
+      title: "Remote page",
+      content: expect.stringContaining("Sandbox evidence"),
+    });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(hostFetch).not.toHaveBeenCalled();
+  });
+});

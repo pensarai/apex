@@ -16,7 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 const counts = vi.hoisted(() => ({
   toolCtor: 0,
   browserGroupRouter: 0,
-  sandboxBrowserFactories: 0,
+  sharedBrowserFactories: 0,
   emailGroup: 0,
 }));
 
@@ -46,17 +46,17 @@ vi.mock("./browserTools", async (importOriginal) => {
   };
 });
 
-// sandboxPlaywright.ts: reached only through the router's sandbox branch.
-vi.mock("./sandboxPlaywright", async (importOriginal) => {
+// All transports use the same lazy schema factories.
+vi.mock("./browserToolFactories", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    createSandboxBrowserToolFactories: ((...args: unknown[]) => {
-      counts.sandboxBrowserFactories++;
+    createBackendBrowserToolFactories: ((...args: unknown[]) => {
+      counts.sharedBrowserFactories++;
       return (
-        actual.createSandboxBrowserToolFactories as (...a: unknown[]) => unknown
+        actual.createBackendBrowserToolFactories as (...a: unknown[]) => unknown
       )(...args);
-    }) as unknown as typeof actual.createSandboxBrowserToolFactories,
+    }) as unknown as typeof actual.createBackendBrowserToolFactories,
   };
 });
 
@@ -118,7 +118,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): ToolContext {
 function reset(): void {
   counts.toolCtor = 0;
   counts.browserGroupRouter = 0;
-  counts.sandboxBrowserFactories = 0;
+  counts.sharedBrowserFactories = 0;
   counts.emailGroup = 0;
 }
 
@@ -140,7 +140,7 @@ describe("createAllTools (full construction)", () => {
     // One construction per retained key — no discarded duplicates.
     expect(counts.toolCtor).toBe(74);
     expect(counts.browserGroupRouter).toBe(1);
-    expect(counts.sandboxBrowserFactories).toBe(1);
+    expect(counts.sharedBrowserFactories).toBe(1);
     expect(counts.emailGroup).toBe(0);
   });
 
@@ -165,7 +165,7 @@ describe("createToolsForNames selective construction", () => {
     expect(Object.keys(selected)).toEqual(JUDGE_TOOLS);
     expect(counts.toolCtor).toBe(7);
     expect(counts.browserGroupRouter).toBe(0);
-    expect(counts.sandboxBrowserFactories).toBe(0);
+    expect(counts.sharedBrowserFactories).toBe(0);
     expect(counts.emailGroup).toBe(0);
   });
 
@@ -175,7 +175,7 @@ describe("createToolsForNames selective construction", () => {
     expect(Object.keys(selected)).toEqual(["browser_click"]);
     expect(counts.toolCtor).toBe(1);
     expect(counts.browserGroupRouter).toBe(1);
-    expect(counts.sandboxBrowserFactories).toBe(1);
+    expect(counts.sharedBrowserFactories).toBe(1);
     expect(counts.emailGroup).toBe(0);
   });
 
@@ -187,7 +187,7 @@ describe("createToolsForNames selective construction", () => {
       expect(Object.keys(selected)).toEqual(["browser_navigate"]);
       expect(counts.toolCtor).toBe(1);
       expect(counts.browserGroupRouter).toBe(1);
-      expect(counts.sandboxBrowserFactories).toBe(0);
+      expect(counts.sharedBrowserFactories).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -200,7 +200,7 @@ describe("createToolsForNames selective construction", () => {
     expect(counts.toolCtor).toBe(1);
     expect(counts.emailGroup).toBe(0);
     expect(counts.browserGroupRouter).toBe(0);
-    expect(counts.sandboxBrowserFactories).toBe(0);
+    expect(counts.sharedBrowserFactories).toBe(0);
   });
 
   it("sparse mixed selection constructs exactly the union, in registry order", () => {
@@ -231,7 +231,7 @@ describe("createToolsForNames selective construction", () => {
       "browser_click",
     ]);
     expect(counts.toolCtor).toBe(2);
-    expect(counts.sandboxBrowserFactories).toBe(1);
+    expect(counts.sharedBrowserFactories).toBe(1);
   });
 
   it("credentialManager browser_fill: wrapper is lazy — 1 construction without fill, 2 with", () => {

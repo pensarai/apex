@@ -206,22 +206,27 @@ describe("executeCommand prompt injection pointer", () => {
     let capturedCommand = "";
     let capturedEnvVars: Record<string, string> | undefined;
     let capturedSandboxFilePath = "";
-    let executionCount = 0;
     const sandbox: UnifiedSandbox = {
       type: "linux",
       execute: async (command, opts) => {
-        executionCount++;
-        // First call writes the payload to a temp file in the sandbox
-        if (executionCount === 1) {
-          // Extract the temp file path from the write command
-          const match = command.match(/> (\/tmp\/apex_payload_\d+\.txt)/);
-          if (match) {
-            capturedSandboxFilePath = match[1];
-          }
+        if (opts?.envVars?.APEX_FILE_PAYLOAD_COUNT) {
+          const fileEnv = opts.envVars;
+          const payloadJson = Array.from(
+            { length: Number(opts.envVars.APEX_FILE_PAYLOAD_COUNT) },
+            (_, i) => fileEnv[`APEX_FILE_PAYLOAD_${i}`],
+          ).join("");
+          const request = JSON.parse(
+            Buffer.from(payloadJson, "base64").toString(),
+          );
+          capturedSandboxFilePath = request.path;
+          if (request.action === "write")
+            expect(Buffer.from(request.content, "base64").toString()).toBe(
+              payload,
+            );
           return {
             success: true,
             exitCode: 0,
-            stdout: "",
+            stdout: JSON.stringify({ ok: true, path: request.path }),
             stderr: "",
           };
         }
@@ -258,7 +263,9 @@ describe("executeCommand prompt injection pointer", () => {
     expect(capturedEnvVars).toEqual({
       APEX_PROMPT_INJECTION_FILE: capturedSandboxFilePath,
     });
-    expect(capturedSandboxFilePath).toMatch(/^\/tmp\/apex_payload_\d+\.txt$/);
+    expect(capturedSandboxFilePath).toMatch(
+      /^\/tmp\/test\/apex_payload_\d+\.txt$/,
+    );
     expect(result.command).toBe(command);
     expect(result.stdout).toContain(capturedSandboxFilePath);
     expect(result.stdout).toContain("[PROMPT_INJECTION:pi.direct.override]");
@@ -586,12 +593,21 @@ describe("executeCommand deadlines", () => {
     const sandbox: UnifiedSandbox = {
       type: "linux",
       execute: async (
-        command: string,
+        _command: string,
         opts?: { timeout?: number; envVars?: Record<string, string> },
       ) => {
-        if (command.includes("apex_payload_")) {
-          writeTimeout.push(opts?.timeout);
-          return { success: true, exitCode: 0, stdout: "", stderr: "" };
+        if (opts?.envVars?.APEX_FILE_PAYLOAD_COUNT) {
+          const request = JSON.parse(
+            Buffer.from(opts.envVars.APEX_FILE_PAYLOAD_0, "base64").toString(),
+          );
+          expect(opts.timeout).toBeLessThanOrEqual(30);
+          if (request.action === "write") writeTimeout.push(opts.timeout);
+          return {
+            success: true,
+            exitCode: 0,
+            stdout: JSON.stringify({ ok: true, path: request.path }),
+            stderr: "",
+          };
         }
         commandTimeout.push(opts?.timeout);
         return { success: true, exitCode: 0, stdout: "ok", stderr: "" };

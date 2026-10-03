@@ -1,12 +1,3 @@
-import { spawn } from "node:child_process";
-import {
-  appendFileSync,
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
@@ -14,6 +5,14 @@ import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import { createLogger } from "../../../logger/structured";
+import { collectCommand } from "../../../tools/backends/collectCommand";
+import {
+  appendArtifactSummary,
+  resolveArtifactFs,
+  resolveBackends,
+  resolveScriptRunner,
+} from "../../../tools/backends/resolve";
+import type { WriteOpts, WriteResult } from "../../../tools/backends/types";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type CVSSScorerInput,
@@ -157,7 +156,70 @@ const POC_EXTENSIONS: Record<PocType, string> = {
 };
 
 const EVIDENCE_FILE_THRESHOLD = 20_000;
-const MAX_OUTPUT_BYTES = 1_024 * 1_024; // 1 MB cap for stdout/stderr
+
+// Root the sandbox writes its own PoC/finding artifacts under, inside the
+// contained workspace — never the host `session.rootPath`
+// (`~/.pensar/sessions/...`), which the sandbox fs backend can't see.
+const SANDBOX_ARTIFACTS_ROOT = "/workspace/repo/.pensar";
+
+function isRealSandbox(ctx: ToolContext): boolean {
+  return ctx.backends?.sandboxed === true;
+}
+
+async function writeArtifact(
+  ctx: ToolContext,
+  path: string,
+  content: string,
+  options: WriteOpts,
+): Promise<WriteResult> {
+  return resolveArtifactFs(ctx).write(path, content, options);
+}
+
+function artifactsRoot(ctx: ToolContext): string {
+  return isRealSandbox(ctx) ? SANDBOX_ARTIFACTS_ROOT : ctx.session.rootPath;
+}
+
+function pocsRoot(ctx: ToolContext): string {
+  return isRealSandbox(ctx)
+    ? `${SANDBOX_ARTIFACTS_ROOT}/pocs`
+    : ctx.session.pocsPath;
+}
+
+function findingsRoot(ctx: ToolContext): string {
+  return isRealSandbox(ctx)
+    ? `${SANDBOX_ARTIFACTS_ROOT}/findings`
+    : ctx.session.findingsPath;
+}
+
+/** Best-effort cleanup through the resolved artifact capability. */
+async function deleteArtifact(ctx: ToolContext, path: string): Promise<void> {
+  try {
+    await resolveArtifactFs(ctx).delete(path);
+  } catch {
+    /* best-effort */
+  }
+}
+
+const summaryUpdates = new Map<string, Promise<void>>();
+
+async function updateSummary(
+  path: string,
+  update: () => Promise<void>,
+): Promise<void> {
+  const previous = summaryUpdates.get(path) ?? Promise.resolve();
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  summaryUpdates.set(path, pending);
+  await previous;
+  try {
+    await update();
+  } finally {
+    release();
+    if (summaryUpdates.get(path) === pending) summaryUpdates.delete(path);
+  }
+}
 
 const FALLBACK_CVSS: CVSSScorerResult = {
   score: 5.0,
@@ -297,9 +359,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         // Phase 1: Write & execute POC
-        const pocResult = ctx.sandbox
-          ? await executeSandboxPoc(ctx, input)
-          : await executeLocalPoc(ctx, input);
+        const pocResult = await executePoc(ctx, input);
 
         if (!pocResult.success) {
           return {
@@ -351,6 +411,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               authConfig: ctx.authConfig,
               abortSignal: ctx.abortSignal,
               sandbox: ctx.sandbox,
+              backends: ctx.backends,
               enableThinking: ctx.enableThinking,
               thinkingEffort: ctx.thinkingEffort,
               openAIReasoningEffort: ctx.openAIReasoningEffort,
@@ -367,7 +428,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           });
 
         if (!judgeResult.valid) {
-          cleanupPocFiles(ctx, filename);
+          await cleanupPocFiles(ctx, filename);
           return {
             success: false,
             judgeRejected: true,
@@ -381,8 +442,8 @@ CRITICAL RULES — READ BEFORE CALLING:
         const isVulnerability = judgeResult.findingType === "vulnerability";
 
         // Write sidecar only after judge acceptance (avoid wasted I/O on rejection)
-        writePocOutputSidecar(
-          ctx.session.pocsPath,
+        await writePocOutputSidecar(
+          ctx,
           filename,
           stdout || "",
           stderr || "",
@@ -403,19 +464,25 @@ CRITICAL RULES — READ BEFORE CALLING:
         const timestamp = new Date().toISOString();
 
         const outputDir = isVulnerability
-          ? session.findingsPath
-          : join(session.rootPath, "informational");
-
-        if (!isVulnerability) {
-          mkdirSync(outputDir, { recursive: true });
-        }
+          ? findingsRoot(ctx)
+          : join(artifactsRoot(ctx), "informational");
 
         let evidenceForPrompt = materializedEvidence;
 
         if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
           const evidenceFilePath = join(outputDir, evidenceFilename);
-          writeFileSync(evidenceFilePath, materializedEvidence);
+          const evidenceWrite = await writeArtifact(
+            ctx,
+            evidenceFilePath,
+            materializedEvidence,
+            { mode: "overwrite" },
+          );
+          if (!evidenceWrite.success) {
+            throw new Error(
+              evidenceWrite.error || `Failed to write ${evidenceFilePath}`,
+            );
+          }
           evidenceForPrompt =
             materializedEvidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
@@ -464,6 +531,10 @@ CRITICAL RULES — READ BEFORE CALLING:
               ctx.authConfig,
               ctx.abortSignal,
               ctx.session.id,
+              {
+                languageModelMiddleware: ctx.languageModelMiddleware,
+                usageRecorder: ctx.usageRecorder,
+              },
             );
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -510,7 +581,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         if (isVulnerability && ctx.findingsRegistry) {
           const check = await ctx.findingsRegistry.register(finding);
           if (check.duplicate) {
-            cleanupPocFiles(ctx, filename);
+            await cleanupPocFiles(ctx, filename);
             const matchTitle = check.matchedFinding?.title ?? "unknown";
             return {
               success: false,
@@ -566,7 +637,15 @@ CRITICAL RULES — READ BEFORE CALLING:
         const mdPath = join(outputDir, mdFilename);
 
         try {
-          writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
+          const jsonWrite = await writeArtifact(
+            ctx,
+            jsonPath,
+            JSON.stringify(findingWithMeta, null, 2),
+            { mode: "overwrite" },
+          );
+          if (!jsonWrite.success) {
+            throw new Error(jsonWrite.error || `Failed to write ${jsonPath}`);
+          }
 
           const cvssSection = cvssWarning
             ? `## CVSS 4.0 Assessment
@@ -655,10 +734,15 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 *This finding was automatically documented by the Pensar penetration testing agent.*
 `;
 
-          writeFileSync(mdPath, markdown);
+          const mdWrite = await writeArtifact(ctx, mdPath, markdown, {
+            mode: "overwrite",
+          });
+          if (!mdWrite.success) {
+            throw new Error(mdWrite.error || `Failed to write ${mdPath}`);
+          }
 
           if (isVulnerability) {
-            const summaryPath = join(session.rootPath, "findings-summary.md");
+            const summaryPath = join(artifactsRoot(ctx), "findings-summary.md");
             const cweTag = cvssResult.cwes?.length
               ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
               : "";
@@ -667,12 +751,21 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
               : `(CVSS ${cvssResult.score})`;
             const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
-            try {
-              appendFileSync(summaryPath, summaryEntry);
-            } catch {
+            await updateSummary(summaryPath, async () => {
               const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
-              writeFileSync(summaryPath, header + summaryEntry);
-            }
+              const summaryWrite = await appendArtifactSummary(
+                ctx,
+                summaryPath,
+                header,
+                summaryEntry,
+              );
+              if (!summaryWrite.success) {
+                log.warn("Failed to update findings-summary.md", {
+                  error: summaryWrite.error,
+                  sessionId: session.id,
+                });
+              }
+            });
           }
         } catch (writeError: unknown) {
           if (isVulnerability && ctx.findingsRegistry) {
@@ -718,111 +811,69 @@ interface PocExecResult {
   exitCode?: number;
 }
 
-async function executeLocalPoc(
+/**
+ * Writes the POC through the backend, then executes it through
+ * the resolved command backend, preserving the owned execution location.
+ */
+async function executePoc(
   ctx: ToolContext,
   input: DocumentVulnerabilityInput,
 ): Promise<PocExecResult> {
-  const pocsPath = ctx.session.pocsPath;
-  if (!existsSync(pocsPath)) {
-    mkdirSync(pocsPath, { recursive: true });
+  const { filename, pocContent } = preparePoc(input);
+  const pocPath = join(pocsRoot(ctx), filename);
+
+  const written = await writeArtifact(ctx, pocPath, pocContent, {
+    mode: "overwrite",
+    ...(!isRealSandbox(ctx) ? { permissions: 0o755 } : {}),
+  });
+  if (!written.success) {
+    throw new Error(written.error || `Failed to write PoC ${pocPath}`);
+  }
+  let executionPath = pocPath;
+  if (!ctx.backends && ctx.sandbox) {
+    executionPath = join(
+      ctx.fileWorkspaceRoot ?? ctx.agentCwd,
+      ".pensar",
+      "pocs",
+      filename,
+    );
+    const staged = await resolveBackends(ctx).fs.write(
+      executionPath,
+      pocContent,
+      { mode: "overwrite" },
+    );
+    if (!staged.success)
+      throw new Error(staged.error || `Failed to stage PoC ${executionPath}`);
   }
 
-  const { filename, pocContent } = preparePoc(input);
-  const pocPath = join(pocsPath, filename);
-
-  writeFileSync(pocPath, pocContent);
-  chmodSync(pocPath, 0o755);
-
-  const { stdout, stderr, exitCode } = await runScript(
+  const { stdout, stderr, exitCode } = await runPocScript(
+    ctx,
     POC_RUNNERS[input.pocType],
-    pocPath,
-    60_000,
-    ctx.abortSignal,
+    executionPath,
+    60,
   );
 
   if (exitCode !== 0) {
-    try {
-      unlinkSync(pocPath);
-    } catch {
-      /* cleanup best-effort */
-    }
+    await deleteArtifact(ctx, pocPath);
+    if (executionPath !== pocPath)
+      await resolveBackends(ctx).fs.delete(executionPath);
     return { success: false, filename, stdout, stderr, exitCode };
   }
 
   return { success: true, filename, stdout, stderr, exitCode };
 }
 
-async function executeSandboxPoc(
-  ctx: ToolContext,
-  input: DocumentVulnerabilityInput,
-): Promise<PocExecResult> {
-  const { filename, pocContent } = preparePoc(input);
-
-  const localPocsPath = ctx.session.pocsPath;
-  if (!existsSync(localPocsPath)) {
-    mkdirSync(localPocsPath, { recursive: true });
-  }
-  const localPocPath = join(localPocsPath, filename);
-
-  writeFileSync(localPocPath, pocContent);
-
-  // Pipeline sandbox setup into a single command to reduce round-trips
-  const sandboxPocPath = `/tmp/pocs/${filename}`;
-  const base64Content = Buffer.from(pocContent).toString("base64");
-  await ctx.sandbox!.execute(
-    `mkdir -p /tmp/pocs && echo "${base64Content}" | base64 -d > ${sandboxPocPath} && chmod +x ${sandboxPocPath}`,
-  );
-
-  const runner = POC_RUNNERS[input.pocType];
-  const result = await ctx.sandbox!.execute(
-    `cd /tmp && ${runner} ${sandboxPocPath}`,
-    { timeout: 60 },
-  );
-
-  const executionSuccess = result.success || result.exitCode === 0;
-
-  if (!executionSuccess) {
-    await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
-    try {
-      unlinkSync(localPocPath);
-    } catch {
-      /* cleanup best-effort */
-    }
-    return {
-      success: false,
-      filename,
-      stdout: result.stdout || "(no output)",
-      stderr:
-        (result.stderr || "POC execution failed") +
-        "\n\nPOC file has been deleted.",
-      exitCode: result.exitCode,
-    };
-  }
-
-  return {
-    success: true,
-    filename,
-    stdout: result.stdout || "(no output)",
-    stderr: result.stderr || "(no errors)",
-    exitCode: result.exitCode,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function cleanupPocFiles(ctx: ToolContext, filename: string): void {
-  try {
-    unlinkSync(join(ctx.session.pocsPath, filename));
-  } catch {
-    /* best-effort */
-  }
-  try {
-    unlinkSync(join(ctx.session.pocsPath, `${filename}.output.json`));
-  } catch {
-    /* best-effort */
-  }
+async function cleanupPocFiles(
+  ctx: ToolContext,
+  filename: string,
+): Promise<void> {
+  const dir = pocsRoot(ctx);
+  await deleteArtifact(ctx, join(dir, filename));
+  await deleteArtifact(ctx, join(dir, `${filename}.output.json`));
 }
 
 function sanitizeFilename(str: string): string {
@@ -937,127 +988,65 @@ function preparePoc(input: {
   return { filename, pocContent };
 }
 
-function writePocOutputSidecar(
-  pocsPath: string,
+async function writePocOutputSidecar(
+  ctx: ToolContext,
   filename: string,
   stdout: string,
   stderr: string,
   exitCode: number,
   description: string,
-): void {
-  try {
-    const outputPath = join(pocsPath, `${filename}.output.json`);
-    writeFileSync(
-      outputPath,
-      JSON.stringify(
-        {
-          stdout,
-          stderr,
-          exitCode,
-          executedAt: new Date().toISOString(),
-          pocFile: filename,
-          description,
-        },
-        null,
-        2,
-      ),
-    );
-  } catch {
-    /* non-critical */
+): Promise<void> {
+  const outputPath = join(pocsRoot(ctx), `${filename}.output.json`);
+
+  const result = await writeArtifact(
+    ctx,
+    outputPath,
+    JSON.stringify(
+      {
+        stdout,
+        stderr,
+        exitCode,
+        executedAt: new Date().toISOString(),
+        pocFile: filename,
+        description,
+      },
+      null,
+      2,
+    ),
+    { mode: "overwrite" },
+  );
+  if (!result.success) {
+    log.warn("Failed to write PoC output sidecar", {
+      error: result.error,
+      filename,
+    });
   }
 }
 
-function runScript(
+/** Executes the prepared PoC through the resolved command transport. */
+async function runPocScript(
+  ctx: ToolContext,
   runner: string,
   scriptPath: string,
-  timeout: number,
-  abortSignal?: AbortSignal,
+  timeoutSeconds: number,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve) => {
-    const child = spawn(runner, [scriptPath], {
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32",
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    let killed = false;
-    let resolved = false;
-
-    let abortCleanup: (() => void) | undefined;
-    if (abortSignal) {
-      const handler = () => killProcess();
-      abortSignal.addEventListener("abort", handler, { once: true });
-      abortCleanup = () => abortSignal.removeEventListener("abort", handler);
-    }
-
-    const safeResolve = (result: {
-      stdout: string;
-      stderr: string;
-      exitCode: number;
-    }) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeoutTimer);
-        abortCleanup?.();
-        resolve(result);
-      }
-    };
-
-    const killProcess = () => {
-      if (killed) return;
-      killed = true;
-
-      try {
-        if (child.pid && process.platform !== "win32") {
-          process.kill(-child.pid, "SIGTERM");
-        } else {
-          child.kill("SIGTERM");
-        }
-      } catch {
-        /* process may have already exited */
-      }
-
-      setTimeout(() => {
-        try {
-          if (child.pid && process.platform !== "win32") {
-            process.kill(-child.pid, "SIGKILL");
-          } else {
-            child.kill("SIGKILL");
-          }
-        } catch {
-          /* process may have already exited */
-        }
-
-        safeResolve({ stdout, stderr, exitCode: 1 });
-      }, 5000);
-    };
-
-    const timeoutTimer = setTimeout(killProcess, timeout);
-
-    child.stdout.on("data", (data: Buffer) => {
-      if (stdoutBytes < MAX_OUTPUT_BYTES) {
-        const chunk = data.toString();
-        stdout += chunk;
-        stdoutBytes += data.length;
-      }
-    });
-    child.stderr.on("data", (data: Buffer) => {
-      if (stderrBytes < MAX_OUTPUT_BYTES) {
-        const chunk = data.toString();
-        stderr += chunk;
-        stderrBytes += data.length;
-      }
-    });
-
-    child.on("close", (code) => {
-      safeResolve({ stdout, stderr, exitCode: code ?? 1 });
-    });
-
-    child.on("error", () => {
-      safeResolve({ stdout, stderr, exitCode: 1 });
-    });
-  });
+  const result = await collectCommand(
+    resolveScriptRunner(ctx)(runner, scriptPath, {
+      timeoutSeconds,
+      abortSignal: ctx.abortSignal,
+    }),
+  );
+  return {
+    ...result,
+    stdout:
+      result.stdout +
+      (result.stdoutTruncated
+        ? "\n\n(INCOMPLETE — stdout capture truncated at the byte limit)"
+        : ""),
+    stderr:
+      result.stderr +
+      (result.stderrTruncated
+        ? "\n\n(INCOMPLETE — stderr capture truncated at the byte limit)"
+        : ""),
+  };
 }
