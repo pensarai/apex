@@ -168,6 +168,8 @@ export interface RunOpts {
 }
 
 export interface CommandBackend {
+  /** Target command interpreter; custom transports default to POSIX, regardless of host OS. */
+  platform?: "posix" | "windows";
   run(cmd: string, o?: RunOpts): AsyncIterable<CommandEvent>;
 }
 

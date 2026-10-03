@@ -1,9 +1,16 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
+import { LocalBackends } from "../../../tools/backends/local";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
@@ -206,22 +213,24 @@ describe("executeCommand prompt injection pointer", () => {
     let capturedCommand = "";
     let capturedEnvVars: Record<string, string> | undefined;
     let capturedSandboxFilePath = "";
-    let executionCount = 0;
     const sandbox: UnifiedSandbox = {
       type: "linux",
       execute: async (command, opts) => {
-        executionCount++;
-        // First call writes the payload to a temp file in the sandbox
-        if (executionCount === 1) {
-          // Extract the temp file path from the write command
-          const match = command.match(/> (\/tmp\/apex_payload_\d+\.txt)/);
-          if (match) {
-            capturedSandboxFilePath = match[1];
-          }
+        if (opts?.envVars?.APEX_HIDDEN_PAYLOAD_COUNT) {
+          const fileEnv = opts.envVars;
+          const encoded = Array.from(
+            { length: Number(fileEnv.APEX_HIDDEN_PAYLOAD_COUNT) },
+            (_, i) => fileEnv[`APEX_HIDDEN_PAYLOAD_${i}`],
+          ).join("");
+          expect(Buffer.from(encoded, "base64").toString()).toBe(payload);
+          expect(command).not.toContain(payload);
+          capturedSandboxFilePath = command.match(
+            /\/tmp\/apex_payload_[a-f0-9-]+\.txt/,
+          )![0];
           return {
             success: true,
             exitCode: 0,
-            stdout: "",
+            stdout: capturedSandboxFilePath,
             stderr: "",
           };
         }
@@ -258,7 +267,9 @@ describe("executeCommand prompt injection pointer", () => {
     expect(capturedEnvVars).toEqual({
       APEX_PROMPT_INJECTION_FILE: capturedSandboxFilePath,
     });
-    expect(capturedSandboxFilePath).toMatch(/^\/tmp\/apex_payload_\d+\.txt$/);
+    expect(capturedSandboxFilePath).toMatch(
+      /^\/tmp\/apex_payload_[a-f0-9-]+\.txt$/,
+    );
     expect(result.command).toBe(command);
     expect(result.stdout).toContain(capturedSandboxFilePath);
     expect(result.stdout).toContain("[PROMPT_INJECTION:pi.direct.override]");
@@ -586,12 +597,18 @@ describe("executeCommand deadlines", () => {
     const sandbox: UnifiedSandbox = {
       type: "linux",
       execute: async (
-        command: string,
+        _command: string,
         opts?: { timeout?: number; envVars?: Record<string, string> },
       ) => {
-        if (command.includes("apex_payload_")) {
-          writeTimeout.push(opts?.timeout);
-          return { success: true, exitCode: 0, stdout: "", stderr: "" };
+        if (opts?.envVars?.APEX_HIDDEN_PAYLOAD_COUNT) {
+          expect(opts.timeout).toBeLessThanOrEqual(30);
+          writeTimeout.push(opts.timeout);
+          return {
+            success: true,
+            exitCode: 0,
+            stdout: "/tmp/apex_payload_test.txt",
+            stderr: "",
+          };
         }
         commandTimeout.push(opts?.timeout);
         return { success: true, exitCode: 0, stdout: "ok", stderr: "" };
@@ -674,3 +691,70 @@ describe("executeCommand deadlines", () => {
     }
   });
 });
+
+it.skipIf(process.platform === "win32")(
+  "stages injected payloads outside readable files and redacts harness output",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-hidden-payload-"));
+    const payload = "INERT SECRET PAYLOAD FOR RETRIEVAL TEST";
+    const library = new StaticPromptInjectionLibrary([
+      {
+        id: "pi.hidden",
+        name: "Hidden",
+        category: "instruction-hijack",
+        description: "test",
+        tags: [],
+        deliveryHints: [],
+        expectedObservation: "",
+        payload,
+      },
+    ]);
+    const ctx = makeCtx({
+      agentCwd: root,
+      fileWorkspaceRoot: root,
+      promptInjectionLibrary: library,
+    });
+    const local = LocalBackends(ctx);
+    const run = local.command.run;
+    let stagedPath = "";
+    const write = vi.fn(async () => {
+      throw new Error("payload must not enter readable filesystem backend");
+    });
+    ctx.backends = {
+      ...local,
+      sandboxed: true,
+      fs: { ...local.fs, write },
+      command: {
+        ...local.command,
+        async *run(command, options) {
+          stagedPath =
+            options?.envVars?.APEX_PROMPT_INJECTION_FILE ?? stagedPath;
+          yield* run(command, options);
+        },
+      },
+    };
+    try {
+      const result = await executeCommand(ctx).execute?.(
+        {
+          command: 'cat "$APEX_PROMPT_INJECTION_FILE"',
+          promptInjection: { id: "pi.hidden" },
+          toolCallDescription: "Verify hidden payload routing",
+        },
+        { toolCallId: "hidden", messages: [] },
+      );
+      expect(result).toMatchObject({
+        success: true,
+        stdout: "[PROMPT_INJECTION:pi.hidden]",
+      });
+      expect(stagedPath).toMatch(/^\/tmp\/apex_payload_[a-f0-9-]+\.txt$/);
+      expect(readFileSync(stagedPath, "utf8")).toBe(payload);
+      await expect(ctx.backends.fs.read(stagedPath)).resolves.toMatchObject({
+        success: false,
+      });
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      if (stagedPath) unlinkSync(stagedPath);
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

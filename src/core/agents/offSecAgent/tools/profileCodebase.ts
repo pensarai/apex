@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
 import {
   profileCodebase as buildRepoProfile,
   resolvePathWithinCodebaseRoot,
@@ -51,7 +52,10 @@ Full structured output is written to the session artifact; inline data is a comp
       }
 
       try {
-        const profile = await buildRepoProfile(rootPath);
+        const profile = await buildRepoProfile(
+          rootPath,
+          resolveWhiteboxBackend(ctx).profile,
+        );
         const selection = selectCatalogForProfile(profile);
         const artifact = await writeWhiteboxArtifact({
           session: ctx.session,

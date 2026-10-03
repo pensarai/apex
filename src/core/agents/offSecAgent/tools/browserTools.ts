@@ -1,34 +1,14 @@
-/**
- * Browser tool wrappers for the general agent harness.
- *
- * Delegates to the existing {@link createBrowserTools} factory from
- * `browserTools/playwrightMcp.ts`, which provisions 8 Playwright MCP
- * tools. The mode is set to `"operator"` (generic reconnaissance) by
- * default — the descriptions are broad enough for recon, auth flows,
- * and pentest use-cases alike.
- *
- * When a {@link CredentialManager} is present in the tool context,
- * `browser_fill` is wrapped so the agent can pass a `credentialId` +
- * `credentialField` instead of a raw secret value — the secret is
- * resolved at execution time and never appears in the agent prompt.
- *
- * Individual agents don't need to worry about Playwright initialisation
- * or MCP plumbing — they just list the browser tool names they want
- * in their `activeTools` array.
- */
+/** Credential and hidden-payload resolution stays above the shared browser backend. */
 
-import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import {
   getPromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
-import {
-  type BrowserFillResult,
-  createBrowserToolFactories,
-} from "./playwrightMcp";
-import { createSandboxBrowserToolFactories } from "./sandboxPlaywright";
+import { resolveBackends } from "../../../tools/backends/resolve";
+import type { BrowserFillResult } from "../../../tools/backends/types";
+import { createBackendBrowserToolFactories } from "./browserToolFactories";
 import type { ToolContext } from "./types";
 
 /**
@@ -45,22 +25,6 @@ export const BROWSER_TOOL_NAMES = [
   "browser_get_cookies",
 ] as const;
 
-/**
- * Create the full set of browser automation tools from a {@link ToolContext}.
- *
- * When `ctx.sandbox` is set, browser tools run inside the sandbox via direct
- * Playwright execution (no MCP). Playwright and Chromium are installed
- * on-demand in the sandbox on the first browser tool call.
- *
- * Otherwise, uses `"operator"` mode with the local Playwright MCP server.
- * The evidence directory is derived from `session.rootPath + "/evidence"`.
- * If `ctx.browserSession` is set, browser tools reuse that session instead
- * of opening a new Chromium — sub-agents inherit the parent's
- * authenticated context (cookies, localStorage, current page).
- *
- * When `ctx.credentialManager` is set, `browser_fill` is replaced with a
- * credential-aware wrapper that resolves secrets from IDs at execution time.
- */
 /**
  * The wrapped fill forwards the raw fill's optional execute, so its result
  * includes the streaming/undefined forms.
@@ -83,23 +47,10 @@ export type BrowserToolsetFactories = ReturnType<
  * fill tool is actually selected.
  */
 export function createBrowserToolsetFactories(ctx: ToolContext) {
-  // Sandbox mode: use direct Playwright execution inside the sandbox.
-  // The sandbox path already shares browser state across tool calls via
-  // the per-sandbox user-data dir, so a sub-agent running in the same
-  // sandbox naturally inherits cookies / localStorage with no extra plumbing.
-  const factories = ctx.sandbox
-    ? createSandboxBrowserToolFactories(ctx)
-    : createBrowserToolFactories(
-        ctx.target ?? "",
-        join(ctx.session.rootPath, "evidence"),
-        "operator",
-        undefined,
-        ctx.abortSignal,
-        undefined,
-        undefined,
-        undefined,
-        ctx.browserSession,
-      );
+  const factories = createBackendBrowserToolFactories(
+    resolveBackends(ctx).browser,
+    { targetUrl: ctx.target ?? "" },
+  );
 
   const cm = ctx.credentialManager;
   // A prompt-injection payload library lets the agent deliver hidden payloads

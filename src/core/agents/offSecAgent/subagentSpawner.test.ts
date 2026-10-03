@@ -354,3 +354,31 @@ describe("inProcessSubagentSpawner — pentest — delegates to runSpawnedPentes
     });
   });
 });
+
+it.each([
+  "parent",
+  "child",
+  "child-only",
+])("standalone worker preserves %s cancellation", async (source) => {
+  drain = createDrain();
+  drain.resolve();
+  const parent = new AbortController();
+  const child = new AbortController();
+  await runSpawnedPentestWorker(
+    { target: "https://example.com", objectives: ["Test"] },
+    {
+      model: "test",
+      session: {} as SessionInfo,
+      hooks: {},
+      abortSignal: source === "child-only" ? undefined : parent.signal,
+      seams: inProcessSeams({
+        hooksForItem: () => ({ abortSignal: child.signal }),
+      }),
+    },
+  );
+  const signal = lastConstructorProps?.abortSignal as AbortSignal;
+  expect(signal.aborted).toBe(false);
+  (source === "parent" ? parent : child).abort("cancelled");
+  expect(signal.aborted).toBe(true);
+  expect(signal.reason).toBe("cancelled");
+});

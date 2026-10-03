@@ -2,6 +2,9 @@ import { appendLocalWorkspaceFile } from "../../agents/offSecAgent/tools/fileWor
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { LocalBackends, runLocalProgram } from "./local";
 import type { RunOpts, ToolBackends, WriteResult } from "./types";
+import { windowsProgramInvocation } from "./windowsProgram";
+
+export const SANDBOX_ARTIFACTS_ROOT = "/workspace/repo/.pensar";
 
 const localByContext = new WeakMap<ToolContext, ToolBackends>();
 
@@ -73,6 +76,13 @@ export function resolveScriptRunner(ctx: ToolContext) {
   const command =
     ctx.backends || ctx.sandbox ? resolveBackends(ctx).command : undefined;
   return (runner: string, scriptPath: string, options?: RunOpts) => {
+    if (command?.platform === "windows") {
+      const invocation = windowsProgramInvocation(runner, [scriptPath]);
+      return command.run(invocation.command, {
+        ...options,
+        envVars: { ...options?.envVars, ...invocation.envVars },
+      });
+    }
     const quotedPath = `'${scriptPath.replace(/'/g, `'\\''`)}'`;
     const commandText = `${runner} ${quotedPath}`;
     return command

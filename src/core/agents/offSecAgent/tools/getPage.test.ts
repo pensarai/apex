@@ -1092,3 +1092,36 @@ describe("getPage preview-limit vs producer failure", () => {
     expect(cancelled).toBe(true);
   }, 5_000);
 });
+
+describe("getPage backend routing", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("preserves the classic host research fetch when execution uses a sandbox", async () => {
+    const hostFetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          "<title>Research page</title><p>Public research evidence</p>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        ),
+      );
+    vi.stubGlobal("fetch", hostFetch);
+    const execute = vi.fn();
+    const result = await getPage(
+      makeCtx({ sandbox: { type: "linux", execute } }),
+    ).execute?.(
+      {
+        url: "https://example.com/page",
+        toolCallDescription: "Read remote page",
+      },
+      { toolCallId: "page", messages: [] },
+    );
+    expect(result).toMatchObject({
+      success: true,
+      title: "Research page",
+      content: expect.stringContaining("Public research evidence"),
+    });
+    expect(hostFetch).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
