@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveArtifactFs } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 function sanitizeName(name: string): string {
@@ -69,7 +70,11 @@ function validateDomainUrl(value: string): {
  * persister in Console.
  */
 export function documentApp(ctx: ToolContext) {
-  const baseAppsPath = join(ctx.session.rootPath, "apps");
+  if (ctx.attackSurfaceArtifactsPath && !ctx.backends)
+    throw new Error("Recon artifacts require explicit backends");
+  const baseAppsPath = ctx.attackSurfaceArtifactsPath
+    ? join(ctx.attackSurfaceArtifactsPath, "../apps")
+    : join(ctx.session.rootPath, "apps");
 
   return tool({
     description: `Document a discovered application during attack surface analysis.
@@ -90,6 +95,15 @@ Do NOT use this for external/third-party services (CDNs, auth providers, SaaS) u
 
 Each application creates a JSON file in the apps directory for tracking and analysis.`,
     inputSchema: z.object({
+      ...(ctx.attackSurfaceArtifactsPath
+        ? {
+            location: z
+              .string()
+              .describe(
+                "Repository-relative application root or cloud resource identifier",
+              ),
+          }
+        : {}),
       appName: z
         .string()
         .describe(
@@ -167,11 +181,16 @@ Each application creates a JSON file in the apps directory for tracking and anal
         input = { ...input, domain: domainCheck.origin! };
       }
 
-      if (!existsSync(baseAppsPath)) {
+      if (!ctx.attackSurfaceArtifactsPath && !existsSync(baseAppsPath)) {
         mkdirSync(baseAppsPath, { recursive: true });
       }
 
       const sanitizedName = sanitizeName(input.appName);
+      if (
+        ctx.attackSurfaceArtifactsPath &&
+        (!sanitizedName || sanitizedName === "." || sanitizedName === "..")
+      )
+        throw new Error("Invalid recon application artifact name");
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const filename = `app_${sanitizedName}_${timestamp}.json`;
       const filepath = join(baseAppsPath, filename);
@@ -183,7 +202,32 @@ Each application creates a JSON file in the apps directory for tracking and anal
         target: ctx.session.targets[0],
       };
 
-      writeFileSync(filepath, JSON.stringify(appRecord, null, 2));
+      if (ctx.attackSurfaceArtifactsPath) {
+        const fs = resolveArtifactFs(ctx);
+        for (const [path, record] of [
+          [filepath, appRecord],
+          [
+            join(ctx.attackSurfaceArtifactsPath, sanitizedName, "app.json"),
+            {
+              name: input.appName,
+              type: input.appType,
+              framework: input.framework ?? "unknown",
+              description: input.description,
+              location: input.location,
+            },
+          ],
+        ] as const) {
+          const result = await fs.write(path, JSON.stringify(record, null, 2), {
+            mode: "overwrite",
+          });
+          if (!result.success)
+            throw new Error(
+              `Application artifact write failed: ${result.error}`,
+            );
+        }
+      } else {
+        writeFileSync(filepath, JSON.stringify(appRecord, null, 2));
+      }
 
       return {
         success: true,

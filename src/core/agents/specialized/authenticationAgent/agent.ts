@@ -1,28 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type {
-  LanguageModelMiddleware,
-  StreamTextOnStepFinishCallback,
-  ToolSet,
-} from "ai";
 import { hasToolCall } from "ai";
-import type {
-  AIAuthConfig,
-  AIModel,
-  OpenAIReasoningEffort,
-  ThinkingEffort,
-  UsageRecorder,
-} from "../../../ai";
-import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
-import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
-import { type AgentHooks, OffensiveSecurityAgent } from "../../offSecAgent";
-import type { StreamIdFactory } from "../../offSecAgent/types";
-import {
-  browserEngineForGoogleSignIn,
-  GOOGLE_SIGNIN_PROMPT_GUIDANCE,
-} from "../googleSignInPrompt";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
+import { browserEngineForGoogleSignIn } from "../googleSignInPrompt";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
@@ -34,20 +18,9 @@ const log = scopedLogger(() => createLogger("authentication-agent"));
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AuthenticationAgentInput extends AgentHooks {
+export interface AuthenticationAgentInput extends SpecializedAgentInput {
   /** The target requiring authentication */
   target: string;
-
-  /** AI model to drive the agent */
-  model: AIModel;
-
-  /**
-   * Session that provides paths and, when created with `authCredentials`,
-   * an auto-provisioned {@link CredentialManager}. The agent reads
-   * `session.credentialManager` automatically — callers never need to
-   * create or pass a credential manager manually.
-   */
-  session: SessionInfo;
 
   /** Hints about the auth flow */
   authHints?: {
@@ -57,56 +30,11 @@ export interface AuthenticationAgentInput extends AgentHooks {
     protectedEndpoints?: string[];
   };
 
-  /** Optional per-provider API key overrides */
-  authConfig?: AIAuthConfig;
-
-  /** Optional callback after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
-
-  /** AbortSignal to cancel mid-run */
-  abortSignal?: AbortSignal;
-
-  /** Event bus for streaming agent output */
-  eventBus?: AgentEventBus;
-
-  /** Tags stream events when this agent runs as a named subagent */
-  subagentId?: string;
-
-  /** Human-readable label for readable OTel span names (see base input). */
-  subagentName?: string;
-
   /**
    * Arbitrary context to include in the agent prompt (e.g. application name/description).
    * The agent will treat non-malicious instructions within the context as guidance.
    */
   context?: string;
-
-  /**
-   * Environment variables to inject into the agent's per-command executor.
-   * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
-   */
-  environmentVariables?: Record<string, string>;
-
-  /** Secret values to scrub from execute_command output. Forwarded to the underlying {@link OffensiveSecurityAgentInput}. */
-  secretValues?: string[];
-
-  /** Enable extended thinking (reasoning) for supported models. */
-  enableThinking?: boolean;
-
-  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
-  thinkingEffort?: ThinkingEffort | null;
-
-  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
-  openAIReasoningEffort?: OpenAIReasoningEffort | null;
-
-  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
-  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
-
-  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
-  usageRecorder?: UsageRecorder;
-
-  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
-  streamIdFactory?: StreamIdFactory;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -130,6 +58,61 @@ export interface AuthenticationResult {
 // ---------------------------------------------------------------------------
 // AuthenticationAgent
 // ---------------------------------------------------------------------------
+
+const AUTH_ACTIVE_TOOLS = [
+  // Auth flow tools
+  "execute_command",
+  "complete_authentication",
+  // Browser automation for login forms, OAuth, SPA auth
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_screenshot",
+  "browser_click",
+  "browser_fill",
+  "browser_evaluate",
+  "browser_console",
+  "browser_get_cookies",
+  // Email tools (filtered out by base class when no inboxes configured)
+  "email_list_inboxes",
+  "email_list_messages",
+  "email_search_messages",
+  "email_get_message",
+  // Send email (filtered out by base class when no SMTP configured)
+  "send_email",
+  // Mobile OTP list (filtered out by base class when no Mobile OTP cred)
+  "sms_list_messages",
+  // Web search tools — look up auth bypass techniques, default credentials
+  "web_search",
+  "get_page",
+] as const;
+
+export const authenticationAgentDefinition = defineAgent<
+  AuthenticationAgentInput,
+  AuthenticationResult
+>({
+  name: "authentication-agent",
+  role: "worker",
+  system: () => detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
+  activeTools: () => [...AUTH_ACTIVE_TOOLS],
+  stopWhen: () => hasToolCall("complete_authentication"),
+  target: (opts) => opts.target,
+  browserEngine: (opts) =>
+    browserEngineForGoogleSignIn(
+      opts.session.credentialManager?.hasGoogleSignIn() === true,
+    ),
+  prompt: (opts) =>
+    buildAuthPrompt(
+      opts.target,
+      opts.authHints,
+      opts.session.credentialManager,
+      opts.context,
+      opts.environmentVariables
+        ? Object.keys(opts.environmentVariables)
+        : undefined,
+    ),
+  resolveResult: (opts) =>
+    loadAuthResult(join(opts.session.rootPath, "auth", "auth-data.json")),
+});
 
 /**
  * An authentication-focused specialisation of {@link OffensiveSecurityAgent}.
@@ -163,62 +146,12 @@ export interface AuthenticationResult {
  * });
  * ```
  */
-export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationResult> {
+export class AuthenticationAgent extends AgentRuntime<
+  AuthenticationAgentInput,
+  AuthenticationResult
+> {
   constructor(opts: AuthenticationAgentInput) {
-    const { target, authHints, context, ...base } = opts;
-    const { session } = base;
-
-    const cm = session.credentialManager;
-    const googleSignIn = cm?.hasGoogleSignIn() === true;
-
-    super({
-      ...base,
-      browserEngine: browserEngineForGoogleSignIn(googleSignIn),
-      system: detectOSAndEnhancePrompt(
-        googleSignIn
-          ? `${AUTH_SUBAGENT_SYSTEM_PROMPT}\n\n${GOOGLE_SIGNIN_PROMPT_GUIDANCE}`
-          : AUTH_SUBAGENT_SYSTEM_PROMPT,
-      ),
-      activeTools: [
-        // Auth flow tools
-        "execute_command",
-        "complete_authentication",
-        // Browser automation for login forms, OAuth, SPA auth
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_screenshot",
-        "browser_click",
-        "browser_fill",
-        "browser_evaluate",
-        "browser_console",
-        "browser_get_cookies",
-        // Email tools (filtered out by base class when no inboxes configured)
-        "email_list_inboxes",
-        "email_list_messages",
-        "email_search_messages",
-        "email_get_message",
-        // Send email (filtered out by base class when no SMTP configured)
-        "send_email",
-        // Mobile OTP list (filtered out by base class when no Mobile OTP cred)
-        "sms_list_messages",
-        // Web search tools — look up auth bypass techniques, default credentials
-        "web_search",
-        "get_page",
-      ],
-      stopWhen: hasToolCall("complete_authentication"),
-      resolveResult: () =>
-        loadAuthResult(join(session.rootPath, "auth", "auth-data.json")),
-      target,
-      prompt: buildAuthPrompt(
-        target,
-        authHints,
-        cm,
-        context,
-        base.environmentVariables
-          ? Object.keys(base.environmentVariables)
-          : undefined,
-      ),
-    });
+    super(authenticationAgentDefinition, opts);
   }
 }
 
@@ -325,9 +258,6 @@ function buildAuthPrompt(
     const smsInstructions = hasMobileOtp
       ? `\n${MOBILE_OTP_PROMPT_GUIDANCE}\n`
       : "";
-    const googleInstructions = credentialManager?.hasGoogleSignIn()
-      ? `\n${GOOGLE_SIGNIN_PROMPT_GUIDANCE}\n`
-      : "";
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.
 1. For API/form logins, use execute_command (curl) to submit credentials and capture the Set-Cookie / token response
@@ -335,7 +265,7 @@ You have credentials available via credential IDs — authenticate immediately.
    pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
    the secret is resolved securely at execution time. NEVER type a password directly.
 3. Call complete_authentication with exported cookies/headers to persist credentials and end the run
-${smsInstructions}${googleInstructions}
+${smsInstructions}
 The credentials above were provided to you and have already been verified — they are SHARED across runs, so
 do not modify them or their account settings. NEVER change the password, complete a password reset /
 forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or
