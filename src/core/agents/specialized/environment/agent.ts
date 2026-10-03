@@ -1,4 +1,5 @@
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
 import {
   buildEnvironmentPrompt,
   buildEnvironmentSystemPrompt,
@@ -8,6 +9,29 @@ import {
   type EnvironmentResult,
   EnvironmentResultSchema,
 } from "./types";
+
+export const environmentAgentDefinition = defineAgent<
+  EnvironmentAgentInput,
+  EnvironmentResult
+>({
+  name: "environment-agent",
+  role: "worker",
+  system: () => buildEnvironmentSystemPrompt(),
+  activeTools: () => [
+    "read_file",
+    "list_files",
+    "grep",
+    "create_file",
+    "update_file",
+    "execute_command",
+    "response",
+    // Web search tools — look up tool installation, environment configuration docs
+    "web_search",
+    "get_page",
+  ],
+  responseSchema: () => EnvironmentResultSchema,
+  prompt: (opts) => buildEnvironmentPrompt(opts.cwd, opts.config),
+});
 
 /**
  * A dev-environment setup agent that starts and validates development
@@ -41,27 +65,11 @@ import {
  * // result.url, result.status, result.stepsTaken, result.authenticationDetails
  * ```
  */
-export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> {
+export class EnvironmentAgent extends AgentRuntime<
+  EnvironmentAgentInput,
+  EnvironmentResult
+> {
   constructor(opts: EnvironmentAgentInput) {
-    const { cwd, config, ...base } = opts;
-
-    super({
-      ...base,
-      system: buildEnvironmentSystemPrompt(),
-      activeTools: [
-        "read_file",
-        "list_files",
-        "grep",
-        "create_file",
-        "update_file",
-        "execute_command",
-        "response",
-        // Web search tools — look up tool installation, environment configuration docs
-        "web_search",
-        "get_page",
-      ],
-      responseSchema: EnvironmentResultSchema,
-      prompt: buildEnvironmentPrompt(cwd, config),
-    });
+    super(environmentAgentDefinition, opts);
   }
 }
