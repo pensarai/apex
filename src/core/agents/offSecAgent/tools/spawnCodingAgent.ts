@@ -193,6 +193,7 @@ async function runSingleCodingAgent(
       model: ctx.model!,
       authConfig: ctx.authConfig,
       abortSignal: ctx.abortSignal,
+      backends: ctx.backends,
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
