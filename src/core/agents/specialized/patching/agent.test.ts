@@ -127,6 +127,28 @@ describe("PatchingAgent runtime plumbing", () => {
     expect(prompt).not.toContain(`<${PROJECT_INSTRUCTIONS_TAG}>`);
   });
 
+  it("reads runtime instructions when a sandbox backend is injected without a sandbox object", () => {
+    writeFileSync(join(repo, "AGENTS.md"), "host-only project rules");
+    const backends = { sandboxed: true } as never;
+    new PatchingAgent({
+      cwd: repo,
+      vulnerability: {
+        name: "XSS",
+        severity: "high",
+        description: "reflected",
+      },
+      model: "test-model",
+      session: { rootPath: "/tmp/apex-session-root" } as never,
+      backends,
+    });
+    const input = lastSuperInput();
+    expect(input.backends).toBe(backends);
+    expect(input.sandbox).toBeUndefined();
+    expect(input.prompt).toContain("sandboxed runtime");
+    expect(input.prompt).toContain("read_file");
+    expect(input.prompt).not.toContain("host-only project rules");
+  });
+
   it("keeps host-read instructions for local runs", () => {
     writeFileSync(join(repo, "AGENTS.md"), "local project rules");
 
