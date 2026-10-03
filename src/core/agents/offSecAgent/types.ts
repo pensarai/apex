@@ -132,6 +132,9 @@ export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
  * by forgetting to list it in a hand-written constructor.
  */
 export interface AgentHooks {
+  /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
+  attackSurfaceArtifactsPath?: string;
+
   /** Execution backends for fs / command / http / browser / inbox. Unset means local execution. */
   backends?: ToolBackends;
 
@@ -164,6 +167,7 @@ export interface AgentHooks {
 }
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
+  attackSurfaceArtifactsPath?: string;
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
 

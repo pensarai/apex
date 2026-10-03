@@ -1,17 +1,13 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { targetFetch } from "../../../http/targetHeaders";
 import { createLogger } from "../../../logger/structured";
+import { resolveBackends } from "../../../tools/backends";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type EndpointInfo,
   extractJavascriptEndpointsFromHtml,
 } from "../../specialized/attackSurface/jsExtraction";
-import {
-  assertUrlInScope,
-  resolverSessionFromCtx,
-  ScopeViolationError,
-} from "./scopeGuard";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("crawl-authenticated"));
@@ -53,6 +49,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
         throw e;
       }
 
+      const backends = resolveBackends(ctx);
       try {
         const { startUrl, sessionCookie, maxDepth, maxPages } = params;
 
@@ -76,17 +73,19 @@ export function crawlAuthenticated(ctx: ToolContext) {
           visited.add(url);
 
           try {
-            const pageResult = await targetFetch(
-              resolverSessionFromCtx(ctx),
+            const pageResult = await backends.http.request({
               url,
-              {
-                method: "GET",
-                headers: { cookie: sessionCookie },
-              },
-            );
+              method: "GET",
+              headers: { cookie: sessionCookie },
+              followRedirects: true,
+            });
 
-            if (pageResult.status >= 200 && pageResult.status < 400) {
-              const html = await pageResult.text();
+            if (!pageResult.success) {
+              log.error(`Error crawling ${url}`, undefined, {
+                error: pageResult.error ?? "request failed",
+              });
+            } else if (pageResult.status >= 200 && pageResult.status < 400) {
+              const html = pageResult.body;
 
               // Extract links
               const linkRegex = /<a[^>]+href=['"]([^'"]+)['"]/gi;
@@ -99,8 +98,12 @@ export function crawlAuthenticated(ctx: ToolContext) {
                 const link = linkMatch[1];
                 if (link.startsWith("/") && !link.startsWith("//")) {
                   links.push(link);
-                  if (!visited.has(link)) {
-                    toVisit.push({ url: link, depth: depth + 1 });
+                  // Resolve against the current page so the fetch (and the
+                  // backend's scope policy) sees an absolute in-scope URL — a
+                  // bare relative path has no host and is rejected.
+                  const resolvedLink = new URL(link, url).href;
+                  if (!visited.has(resolvedLink)) {
+                    toVisit.push({ url: resolvedLink, depth: depth + 1 });
                   }
                 }
               }

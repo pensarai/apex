@@ -118,7 +118,7 @@ describe("crawlAuthenticated", () => {
     const requests = stubFetch(
       servePages({
         "https://example.com/dashboard": DASHBOARD_HTML,
-        "/settings": SETTINGS_HTML,
+        "https://example.com/settings": SETTINGS_HTML,
       }),
     );
 
@@ -127,10 +127,11 @@ describe("crawlAuthenticated", () => {
     expect(result.success).toBe(true);
     expect(result.pagesVisited).toBe(2);
     // The crawler must reuse its own authenticated download for JS endpoint
-    // extraction instead of fetching every page a second time.
+    // extraction instead of fetching every page a second time. Relative links
+    // are resolved to absolute URLs before the request.
     expect(requests.map((r) => r.url).sort()).toEqual([
-      "/settings",
       "https://example.com/dashboard",
+      "https://example.com/settings",
     ]);
     for (const request of requests) {
       expect(headerValue(request.headers, "cookie")).toBe("sid=abc");
@@ -141,7 +142,7 @@ describe("crawlAuthenticated", () => {
     const requests = stubFetch(
       servePages({
         "https://example.com/dashboard": DASHBOARD_HTML,
-        "/settings": SETTINGS_HTML,
+        "https://example.com/settings": SETTINGS_HTML,
       }),
     );
 
@@ -172,7 +173,7 @@ describe("crawlAuthenticated", () => {
           ],
         },
         {
-          url: "/settings",
+          url: "https://example.com/settings",
           status: 200,
           links: ["/settings"],
           forms: [],

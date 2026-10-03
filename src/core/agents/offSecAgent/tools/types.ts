@@ -37,6 +37,8 @@ import type { SmsInbox } from "./smsInbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  attackSurfaceArtifactsPath?: string;
+
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
 
