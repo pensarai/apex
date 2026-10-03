@@ -304,6 +304,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
             abortSignal: ctx.abortSignal,
             environmentVariables: ctx.environmentVariables,
             secretValues: ctx.secretValues,
+            backends: ctx.backends,
             languageModelMiddleware: ctx.languageModelMiddleware,
             usageRecorder: ctx.usageRecorder,
             streamIdFactory: ctx.streamIdFactory,

@@ -1,9 +1,8 @@
 import { stepCountIs } from "ai";
 import type { z } from "zod";
-import {
-  OffensiveSecurityAgent,
-  type SpecializedAgentInput,
-} from "../../offSecAgent";
+import { AgentRuntime } from "../../agentRuntime";
+import { type AgentDefinition, defineAgent } from "../../defineAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 
 const CODE_AGENT_TOOLS: string[] = [
@@ -85,34 +84,37 @@ export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
  * });
  * ```
  */
-export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
+export function codeAgentDefinition<TResult = void>(): AgentDefinition<
+  CodeAgentInput<TResult>,
+  TResult
+> {
+  return defineAgent<CodeAgentInput<TResult>, TResult>({
+    name: "code-agent",
+    role: "worker",
+    system: (opts) => opts.system ?? CODE_AGENT_SYSTEM_PROMPT,
+    activeTools: (opts) => {
+      let activeTools = [...CODE_AGENT_TOOLS];
+      if (opts.excludeTools?.length) {
+        const excluded = new Set(opts.excludeTools);
+        activeTools = activeTools.filter((t) => !excluded.has(t));
+      }
+      if (opts.responseSchema) {
+        activeTools.push("response");
+      }
+      return activeTools;
+    },
+    responseSchema: (opts) => opts.responseSchema,
+    stopWhen: (opts) => opts.stopWhen ?? stepCountIs(10000),
+    prompt: (opts) => buildPrompt(opts.codebasePath, opts.objective),
+  });
+}
+
+export class CodeAgent<TResult = void> extends AgentRuntime<
+  CodeAgentInput<TResult>,
+  TResult
+> {
   constructor(opts: CodeAgentInput<TResult>) {
-    const {
-      codebasePath,
-      objective,
-      system,
-      responseSchema,
-      excludeTools,
-      ...base
-    } = opts;
-
-    let activeTools = [...CODE_AGENT_TOOLS];
-    if (excludeTools?.length) {
-      const excluded = new Set(excludeTools);
-      activeTools = activeTools.filter((t) => !excluded.has(t));
-    }
-    if (responseSchema) {
-      activeTools.push("response");
-    }
-
-    super({
-      ...base,
-      prompt: buildPrompt(codebasePath, objective),
-      system: system ?? CODE_AGENT_SYSTEM_PROMPT,
-      activeTools,
-      responseSchema,
-      stopWhen: base.stopWhen ?? stepCountIs(10000),
-    });
+    super(codeAgentDefinition<TResult>(), opts);
   }
 }
 

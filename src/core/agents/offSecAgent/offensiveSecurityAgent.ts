@@ -488,6 +488,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.credentialManager ?? input.session.credentialManager;
 
     const toolCtx = {
+      ...(input.attackSurfaceArtifactsPath
+        ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
+        : {}),
       session: input.session,
       agentCwd,
       fileWorkspaceRoot: input.fileWorkspaceRoot,
