@@ -1,48 +1,18 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall, stepCountIs } from "ai";
-import type {
-  AIAuthConfig,
-  AIModel,
-  OpenAIReasoningEffort,
-  ThinkingEffort,
-} from "../../ai";
-import type { SessionInfo } from "../../session";
-import { OffensiveSecurityAgent } from "../offSecAgent";
+import { AgentRuntime } from "../agentRuntime";
+import { defineAgent } from "../defineAgent";
+import type { SpecializedAgentInput } from "../offSecAgent";
 import type { ComparisonResult } from "./benchmark";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface BenchmarkComparisonAgentInput {
+export interface BenchmarkComparisonAgentInput extends SpecializedAgentInput {
   /** Path to the benchmark repo containing expected results */
   repoPath: string;
-
-  /** AI model to drive the comparison */
-  model: AIModel;
-
-  /** Session that provides the findings to compare */
-  session: SessionInfo;
-
-  /** Optional per-provider API key overrides */
-  authConfig?: AIAuthConfig;
-
-  /** Optional callback after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
-
-  /** AbortSignal to cancel mid-run */
-  abortSignal?: AbortSignal;
-
-  /** Enable extended thinking (reasoning) for supported models. */
-  enableThinking?: boolean;
-
-  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
-  thinkingEffort?: ThinkingEffort | null;
-
-  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
-  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
 /** The typed result returned by `BenchmarkComparisonAgent.consume()`. */
@@ -57,6 +27,39 @@ export interface BenchmarkComparisonResult {
 // BenchmarkComparisonAgent
 // ---------------------------------------------------------------------------
 
+export const benchmarkComparisonDefinition = defineAgent<
+  BenchmarkComparisonAgentInput,
+  BenchmarkComparisonResult
+>({
+  name: "benchmark-comparison",
+  role: "analyst",
+  system: () => COMPARISON_SYSTEM_PROMPT,
+  activeTools: () => ["provide_comparison_results"],
+  stopWhen: () => [
+    hasToolCall("provide_comparison_results"),
+    stepCountIs(10000),
+  ],
+  prompt: (opts) =>
+    buildComparisonPrompt(
+      loadExpectedResults(opts.repoPath),
+      loadActualFindings(opts.session.rootPath),
+    ),
+  resolveResult: (opts) => {
+    const resultsPath = join(opts.session.rootPath, "comparison-results.json");
+    let comparison: ComparisonResult | null = null;
+    if (existsSync(resultsPath)) {
+      try {
+        comparison = JSON.parse(
+          readFileSync(resultsPath, "utf-8"),
+        ) as ComparisonResult;
+      } catch {
+        // May not have been written
+      }
+    }
+    return { comparison, resultsPath };
+  },
+});
+
 /**
  * A benchmark comparison specialisation of {@link OffensiveSecurityAgent}.
  *
@@ -66,35 +69,12 @@ export interface BenchmarkComparisonResult {
  *
  * `consume()` returns a {@link BenchmarkComparisonResult}.
  */
-export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkComparisonResult> {
+export class BenchmarkComparisonAgent extends AgentRuntime<
+  BenchmarkComparisonAgentInput,
+  BenchmarkComparisonResult
+> {
   constructor(opts: BenchmarkComparisonAgentInput) {
-    const { repoPath, ...base } = opts;
-    const { session } = base;
-
-    const expectedResults = loadExpectedResults(repoPath);
-    const actualFindings = loadActualFindings(session.rootPath);
-
-    super({
-      ...base,
-      system: COMPARISON_SYSTEM_PROMPT,
-      activeTools: ["provide_comparison_results"],
-      stopWhen: [hasToolCall("provide_comparison_results"), stepCountIs(10000)],
-      resolveResult: () => {
-        const resultsPath = join(session.rootPath, "comparison-results.json");
-        let comparison: ComparisonResult | null = null;
-        if (existsSync(resultsPath)) {
-          try {
-            comparison = JSON.parse(
-              readFileSync(resultsPath, "utf-8"),
-            ) as ComparisonResult;
-          } catch {
-            // May not have been written
-          }
-        }
-        return { comparison, resultsPath };
-      },
-      prompt: buildComparisonPrompt(expectedResults, actualFindings),
-    });
+    super(benchmarkComparisonDefinition, opts);
   }
 }
 
