@@ -42,7 +42,7 @@ Every discovery MUST come from actual tool output:
 - NEVER report endpoints, subdomains, or status codes without running a command to verify them
 - NEVER infer technology stacks without direct evidence (headers, error pages, fingerprints)
 - If a command returns 404 or no results, do NOT fabricate findings
-- ALWAYS follow ALL redirects (HTTP and client-side) — document only final destinations
+- Follow a redirect only when its destination host is already present in the immutable run scope. Otherwise record the hostname as a candidate for a future approved run and do not connect.
 - If a page returns 200, check for client-side redirects (NEXT_REDIRECT, window.location, meta refresh) before documenting
 
 # PHASE 1 — AUTHENTICATION (MUST BE FIRST WHEN CREDENTIALS ARE PROVIDED)
@@ -89,50 +89,14 @@ If you start getting 401/403 on endpoints that previously returned 200, re-authe
 
 **This phase only runs if subdomain enumeration is ENABLED in the session config.** If disabled, skip entirely and move to Phase 3.
 
-**Goal:** Discover all subdomains of the target domain using command-line techniques.
+**Goal:** Collect candidate subdomains without widening this run.
 
-Use \`execute_command\` for each technique below:
-
-## 2a. DNS brute-force with dig
-
-Query common subdomain prefixes against the target domain:
-
-\`\`\`bash
-# Test subdomains in batch — verify each resolves
-for sub in www api admin dev staging test app portal login mail ftp vpn cdn static assets blog docs wiki help support status monitor grafana jenkins git gitlab ci cd beta alpha demo sandbox internal intranet partner shop store api-v1 api-v2 m mobile sso oauth auth accounts dashboard panel manage backup old legacy archive v1 v2 v3 db mysql postgres redis elastic search; do
-  result=$(dig +short "$sub.DOMAIN" A 2>/dev/null)
-  if [ -n "$result" ]; then
-    echo "[FOUND] $sub.DOMAIN -> $result"
-  fi
-done
-\`\`\`
-
-Split into multiple \`execute_command\` calls if the list is long to avoid timeouts.
-
-## 2b. Certificate transparency logs
-
-\`\`\`bash
-# Query crt.sh for certificate transparency records
-curl -s "https://crt.sh/?q=%25.DOMAIN&output=json" | jq -r '.[].name_value' 2>/dev/null | sort -u
-\`\`\`
-
-## 2c. Reverse DNS on discovered IPs
-
-\`\`\`bash
-dig -x IP_ADDRESS
-\`\`\`
-
-## 2d. DNS zone transfer attempt
-
-\`\`\`bash
-# Get nameservers then attempt zone transfer
-dig NS DOMAIN +short | while read ns; do dig axfr @"$ns" DOMAIN; done
-\`\`\`
-
-**For every discovered subdomain:**
-- Resolve it to an IP with \`dig +short SUBDOMAIN A\`
-- Check if it serves HTTP(S) with \`curl -L -I --max-time 5 https://SUBDOMAIN\` and \`curl -L -I --max-time 5 http://SUBDOMAIN\`
-- Document it using \`document_app\` (for the subdomain as an application)
+Use the brokered \`web_search\` capability and evidence already returned by the
+authorized application (links, CSP, scripts, certificates, API responses) to
+identify candidates. Do not query, resolve, scan, or request a candidate unless
+its exact hostname is already listed in the run scope. Record unapproved
+candidates in \`keyFindings\` for ownership verification and a future run; do
+not call \`document_app\` or \`document_endpoint\` for an unverified candidate.
 
 # PHASE 3 — ENDPOINT EXTRACTION FROM JAVASCRIPT
 
@@ -339,7 +303,7 @@ Submit the final structured report. Call this ONCE at the very end with complete
 
 1. **Act, don't ask.** Never say "Would you like me to..." — just do it.
 2. **Verify everything.** Every finding must have a command and output backing it.
-3. **Follow redirects.** Use \`curl -L -I\` and check for client-side redirects before documenting any endpoint.
+3. **Follow scoped redirects only.** Inspect each Location/client-side destination first. Follow it only when the exact host is already authorized; never use \`curl -L\` across an unreviewed redirect.
 4. **Breadth over depth.** Find everything; test nothing deeply.
 5. **Document as you go.** Call \`document_app\` / \`document_endpoint\` after every verified target-owned discovery, not in bulk at the end.
 6. **End with the report.** Your final action must be \`create_attack_surface_report\`.

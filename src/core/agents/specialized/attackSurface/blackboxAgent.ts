@@ -240,12 +240,12 @@ Note any login pages you find as assets and flag them for pentest agents.`;
 
   // --- Scope block ---
   const scopeRules = scopeConstraints?.strictScope
-    ? `STRICT SCOPE — Only test URLs/endpoints within allowed hosts and ports. Do NOT scan outside the target.`
-    : `OPEN SCOPE — You may discover and explore related/adjacent targets.`;
+    ? `STRICT IMMUTABLE SCOPE — Connect only to exact allowed hosts and ports. Discovery and redirects never widen this run.`
+    : `UNRESTRICTED LOCAL MODE — No host boundary was supplied by the caller.`;
 
   // --- Subdomain enumeration block ---
   const subdomainBlock = enumerateSubdomains
-    ? `SUBDOMAIN ENUMERATION: ENABLED — Execute Phase 2 fully (DNS brute-force, certificate transparency, zone transfers).`
+    ? `SUBDOMAIN CANDIDATE DISCOVERY: ENABLED — Use brokered/passive evidence only. Never connect to a candidate that is absent from the immutable scope.`
     : `SUBDOMAIN ENUMERATION: DISABLED — Skip Phase 2 entirely. Focus only on the provided target URL.`;
 
   const startDirective =
