@@ -173,15 +173,15 @@ describe("OffensiveSecurityAgent public-path construction counts", () => {
     });
   });
 
-  it("fast-strike full path constructs exactly the gated catalog: 40", async () => {
+  it("fast-strike full path constructs exactly the gated catalog: 41", async () => {
     await withRoot(async (root) => {
       reset();
       observed.armed = true;
       makeAgent(root, [], { mode: "fast-strike" });
       observed.armed = false;
       const tools = stream().tools;
-      expect(observed.constructed).toBe(40);
-      expect(Object.keys(tools)).toHaveLength(40);
+      expect(observed.constructed).toBe(41);
+      expect(Object.keys(tools)).toHaveLength(41);
       expect(tools).toHaveProperty("checkpoint_state");
       expect(tools).not.toHaveProperty("list_workspace_domains");
       expect(tools).not.toHaveProperty("send_email");

@@ -207,7 +207,12 @@ export interface SubagentSpawner {
   spawnMany<TItem, TResult>(
     items: readonly TItem[],
     worker: (item: TItem, index: number) => Promise<TResult>,
-    opts: { concurrency: number; abortSignal?: AbortSignal },
+    opts: {
+      concurrency: number;
+      abortSignal?: AbortSignal;
+      /** Replay-stable identity for repeated fan-outs under one parent. */
+      scope?: string;
+    },
   ): Promise<(TResult | null)[]>;
 }
 
@@ -646,14 +651,17 @@ class InProcessSubagentSpawner implements SubagentSpawner {
   spawnMany<TItem, TResult>(
     items: readonly TItem[],
     worker: (item: TItem, index: number) => Promise<TResult>,
-    opts: { concurrency: number; abortSignal?: AbortSignal },
+    opts: { concurrency: number; abortSignal?: AbortSignal; scope?: string },
   ): Promise<(TResult | null)[]> {
     return runWithBoundedConcurrency(
       items as TItem[],
       opts.concurrency,
       worker,
       opts.abortSignal,
-    );
+    ).then((results) => {
+      opts.abortSignal?.throwIfAborted();
+      return results;
+    });
   }
 }
 

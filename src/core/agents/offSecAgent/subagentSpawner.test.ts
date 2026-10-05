@@ -74,6 +74,21 @@ afterEach(() => {
 });
 
 describe("inProcessSubagentSpawner", () => {
+  it("propagates cancellation after draining bounded fan-out", async () => {
+    const abort = new AbortController();
+    const cancellation = new DOMException("cancelled", "AbortError");
+    abort.abort(cancellation);
+    const worker = vi.fn(async (item: number) => item);
+
+    await expect(
+      createInProcessSubagentSpawner().spawnMany([1, 2], worker, {
+        concurrency: 2,
+        abortSignal: abort.signal,
+      }),
+    ).rejects.toBe(cancellation);
+    expect(worker).not.toHaveBeenCalled();
+  });
+
   it("attributes child model calls to the exact parent tool invocation", async () => {
     drain = createDrain();
     drain.resolve();

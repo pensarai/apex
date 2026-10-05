@@ -313,23 +313,23 @@ export async function generateThreatModelForEndpoint(
   ctx: ToolContext,
   input: GenerateThreatModelInput,
 ): Promise<ThreatModelOutput | null> {
+  ctx.abortSignal?.throwIfAborted();
   if (!ctx.model) return null;
   const model = ctx.model;
 
   return threatModelLimiter(async () => {
-    if (ctx.abortSignal?.aborted) return null;
+    ctx.abortSignal?.throwIfAborted();
 
     const subagentName = `Threat Model: ${input.routePath}`;
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
     // Child-scoped abort so a failure cancels only this threat model, not the shared parent `ctx.abortSignal` (which still propagates down).
     const childAbort = new AbortController();
+    const abortChild = () => childAbort.abort(ctx.abortSignal?.reason);
     if (ctx.abortSignal) {
-      if (ctx.abortSignal.aborted) childAbort.abort();
+      if (ctx.abortSignal.aborted) abortChild();
       else
-        ctx.abortSignal.addEventListener("abort", () => childAbort.abort(), {
-          once: true,
-        });
+        ctx.abortSignal.addEventListener("abort", abortChild, { once: true });
     }
 
     const buildOutput = (result: ThreatModelResult): ThreatModelOutput => {
@@ -397,10 +397,13 @@ export async function generateThreatModelForEndpoint(
       });
       return result ? buildOutput(result) : null;
     } catch (error) {
+      ctx.abortSignal?.throwIfAborted();
       log.warn(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
+    } finally {
+      ctx.abortSignal?.removeEventListener("abort", abortChild);
     }
   });
 }

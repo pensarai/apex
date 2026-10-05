@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  createDocumentEndpointExecutor,
   type DocumentEndpointInput,
-  documentEndpoint,
   documentEndpointInputSchema,
 } from "./documentEndpoint";
 import type { ToolContext } from "./types";
@@ -31,7 +31,7 @@ export const documentEndpointsInputSchema = z.object({
 type DocumentEndpointsInput = z.infer<typeof documentEndpointsInputSchema>;
 
 export function documentEndpoints(ctx: ToolContext) {
-  const endpointTool = documentEndpoint(ctx);
+  const executeEndpoint = createDocumentEndpointExecutor(ctx);
 
   return tool({
     description: `Document and threat-model a bounded endpoint batch.
@@ -41,33 +41,19 @@ This is the high-throughput counterpart to \`document_endpoint\`. Supply one to 
 Do not build a manifest of the whole application. Submit a batch as soon as it reaches ${DOCUMENT_ENDPOINT_BATCH_SIZE} entries, then continue discovery.`,
     inputSchema: documentEndpointsInputSchema,
     execute: async (input: DocumentEndpointsInput, options) => {
-      const executeEndpoint = endpointTool.execute;
-      if (!executeEndpoint) {
-        throw new Error("document_endpoint has no executor");
-      }
-
       const results = await ctx.subagentSpawner.spawnMany(
         input.endpoints,
         async (endpoint): Promise<Record<string, unknown>> => {
-          const result = await executeEndpoint(
-            {
-              ...endpoint,
-              toolCallDescription: `Document ${endpoint.routePath}`,
-            } satisfies DocumentEndpointInput,
-            options,
-          );
-          if (
-            typeof result !== "object" ||
-            result === null ||
-            Symbol.asyncIterator in result
-          ) {
-            throw new Error("document_endpoint returned a streaming result");
-          }
+          const result = await executeEndpoint({
+            ...endpoint,
+            toolCallDescription: `Document ${endpoint.routePath}`,
+          } satisfies DocumentEndpointInput);
           return result as Record<string, unknown>;
         },
         {
           concurrency: DOCUMENT_ENDPOINT_BATCH_SIZE,
           abortSignal: ctx.abortSignal,
+          scope: options.toolCallId,
         },
       );
 

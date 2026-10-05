@@ -8,7 +8,10 @@ import {
   EndpointTransportEnum,
   GrpcEndpointMetadataSchema,
 } from "../../specialized/attackSurface/grpcSchema";
-import { generateThreatModelForEndpoint } from "./threatModelGenerator";
+import {
+  generateThreatModelForEndpoint,
+  type ThreatModelOutput,
+} from "./threatModelGenerator";
 import type { ToolContext } from "./types";
 
 function sanitizeName(name: string): string {
@@ -111,22 +114,7 @@ export const documentEndpointInputSchema = z.object({
 
 export type DocumentEndpointInput = z.infer<typeof documentEndpointInputSchema>;
 
-/**
- * Factory for the `document_endpoint` tool.
- *
- * Documents a discovered endpoint during attack surface analysis —
- * writes a JSON file to the session's assets directory (scoped by
- * app name). This tool is specifically for individual endpoints and
- * is designed for incremental creation via the agent log persister in Console.
- */
-export function documentEndpoint(ctx: ToolContext) {
-  if (ctx.attackSurfaceArtifactsPath && !ctx.backends)
-    throw new Error("Recon artifacts require explicit backends");
-  const baseAssetsPath =
-    ctx.attackSurfaceArtifactsPath ?? join(ctx.session.rootPath, "assets");
-
-  return tool({
-    description: `Document a discovered endpoint during attack surface analysis.
+const DOCUMENT_ENDPOINT_DESCRIPTION = `Document a discovered endpoint during attack surface analysis.
 
 This stores a session-local reconnaissance artifact and runs endpoint threat-model enrichment. It does NOT create or update an endpoint in the user's authenticated Pensar workspace. Use \`create_workspace_endpoint\` for that mutation.
 
@@ -142,150 +130,169 @@ Use this tool to document:
 
 You MUST specify \`appName\` to associate the endpoint with its parent application (previously documented via \`document_app\`).
 
-Each endpoint creates a JSON file in the assets directory for tracking and analysis.`,
+Each endpoint creates a JSON file in the assets directory for tracking and analysis.`;
+
+/**
+ * Factory for the `document_endpoint` tool.
+ *
+ * Documents a discovered endpoint during attack surface analysis —
+ * writes a JSON file to the session's assets directory (scoped by
+ * app name). This tool is specifically for individual endpoints and
+ * is designed for incremental creation via the agent log persister in Console.
+ */
+export function documentEndpoint(ctx: ToolContext) {
+  return tool({
+    description: DOCUMENT_ENDPOINT_DESCRIPTION,
     inputSchema:
       documentEndpointInputSchema as z.ZodType<DocumentEndpointInput>,
-    execute: async (input: DocumentEndpointInput) => {
-      if (ctx.attackSurfaceRegistry) {
-        const assetRecord = {
-          appName: input.appName,
-          assetName: input.routePath,
-          assetType: "endpoint" as const,
-          description: input.description,
-          details: { url: input.routePath },
-        };
-        const check = await ctx.attackSurfaceRegistry.register(assetRecord);
-        if (check.duplicate) {
-          const matchName = check.matchedAsset?.assetName ?? "unknown";
-          return {
-            success: false,
-            duplicate: true,
-            matchType: check.matchType,
-            matchedAsset: matchName,
-            message: `Duplicate endpoint (${check.matchType}): already documented as "${matchName}". Skipping.`,
-          };
-        }
-      }
+    execute: createDocumentEndpointExecutor(ctx),
+  });
+}
 
-      if (
-        input.routePath.startsWith("https://") ||
-        input.routePath.startsWith("http://")
-      ) {
-        return {
-          success: false,
-          error: "routePath_is_url",
-          message:
-            `routePath "${input.routePath}" is a full URL. The domain is already stored on the parent application. ` +
-            `Use a path or access pattern instead (e.g. "/api/users", "/{objectKey}?X-Amz-Signature={sig}", "arn:aws:s3:::bucket-name").`,
-        };
-      }
+export function createDocumentEndpointExecutor(ctx: ToolContext) {
+  if (ctx.attackSurfaceArtifactsPath && !ctx.backends)
+    throw new Error("Recon artifacts require explicit backends");
+  const baseAssetsPath =
+    ctx.attackSurfaceArtifactsPath ?? join(ctx.session.rootPath, "assets");
 
-      const appDirectory = sanitizeName(input.appName);
-      if (
-        ctx.attackSurfaceArtifactsPath &&
-        (!appDirectory || appDirectory === "." || appDirectory === "..")
-      )
-        throw new Error("Invalid recon application artifact name");
-      const targetDir = join(baseAssetsPath, appDirectory);
+  return async (input: DocumentEndpointInput) => {
+    if (
+      input.routePath.startsWith("https://") ||
+      input.routePath.startsWith("http://")
+    ) {
+      return {
+        success: false,
+        error: "routePath_is_url",
+        message:
+          `routePath "${input.routePath}" is a full URL. The domain is already stored on the parent application. ` +
+          `Use a path or access pattern instead (e.g. "/api/users", "/{objectKey}?X-Amz-Signature={sig}", "arn:aws:s3:::bucket-name").`,
+      };
+    }
 
-      if (!ctx.attackSurfaceArtifactsPath && !existsSync(targetDir)) {
-        mkdirSync(targetDir, { recursive: true });
-      }
+    const appDirectory = sanitizeName(input.appName);
+    if (
+      ctx.attackSurfaceArtifactsPath &&
+      (!appDirectory || appDirectory === "." || appDirectory === "..")
+    )
+      throw new Error("Invalid recon application artifact name");
+    const targetDir = join(baseAssetsPath, appDirectory);
 
-      const sanitizedPath = sanitizeName(input.routePath);
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = `asset_${sanitizedPath}_${timestamp}.json`;
-      const filepath = join(targetDir, filename);
+    if (!ctx.attackSurfaceArtifactsPath && !existsSync(targetDir)) {
+      mkdirSync(targetDir, { recursive: true });
+    }
 
-      const heuristicRiskScore = computeBlackboxRiskScore(
-        input.riskLevel,
-        "endpoint",
-        {
-          url: input.routePath,
-          method: input.method,
-          handler: input.handler,
-          file: input.file,
-          line: input.line,
-          authRequired: input.authRequired,
-          authentication: input.authentication,
-        },
-        input.notes,
-      );
+    const sanitizedPath = sanitizeName(input.routePath);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `asset_${sanitizedPath}_${timestamp}.json`;
+    const filepath = join(targetDir, filename);
 
-      const subagentInput = {
-        appName: input.appName,
-        routePath: input.routePath,
+    const heuristicRiskScore = computeBlackboxRiskScore(
+      input.riskLevel,
+      "endpoint",
+      {
+        url: input.routePath,
         method: input.method,
+        handler: input.handler,
         file: input.file,
         line: input.line,
-        handler: input.handler,
         authRequired: input.authRequired,
-        description: input.description,
-        transport: input.transport,
-        grpc: input.grpc,
-      };
+        authentication: input.authentication,
+      },
+      input.notes,
+    );
 
-      const threatModelOutput = await generateThreatModelForEndpoint(
+    const subagentInput = {
+      appName: input.appName,
+      routePath: input.routePath,
+      method: input.method,
+      file: input.file,
+      line: input.line,
+      handler: input.handler,
+      authRequired: input.authRequired,
+      description: input.description,
+      transport: input.transport,
+      grpc: input.grpc,
+    };
+
+    const assetRecord = {
+      appName: input.appName,
+      assetName: input.routePath,
+      assetType: "endpoint" as const,
+      description: input.description,
+      details: { url: input.routePath },
+    };
+    if (ctx.attackSurfaceRegistry) {
+      const check = await ctx.attackSurfaceRegistry.register(assetRecord);
+      if (check.duplicate) {
+        const matchName = check.matchedAsset?.assetName ?? "unknown";
+        return {
+          success: false,
+          duplicate: true,
+          matchType: check.matchType,
+          matchedAsset: matchName,
+          message: `Duplicate endpoint (${check.matchType}): already documented as "${matchName}". Skipping.`,
+        };
+      }
+    }
+
+    let threatModelOutput: ThreatModelOutput | null;
+    try {
+      threatModelOutput = await generateThreatModelForEndpoint(
         ctx,
         subagentInput,
       );
+    } catch (error) {
+      await ctx.attackSurfaceRegistry?.unregister(assetRecord);
+      throw error;
+    }
 
-      const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
-      const pentestObjectives = threatModelOutput?.pentestObjectives ?? [];
-      const businessLogic = threatModelOutput?.businessLogic;
-      const threatModel = threatModelOutput?.threatModel;
+    const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
+    const pentestObjectives = threatModelOutput?.pentestObjectives ?? [];
+    const businessLogic = threatModelOutput?.businessLogic;
+    const threatModel = threatModelOutput?.threatModel;
 
-      const endpointRecord = {
-        ...input,
-        pentestObjectives,
-        discoveredAt: new Date().toISOString(),
-        sessionId: ctx.session.id,
-        target: ctx.session.targets[0],
-        riskScore,
-        ...(businessLogic ? { businessLogic } : {}),
-        ...(threatModel ? { threatModel } : {}),
-      };
+    const endpointRecord = {
+      ...input,
+      pentestObjectives,
+      discoveredAt: new Date().toISOString(),
+      sessionId: ctx.session.id,
+      target: ctx.session.targets[0],
+      riskScore,
+      ...(businessLogic ? { businessLogic } : {}),
+      ...(threatModel ? { threatModel } : {}),
+    };
 
-      try {
-        if (ctx.attackSurfaceArtifactsPath) {
-          const result = await resolveArtifactFs(ctx).write(
-            filepath,
-            JSON.stringify(endpointRecord, null, 2),
-            { mode: "overwrite" },
-          );
-          if (!result.success)
-            throw new Error(`Endpoint artifact write failed: ${result.error}`);
-        } else {
-          writeFileSync(filepath, JSON.stringify(endpointRecord, null, 2));
-        }
-      } catch (writeError: unknown) {
-        if (ctx.attackSurfaceRegistry) {
-          await ctx.attackSurfaceRegistry.unregister({
-            appName: input.appName,
-            assetName: input.routePath,
-            assetType: "endpoint",
-            description: input.description,
-            details: { url: input.routePath },
-          });
-        }
-        throw writeError;
+    try {
+      if (ctx.attackSurfaceArtifactsPath) {
+        const result = await resolveArtifactFs(ctx).write(
+          filepath,
+          JSON.stringify(endpointRecord, null, 2),
+          { mode: "overwrite" },
+        );
+        if (!result.success)
+          throw new Error(`Endpoint artifact write failed: ${result.error}`);
+      } else {
+        writeFileSync(filepath, JSON.stringify(endpointRecord, null, 2));
       }
+    } catch (writeError: unknown) {
+      await ctx.attackSurfaceRegistry?.unregister(assetRecord);
+      throw writeError;
+    }
 
-      return {
-        success: true,
-        appName: input.appName,
-        routePath: input.routePath,
-        endpointType: input.endpointType,
-        transport: input.transport,
-        grpc: input.grpc,
-        riskLevel: input.riskLevel,
-        filepath,
-        businessLogic: businessLogic ?? undefined,
-        threatModel: threatModel ?? undefined,
-        pentestObjectives,
-        riskScore,
-        message: `Endpoint '${input.routePath}' documented successfully under app '${input.appName}'`,
-      };
-    },
-  });
+    return {
+      success: true,
+      appName: input.appName,
+      routePath: input.routePath,
+      endpointType: input.endpointType,
+      transport: input.transport,
+      grpc: input.grpc,
+      riskLevel: input.riskLevel,
+      filepath,
+      businessLogic: businessLogic ?? undefined,
+      threatModel: threatModel ?? undefined,
+      pentestObjectives,
+      riskScore,
+      message: `Endpoint '${input.routePath}' documented successfully under app '${input.appName}'`,
+    };
+  };
 }

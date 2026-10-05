@@ -135,4 +135,23 @@ describe("remaining runtime backend consumers", () => {
       class: "sandbox-leaf",
     });
   });
+
+  it("propagates endpoint-analysis cancellation instead of degrading to heuristics", async () => {
+    const ctx = context();
+    const abort = new AbortController();
+    const cancellation = new DOMException("cancelled", "AbortError");
+    abort.abort(cancellation);
+    ctx.abortSignal = abort.signal;
+    const spawn = vi.fn();
+    ctx.subagentSpawner = { spawn } as unknown as SubagentSpawner;
+
+    await expect(
+      generateThreatModelForEndpoint(ctx, {
+        appName: "Example",
+        routePath: "/cancelled",
+        description: "Cancelled endpoint",
+      }),
+    ).rejects.toBe(cancellation);
+    expect(spawn).not.toHaveBeenCalled();
+  });
 });

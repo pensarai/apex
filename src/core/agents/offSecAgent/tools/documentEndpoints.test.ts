@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import type { SubagentSpawner } from "../subagentSpawner";
 import {
+  createDocumentEndpointExecutor,
+  type DocumentEndpointInput,
+} from "./documentEndpoint";
+import {
   DOCUMENT_ENDPOINT_BATCH_SIZE,
   documentEndpoints,
   documentEndpointsInputSchema,
@@ -106,6 +110,7 @@ describe("document_endpoints", () => {
     expect(spawnMany.mock.calls[0]?.[2]).toEqual({
       concurrency: DOCUMENT_ENDPOINT_BATCH_SIZE,
       abortSignal: undefined,
+      scope: "batch-call",
     });
     expect(result).toMatchObject({
       success: true,
@@ -139,5 +144,26 @@ describe("document_endpoints", () => {
       success: false,
       error: "routePath_is_url",
     });
+  });
+
+  it("releases the registry claim when endpoint enrichment is cancelled", async () => {
+    const { ctx } = context();
+    const abort = new AbortController();
+    const cancellation = new DOMException("cancelled", "AbortError");
+    abort.abort(cancellation);
+    const unregister = vi.fn(async () => {});
+    ctx.abortSignal = abort.signal;
+    ctx.attackSurfaceRegistry = {
+      register: vi.fn(async () => ({ duplicate: false })),
+      unregister,
+    } as never;
+
+    await expect(
+      createDocumentEndpointExecutor(ctx)({
+        ...endpoint("/cancelled"),
+        toolCallDescription: "Document cancelled endpoint",
+      } satisfies DocumentEndpointInput),
+    ).rejects.toBe(cancellation);
+    expect(unregister).toHaveBeenCalledOnce();
   });
 });
