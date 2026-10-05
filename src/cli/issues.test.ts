@@ -202,8 +202,8 @@ describe("pensar issues CLI", () => {
   });
 
   it.each([
-    [],
-    ["--endpoint", "22222222-2222-4222-8222-222222222222", "--clear"],
+    [[]],
+    [["--endpoint", "22222222-2222-4222-8222-222222222222", "--clear"]],
   ])("requires exactly one reassociation mode (%j)", (flags) => {
     const { status, stderr } = runIssues([
       "reassociate",
