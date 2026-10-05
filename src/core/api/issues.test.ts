@@ -5,7 +5,14 @@ const apiRequest = vi.hoisted(() => vi.fn());
 vi.mock("./apiClient", () => ({ apiRequest }));
 
 import type { IssueDetail, IssueSummary } from "./issues";
-import { dispatchPentest, getIssue, listIssues, retestIssue } from "./issues";
+import {
+  dispatchPentest,
+  getIssue,
+  listIssueRetests,
+  listIssues,
+  reassociateIssueEndpoint,
+  retestIssue,
+} from "./issues";
 
 const ISSUE_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -36,6 +43,32 @@ describe("retestIssue", () => {
     expect(apiRequest).toHaveBeenCalledWith(
       "POST",
       `/issues/${ISSUE_ID}/retest`,
+    );
+  });
+});
+
+describe("retest history and endpoint reassociation", () => {
+  beforeEach(() => apiRequest.mockReset());
+
+  it("GETs the issue retest history", async () => {
+    await listIssueRetests("VULN-000175");
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/issues/VULN-000175/retests",
+    );
+  });
+
+  it.each([
+    ["endpoint UUID", "22222222-2222-4222-8222-222222222222"],
+    ["cleared association", null],
+  ])("PUTs the %s", async (_name, endpointId) => {
+    await reassociateIssueEndpoint("VULN-000175", endpointId);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      "PUT",
+      "/issues/VULN-000175/endpoint",
+      { endpointId },
     );
   });
 });

@@ -26,10 +26,11 @@ async function captureRequest(args: string[]) {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
+      const rawBody = Buffer.concat(chunks).toString("utf-8");
       request = {
         method: req.method,
         url: req.url,
-        body: JSON.parse(Buffer.concat(chunks).toString("utf-8")),
+        body: rawBody ? JSON.parse(rawBody) : {},
       };
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true, issue: {} }));
@@ -75,7 +76,9 @@ describe("pensar issues CLI", () => {
   it.each([
     "get",
     "update",
+    "reassociate",
     "retest",
+    "retests",
     "link-pr",
     "prs",
     "comments",
@@ -165,6 +168,62 @@ describe("pensar issues CLI", () => {
       status: "closed",
       closedDisposition: "duplicate",
       duplicateOf: "VULN-000002",
+    });
+  });
+
+  it("links a finding to an endpoint", async () => {
+    const endpointId = "22222222-2222-4222-8222-222222222222";
+    const request = await captureRequest([
+      "reassociate",
+      "VULN-000030",
+      "--endpoint",
+      endpointId,
+    ]);
+
+    expect(request).toEqual({
+      method: "PUT",
+      url: "/issues/VULN-000030/endpoint",
+      body: { endpointId },
+    });
+  });
+
+  it("clears a finding's stale endpoint association", async () => {
+    const request = await captureRequest([
+      "reassociate",
+      "VULN-000030",
+      "--clear",
+    ]);
+
+    expect(request).toEqual({
+      method: "PUT",
+      url: "/issues/VULN-000030/endpoint",
+      body: { endpointId: null },
+    });
+  });
+
+  it.each([
+    [],
+    ["--endpoint", "22222222-2222-4222-8222-222222222222", "--clear"],
+  ])("requires exactly one reassociation mode (%j)", (flags) => {
+    const { status, stderr } = runIssues([
+      "reassociate",
+      "VULN-000030",
+      ...flags,
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "provide exactly one of --endpoint <endpointId> or --clear",
+    );
+  });
+
+  it("lists the retest verdict history", async () => {
+    const request = await captureRequest(["retests", "VULN-000175"]);
+
+    expect(request).toEqual({
+      method: "GET",
+      url: "/issues/VULN-000175/retests",
+      body: {},
     });
   });
 

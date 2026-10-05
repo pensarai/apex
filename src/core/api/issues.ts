@@ -60,6 +60,8 @@ export interface IssueDetail extends IssueSummary {
   cwe?: string;
   branch?: string;
   endpoint?: string;
+  endpointId?: string | null;
+  applicationId?: string | null;
   poc?: string;
   workspaceId: string;
   workspaceName: string;
@@ -127,6 +129,30 @@ export interface RetestIssueResult {
   sessionId: string;
   status: "queued";
   message: string;
+}
+
+export interface RetestSummary {
+  id: string;
+  status: "queued" | "in-progress" | "fixed" | "still-vulnerable" | "error";
+  stillExists: boolean | null;
+  confidence: "high" | "medium" | "low" | null;
+  evidence: string | null;
+  recommendation: string | null;
+  error: string | null;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface ReassociateIssueEndpointResult {
+  success: boolean;
+  issue: {
+    id: string;
+    issueLabel: string | null;
+    name: string | null;
+    endpointId: string | null;
+    applicationId: string | null;
+  };
 }
 
 export interface PullRequestSummary {
@@ -334,6 +360,23 @@ export async function createIssueComment(
 
 export async function retestIssue(issueId: string): Promise<RetestIssueResult> {
   return apiRequest<RetestIssueResult>("POST", `/issues/${issueId}/retest`);
+}
+
+export async function listIssueRetests(
+  issueId: string,
+): Promise<RetestSummary[]> {
+  return apiRequest<RetestSummary[]>("GET", `/issues/${issueId}/retests`);
+}
+
+export async function reassociateIssueEndpoint(
+  issueId: string,
+  endpointId: string | null,
+): Promise<ReassociateIssueEndpointResult> {
+  return apiRequest<ReassociateIssueEndpointResult>(
+    "PUT",
+    `/issues/${issueId}/endpoint`,
+    { endpointId },
+  );
 }
 
 /**

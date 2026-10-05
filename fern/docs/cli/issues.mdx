@@ -15,7 +15,9 @@ All commands operate on the **selected workspace**, which is chosen when you con
 pensar issues [filters]                        # List issues in the workspace (alias: pensar issues list)
 pensar issues get <issueId>                    # Get issue details
 pensar issues update <issueId> [options]       # Update an issue
+pensar issues reassociate <issueId> [options]  # Repair endpoint association
 pensar issues retest <issueId>                 # Queue an issue retest
+pensar issues retests <issueId>                # List retest attempts and verdicts
 pensar issues link-pr <issueId> --url <url>    # Link a pull request to an issue
 pensar issues prs <issueId>                    # List pull requests linked to an issue
 pensar issues comments <issueId>               # List review comments on an issue
@@ -71,7 +73,7 @@ back to any command taking an `<issueId>`.
 pensar issues get <issueId>
 ```
 
-Returns detailed information about a specific issue, including vulnerability description, reproduction steps, and severity. The response carries the same `issueLabel` and `url` as the list shape, plus description, line range, CWE, branch, and proof-of-concept.
+Returns detailed information about a specific issue, including vulnerability description, reproduction steps, and severity. The response carries the same `issueLabel` and `url` as the list shape, plus description, line range, CWE, branch, proof-of-concept, `endpointId`, and `applicationId`.
 
 A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400; a well-formed reference that matches no issue returns a 404.
 
@@ -100,6 +102,28 @@ workspace, must not be the issue itself, and must not itself be closed as a
 duplicate. Issue responses carry the link as `duplicateOf`, the original's UUID
 (`null` otherwise).
 
+### Repair the Endpoint Association
+
+```bash
+pensar issues reassociate <issueId> --endpoint <endpointId>
+pensar issues reassociate <issueId> --clear
+```
+
+Re-points a finding to the inventory endpoint it actually affects. The Console
+validates that the endpoint belongs to the selected workspace and updates the
+finding's endpoint and application together. Use `pensar apps endpoints
+<applicationId>` to find endpoint IDs.
+
+Pass exactly one of:
+
+| Option                    | Description                                      |
+| ------------------------- | ------------------------------------------------ |
+| `--endpoint <endpointId>` | Link the finding to this inventory endpoint      |
+| `--clear`                 | Clear both endpoint and application associations |
+
+The command returns HTTP 409 without changing the finding if the destination
+would duplicate another finding with the same pentest, title, and endpoint.
+
 ### Retest an Issue
 
 ```bash
@@ -107,6 +131,17 @@ pensar issues retest <issueId>
 ```
 
 Queues an asynchronous retest of the issue against its original target. The JSON response includes the agent session ID for the queued run.
+
+### List Retest Attempts
+
+```bash
+pensar issues retests <issueId>
+```
+
+Returns every retest attempt, newest first. Each row includes the derived
+`status` (`queued`, `in-progress`, `fixed`, `still-vulnerable`, or `error`),
+the flattened verdict and confidence when determined, the blocker text for an
+inconclusive run, and queue/start/completion timestamps.
 
 ### Link a Pull Request
 
@@ -204,6 +239,12 @@ pensar issues update VULN-000123 --false-positive --fp-reason "Test environment 
 
 # Retest an issue after deploying a fix
 pensar issues retest VULN-000123
+
+# Read the retest verdict or blocker
+pensar issues retests VULN-000123
+
+# Repair a finding that was linked to the wrong inventory endpoint
+pensar issues reassociate VULN-000123 --endpoint 22222222-2222-4222-8222-222222222222
 
 # Reference an issue by its label instead of its UUID
 pensar issues get VULN-000123
