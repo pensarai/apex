@@ -284,6 +284,7 @@ export function LocalBackends(
         req.headers,
       ),
       extract: req.extract,
+      fetchToken: req.fetchToken,
     });
   }
 
@@ -291,7 +292,7 @@ export function LocalBackends(
     async request(req: HttpRequest, o?: HttpOpts): Promise<HttpResponse> {
       await authorizeHttp(req);
       if (req.extract === "readability") {
-        return fetchReadable(ctx, req.url, o, authorizeHttp);
+        return fetchReadable(ctx, req.url, req.fetchToken, o, authorizeHttp);
       }
       return fetchStandard(ctx, req, o, authorizeHttp);
     },
@@ -780,9 +781,54 @@ async function fetchStandard(
   }
 }
 
+async function fetchBrokeredResearch(
+  url: string,
+  fetchToken: string,
+  signal: AbortSignal,
+): Promise<{ response: Response; url: string; redirected: boolean }> {
+  const apiUrl = process.env.PENSAR_API_URL ?? process.env.AGENT_API_URL;
+  const apiKey = process.env.PENSAR_API_KEY;
+  if (!apiUrl || !apiKey) {
+    throw new Error(
+      "External documents require the Console research broker configuration",
+    );
+  }
+  const broker = await fetch(`${apiUrl}/agents/web_search`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      ...(process.env.PENSAR_WORKSPACE_ID
+        ? { "x-workspace-id": process.env.PENSAR_WORKSPACE_ID }
+        : {}),
+    },
+    body: JSON.stringify({ url, fetchToken }),
+    signal,
+  });
+  if (!broker.ok) {
+    throw new Error(
+      `Research broker rejected the document: HTTP ${broker.status}`,
+    );
+  }
+  const document = (await broker.json()) as {
+    url: string;
+    contentType: string;
+    body: string;
+  };
+  return {
+    response: new Response(document.body, {
+      status: 200,
+      headers: { "content-type": document.contentType },
+    }),
+    url: document.url,
+    redirected: document.url !== url,
+  };
+}
+
 async function fetchReadable(
   ctx: ToolContext,
   url: string,
+  fetchToken: string | undefined,
   o: HttpOpts | undefined,
   authorize: AuthorizeHttp,
 ): Promise<HttpResponse> {
@@ -795,21 +841,22 @@ async function fetchReadable(
     ? AbortSignal.any([o.abortSignal, controller.signal])
     : controller.signal;
   try {
-    const headers = readabilityRequestHeaders(
-      resolveEffectiveHeaders(resolverSessionFromCtx(ctx), url),
-    );
-    const fetched = await fetchTargetWithRedirects(
-      ctx,
-      {
-        url,
-        method: "GET",
-        headers,
-        followRedirects: true,
-        extract: "readability",
-      },
-      combinedSignal,
-      authorize,
-    );
+    const fetched = fetchToken
+      ? await fetchBrokeredResearch(url, fetchToken, combinedSignal)
+      : await fetchTargetWithRedirects(
+          ctx,
+          {
+            url,
+            method: "GET",
+            headers: readabilityRequestHeaders(
+              resolveEffectiveHeaders(resolverSessionFromCtx(ctx), url),
+            ),
+            followRedirects: true,
+            extract: "readability",
+          },
+          combinedSignal,
+          authorize,
+        );
     const { response } = fetched;
 
     if (!response.ok) {

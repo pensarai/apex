@@ -190,6 +190,8 @@ export interface HttpRequest {
   followRedirects?: boolean;
   /** `get_page` folds into `http_request` here. */
   extract?: "readability";
+  /** Signed search-result capability for brokered external document reads. */
+  fetchToken?: string;
 }
 
 export interface HttpOpts {

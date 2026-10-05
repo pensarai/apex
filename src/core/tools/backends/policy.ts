@@ -56,6 +56,7 @@ interface HttpPolicyArgs {
   body?: string;
   headers?: Record<string, string>;
   extract?: "readability";
+  fetchToken?: string;
 }
 
 interface BrowserNavigatePolicyArgs {
@@ -92,9 +93,12 @@ export const defaultPolicy: ToolPolicy = {
     }
 
     if (call.backend === "http" && call.op === "request") {
-      const { method, url, body, headers } = call.args as HttpPolicyArgs;
+      const { method, url, body, headers, extract, fetchToken } =
+        call.args as HttpPolicyArgs;
       try {
-        assertUrlInScope(url, ctx);
+        if (!(extract === "readability" && fetchToken)) {
+          assertUrlInScope(url, ctx);
+        }
         assertHttpActionAllowed({ method, url, body, headers }, ctx);
       } catch (e) {
         if (

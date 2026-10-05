@@ -79,6 +79,21 @@ describe("defaultPolicy", () => {
     if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
   });
 
+  it("allows brokered readability with a signed search-result token", async () => {
+    const decision = await defaultPolicy.beforeCall({
+      backend: "http",
+      op: "request",
+      args: {
+        method: "GET",
+        url: "http://research.example/",
+        extract: "readability",
+        fetchToken: "signed-result",
+      },
+      ctx: scopedCtx(),
+    });
+    expect(decision).toEqual({ allow: true });
+  });
+
   it("denies an out-of-scope browser navigation", async () => {
     const decision = await defaultPolicy.beforeCall({
       backend: "browser",
