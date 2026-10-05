@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { extractJavascriptEndpoints } from "../../specialized/attackSurface/jsExtraction";
+import { assertUrlInScope } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 /**
  * Factory for the `extract_js_endpoints` tool.
@@ -8,7 +10,7 @@ import { extractJavascriptEndpoints } from "../../specialized/attackSurface/jsEx
  * Thin wrapper around the existing jsExtraction helper.
  * No ToolContext needed — the helper is stateless.
  */
-export function extractJsEndpoints(_ctx: unknown) {
+export function extractJsEndpoints(ctx: ToolContext) {
   return tool({
     description: `Extract endpoint URLs from JavaScript code in a page using pattern matching.
 
@@ -37,6 +39,7 @@ Returns all discovered endpoint patterns.`,
         ),
     }),
     execute: async (params) => {
+      assertUrlInScope(params.url, ctx);
       return extractJavascriptEndpoints(params);
     },
   });

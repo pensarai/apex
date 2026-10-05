@@ -29,6 +29,7 @@ import {
   createBrowserToolFactories,
 } from "./playwrightMcp";
 import { createSandboxBrowserToolFactories } from "./sandboxPlaywright";
+import { assertUrlInScope } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -99,6 +100,8 @@ export function createBrowserToolsetFactories(ctx: ToolContext) {
         undefined,
         undefined,
         ctx.browserSession,
+        undefined,
+        (url) => assertUrlInScope(url, ctx),
       );
 
   const cm = ctx.credentialManager;

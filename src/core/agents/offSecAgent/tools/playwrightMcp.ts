@@ -1315,6 +1315,7 @@ export function createBrowserToolFactories(
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
   extraHttpHeaders?: Record<string, string> | null,
+  assertNavigation?: (url: string) => void,
 ) {
   let session: PlaywrightMcpSession;
 
@@ -1362,6 +1363,7 @@ export function createBrowserToolFactories(
           toolCallDescription,
         }): Promise<BrowserNavigateResult> => {
           try {
+            assertNavigation?.(url);
             const result = await session.callTool(
               "browser_navigate",
               { url },

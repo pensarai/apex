@@ -343,6 +343,52 @@ function parseHeaders(raw: string | undefined): Record<string, string> {
   return {};
 }
 
+async function fetchWithScopedRedirects(
+  ctx: ToolContext,
+  initialUrl: string,
+  init: RequestInit,
+  followRedirects: boolean,
+): Promise<Response> {
+  let url = initialUrl;
+  let requestInit = { ...init, redirect: "manual" as const };
+  for (let redirectCount = 0; ; redirectCount++) {
+    assertUrlInScope(url, ctx);
+    const response = await targetFetch(
+      resolverSessionFromCtx(ctx),
+      url,
+      requestInit,
+    );
+    if (
+      !followRedirects ||
+      ![301, 302, 303, 307, 308].includes(response.status)
+    ) {
+      return response;
+    }
+    if (redirectCount >= 9) {
+      response.body?.cancel().catch(() => {});
+      throw new Error("Too many redirects (maximum 10)");
+    }
+    const location = response.headers.get("location");
+    if (!location) return response;
+    const nextUrl = new URL(location, url).toString();
+    assertUrlInScope(nextUrl, ctx);
+    response.body?.cancel().catch(() => {});
+    if (
+      response.status === 303 ||
+      ((response.status === 301 || response.status === 302) &&
+        requestInit.method !== "GET" &&
+        requestInit.method !== "HEAD")
+    ) {
+      requestInit = {
+        ...requestInit,
+        method: "GET",
+        body: undefined,
+      };
+    }
+    url = nextUrl;
+  }
+}
+
 export function httpRequest(ctx: ToolContext) {
   return tool({
     description: `Make HTTP requests with detailed response analysis for web application testing.
@@ -497,13 +543,17 @@ COMMON TESTING PATTERNS:
           ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
           : timeoutController.signal;
 
-        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
-          method,
-          headers,
-          body: resolvedBody || undefined,
-          redirect: followRedirects ? "follow" : "manual",
-          signal: combinedSignal,
-        });
+        const response = await fetchWithScopedRedirects(
+          ctx,
+          url,
+          {
+            method,
+            headers,
+            body: resolvedBody || undefined,
+            signal: combinedSignal,
+          },
+          followRedirects,
+        );
 
         const responseHeaders: Record<string, string> = {};
         response.headers.forEach((value, key) => {

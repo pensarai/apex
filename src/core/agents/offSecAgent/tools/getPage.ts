@@ -2,12 +2,11 @@ import { tool } from "ai";
 import { z } from "zod";
 import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
 import type { HeaderRecord } from "../../../http/types";
-import { resolverSessionFromCtx } from "./scopeGuard";
+import { assertUrlInScope, resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
-// Tool baselines used for out-of-scope research URLs (CVE writeups, vendor
-// docs) — a recognisable UA avoids Cloudflare/Akamai bot challenges on
-// `Bun/x.y` defaults. For in-scope URLs the resolver's values win.
+// A recognisable UA avoids bot challenges on approved target pages. External
+// research is brokered through web_search rather than fetched from the sandbox.
 const GETPAGE_USER_AGENT =
   "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)";
 
@@ -233,13 +232,11 @@ async function readBodyCapped(
 
 export function getPage(ctx: ToolContext) {
   return tool({
-    description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
+    description: `Fetch and extract readable content from an in-scope target page. Returns the page title and main text content.
 
 USAGE GUIDANCE:
-- Use this tool to read full content from URLs found via web_search
-- Fetch CVE details, security advisories, and vulnerability write-ups
-- Read documentation, API references, and technical guides
-- Extract exploit code, payloads, and proof-of-concept details from security blogs
+- Use this tool only for pages already present in the immutable run scope
+- Use web_search for external security research; do not fetch those URLs directly
 
 BEST PRACTICES:
 - First use web_search to find relevant URLs, then use get_page to read the full content
@@ -250,6 +247,7 @@ BEST PRACTICES:
     execute: async ({ url }): Promise<GetPageResponse> => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
+        assertUrlInScope(url, ctx);
         const controller = new AbortController();
         timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -269,8 +267,20 @@ BEST PRACTICES:
           method: "GET",
           headers,
           signal: combinedSignal,
-          redirect: "follow",
+          redirect: "manual",
         });
+
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          response.body?.cancel().catch(() => {});
+          const location = response.headers.get("location");
+          return {
+            success: false,
+            url,
+            error: location
+              ? `Redirect not followed automatically; authorize and request ${new URL(location, url).toString()} explicitly`
+              : "Redirect response did not include a Location header",
+          };
+        }
 
         if (!response.ok) {
           response.body?.cancel().catch(() => {});

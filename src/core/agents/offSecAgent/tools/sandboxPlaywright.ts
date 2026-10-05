@@ -43,7 +43,11 @@ import type {
   BrowserScreenshotResult,
 } from "./playwrightMcp";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
-import { resolverSessionFromCtx } from "./scopeGuard";
+import {
+  assertUrlInScope,
+  getAllowedHosts,
+  resolverSessionFromCtx,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -289,6 +293,7 @@ async function runPlaywrightScript(
   body: string,
   timeout = 60,
   extraHttpHeaders?: Record<string, string>,
+  allowedHosts: string[] = [],
 ): Promise<unknown> {
   const headersJson =
     extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
@@ -307,6 +312,16 @@ const fs = require('fs');
   // Resolved per script invocation so /headers mutations take effect
   // on the next browser tool call.
   const __extraHeaders = ${headersJson};
+  const __allowedHosts = ${JSON.stringify(allowedHosts)};
+  const __hostAllowed = (hostname) => {
+    const lower = hostname.toLowerCase().replace(/\\.$/, '');
+    return __allowedHosts.some((entry) => {
+      const normalized = entry.toLowerCase().replace(/\\.$/, '');
+      const wildcard = normalized.startsWith('*.');
+      const base = wildcard ? normalized.slice(2) : normalized;
+      return lower === base || (wildcard && lower.endsWith('.' + base));
+    });
+  };
 
   // Use the sandbox's virtual display if one is present — Camoufox is far less
   // detectable headful. Falls back to plain headless, which is still fully
@@ -350,6 +365,17 @@ const fs = require('fs');
       // fan-out that otherwise costs ~3 GB across the run.
       firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
       ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
+      serviceWorkers: 'block',
+    });
+    await context.route('**/*', async route => {
+      const requestUrl = route.request().url();
+      let parsed;
+      try { parsed = new URL(requestUrl); } catch { await route.abort('blockedbyclient'); return; }
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !__hostAllowed(parsed.hostname)) {
+        await route.abort('blockedbyclient');
+        return;
+      }
+      await route.continue();
     });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
@@ -585,7 +611,13 @@ export function createSandboxBrowserToolFactories(ctx: ToolContext) {
       : ctx.session.config?.headers;
     const headers = stripBrowserManagedHeaders(resolved);
     const next = scriptQueue.then(() =>
-      runPlaywrightScript(sandbox, body, timeout, headers),
+      runPlaywrightScript(
+        sandbox,
+        body,
+        timeout,
+        headers,
+        getAllowedHosts(ctx),
+      ),
     );
     scriptQueue = next.then(
       () => {},
@@ -606,6 +638,7 @@ Target base URL: ${targetUrl}`,
         inputSchema: BrowserNavigateInput,
         execute: async ({ url }): Promise<BrowserNavigateResult> => {
           try {
+            assertUrlInScope(url, ctx);
             await setup();
             const result = (await runScript(
               `

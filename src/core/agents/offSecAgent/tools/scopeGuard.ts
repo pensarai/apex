@@ -6,40 +6,18 @@
  * Endpoint paths are intentionally NOT checked — the guard only restricts
  * the domain, not which paths the agent visits on that domain.
  *
- * Allowed domains are derived from:
- *  1. `ctx.target` (the primary target URL)
- *  2. `ctx.session.targets` (all session target URLs)
- *  3. `ctx.session.config.scopeConstraints.allowedHosts` (explicit list)
- *
- * Scope expansion: hosts derived from session targets are expanded to
- * their registrable domain (eTLD+1) via the Public Suffix List. So a
- * target of `web.dev.example.com` produces an allowed host of
- * `example.com`, which in turn permits any subdomain under it
- * (`auth.dev.example.com`, `api.example.com`, etc.). Other registrable
- * domains stay out of scope.
- *
- * Hosts in `scopeConstraints.allowedHosts` are used verbatim (not
- * expanded), so operators can narrow scope explicitly when needed.
- *
- * Subdomain matching: if `example.com` is allowed, `api.example.com` is
- * also allowed (suffix match on the hostname).
+ * An explicit `scopeConstraints.allowedHosts` list is authoritative. Without
+ * one, exact hosts are derived from `ctx.target` and `session.targets`.
+ * Subdomains are permitted only by an explicit `*.example.com` entry.
  */
 
-import { getDomain } from "tldts";
 import { parseTargetUrl } from "../../../../util/url";
-import type { ResolverSession } from "../../../http/targetHeaders";
+import {
+  getSessionAllowedHosts,
+  isHostInScope,
+  type ResolverSession,
+} from "../../../http/targetHeaders";
 import type { ToolContext } from "./types";
-
-/**
- * Compute the registrable domain (eTLD+1) for a hostname using the
- * Public Suffix List. Falls back to the hostname itself for IPs,
- * `localhost`, and other hosts without a recognised public suffix.
- */
-export function getRegistrableDomain(hostname: string): string {
-  const lower = hostname.toLowerCase();
-  const domain = getDomain(lower, { allowPrivateDomains: false });
-  return domain ?? lower;
-}
 
 export class ScopeViolationError extends Error {
   constructor(
@@ -48,7 +26,7 @@ export class ScopeViolationError extends Error {
   ) {
     super(
       `Scope violation: "${hostname}" is not in the list of allowed target domains [${allowedHosts.join(", ")}]. ` +
-        `Only the target host and its subdomains are permitted.`,
+        `Only exact hosts and explicit wildcard grants are permitted.`,
     );
     this.name = "ScopeViolationError";
   }
@@ -72,28 +50,7 @@ export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
  * Returns an empty array when no scope is configured (= no enforcement).
  */
 export function getAllowedHosts(ctx: ToolContext): string[] {
-  const hosts = new Set<string>();
-
-  if (ctx.target) {
-    const parsed = parseTargetUrl(ctx.target);
-    if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
-  }
-
-  if (ctx.session?.targets) {
-    for (const t of ctx.session.targets) {
-      const parsed = parseTargetUrl(t);
-      if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
-    }
-  }
-
-  const explicit = ctx.session?.config?.scopeConstraints?.allowedHosts;
-  if (explicit) {
-    for (const h of explicit) {
-      hosts.add(h.toLowerCase());
-    }
-  }
-
-  return [...hosts];
+  return getSessionAllowedHosts(resolverSessionFromCtx(ctx));
 }
 
 /**
@@ -109,17 +66,11 @@ export function isHostAllowed(
   hostname: string,
   allowedHosts: string[],
 ): boolean {
-  if (allowedHosts.length === 0) return true;
+  return isHostInScope(hostname, allowedHosts);
+}
 
-  const lower = hostname.toLowerCase();
-
-  for (const allowed of allowedHosts) {
-    const allowedLower = allowed.toLowerCase();
-    if (lower === allowedLower) return true;
-    if (lower.endsWith(`.${allowedLower}`)) return true;
-  }
-
-  return false;
+function strictScope(ctx: ToolContext): boolean {
+  return ctx.session.config?.scopeConstraints?.strictScope === true;
 }
 
 /**
@@ -138,7 +89,7 @@ export function extractHostname(url: string): string | null {
  */
 export function assertUrlInScope(url: string, ctx: ToolContext): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0) return;
+  if (allowedHosts.length === 0 && !strictScope(ctx)) return;
 
   const hostname = extractHostname(url);
   if (!hostname) {
@@ -166,7 +117,7 @@ export function assertFindingEndpointInScope(
   ctx: ToolContext,
 ): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0) return;
+  if (allowedHosts.length === 0 && !strictScope(ctx)) return;
 
   // Only absolute http(s) URLs name their own host; anything else (a path,
   // "host:port", a scheme-less token) is treated as relative to the in-scope
@@ -340,7 +291,7 @@ export function extractHostsFromCommand(command: string): string[] {
  */
 export function assertCommandInScope(command: string, ctx: ToolContext): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0) return;
+  if (allowedHosts.length === 0 && !strictScope(ctx)) return;
 
   const commandHosts = extractHostsFromCommand(command);
 
