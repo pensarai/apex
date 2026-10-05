@@ -142,6 +142,8 @@ export async function runRecordedAgent(
           model: spec.model,
           ...(spec.system ? { system: spec.system } : {}),
           activeTools: spec.activeTools,
+          // Override the SDK's one-step default; persisted limits gate dispatch.
+          stopWhen: () => false,
           target: spec.target,
           agentCwd: spec.environment.cwd,
           contextRecorder,
