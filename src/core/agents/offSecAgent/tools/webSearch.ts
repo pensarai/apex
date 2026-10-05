@@ -27,6 +27,7 @@ interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;
+  fetchToken?: string;
 }
 
 export interface WebSearchResponse {
@@ -142,6 +143,8 @@ COMMON SEARCH PATTERNS:
             headers: {
               "Content-Type": "application/json",
               "x-api-key": cfg.pensarAPIKey,
+              "x-workspace-id":
+                cfg.workspaceId ?? process.env.PENSAR_WORKSPACE_ID ?? "system",
             },
             body,
           });

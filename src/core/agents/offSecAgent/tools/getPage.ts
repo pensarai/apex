@@ -2,7 +2,11 @@ import { tool } from "ai";
 import { z } from "zod";
 import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
 import type { HeaderRecord } from "../../../http/types";
-import { assertUrlInScope, resolverSessionFromCtx } from "./scopeGuard";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 // A recognisable UA avoids bot challenges on approved target pages. External
@@ -37,6 +41,12 @@ const getPageInputSchema = z.object({
     .string()
     .url()
     .describe("The URL of the page to fetch and extract content from."),
+  fetchToken: z
+    .string()
+    .optional()
+    .describe(
+      "Broker token returned with this exact URL by web_search. Required for external research URLs; omit for in-scope target pages.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -244,10 +254,16 @@ BEST PRACTICES:
 - For large pages, focus on the most relevant sections
 - If content is truncated, the important information is usually near the beginning`,
     inputSchema: getPageInputSchema,
-    execute: async ({ url }): Promise<GetPageResponse> => {
+    execute: async ({ url, fetchToken }): Promise<GetPageResponse> => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
-        assertUrlInScope(url, ctx);
+        let inScope = true;
+        try {
+          assertUrlInScope(url, ctx);
+        } catch (error) {
+          if (!(error instanceof ScopeViolationError)) throw error;
+          inScope = false;
+        }
         const controller = new AbortController();
         timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -255,20 +271,64 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
-        // Resolve once, then layer baselines so resolver values still win.
-        // Calling bare fetch (not targetFetch) avoids a second resolution
-        // pass that would promote baselines above credential headers.
-        const resolverSession = resolverSessionFromCtx(ctx);
-        const resolved = resolveEffectiveHeaders(resolverSession, url);
-        const headers = mergeBaselineHeaders(resolved);
+        let response: Response;
+        if (inScope) {
+          // Resolve once, then layer baselines so resolver values still win.
+          // Calling bare fetch (not targetFetch) avoids a second resolution
+          // pass that would promote baselines above credential headers.
+          const resolverSession = resolverSessionFromCtx(ctx);
+          const resolved = resolveEffectiveHeaders(resolverSession, url);
+          const headers = mergeBaselineHeaders(resolved);
 
-        // biome-ignore lint/style/noRestrictedGlobals: headers fully resolved above; targetFetch would re-resolve
-        const response = await fetch(url, {
-          method: "GET",
-          headers,
-          signal: combinedSignal,
-          redirect: "manual",
-        });
+          // biome-ignore lint/style/noRestrictedGlobals: headers fully resolved above; targetFetch would re-resolve
+          response = await fetch(url, {
+            method: "GET",
+            headers,
+            signal: combinedSignal,
+            redirect: "manual",
+          });
+        } else {
+          const apiUrl =
+            process.env.PENSAR_API_URL ?? process.env.AGENT_API_URL;
+          const apiKey = process.env.PENSAR_API_KEY;
+          if (!fetchToken || !apiUrl || !apiKey) {
+            return {
+              success: false,
+              url,
+              error:
+                "External documents require the fetchToken returned by web_search and the Console research broker.",
+            };
+          }
+          // biome-ignore lint/style/noRestrictedGlobals: Console research broker, not a target request.
+          const broker = await fetch(`${apiUrl}/agents/web_search`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              ...(process.env.PENSAR_WORKSPACE_ID
+                ? { "x-workspace-id": process.env.PENSAR_WORKSPACE_ID }
+                : {}),
+            },
+            body: JSON.stringify({ url, fetchToken }),
+            signal: combinedSignal,
+          });
+          if (!broker.ok) {
+            return {
+              success: false,
+              url,
+              error: `Research broker rejected the document: HTTP ${broker.status}`,
+            };
+          }
+          const document = (await broker.json()) as {
+            url: string;
+            contentType: string;
+            body: string;
+          };
+          response = new Response(document.body, {
+            status: 200,
+            headers: { "content-type": document.contentType },
+          });
+        }
 
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           response.body?.cancel().catch(() => {});

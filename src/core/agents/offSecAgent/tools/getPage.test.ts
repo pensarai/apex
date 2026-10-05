@@ -479,6 +479,69 @@ describe("getPage body liveness", () => {
   });
 });
 
+describe("getPage research broker", () => {
+  const originalApiUrl = process.env.PENSAR_API_URL;
+  const originalApiKey = process.env.PENSAR_API_KEY;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalApiUrl === undefined) delete process.env.PENSAR_API_URL;
+    else process.env.PENSAR_API_URL = originalApiUrl;
+    if (originalApiKey === undefined) delete process.env.PENSAR_API_KEY;
+    else process.env.PENSAR_API_KEY = originalApiKey;
+  });
+
+  it("fetches an external search result only through its broker token", async () => {
+    process.env.PENSAR_API_URL = "https://api.pensar.test";
+    process.env.PENSAR_API_KEY = "service-key";
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            url: "https://security.example/advisory",
+            contentType: "text/html",
+            body: "<html><title>Advisory</title><body>Patch now</body></html>",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://security.example/advisory",
+        fetchToken: "signed-search-result",
+        toolCallDescription: "Read an advisory",
+      },
+      { toolCallId: "tc_broker", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(true);
+    expect(result.title).toBe("Advisory");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.pensar.test/agents/web_search",
+    );
+  });
+
+  it("does not fetch an external URL without a search-result token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://prod.example.com/admin",
+        toolCallDescription: "Read a sibling",
+      },
+      { toolCallId: "tc_broker", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/fetchToken/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 // Capture-vs-preview distinction: a >50k extraction followed by a producer
 // failure must be a FAILED capture with the producer stop reason — the 50k
 // preview cut never launders an incomplete download into success.
