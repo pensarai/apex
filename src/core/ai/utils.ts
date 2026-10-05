@@ -30,6 +30,7 @@ import { scopedLogger } from "../util/lazyLogger";
 import {
   type AIModel,
   buildOpenRouterProviderOptions,
+  recordContextRestart,
   type StreamResponseOpts,
   streamResponse,
 } from "./ai";
@@ -591,6 +592,7 @@ async function summarizeConversation(
 
   // Bump depth so a recursive overflow eventually trips
   // `ContextLengthExhaustedError` instead of looping forever.
+  await recordContextRestart((opts._restartDepth ?? 0) + 1);
   const resumed = streamResponse({
     ...opts,
     prompt: enhancedPrompt,

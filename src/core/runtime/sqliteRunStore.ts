@@ -7,13 +7,17 @@ import { type ModelMessage, modelMessageSchema } from "ai";
 import { z } from "zod";
 import { newSessionId } from "../id/id";
 import { getCurrentVersion } from "../installation";
-import type { RunCheckpointStore } from "./runCheckpointStore";
+import type { RunModelStore } from "./runModelStore";
 import {
   type RecordedRunSpec,
   RecordedRunSpecSchema,
   type RunRecord,
   RunRecordSchema,
 } from "./runStore";
+import {
+  createSqliteModelStore,
+  MODEL_STORE_SCHEMA_SQL,
+} from "./sqliteModelStore";
 
 type SqlValue = string | number | null;
 interface Database {
@@ -27,7 +31,7 @@ interface Database {
 }
 
 const APPLICATION_ID = 0x41505258;
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 const EvidenceSchema = z
   .object({
@@ -132,7 +136,7 @@ export async function openSqliteRunStore(
     "runtime",
     "runs.sqlite",
   ),
-): Promise<RunCheckpointStore & { close(): void }> {
+): Promise<RunModelStore & { close(): void }> {
   // Leave the other runtime's builtin unresolved in both bundled distributions.
   const moduleName = typeof Bun !== "undefined" ? "bun:sqlite" : "node:sqlite";
   let sqlite: {
@@ -168,7 +172,7 @@ export async function openSqliteRunStore(
       ) {
         throw new Error("Database is not an Apex run store");
       }
-      if (![0, 1, STORE_VERSION].includes(version.user_version)) {
+      if (![0, 1, 2, STORE_VERSION].includes(version.user_version)) {
         throw new Error(
           `Unsupported run store version: ${version.user_version}`,
         );
@@ -204,8 +208,12 @@ export async function openSqliteRunStore(
             run_id TEXT PRIMARY KEY NOT NULL REFERENCES runs(run_id),
             evidence_json TEXT NOT NULL
           );
-          PRAGMA user_version = ${STORE_VERSION};
+          PRAGMA user_version = 2;
         `);
+      }
+      if (version.user_version < 3) {
+        db.exec(MODEL_STORE_SCHEMA_SQL);
+        db.exec(`PRAGMA user_version = ${STORE_VERSION}`);
       }
     });
     db.exec("PRAGMA journal_mode = WAL");
@@ -243,6 +251,15 @@ export async function openSqliteRunStore(
     };
 
     return {
+      ...createSqliteModelStore({
+        db,
+        transaction: (operation) => transaction(db, operation),
+        getRun: get,
+        getContextReference: (runId) => {
+          const head = headContext(runId);
+          return head ? { epoch: head.epoch, revision: head.revision } : null;
+        },
+      }),
       async commitContext(
         runId,
         attemptId,

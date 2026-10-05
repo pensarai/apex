@@ -1,4 +1,5 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
+import { setTimeout as delay } from "node:timers/promises";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -35,6 +36,7 @@ import {
 } from "../observability";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import type { RunContextRecorder } from "../runtime/runContext";
+import { RunLimitError } from "../runtime/runModelStore";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -51,6 +53,7 @@ import {
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
+import { getInferenceRecorder } from "./inference-attempt";
 import {
   getClaudeCapabilities,
   getMaxOutputTokens,
@@ -518,6 +521,17 @@ const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Observe the existing depth allowance only for accepted restarts.
+export async function recordContextRestart(depth: number): Promise<void> {
+  if (depth > MAX_RESTART_DEPTH) return;
+  await getInferenceRecorder()?.retry({
+    authority: "context-restart",
+    count: depth,
+    maxRetries: MAX_RESTART_DEPTH,
+    delayMs: 0,
+  });
+}
+
 function getStreamIdleTimeoutMs(model: AIModel): number {
   // Pro cannot stream progress while reasoning; wait for its completed response.
   return /^(?:openai\/)?gpt-5\.5-pro(?:-|$)/.test(model)
@@ -759,13 +773,19 @@ function wrapStreamWithErrorHandler(
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
+              // SDK RetryError can wrap a critical failure after a prior provider retry.
+              await getInferenceRecorder()?.flush();
+
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
 
               // A latched persistence failure is terminal: retrying would
               // dispatch a turn whose context was never durably committed.
-              if (error instanceof RunPersistenceError) {
+              if (
+                error instanceof RunPersistenceError ||
+                error instanceof RunLimitError
+              ) {
                 throw error;
               }
 
@@ -777,6 +797,12 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
+                await getInferenceRecorder()?.retry({
+                  authority: "stream-idle",
+                  count: nextIdleCount,
+                  maxRetries: MAX_IDLE_RESUME_RETRIES,
+                  delayMs: 0,
+                });
                 // Surfaced on silent sub-agents too when stream-debugging.
                 if (!silent || STREAM_DEBUG) {
                   log.warn(
@@ -813,6 +839,13 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
+                const recorder = getInferenceRecorder();
+                await recorder?.retry({
+                  authority: "stream-rate-limit",
+                  count: nextRetryCount,
+                  maxRetries: MAX_RATE_LIMIT_RETRIES,
+                  delayMs,
+                });
 
                 if (!silent) {
                   log.warn(
@@ -820,7 +853,11 @@ function wrapStreamWithErrorHandler(
                   );
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, delayMs));
+                if (recorder) {
+                  await delay(delayMs, undefined, { signal: opts.abortSignal });
+                } else {
+                  await new Promise((resolve) => setTimeout(resolve, delayMs));
+                }
 
                 const retriedStream = streamResponse({
                   ...opts,
@@ -913,6 +950,7 @@ function wrapStreamWithErrorHandler(
                     // forever. Without this, only Layer-3 escalation
                     // increments depth and a drift-driven loop can burn
                     // arbitrarily many failed provider calls.
+                    await recordContextRestart(postReactiveDepth + 1);
                     const retried = streamResponse({
                       ...opts,
                       messages: fitted.messages,
@@ -1046,6 +1084,7 @@ function wrapStreamWithErrorHandler(
                   reset?.finish("completed");
                   if (reset && opts._compaction)
                     opts._compaction.last = reset.link;
+                  await recordContextRestart(postReactiveDepth + 1);
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
@@ -1800,9 +1839,16 @@ function streamResponseWithinOperation(
           errorMessage.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
+          if (getInferenceRecorder()) {
+            // This SDK callback must not throw, including when cancellation ends its wait.
+            await delay(1000 * rateLimitRetryCount, undefined, {
+              signal: abortSignal,
+            }).catch(() => {});
+          } else {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1000 * rateLimitRetryCount),
+            );
+          }
         }
       },
       onStepFinish,
@@ -2190,6 +2236,15 @@ export async function generateObjectResponse<T extends z.ZodType>(
           // from the schema generic for callers.
           return output as z.infer<T>;
         } catch (error) {
+          // Surface latched persistence/limit failures before any retry
+          // classification — they are terminal, never delayed or retried.
+          await getInferenceRecorder()?.flush();
+          if (
+            error instanceof RunPersistenceError ||
+            error instanceof RunLimitError
+          ) {
+            throw error;
+          }
           lastError = error;
 
           if (checkIfContextLengthError(error)) {
@@ -2204,7 +2259,18 @@ export async function generateObjectResponse<T extends z.ZodType>(
             attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
           ) {
             const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            const recorder = getInferenceRecorder();
+            await recorder?.retry({
+              authority: "object-rate-limit",
+              count: attempt + 1,
+              maxRetries: MAX_OBJECT_RATE_LIMIT_RETRIES,
+              delayMs,
+            });
+            if (recorder) {
+              await delay(delayMs, undefined, { signal: abortSignal });
+            } else {
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
             continue;
           }
 

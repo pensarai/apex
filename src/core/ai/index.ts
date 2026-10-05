@@ -30,7 +30,18 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
-export type { InferenceAttempt } from "./inference-attempt";
+export type {
+  InferenceAttempt,
+  InferenceRecorder,
+  ModelRetryDecision,
+  ObservedModelToolCall,
+} from "./inference-attempt";
+export {
+  getInferenceRecorder,
+  InferenceAttemptSchema,
+  parseInferenceAttempt,
+  runWithInferenceRecorder,
+} from "./inference-attempt";
 export {
   addRecentModelId,
   getRecentModels,
