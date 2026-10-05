@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HttpResponse } from "../../../tools/backends/types";
+import type { ToolContext } from "../../offSecAgent/tools/types";
 import {
   extractJavascriptEndpoints,
   extractJavascriptEndpointsFromHtml,
@@ -173,45 +175,59 @@ describe("extractJavascriptEndpointsFromHtml", () => {
 describe("extractJavascriptEndpoints (fetching helper)", () => {
   const html = `<script>fetch('/api/via-fetch');</script>`;
 
+  // The page fetch routes through the tool http backend, never
+  // a bare global fetch — so the test injects a fake backend on the context.
+  function ctxWith(
+    request: (...args: unknown[]) => Promise<HttpResponse>,
+  ): ToolContext {
+    return { backends: { http: { request } } } as unknown as ToolContext;
+  }
+
   it("sends the session cookie as a Cookie header and matches the pure parser output", async () => {
-    const fetchMock = vi.fn(async () => new Response(html));
-    vi.stubGlobal("fetch", fetchMock);
+    const request = vi.fn(
+      async () => ({ success: true, body: html }) as HttpResponse,
+    );
 
     const result = await extractJavascriptEndpoints({
       url: PAGE_URL,
       sessionCookie: "sid=abc",
+      ctx: ctxWith(request),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      PAGE_URL,
-      expect.objectContaining({
-        method: "GET",
-        headers: { Cookie: "sid=abc" },
-      }),
-    );
+    expect(request).toHaveBeenCalledWith({
+      url: PAGE_URL,
+      method: "GET",
+      followRedirects: true,
+      headers: { Cookie: "sid=abc" },
+    });
     expect(result).toEqual(extractJavascriptEndpointsFromHtml(html, PAGE_URL));
   });
 
   it("omits headers when no session cookie is given", async () => {
-    const fetchMock = vi.fn(async () => new Response(html));
-    vi.stubGlobal("fetch", fetchMock);
+    const request = vi.fn(
+      async () => ({ success: true, body: html }) as HttpResponse,
+    );
 
-    await extractJavascriptEndpoints({ url: PAGE_URL });
+    await extractJavascriptEndpoints({ url: PAGE_URL, ctx: ctxWith(request) });
 
-    expect(fetchMock).toHaveBeenCalledWith(PAGE_URL, {
+    expect(request).toHaveBeenCalledWith({
+      url: PAGE_URL,
       method: "GET",
+      followRedirects: true,
+      headers: undefined,
     });
   });
 
   it("returns a failure result when the page fetch fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("connection refused");
-      }),
+    const request = vi.fn(
+      async () =>
+        ({ success: false, error: "connection refused" }) as HttpResponse,
     );
 
-    const result = await extractJavascriptEndpoints({ url: PAGE_URL });
+    const result = await extractJavascriptEndpoints({
+      url: PAGE_URL,
+      ctx: ctxWith(request),
+    });
 
     expect(result.success).toBe(false);
     expect(result.message).toBe(

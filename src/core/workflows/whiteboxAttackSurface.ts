@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
+import type { AgentHooks } from "../agents/offSecAgent";
 import {
   inProcessSubagentSpawner,
   type SubagentSpawner,
@@ -21,6 +22,7 @@ import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
   type App,
   type AppInfo,
+  AppInfoSchema,
   type AppsDiscoveryResult,
   AppsDiscoveryResultSchema,
   type DiscoverySummary,
@@ -31,7 +33,10 @@ import {
   WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
   type WhiteboxAttackSurfaceResult,
 } from "../agents/specialized/whiteboxAttackSurface";
-import { runAppEndpointDocumentation } from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
+import {
+  type AgentConcurrencyLimiter,
+  runAppEndpointDocumentation,
+} from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
 import type {
   AIAuthConfig,
   AIModel,
@@ -40,11 +45,18 @@ import type {
   ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
-import { newSessionId } from "../id/id";
 import { mapAppWithSurface } from "../integrations/surface";
 import { createLogger } from "../logger/structured";
 import type { SessionInfo } from "../session";
+import { collectCommand } from "../tools/backends/collectCommand";
+import type { ToolBackends } from "../tools/backends/types";
 import { scopedLogger } from "../util/lazyLogger";
+import {
+  assertDepth,
+  inProcessSeams,
+  resolveItemHooks,
+  type WorkflowSeams,
+} from "./seams";
 
 const log = scopedLogger(() => createLogger("whitebox-workflow"));
 
@@ -74,6 +86,10 @@ const TASK_TYPE_LABELS = {
   apiEndpoints: "API Endpoints",
   cloudResourceEndpoints: "Cloud Resources",
 } as const satisfies Record<DiscoveryTaskType, string>;
+
+// App types surface doesn't enumerate — these always use the specialized
+// cloud-resource objective, regardless of `surfaceIntegrationEnabled`.
+const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -111,6 +127,12 @@ function toAppMetadata(
 // ---------------------------------------------------------------------------
 
 export interface WhiteboxAttackSurfaceWorkflowInput {
+  /** Preloaded owned-backend artifacts; absent preserves full discovery. */
+  incremental?: {
+    diffPath: string;
+    assetsPath: string;
+    existingResult: WhiteboxAttackSurfaceResult;
+  };
   codebasePath: string;
   model: AIModel;
   session: SessionInfo;
@@ -145,12 +167,247 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   maxConcurrentAgents?: number;
   /** Fan-out spawner. Defaults to the in-process spawner. */
   subagentSpawner?: SubagentSpawner;
+  /**
+   * The caller's full {@link AgentHooks}, forwarded to every CodeAgent this
+   * workflow constructs (Phase 1 apps discovery, Phase 2 per-app/per-endpoint
+   * documentation). A per-app override can come from `seams.hooksForItem`
+   * (`./seams.ts`).
+   */
+  hooks?: AgentHooks;
+  /**
+   * Fan-out / id / hook seams (`./seams.ts`). Defaults to
+   * {@link inProcessSeams}, matching today's in-process behavior.
+   */
+  seams?: WorkflowSeams;
 }
 
 interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 per-app worker
+// ---------------------------------------------------------------------------
+
+/**
+ * Explicit, serializable-by-the-caller input for {@link runWhiteboxAttackSurfaceApp}
+ * — everything one app's Phase-2 worker reads, with no reads of
+ * `runWhiteboxAttackSurfaceWorkflow`'s own local scope. A durable caller
+ * rebuilds `hooks`, `seams`, `mintChildId` and `agentLimiter` on its own side
+ * and runs the app as a separate child workflow.
+ */
+export interface WhiteboxAttackSurfaceAppInput {
+  codebasePath: string;
+  model: AIModel;
+  session: SessionInfo;
+  authConfig?: AIAuthConfig;
+  abortSignal?: AbortSignal;
+  eventBus?: AgentEventBus;
+  attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
+  projectThreatModel?: string;
+  environments?: string[];
+  surfaceIntegrationEnabled: boolean;
+  /** `serviceApps.length === 1` at the time Phase 2 started — forwarded to `mapAppWithSurface`. */
+  isSingleAppRepo: boolean;
+  /** Parent id for this app's own subagent-complete event — the Phase-1 umbrella node. */
+  umbrellaId: string;
+  /** Mints IDs for discovery and per-endpoint documentation children. */
+  mintChildId: (name: string) => string;
+  /** Bounds total concurrent CodeAgents across the whole workflow (Phase 1 + every app). */
+  agentLimiter: AgentConcurrencyLimiter;
+  /** Fan-out spawner forwarded to `runAppEndpointDocumentation`'s own per-endpoint fan-out. */
+  subagentSpawner?: SubagentSpawner;
+  hooks: AgentHooks;
+  seams: WorkflowSeams;
+}
+
+/**
+ * One Phase-2 app: pages/API-endpoints discovery (surface-driven or legacy
+ * fallback) or cloud-resource documentation, then this app's own
+ * subagent-complete event. Closure-free extraction of
+ * `runWhiteboxAttackSurfaceWorkflow`'s per-app worker so a durable caller can
+ * run it as a separate child workflow. Returns whether the app failed.
+ */
+export async function runWhiteboxAttackSurfaceApp(
+  app: AppInfo,
+  appIndex: number,
+  input: WhiteboxAttackSurfaceAppInput,
+): Promise<boolean> {
+  const {
+    codebasePath,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    eventBus,
+    attackSurfaceRegistry,
+    onStepFinish,
+    onCacheMetrics,
+    openAIReasoningEffort,
+    enableThinking,
+    thinkingEffort,
+    projectThreatModel,
+    environments,
+    surfaceIntegrationEnabled,
+    isSingleAppRepo,
+    umbrellaId,
+    mintChildId,
+    agentLimiter,
+    subagentSpawner,
+    hooks: sharedHooks,
+    seams,
+  } = input;
+
+  const appNodeId = `app:${sanitizeName(app.name)}`;
+  // Per-app AgentHooks: seams.hooksForItem can give this one app (and every
+  // endpoint documented under it) different hooks than its siblings;
+  // otherwise it inherits sharedHooks as-is.
+  const hooksForApp = resolveItemHooks(sharedHooks, seams, app, appIndex);
+  let failed = false;
+
+  const spawnDiscoveryAgent = async (
+    type: DiscoveryTaskType,
+    objective: string,
+  ): Promise<void> => {
+    const subagentId = mintChildId(TASK_TYPE_LABELS[type]);
+
+    log.debug(
+      `Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
+    );
+
+    const spawner = subagentSpawner ?? inProcessSubagentSpawner;
+
+    try {
+      await agentLimiter(() =>
+        spawner.spawn<DiscoverySummary>({
+          spec: {
+            type: "code",
+            codebasePath,
+            objective,
+            system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+            excludeTools: ["document_app"],
+            responseSchema: DiscoverySummarySchema,
+            projectThreatModel,
+            attackSurfaceRegistry,
+          },
+          runtime: {
+            model,
+            session,
+            authConfig,
+            abortSignal,
+            enableThinking,
+            thinkingEffort,
+            openAIReasoningEffort,
+            onStepFinish,
+            onCacheMetrics,
+            backends: hooksForApp.backends,
+            sandbox: hooksForApp.sandbox,
+            languageModelMiddleware: hooksForApp.languageModelMiddleware,
+            usageRecorder: hooksForApp.usageRecorder,
+            streamIdFactory: hooksForApp.streamIdFactory,
+          },
+          subagentId,
+          subagentName: TASK_TYPE_LABELS[type],
+          parentBus: eventBus,
+          parentSubagentId: appNodeId,
+          lifecycleInput: { app: app.name, type },
+        }),
+      );
+
+      log.debug(`Phase 2: agent "${subagentId}" completed`);
+    } catch (error) {
+      log.error(
+        `Phase 2: agent "${subagentId}" FAILED`,
+        error instanceof Error ? error : undefined,
+        { error: String(error) },
+      );
+
+      failed = true;
+    }
+  };
+
+  const spawnPagesAgent = (): Promise<void> =>
+    spawnDiscoveryAgent(
+      "pages",
+      buildPagesDiscoveryObjective(codebasePath, app),
+    );
+
+  const spawnApiEndpointsAgent = (): Promise<void> =>
+    spawnDiscoveryAgent(
+      "apiEndpoints",
+      buildApiEndpointsDiscoveryObjective(codebasePath, app),
+    );
+
+  const spawnCloudResourceAgent = (): Promise<void> =>
+    spawnDiscoveryAgent(
+      "cloudResourceEndpoints",
+      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
+    );
+
+  try {
+    if (NON_SERVICE_TYPES.includes(app.type)) {
+      // Cloud resources: surface doesn't enumerate these — always fallback.
+      await spawnCloudResourceAgent();
+    } else if (!surfaceIntegrationEnabled) {
+      log.debug(`${app.name}: legacy (surfaceIntegrationEnabled=false)`);
+      await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+    } else {
+      const surfaceResult = mapAppWithSurface(
+        join(codebasePath, app.location),
+        codebasePath,
+        { isSingleAppRepo },
+      );
+      if (surfaceResult.mode === "surface") {
+        log.debug(
+          `${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
+        );
+
+        await runAppEndpointDocumentation({
+          codebasePath,
+          app,
+          endpoints: surfaceResult.endpoints,
+          frameworks: surfaceResult.frameworks,
+          model,
+          session,
+          authConfig,
+          abortSignal,
+          eventBus,
+          attackSurfaceRegistry,
+          onStepFinish,
+          onCacheMetrics,
+          openAIReasoningEffort,
+          enableThinking,
+          thinkingEffort,
+          projectThreatModel,
+          parentSubagentId: appNodeId,
+          agentLimiter,
+          subagentSpawner,
+          hooks: hooksForApp,
+          mintChildId,
+        });
+      } else {
+        log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
+        await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+      }
+    }
+  } catch {
+    failed = true;
+  }
+
+  eventBus?.emit("subagent-complete", {
+    subagentId: appNodeId,
+    status: failed ? "failed" : "completed",
+    parentSubagentId: umbrellaId,
+  });
+
+  return failed;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,9 +452,20 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     surfaceIntegrationEnabled = true,
     maxConcurrentAgents = MAX_CONCURRENT_AGENTS,
     subagentSpawner,
+    hooks,
+    seams: inputSeams,
   } = input;
 
-  const spawner = subagentSpawner ?? inProcessSubagentSpawner;
+  const seams = inputSeams ?? inProcessSeams();
+  // The shared AgentHooks every CodeAgent in this workflow gets unless
+  // `seams.hooksForItem` overrides it for a given app.
+  const sharedHooks: AgentHooks = { subagentSpawner, ...hooks };
+  // Every child id this workflow mints goes through one monotonic ordinal —
+  // the umbrella node is ordinal 0, everything spawned under it follows in
+  // dispatch order.
+  let nextChildOrdinal = 0;
+  const mintChildId = (name: string): string =>
+    seams.ids.newSessionId(name, nextChildOrdinal++);
 
   // Single shared gate for every CodeAgent run in this workflow (Phase 1
   // discovery, Phase 2 per-app discovery, and per-endpoint documentation). This
@@ -214,22 +482,39 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   // Umbrella node — real `ses_` id so the appsAgent span and its agent_sessions
   // row share one id; also the parent for per-app nodes (held open until Phase 2).
-  const WORKFLOW_UMBRELLA_ID = newSessionId();
+  const WORKFLOW_UMBRELLA_ID = mintChildId("whitebox-apps-discovery");
+
+  if (input.incremental && !hooks?.backends)
+    throw new Error("Incremental recon requires owned artifact backends");
 
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
-    objective: buildAppsDiscoveryObjective(codebasePath, domains, environments),
+    objective: input.incremental
+      ? buildIncrementalObjective(
+          codebasePath,
+          input.incremental.diffPath,
+          input.incremental.assetsPath,
+          input.incremental.existingResult,
+          domains,
+          environments,
+        ).replace(
+          "- **Non-route changes** (e.g. utility functions, configs, tests) → skip",
+          "- **Shared-library/configuration changes** → trace affected consumers and update only impacted endpoint assets; skip unrelated changes",
+        ) +
+        "\nTrace changed shared libraries, deleted files, and root/build/deployment configuration to the applications that consume them. A path outside an application directory does not prove that application is unaffected. Leave unrelated endpoint artifacts unchanged."
+      : buildAppsDiscoveryObjective(codebasePath, domains, environments),
     // Phase 1 uses an apps-only system prompt (no document_endpoint guidance)
     // paired with `excludeTools: ["document_endpoint"]`. The shared
     // WHITEBOX_DISCOVERY_SYSTEM_PROMPT instructs every agent to call
     // document_endpoint per route — strong enough that Phase 1 would
     // improvise by abusing document_app for individual routes if the prompt
     // mentioned the tool at all. The variant below removes those mentions.
-    system: WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
+    system: input.incremental
+      ? WHITEBOX_DISCOVERY_SYSTEM_PROMPT
+      : WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
     model,
     session,
     authConfig,
-    abortSignal,
     attackSurfaceRegistry,
     eventBus,
     subagentId: WORKFLOW_UMBRELLA_ID,
@@ -239,11 +524,18 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     openAIReasoningEffort,
     enableThinking,
     thinkingEffort,
-    responseSchema: AppsDiscoveryResultSchema,
+    responseSchema: input.incremental
+      ? IncrementalReconResultSchema
+      : AppsDiscoveryResultSchema,
     projectThreatModel,
     // Reserved for Phase 2's per-app task agents. Inline documentation
     // here would flatten the UI hierarchy under Phase 1.
-    excludeTools: ["document_endpoint"],
+    excludeTools: input.incremental ? [] : ["document_endpoint"],
+    ...sharedHooks,
+    ...(input.incremental
+      ? { attackSurfaceArtifactsPath: input.incremental.assetsPath }
+      : {}),
+    abortSignal,
   });
 
   log.info(
@@ -257,6 +549,22 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   });
 
   const appsResult = await agentLimiter(() => appsAgent.consume());
+
+  if (input.incremental) {
+    if (!hooks?.backends)
+      throw new Error("Incremental recon requires owned artifact backends");
+    const result = await readIncrementalReconAssets(
+      hooks.backends,
+      input.incremental.assetsPath,
+      input.incremental.existingResult,
+      abortSignal,
+    );
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "completed",
+    });
+    return result;
+  }
 
   log.info(
     `Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -322,7 +630,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   log.info(`Phase 2: surfaceIntegrationEnabled=${surfaceIntegrationEnabled}`);
 
-  const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
   const serviceApps = appsResult.apps.filter(
     (app) => !NON_SERVICE_TYPES.includes(app.type),
   );
@@ -344,181 +651,53 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   // Synthetic grouping nodes between the umbrella and per-task agents,
   // so the UI nests pages/api/endpoint-doc agents under their app.
-  const appNodeIdFor = (appName: string) => `app:${sanitizeName(appName)}`;
-  const appAnyTaskFailed = new Map<string, boolean>();
   for (const app of appsResult.apps) {
-    const appNodeId = appNodeIdFor(app.name);
-    appAnyTaskFailed.set(app.name, false);
     eventBus?.emit("subagent-spawn", {
-      subagentId: appNodeId,
+      subagentId: `app:${sanitizeName(app.name)}`,
       name: app.name,
       input: { app: app.name, type: app.type, framework: app.framework },
       parentSubagentId: WORKFLOW_UMBRELLA_ID,
     });
   }
 
-  const spawnDiscoveryAgent = async (
-    app: AppInfo,
-    type: DiscoveryTaskType,
-    objective: string,
-  ): Promise<void> => {
-    const subagentId = newSessionId();
-    const appNodeId = appNodeIdFor(app.name);
-
-    log.debug(
-      `Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
-    );
-
-    eventBus?.emit("subagent-spawn", {
-      subagentId,
-      name: TASK_TYPE_LABELS[type],
-      input: { app: app.name, type },
-      parentSubagentId: appNodeId,
-    });
-
-    const agent = new CodeAgent<DiscoverySummary>({
-      codebasePath,
-      objective,
-      system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-      model,
-      session,
-      authConfig,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      subagentName: TASK_TYPE_LABELS[type],
-      onStepFinish: (event) => onStepFinish?.(event),
-      onCacheMetrics,
-      openAIReasoningEffort,
-      enableThinking,
-      thinkingEffort,
-      responseSchema: DiscoverySummarySchema,
-      excludeTools: ["document_app"],
-      projectThreatModel,
-    });
-
-    try {
-      await agentLimiter(() => agent.consume());
-
-      log.debug(`Phase 2: agent "${subagentId}" completed`);
-
-      eventBus?.emit("subagent-complete", {
-        subagentId,
-        status: "completed",
-        parentSubagentId: appNodeId,
-      });
-    } catch (error) {
-      log.error(
-        `Phase 2: agent "${subagentId}" FAILED`,
-        error instanceof Error ? error : undefined,
-        { error: String(error) },
-      );
-
-      appAnyTaskFailed.set(app.name, true);
-      eventBus?.emit("subagent-complete", {
-        subagentId,
-        status: "failed",
-        parentSubagentId: appNodeId,
-      });
-    }
+  const appWorkerInput: WhiteboxAttackSurfaceAppInput = {
+    codebasePath,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    eventBus,
+    attackSurfaceRegistry,
+    onStepFinish,
+    onCacheMetrics,
+    openAIReasoningEffort,
+    enableThinking,
+    thinkingEffort,
+    projectThreatModel,
+    environments,
+    surfaceIntegrationEnabled,
+    isSingleAppRepo: serviceApps.length === 1,
+    umbrellaId: WORKFLOW_UMBRELLA_ID,
+    mintChildId,
+    agentLimiter,
+    subagentSpawner,
+    hooks: sharedHooks,
+    seams,
   };
 
-  const spawnPagesAgent = (app: AppInfo): Promise<void> =>
-    spawnDiscoveryAgent(
-      app,
-      "pages",
-      buildPagesDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnApiEndpointsAgent = (app: AppInfo): Promise<void> =>
-    spawnDiscoveryAgent(
-      app,
-      "apiEndpoints",
-      buildApiEndpointsDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnCloudResourceAgent = (app: AppInfo): Promise<void> =>
-    spawnDiscoveryAgent(
-      app,
-      "cloudResourceEndpoints",
-      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
-    );
-
-  await spawner.spawnMany(
+  assertDepth(1, seams.limits);
+  await seams.fanOut.spawnMany(
     appsResult.apps,
-    async (app) => {
-      const appNodeId = appNodeIdFor(app.name);
-      try {
-        if (NON_SERVICE_TYPES.includes(app.type)) {
-          // Cloud resources: surface doesn't enumerate these — always fallback.
-          await spawnCloudResourceAgent(app);
-        } else if (!surfaceIntegrationEnabled) {
-          log.debug(`${app.name}: legacy (surfaceIntegrationEnabled=false)`);
-          await Promise.all([
-            spawnPagesAgent(app),
-            spawnApiEndpointsAgent(app),
-          ]);
-        } else {
-          const surfaceResult = mapAppWithSurface(
-            join(codebasePath, app.location),
-            codebasePath,
-            { isSingleAppRepo: serviceApps.length === 1 },
-          );
-          if (surfaceResult.mode === "surface") {
-            log.debug(
-              `${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
-            );
+    async (app, appIndex) => {
+      await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
 
-            await runAppEndpointDocumentation({
-              codebasePath,
-              app,
-              endpoints: surfaceResult.endpoints,
-              frameworks: surfaceResult.frameworks,
-              model,
-              session,
-              authConfig,
-              abortSignal,
-              eventBus,
-              attackSurfaceRegistry,
-              onStepFinish,
-              onCacheMetrics,
-              openAIReasoningEffort,
-              enableThinking,
-              thinkingEffort,
-              projectThreatModel,
-              parentSubagentId: appNodeId,
-              agentLimiter,
-              subagentSpawner,
-            });
-          } else {
-            log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
-            await Promise.all([
-              spawnPagesAgent(app),
-              spawnApiEndpointsAgent(app),
-            ]);
-          }
-        }
-      } catch {
-        appAnyTaskFailed.set(app.name, true);
-      } finally {
-        completedAppCount++;
+      completedAppCount++;
 
-        const appStatus = appAnyTaskFailed.get(app.name)
-          ? ("failed" as const)
-          : ("completed" as const);
-        eventBus?.emit("subagent-complete", {
-          subagentId: appNodeId,
-          status: appStatus,
-          parentSubagentId: WORKFLOW_UMBRELLA_ID,
-        });
-
-        eventBus?.emit("app-analysis-progress", {
-          totalApps,
-          completedApps: completedAppCount,
-          appName: app.name,
-        });
-      }
+      eventBus?.emit("app-analysis-progress", {
+        totalApps,
+        completedApps: completedAppCount,
+        appName: app.name,
+      });
     },
     { concurrency: DEFAULT_CONCURRENCY },
   );
@@ -1090,7 +1269,10 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     attackSurfaceRegistry,
     onStepFinish,
     projectThreatModel,
+    seams: inputSeams,
   } = input;
+
+  const seams = inputSeams ?? inProcessSeams();
 
   // =========================================================================
   // Phase 1: Generate diff file
@@ -1207,7 +1389,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     input.environments,
   );
 
-  const incrementalSubagentId = newSessionId();
+  const incrementalSubagentId = seams.ids.newSessionId("incremental-recon", 0);
   const agent = new CodeAgent<IncrementalResult>({
     codebasePath,
     objective,
@@ -1215,7 +1397,6 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     model,
     session,
     authConfig,
-    abortSignal,
     attackSurfaceRegistry,
     eventBus,
     subagentId: incrementalSubagentId,
@@ -1226,6 +1407,9 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
+    subagentSpawner: input.subagentSpawner,
+    ...input.hooks,
+    abortSignal,
   });
 
   eventBus?.emit("subagent-spawn", {
@@ -1395,3 +1579,162 @@ When finished, call the \`response\` tool with a summary of your changes.
 
 **IMPORTANT:** Be conservative. Only add/modify/remove endpoints that are clearly affected by the diff. Do not re-analyze the entire codebase.`;
 }
+
+const IncrementalReconResultSchema = z.object({
+  repoType: z.string(),
+  packageManager: z.string(),
+  changedApps: z
+    .array(z.string())
+    .describe("Names of applications that were affected by the diff"),
+  addedEndpoints: z.number().describe("Count of new endpoints added"),
+  modifiedEndpoints: z
+    .number()
+    .describe("Count of existing endpoints modified"),
+  removedEndpoints: z.number().describe("Count of endpoints removed"),
+  summary: z.string().describe("Brief summary of what changed"),
+});
+
+async function readIncrementalReconAssets(
+  backends: ToolBackends,
+  assetsPath: string,
+  existing: WhiteboxAttackSurfaceResult,
+  abortSignal?: AbortSignal,
+): Promise<WhiteboxAttackSurfaceResult> {
+  const fs = backends.fs;
+  const list = async (path: string) => {
+    abortSignal?.throwIfAborted();
+    const result = await fs.list(path);
+    if (!result.success)
+      throw new Error(`Incomplete recon asset listing: ${path}`);
+    if (!result.truncated) return result.files;
+    const files: string[] = [];
+    let total: number | undefined;
+    for (let offset = 0; ; ) {
+      abortSignal?.throwIfAborted();
+      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+      const output = await collectCommand(
+        backends.command.run(
+          `python3 -c ${quote(RECON_ARTIFACT_PAGE_SCRIPT)} ${quote(assetsPath)} ${quote(path)} ${offset}`,
+          { timeoutSeconds: 30, abortSignal },
+        ),
+      );
+      if (output.exitCode !== 0 || output.timedOut || output.stdoutTruncated)
+        throw new Error(`Recon artifact enumeration failed: ${path}`);
+      const page = z
+        .object({
+          files: z.array(z.string()).max(64),
+          total: z.number().int().min(0).max(100000),
+          next: z.number().int().min(1).nullable(),
+        })
+        .parse(JSON.parse(output.stdout));
+      total ??= page.total;
+      if (
+        page.total !== total ||
+        (page.next !== null && page.next !== offset + page.files.length) ||
+        (page.next !== null && (page.files.length === 0 || page.next >= total))
+      )
+        throw new Error(
+          "Recon artifact enumeration did not advance consistently",
+        );
+      files.push(...page.files);
+      if (page.next === null) {
+        if (files.length !== total || new Set(files).size !== total)
+          throw new Error("Incomplete recon artifact pagination");
+        return files;
+      }
+      offset = page.next;
+    }
+  };
+  const read = async (path: string): Promise<unknown> => {
+    abortSignal?.throwIfAborted();
+    const result = await fs.readRaw(path);
+    if (!result.success) throw new Error(`Recon artifact read failed: ${path}`);
+    return JSON.parse(result.content);
+  };
+  const apps: App[] = [];
+  for (const directory of await list(assetsPath)) {
+    if (!directory.endsWith("/")) continue;
+    if (
+      directory === "../" ||
+      directory === "./" ||
+      directory.slice(0, -1).includes("/")
+    )
+      throw new Error("Invalid recon artifact directory");
+    const appPath = join(assetsPath, directory);
+    const metadata = AppInfoSchema.parse(await read(join(appPath, "app.json")));
+    const previousApp = existing.apps.find((app) => app.name === metadata.name);
+    const app: App = {
+      ...previousApp,
+      ...metadata,
+      pages: [],
+      apiEndpoints: [],
+    };
+    for (const file of await list(appPath)) {
+      if (file === "app.json" || !file.endsWith(".json")) continue;
+      if (file.includes("/") || file === "..")
+        throw new Error("Invalid recon artifact filename");
+      const raw = await read(join(appPath, file));
+      const record = z
+        .object({
+          method: z.union([z.string(), z.array(z.string())]),
+          routePath: z.string(),
+        })
+        .passthrough()
+        .parse(raw) as DocumentedEndpointRecord;
+      const endpoint = assetRecordToEndpoint(record);
+      if (!endpoint)
+        throw new Error(`Invalid recon endpoint artifact: ${file}`);
+      const previous =
+        previousApp &&
+        [...previousApp.pages, ...previousApp.apiEndpoints].find(
+          (ep) =>
+            ep.method === endpoint.method &&
+            ep.file === endpoint.file &&
+            ep.path === endpoint.path,
+        );
+      const restored = {
+        ...previous,
+        ...endpoint,
+        ...(endpoint.riskScore
+          ? {}
+          : previous?.riskScore
+            ? { riskScore: previous.riskScore }
+            : {}),
+      };
+      (isPageEndpoint(record) ? app.pages : app.apiEndpoints).push(restored);
+    }
+    apps.push(app);
+  }
+  return {
+    ...existing,
+    apps,
+    summary: {
+      totalApps: apps.length,
+      totalPages: apps.reduce((sum, app) => sum + app.pages.length, 0),
+      totalApiEndpoints: apps.reduce(
+        (sum, app) => sum + app.apiEndpoints.length,
+        0,
+      ),
+      totalPentestObjectives: apps.reduce(
+        (sum, app) =>
+          sum +
+          [...app.pages, ...app.apiEndpoints].reduce(
+            (count, ep) => count + ep.pentestObjectives.length,
+            0,
+          ),
+        0,
+      ),
+    },
+  };
+}
+
+const RECON_ARTIFACT_PAGE_SCRIPT = `import os,sys,json,itertools
+base=os.path.realpath(sys.argv[1]); directory=os.path.realpath(sys.argv[2]); offset=int(sys.argv[3])
+if os.path.commonpath([base,directory]) != base: raise ValueError("Artifact directory escaped root")
+with os.scandir(directory) as scan:
+ entries=list(itertools.islice(scan,100001))
+if len(entries)>100000: raise ValueError("Artifact inventory exceeds limit")
+if any(entry.is_symlink() for entry in entries): raise ValueError("Artifact links are not supported")
+files=sorted(entry.name+("/" if entry.is_dir() else "") for entry in entries)
+end=min(len(files),offset+64)
+print(json.dumps({"files":files[offset:end],"total":len(files),"next":end if end<len(files) else None}))`;

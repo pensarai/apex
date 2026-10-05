@@ -1,8 +1,7 @@
 import { stepCountIs, tool } from "ai";
-import {
-  OffensiveSecurityAgent,
-  type SpecializedAgentInput,
-} from "../../offSecAgent";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
 import { WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import {
   type WhiteboxAttackSurfaceResult,
@@ -105,67 +104,77 @@ export interface WhiteboxAttackSurfaceAgentInput extends SpecializedAgentInput {
  * console.log(`Found ${result.summary.totalApiEndpoints} API endpoints`);
  * ```
  */
-export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxAttackSurfaceResult> {
-  constructor(opts: WhiteboxAttackSurfaceAgentInput) {
-    const { codebasePath, domains, ...base } = opts;
+/** Per-construction capture: the `submit_results` tool stashes the model's
+ * validated payload here and `resolveResult` reads it back once the run ends. */
+interface WhiteboxState {
+  capturedResult: WhiteboxAttackSurfaceResult | null;
+}
 
-    // The `submit_results` tool stashes the model's structured payload here and
-    // `resolveResult` reads it back once the run ends — a per-run capture.
-    let capturedResult: WhiteboxAttackSurfaceResult | null = null;
-
-    super({
-      ...base,
-      system: WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
-      activeTools: [
-        // Filesystem tools — for Phase 1 repo identification
-        "read_file",
-        "list_files",
-        "grep",
-        "document_app",
-        "document_endpoint",
-        // Orchestration — for Phase 2 app analysis
-        "spawn_coding_agent",
-        // Response tool (injected via extraTools)
-        "submit_results",
-      ],
-      // Stop on a *successful* submission, not merely on the tool call. A
-      // `submit_results` call whose arguments fail schema validation never sets
-      // `capturedResult`, so the loop continues and the model gets another turn
-      // to fix and resubmit (aided by tool-call repair). `stepCountIs` is only a
-      // safety cap for a model that never produces a valid submission.
-      stopWhen: [
-        () => capturedResult !== null,
-        stepCountIs(WHITEBOX_MAX_STEPS),
-      ],
-      extraTools: {
-        ...base.extraTools,
-        [SUBMIT_RESULTS_TOOL_NAME]: tool({
-          description: `Submit the final whitebox attack surface analysis results.
+export const whiteboxAttackSurfaceDefinition = defineAgent<
+  WhiteboxAttackSurfaceAgentInput,
+  WhiteboxAttackSurfaceResult,
+  WhiteboxState
+>({
+  name: "whitebox-attack-surface",
+  role: "orchestrator",
+  createState: () => ({ capturedResult: null }),
+  system: () => WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
+  activeTools: () => [
+    // Filesystem tools — for Phase 1 repo identification
+    "read_file",
+    "list_files",
+    "grep",
+    "document_app",
+    "document_endpoint",
+    // Orchestration — for Phase 2 app analysis
+    "spawn_coding_agent",
+    // Response tool (injected via extraTools)
+    "submit_results",
+  ],
+  // Stop on a *successful* submission, not merely on the tool call. A
+  // `submit_results` call whose arguments fail schema validation never sets
+  // `capturedResult`, so the loop continues and the model gets another turn
+  // to fix and resubmit (aided by tool-call repair). `stepCountIs` is only a
+  // safety cap for a model that never produces a valid submission.
+  stopWhen: (_opts, state) => [
+    () => state.capturedResult !== null,
+    stepCountIs(WHITEBOX_MAX_STEPS),
+  ],
+  extraTools: (_opts, state) => ({
+    [SUBMIT_RESULTS_TOOL_NAME]: tool({
+      description: `Submit the final whitebox attack surface analysis results.
 
 Call this ONCE at the end with your complete structured findings.
 This ends the agent run — make sure all data is included.`,
-          inputSchema: WhiteboxAttackSurfaceResultSchema,
-          execute: async (results) => {
-            capturedResult = results;
-            return { success: true, message: "Results submitted." };
-          },
-        }),
+      inputSchema: WhiteboxAttackSurfaceResultSchema,
+      execute: async (results) => {
+        state.capturedResult = results;
+        return { success: true, message: "Results submitted." };
       },
-      resolveResult: async (streamResult) => {
-        // `capturedResult` is only set by a submission that passed validation.
-        // If it's null but the model *did* call `submit_results` (the call was
-        // rejected on a bad field), fail loud rather than masking the discarded
-        // recon with an empty fallback.
-        const steps = await streamResult.steps;
-        const submitAttempted = steps.some((step) =>
-          step.toolCalls.some(
-            (call) => call.toolName === SUBMIT_RESULTS_TOOL_NAME,
-          ),
-        );
-        return finalizeWhiteboxResult(capturedResult, submitAttempted);
-      },
-      prompt: buildPrompt(codebasePath, domains, base.session.config?.prompt),
-    });
+    }),
+  }),
+  resolveResult: async (_opts, state, streamResult) => {
+    // `capturedResult` is only set by a submission that passed validation.
+    // If it's null but the model *did* call `submit_results` (the call was
+    // rejected on a bad field), fail loud rather than masking the discarded
+    // recon with an empty fallback.
+    const steps = await streamResult.steps;
+    const submitAttempted = steps.some((step) =>
+      step.toolCalls.some((call) => call.toolName === SUBMIT_RESULTS_TOOL_NAME),
+    );
+    return finalizeWhiteboxResult(state.capturedResult, submitAttempted);
+  },
+  prompt: (opts) =>
+    buildPrompt(opts.codebasePath, opts.domains, opts.session.config?.prompt),
+});
+
+export class WhiteboxAttackSurfaceAgent extends AgentRuntime<
+  WhiteboxAttackSurfaceAgentInput,
+  WhiteboxAttackSurfaceResult,
+  WhiteboxState
+> {
+  constructor(opts: WhiteboxAttackSurfaceAgentInput) {
+    super(whiteboxAttackSurfaceDefinition, opts);
   }
 }
 

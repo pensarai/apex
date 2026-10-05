@@ -98,10 +98,15 @@ async function measure(
 
   let run: () => Promise<unknown>;
   if (mode === "fetched") {
-    globalThis.fetch = (async () =>
-      new Response(html)) as unknown as typeof fetch;
     const helper = extraction.extractJavascriptEndpoints;
-    run = () => helper({ url });
+    // The page fetch routes through the tool http backend (design §3.2), so
+    // the benchmark injects a backend that returns the fixture body.
+    const ctx = {
+      backends: {
+        http: { request: async () => ({ success: true, body: html }) },
+      },
+    } as unknown as Parameters<typeof helper>[0]["ctx"];
+    run = () => helper({ url, ctx });
   } else if (mode === "pure") {
     const pure = extraction.extractJavascriptEndpointsFromHtml;
     run = () => Promise.resolve(pure(html, url));
