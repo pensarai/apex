@@ -166,14 +166,20 @@ describe("artifact summary append", () => {
 });
 
 describe("script transport resolution", () => {
-  it("executes a native script path without shell interpretation", async () => {
+  it.each([
+    "native",
+    "injected",
+  ])("executes a %s script path without shell interpretation", async (transport) => {
     const ctx = await context();
+    if (transport === "injected") {
+      ctx.backends = LocalBackends(ctx);
+    }
     const path = join(ctx.agentCwd, "proof ' $HOME & %.js");
     await writeFile(path, "console.log(process.argv[1])");
     const result = await collectCommand(
       resolveScriptRunner(ctx)(process.execPath, path, { timeoutSeconds: 10 }),
     );
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, JSON.stringify(result)).toBe(0);
     expect(result.stdout.trim()).toBe(path);
   });
 
@@ -201,6 +207,37 @@ describe("script transport resolution", () => {
     } finally {
       Object.defineProperty(process, "platform", platform);
     }
+  });
+
+  it("keeps Windows program arguments out of the command interpreter", async () => {
+    const ctx = await context();
+    const run = vi.fn<CommandBackend["run"]>(async function* () {
+      yield { type: "end", exitCode: 0, timedOut: false };
+    });
+    ctx.backends = {
+      ...LocalBackends(ctx),
+      command: { platform: "windows", run },
+    };
+    const path = String.raw`C:\Ada's POCs\proof & %PATH% !.js`;
+    await collectCommand(
+      resolveScriptRunner(ctx)("node", path, {
+        envVars: { KEEP: "value" },
+        timeoutSeconds: 37,
+      }),
+    );
+    const [command, options] = run.mock.calls[0];
+    expect(command).toMatch(
+      /^powershell\.exe .* -EncodedCommand [A-Za-z0-9+/=]+$/,
+    );
+    expect(command).not.toContain(path);
+    expect(options).toMatchObject({
+      timeoutSeconds: 37,
+      envVars: {
+        KEEP: "value",
+        APEX_PROGRAM_FILE: "node",
+        APEX_PROGRAM_ARGS_0: `"${path}"`,
+      },
+    });
   });
 
   it("does not fall back to native execution after an injected failure", async () => {

@@ -287,7 +287,10 @@ export async function runSpawnedPentestWorker(
     openAIReasoningEffort: input.openAIReasoningEffort,
     display: input.display,
     ...hooks,
-    abortSignal: input.abortSignal,
+    abortSignal:
+      input.abortSignal && hooks.abortSignal
+        ? AbortSignal.any([input.abortSignal, hooks.abortSignal])
+        : (input.abortSignal ?? hooks.abortSignal),
   });
 
   input.onAgentConstructed?.(agent);

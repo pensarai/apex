@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { type GitDiffResult, gitDiff } from "./gitDiff";
 import { type GitStatusResult, gitStatus } from "./gitStatus";
 import { PerCommandShell } from "./perCommandShell";
@@ -182,5 +182,56 @@ describe("git_status truncated capture evidence", () => {
     expect(result.success).toBe(true);
     expect(result.error).toBe("");
     expect(result.diff).toContain("+added");
+  });
+});
+
+describe("git backend boundary", () => {
+  it("executes in the owned sandbox with the repository cwd and deadline", async () => {
+    const execute = vi.fn(async () => ({
+      success: true,
+      stdout: " M remote.ts\n",
+      stderr: "",
+      exitCode: 0,
+    }));
+    const local = vi.fn();
+    const ctx = {
+      agentCwd: "/remote/repo",
+      session: { id: "ses_remote", rootPath: "/host/session" },
+      sandbox: { execute },
+      commandShell: { execute: local },
+    } as unknown as ToolContext;
+    const result = (await gitStatus(ctx).execute?.(
+      { toolCallDescription: "status" },
+      { toolCallId: "git", messages: [] },
+    )) as GitStatusResult;
+    expect(result.status).toBe("M remote.ts");
+    expect(result.cwd).toBe("/remote/repo");
+    expect(execute).toHaveBeenCalledWith(
+      "git 'status' '--porcelain'",
+      expect.objectContaining({ cwd: "/remote/repo", timeout: 30 }),
+    );
+    expect(local).not.toHaveBeenCalled();
+  });
+
+  it("propagates an injected Git failure without executing elsewhere", async () => {
+    const failure = new Error("durable git unavailable");
+    const git = vi.fn().mockRejectedValue(failure);
+    const execute = vi.fn();
+    const ctx = {
+      agentCwd: "/repo",
+      session: { id: "ses_git" },
+      backends: { fs: { git } },
+      sandbox: { execute },
+      commandShell: { execute },
+    } as unknown as ToolContext;
+    await expect(
+      gitDiff(ctx).execute?.(
+        { path: "src", staged: true, toolCallDescription: "diff" },
+        { toolCallId: "git", messages: [] },
+      ),
+    ).rejects.toBe(failure);
+    expect(git).toHaveBeenCalledOnce();
+    expect(git).toHaveBeenCalledWith("diff", { path: "src", staged: true });
+    expect(execute).not.toHaveBeenCalled();
   });
 });

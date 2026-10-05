@@ -262,6 +262,13 @@ export function LocalBackends(
   };
 
   const command: ToolBackends["command"] = {
+    platform: (
+      ctx.sandbox
+        ? ctx.sandbox.type === "windows"
+        : process.platform === "win32"
+    )
+      ? "windows"
+      : "posix",
     run(cmd: string, o?: RunOpts): AsyncIterable<CommandEvent> {
       return runCommand(ctx, policy, cmd, o);
     },
@@ -664,33 +671,12 @@ async function fetchReadable(
     const headers = mergeBaselineHeaders(
       resolveEffectiveHeaders(resolverSessionFromCtx(ctx), url),
     );
-    const sandboxResponse = ctx.sandbox
-      ? await requestSandboxHttp(
-          { ...ctx, abortSignal: combinedSignal },
-          {
-            url,
-            method: "GET",
-            headers,
-            followRedirects: true,
-            timeout: o?.timeoutMs ?? CAPS.READABILITY_TIMEOUT_MS,
-          },
-        )
-      : undefined;
-    const response = sandboxResponse
-      ? {
-          ok: sandboxResponse.status >= 200 && sandboxResponse.status < 300,
-          status: sandboxResponse.status,
-          statusText: sandboxResponse.statusText,
-          headers: new Headers(sandboxResponse.headers),
-          redirected: sandboxResponse.redirected,
-          body: null,
-        }
-      : await fetch(url, {
-          method: "GET",
-          headers,
-          signal: combinedSignal,
-          redirect: "follow",
-        });
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: combinedSignal,
+      redirect: "follow",
+    });
 
     if (!response.ok) {
       response.body?.cancel().catch(() => {});
@@ -725,23 +711,11 @@ async function fetchReadable(
       };
     }
 
-    const read = sandboxResponse
-      ? {
-          text: sandboxResponse.body,
-          stopReason: sandboxResponse.capture.complete
-            ? ("end" as const)
-            : sandboxResponse.capture.stopReason === "byte-cap"
-              ? ("byte-cap" as const)
-              : sandboxResponse.capture.stopReason === "aborted"
-                ? ("aborted" as const)
-                : ("error" as const),
-          cause: sandboxResponse.error,
-        }
-      : await readHttpBodyCapped(
-          response as Response,
-          5 * 1024 * 1024,
-          combinedSignal,
-        );
+    const read = await readHttpBodyCapped(
+      response,
+      5 * 1024 * 1024,
+      combinedSignal,
+    );
     const producerStop =
       read.stopReason === "end"
         ? undefined
