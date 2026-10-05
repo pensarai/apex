@@ -20,6 +20,8 @@ export {
   createNativeRolloutEvidenceCapture,
   DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
 } from "../ai";
+export type { RecordedRunSpec, RunRecord, RunStore } from "../runtime/runStore";
+export { openSqliteRunStore } from "../runtime/sqliteRunStore";
 export type {
   AppDetail,
   ApplicationType,
@@ -135,6 +137,11 @@ export {
 } from "./offesecAgent";
 export type { PatchingAgentInput, PatchResult } from "./patching";
 export { runPatchingAgent } from "./patching";
+export type {
+  RecordedRunAgentInput,
+  RecordedRunOutcome,
+} from "./recordedRun";
+export { runRecordedAgent } from "./recordedRun";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,

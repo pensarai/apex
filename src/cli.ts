@@ -265,6 +265,7 @@ Usage:
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar apps                         Manage the attack surface (apps & endpoints)
   pensar pentests                     List and manage pentests
+  pensar agent-runs                   Record and inspect local agent runs
   pensar targets                      List pentest targets and view their agent logs
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
@@ -818,6 +819,9 @@ try {
   } else if (command === "pentests") {
     process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
     await import("./cli/pentests");
+  } else if (command === "agent-runs") {
+    const { runAgentRunsCommand } = await import("./cli/agent-runs");
+    await runAgentRunsCommand(args.slice(1));
   } else if (command === "targets") {
     process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
     await import("./cli/targets");
