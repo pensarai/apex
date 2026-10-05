@@ -10,6 +10,7 @@ import type {
   RunControlStore,
 } from "../runtime/runControlStore";
 import type { RunModelStore } from "../runtime/runModelStore";
+import type { RunRecoveryStore } from "../runtime/runRecoveryStore";
 import {
   type RecordedRunSpec,
   RecordedRunSpecSchema,
@@ -68,7 +69,20 @@ function makeStore() {
   let record: RunRecord | undefined;
   let control: RunControlRecord | undefined;
   const transitionFailures = new Map<string, unknown>();
-  const store: RunModelStore & RunToolStore & RunControlStore = {
+  const store: RunModelStore &
+    RunToolStore &
+    RunControlStore &
+    RunRecoveryStore = {
+    acquireExecutionLock: async (runId: string) => ({
+      runId,
+      release: vi.fn(),
+    }),
+    enrollRecovery: async () => ({}) as never,
+    getRecoveryEnrollment: async () => undefined,
+    listRecoveries: async () => [],
+    claimRecovery: async () => {
+      throw new Error("Unexpected recovery");
+    },
     initializeControl: async (runId: string, executionAttemptId: string) => {
       control = {
         schemaVersion: 1,

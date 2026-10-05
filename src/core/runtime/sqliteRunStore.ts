@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
+import { mkdir, open, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -7,8 +7,10 @@ import { type ModelMessage, modelMessageSchema } from "ai";
 import { z } from "zod";
 import { newSessionId } from "../id/id";
 import { getCurrentVersion } from "../installation";
+import { acquireLocalRunLock } from "./localRunLock";
 import type { RunControlStore } from "./runControlStore";
 import type { RunModelStore } from "./runModelStore";
+import type { ExecutionLock, RunRecoveryStore } from "./runRecoveryStore";
 import {
   type RecordedRunSpec,
   RecordedRunSpecSchema,
@@ -24,6 +26,10 @@ import {
   createSqliteModelStore,
   MODEL_STORE_SCHEMA_SQL,
 } from "./sqliteModelStore";
+import {
+  createSqliteRecoveryStore,
+  RECOVERY_STORE_SCHEMA_SQL,
+} from "./sqliteRecoveryStore";
 import {
   createSqliteToolStore,
   TOOL_STORE_SCHEMA_SQL,
@@ -41,7 +47,7 @@ interface Database {
 }
 
 const APPLICATION_ID = 0x41505258;
-const STORE_VERSION = 5;
+const STORE_VERSION = 6;
 
 const EvidenceSchema = z
   .object({
@@ -146,7 +152,12 @@ export async function openSqliteRunStore(
     "runtime",
     "runs.sqlite",
   ),
-): Promise<RunModelStore & RunToolStore & RunControlStore & { close(): void }> {
+): Promise<
+  RunModelStore &
+    RunToolStore &
+    RunControlStore &
+    RunRecoveryStore & { close(): void }
+> {
   // Leave the other runtime's builtin unresolved in both bundled distributions.
   const moduleName = typeof Bun !== "undefined" ? "bun:sqlite" : "node:sqlite";
   let sqlite: {
@@ -165,7 +176,11 @@ export async function openSqliteRunStore(
   await mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 });
   const file = await open(resolved, "a", 0o600);
   await file.close();
-  const db = new Constructor(resolved);
+  const canonicalPath = await realpath(resolved);
+  const db = new Constructor(canonicalPath);
+  const heldLocks = new Map<string, ExecutionLock>();
+  const freshAdmissions = new Set<string>();
+  let closed = false;
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA foreign_keys = ON");
@@ -182,7 +197,7 @@ export async function openSqliteRunStore(
       ) {
         throw new Error("Database is not an Apex run store");
       }
-      if (![0, 1, 2, 3, 4, STORE_VERSION].includes(version.user_version)) {
+      if (![0, 1, 2, 3, 4, 5, STORE_VERSION].includes(version.user_version)) {
         throw new Error(
           `Unsupported run store version: ${version.user_version}`,
         );
@@ -231,6 +246,10 @@ export async function openSqliteRunStore(
       }
       if (version.user_version < 5) {
         db.exec(CONTROL_STORE_SCHEMA_SQL);
+        db.exec("PRAGMA user_version = 5");
+      }
+      if (version.user_version < 6) {
+        db.exec(RECOVERY_STORE_SCHEMA_SQL);
         db.exec(`PRAGMA user_version = ${STORE_VERSION}`);
       }
     });
@@ -294,6 +313,7 @@ export async function openSqliteRunStore(
     };
 
     const controlStore = createSqliteControlStore({
+      assertExecutionLock: (id) => recoveryStore.assertExecutionLock(id),
       db,
       transaction: (operation) => transaction(db, operation),
       getRun: get,
@@ -303,13 +323,54 @@ export async function openSqliteRunStore(
       },
     });
 
+    const recoveryStore = createSqliteRecoveryStore({
+      db,
+      transaction: (operation) => transaction(db, operation),
+      getRun: get,
+      getContextReference: (id) => {
+        const head = headContext(id);
+        return head ? { epoch: head.epoch, revision: head.revision } : null;
+      },
+      readControl: controlStore.readControl,
+      databasePath: canonicalPath,
+      runtimeVersion: getCurrentVersion(),
+      isFreshAdmission: (id) => freshAdmissions.has(id),
+      lockHeld: (id) => heldLocks.has(id),
+    });
+    const getForExecution = (id: string) => {
+      recoveryStore.assertExecutionLock(id);
+      return get(id);
+    };
+
     return {
+      ...recoveryStore.methods,
+      async acquireExecutionLock(runId) {
+        if (closed) throw new Error("Run store is closed");
+        if (!get(runId)) throw new Error("Run does not exist");
+        if (heldLocks.has(runId))
+          throw new Error("Execution lock is already held");
+        const acquired = await acquireLocalRunLock(runId, canonicalPath);
+        if (closed || heldLocks.has(runId)) {
+          acquired.release();
+          throw new Error("Run store closed or execution lock already held");
+        }
+        const lock: ExecutionLock = {
+          runId,
+          release() {
+            if (heldLocks.get(runId) !== lock) return;
+            heldLocks.delete(runId);
+            acquired.release();
+          },
+        };
+        heldLocks.set(runId, lock);
+        return lock;
+      },
       ...controlStore.methods,
       ...createSqliteToolStore({
         db,
         assertToolApproved: controlStore.assertToolApproved,
         transaction: (operation) => transaction(db, operation),
-        getRun: get,
+        getRun: getForExecution,
         getContextReference: (runId) => {
           const head = headContext(runId);
           return head ? { epoch: head.epoch, revision: head.revision } : null;
@@ -320,7 +381,7 @@ export async function openSqliteRunStore(
         db,
         assertDispatchAllowed: controlStore.assertDispatchAllowed,
         transaction: (operation) => transaction(db, operation),
-        getRun: get,
+        getRun: getForExecution,
         getContextReference: (runId) => {
           const head = headContext(runId);
           return head ? { epoch: head.epoch, revision: head.revision } : null;
@@ -341,6 +402,7 @@ export async function openSqliteRunStore(
           throw new Error("Invalid expected context revision");
         }
         return transaction(db, () => {
+          recoveryStore.assertExecutionLock(runId);
           const record = get(runId);
           if (!record || record.attemptId !== attemptId) {
             throw new Error("Execution attempt does not own this run");
@@ -428,6 +490,7 @@ export async function openSqliteRunStore(
           db.prepare(
             "INSERT INTO runs (run_id, record_json) VALUES (?, ?)",
           ).run(spec.runId, JSON.stringify(record));
+          freshAdmissions.add(spec.runId);
           return { created: true, record };
         });
       },
@@ -453,6 +516,7 @@ export async function openSqliteRunStore(
           throw new Error("Invalid run transition status");
         }
         return transaction(db, () => {
+          recoveryStore.assertExecutionLock(runId);
           const previous = get(runId);
           if (!previous) throw new Error("Run does not exist");
           if (previous.attemptId !== attemptId) {
@@ -484,7 +548,12 @@ export async function openSqliteRunStore(
           return record;
         });
       },
-      close: () => db.close(),
+      close() {
+        if (closed) return;
+        closed = true;
+        for (const lock of heldLocks.values()) lock.release();
+        db.close();
+      },
     };
   } catch (error) {
     db.close();

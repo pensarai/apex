@@ -19,6 +19,7 @@ import type {
   RunControlStore,
 } from "../runtime/runControlStore";
 import { RunLimitError, type RunModelStore } from "../runtime/runModelStore";
+import type { RunRecoveryStore } from "../runtime/runRecoveryStore";
 import type { RecordedRunSpec, RunRecord } from "../runtime/runStore";
 import type {
   RunToolStore,
@@ -103,6 +104,16 @@ function makeModelStore(script?: {
   let control: RunControlRecord | undefined;
   const calls: string[] = [];
   const store = {
+    acquireExecutionLock: async (runId: string) => ({
+      runId,
+      release: vi.fn(),
+    }),
+    enrollRecovery: async () => ({}) as never,
+    getRecoveryEnrollment: async () => undefined,
+    listRecoveries: async () => [],
+    claimRecovery: async () => {
+      throw new Error("Unexpected recovery");
+    },
     initializeControl: async (runId: string, executionAttemptId: string) => {
       control = {
         schemaVersion: 1,
@@ -189,7 +200,10 @@ function makeModelStore(script?: {
     listRetries: async () => [],
   };
   return {
-    store: store as unknown as RunModelStore & RunToolStore & RunControlStore,
+    store: store as unknown as RunModelStore &
+      RunToolStore &
+      RunControlStore &
+      RunRecoveryStore,
     calls: () => calls,
     current: () => record,
   };

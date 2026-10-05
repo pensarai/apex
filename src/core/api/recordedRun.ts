@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import {
   type AIAuthConfig,
   AVAILABLE_MODELS,
@@ -15,16 +15,29 @@ import {
   type RunControlStore,
 } from "../runtime/runControlStore";
 import { runDeadline } from "../runtime/runDeadline";
-import { collectSessionEvidence } from "../runtime/runEvidence";
+import {
+  collectSessionEvidence,
+  inspectSessionEvidence,
+} from "../runtime/runEvidence";
 import { createRunInferenceRecorder } from "../runtime/runInference";
 import type { RunModelStore } from "../runtime/runModelStore";
+import { restoreRunContext } from "../runtime/runRecoveryContext";
+import {
+  planRunRecovery,
+  type RecoveryPlanContext,
+} from "../runtime/runRecoveryPlan";
+import type { RunRecoveryStore } from "../runtime/runRecoveryStore";
 import { RecordedRunSpecSchema, type RunRecord } from "../runtime/runStore";
 import type {
   RunToolStore,
   ToolExecutionRecorder,
 } from "../runtime/runToolStore";
 import { createRunToolRecorder } from "../runtime/runTools";
-import { create as createSession } from "../session";
+import {
+  create as createSession,
+  get as getSession,
+  type SessionInfo,
+} from "../session";
 import { type RunAgentResult, runOffensiveSecurityAgent } from "./offesecAgent";
 
 const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
@@ -32,7 +45,7 @@ const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
 export type RecordedRunAgentInput = {
   /** Raw (unparsed) run spec — the parsed, normalized form is the only version stored or executed. */
   spec: unknown;
-  store: RunModelStore & RunToolStore & RunControlStore;
+  store: RunModelStore & RunToolStore & RunControlStore & RunRecoveryStore;
   authConfig?: AIAuthConfig;
   credentialManager?: CredentialManager;
   eventBus?: AgentEventBus;
@@ -78,8 +91,164 @@ export async function runRecordedAgent(
   if (!admission.created) {
     return { started: false, record: admission.record };
   }
+  const lock = await input.store.acquireExecutionLock(spec.runId);
+  try {
+    return await executeRecordedRun(input, admission.record);
+  } finally {
+    lock.release();
+  }
+}
+
+export type ResumeRecordedAgentInput = Omit<RecordedRunAgentInput, "spec"> & {
+  runId: string;
+};
+
+export class RunRecoveryBlockedError extends Error {
+  constructor(readonly blockers: string[]) {
+    super(`Run recovery blocked: ${blockers.join("; ")}`);
+    this.name = "RunRecoveryBlockedError";
+  }
+}
+
+export async function resumeRecordedAgent(
+  input: ResumeRecordedAgentInput,
+): Promise<RecordedRunOutcome> {
+  const { store, runId } = input;
+  let lock: Awaited<ReturnType<RunRecoveryStore["acquireExecutionLock"]>>;
+  try {
+    if (!(await store.getRecoveryEnrollment(runId))) {
+      throw new Error("Run predates recovery enrollment; inspection only");
+    }
+    lock = await store.acquireExecutionLock(runId);
+  } catch (error) {
+    throw new RunRecoveryBlockedError([
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
+  try {
+    let record: RunRecord;
+    let continuation: RecordedContinuation;
+    try {
+      const saved = await store.get(runId);
+      if (!saved) throw new Error("Run does not exist");
+      record = saved;
+      const { spec } = record;
+      if (!["running", "paused", "failed"].includes(record.status)) {
+        throw new Error(`Run status ${record.status} cannot be recovered`);
+      }
+      if (input.abortSignal?.aborted) throw new Error("Resume was aborted");
+      if (!AVAILABLE_MODELS.some((model) => model.id === spec.model)) {
+        throw new Error(`Model is not registered: ${spec.model}`);
+      }
+      assertCredentialsDeclared(spec, input.credentialManager);
+      if (
+        spec.limits?.deadlineAt &&
+        Date.now() >= Date.parse(spec.limits.deadlineAt)
+      ) {
+        throw new Error("Run deadline has expired");
+      }
+      const [
+        context,
+        attempts,
+        operations,
+        approvals,
+        retries,
+        control,
+        evidence,
+        enrollment,
+        recoveries,
+      ] = await Promise.all([
+        store.getContext(runId),
+        store.listModelAttempts(runId),
+        store.listToolOperations(runId),
+        store.listApprovals(runId),
+        store.listRetries(runId),
+        store.getControl(runId),
+        store.getEvidence(runId),
+        store.getRecoveryEnrollment(runId),
+        store.listRecoveries(runId),
+      ]);
+      if (!context) throw new Error("Canonical context checkpoint is missing");
+      if (!control || control.intent === "stop")
+        throw new Error("Control is missing or stop was requested");
+      if (!evidence || !enrollment)
+        throw new Error("Evidence inventory or recovery enrollment is missing");
+      if (
+        spec.limits?.maxModelAttempts !== undefined &&
+        attempts.length >= spec.limits.maxModelAttempts
+      ) {
+        throw new Error("Run model-attempt allowance is exhausted");
+      }
+      const session = await getSession(record.sessionId);
+      if (
+        (await realpath(session.rootPath)) !==
+          enrollment.environment.sessionRootPath ||
+        (await realpath(evidence.rootPath)) !==
+          enrollment.environment.sessionRootPath
+      ) {
+        throw new Error(
+          "Session/evidence root does not match recovery enrollment",
+        );
+      }
+      const badEvidence = (
+        await inspectSessionEvidence(evidence, evidence.files)
+      ).filter((check) => check.status !== "match");
+      if (badEvidence.length)
+        throw new Error(
+          `Evidence is unavailable or changed: ${badEvidence.map((check) => `${check.ref.path} (${check.status})`).join(", ")}`,
+        );
+      const plan = planRunRecovery({
+        record,
+        context,
+        attempts,
+        operations,
+        approvals,
+        retries,
+        recoveries,
+      });
+      if (!plan.ok) throw new RunRecoveryBlockedError(plan.blockers);
+      const restored = restoreRunContext({
+        record,
+        session,
+        context: { ...context, messages: plan.messages },
+      });
+      continuation = { session, context, ...restored };
+      await store.claimRecovery(runId, {
+        expectedAttemptId: record.attemptId,
+        expectedContext: { epoch: context.epoch, revision: context.revision },
+        expectedControlRevision: control.revision,
+        reconstruction: plan.reconstruction,
+      });
+      const claimed = await store.get(runId);
+      if (!claimed) throw new Error("Claimed run is missing");
+      record = claimed;
+    } catch (error) {
+      if (error instanceof RunRecoveryBlockedError) throw error;
+      throw new RunRecoveryBlockedError([
+        error instanceof Error ? error.message : String(error),
+      ]);
+    }
+    return await executeRecordedRun(input, record, continuation);
+  } finally {
+    lock.release();
+  }
+}
+
+interface RecordedContinuation {
+  session: SessionInfo;
+  context: RecoveryPlanContext;
+  messages: RecoveryPlanContext["messages"];
+  baseSystem: string;
+}
+
+async function executeRecordedRun(
+  input: Omit<RecordedRunAgentInput, "spec">,
+  admitted: RunRecord,
+  continuation?: RecordedContinuation,
+): Promise<RecordedRunOutcome> {
+  const spec = admitted.spec;
   const runId = spec.runId;
-  const attemptId = admission.record.attemptId;
+  const attemptId = admitted.attemptId;
 
   const deadline = runDeadline(spec.limits?.deadlineAt, input.abortSignal);
   try {
@@ -156,28 +325,33 @@ export async function runRecordedAgent(
       }
       assertCredentialsDeclared(spec, input.credentialManager);
 
-      const session = await createSession({
-        id: admission.record.sessionId,
-        targets: [spec.target],
-        name: spec.runId,
-        config: {
-          headers: {},
-          agentCwd: spec.environment.cwd,
-          scopeConstraints: {
-            allowedHosts: spec.scope.allowedHosts,
-            allowedPorts: spec.scope.allowedPorts,
-            strictScope: spec.scope.strictScope,
+      const session =
+        continuation?.session ??
+        (await createSession({
+          id: admitted.sessionId,
+          targets: [spec.target],
+          name: spec.runId,
+          config: {
+            headers: {},
+            agentCwd: spec.environment.cwd,
+            scopeConstraints: {
+              allowedHosts: spec.scope.allowedHosts,
+              allowedPorts: spec.scope.allowedPorts,
+              strictScope: spec.scope.strictScope,
+            },
+            allowDestructiveActions: spec.scope.allowDestructiveActions,
+            allowRateLimitTesting: spec.scope.allowRateLimitTesting,
+            taskDriven: spec.activeTools.some((tool) =>
+              TASK_TOOL_NAMES.has(tool),
+            ),
+            disableSubagents: true,
           },
-          allowDestructiveActions: spec.scope.allowDestructiveActions,
-          allowRateLimitTesting: spec.scope.allowRateLimitTesting,
-          taskDriven: spec.activeTools.some((tool) =>
-            TASK_TOOL_NAMES.has(tool),
-          ),
-          disableSubagents: true,
-        },
-        inheritEnvironmentConfig: false,
-      });
+          inheritEnvironmentConfig: false,
+        }));
 
+      if (!continuation) {
+        await input.store.enrollRecovery(runId, attemptId, session.rootPath);
+      }
       const runningRecord = await input.store.transition(
         runId,
         attemptId,
@@ -221,6 +395,7 @@ export async function runRecordedAgent(
       });
 
       const contextRecorder = createRunContextRecorder({
+        initial: continuation?.context,
         runId,
         attemptId,
         store: {
@@ -255,7 +430,14 @@ export async function runRecordedAgent(
           session,
           prompt: spec.prompt,
           model: spec.model,
-          ...(spec.system ? { system: spec.system } : {}),
+          ...(continuation
+            ? {
+                system: continuation.baseSystem,
+                messages: continuation.messages,
+              }
+            : spec.system
+              ? { system: spec.system }
+              : {}),
           activeTools: spec.activeTools,
           // Override the SDK's one-step default; persisted limits gate dispatch.
           stopWhen: () => false,

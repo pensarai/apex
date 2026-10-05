@@ -34,6 +34,13 @@ interface RunContextRecorderOptions {
   runId: string;
   attemptId: string;
   store: ContextStore;
+  /** Canonical committed head to continue from; skips the fresh base commit. */
+  initial?: {
+    epoch: number;
+    revision: number;
+    messages: ModelMessage[];
+    system: string | null;
+  };
 }
 
 export interface RunContextRecorder {
@@ -51,10 +58,17 @@ export interface RunContextRecorder {
 export function createRunContextRecorder(
   options: RunContextRecorderOptions,
 ): RunContextRecorder {
-  const { runId, attemptId, store } = options;
+  const { runId, attemptId, store, initial } = options;
   let ref: ContextReference | undefined;
   let committed: ModelMessage[] | undefined;
   let system: string | null = null;
+  // The seed is deep-cloned synchronously so caller mutation after
+  // construction cannot reach a commit or latest().
+  if (initial) {
+    ref = { epoch: initial.epoch, revision: initial.revision };
+    committed = structuredClone(initial.messages);
+    system = initial.system === null ? null : structuredClone(initial.system);
+  }
   let latched: Error | undefined;
   let tail: Promise<void> = Promise.resolve();
 

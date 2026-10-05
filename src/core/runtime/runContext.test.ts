@@ -16,11 +16,16 @@ type CommitCall = {
  * In-memory store with the documented reference arithmetic: revision is
  * always expectedRevision + 1; a replace opens epoch (prior + 1), the very
  * first commit opens epoch 1, an append carries the prior epoch.
+ * startEpoch lets seeded recorders carry a pre-existing epoch.
  */
-function makeStore(script?: { failOn?: number }) {
+function makeStore(
+  script?: { failOn?: number },
+  options?: { startEpoch?: number },
+) {
   const calls: CommitCall[] = [];
+  const baseEpoch = options?.startEpoch ?? 0;
   const epochAfter = (upTo: number): number => {
-    let epoch = 0;
+    let epoch = baseEpoch;
     for (let i = 0; i < upTo; i++) {
       if (calls[i].change.kind === "replace") epoch += 1;
     }
@@ -333,5 +338,108 @@ describe("createRunContextRecorder", () => {
     ).rejects.toBeInstanceOf(RunPersistenceError);
     expect(calls).toHaveLength(0);
     await expect(r.flush()).rejects.toBeInstanceOf(RunPersistenceError);
+  });
+});
+
+describe("createRunContextRecorder seeded from a committed head", () => {
+  const seed = {
+    epoch: 2,
+    revision: 5,
+    messages: [user("a")],
+    system: "sys",
+  };
+
+  it("an extending checkpoint appends only the delta at the preserved revision", async () => {
+    const { store, calls } = makeStore(undefined, { startEpoch: 2 });
+    const r = createRunContextRecorder({
+      runId: "run_1",
+      attemptId: "attempt_1",
+      store,
+      initial: seed,
+    });
+
+    await r.checkpoint({ messages: [user("a"), assistant("b")] });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      expectedRevision: 5,
+      change: { kind: "append", messages: [assistant("b")] },
+    });
+  });
+
+  it("a rewritten head replaces and opens the next epoch", async () => {
+    const { store, calls } = makeStore(undefined, { startEpoch: 2 });
+    const r = createRunContextRecorder({
+      runId: "run_1",
+      attemptId: "attempt_1",
+      store,
+      initial: seed,
+    });
+
+    await r.checkpoint({ messages: [assistant("rewritten")] });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      expectedRevision: 5,
+      change: {
+        kind: "replace",
+        messages: [assistant("rewritten")],
+        system: "sys",
+      },
+    });
+  });
+
+  it("an identical seeded head is deduplicated without a store call", async () => {
+    const { store, calls } = makeStore(undefined, { startEpoch: 2 });
+    const r = createRunContextRecorder({
+      runId: "run_1",
+      attemptId: "attempt_1",
+      store,
+      initial: seed,
+    });
+
+    await r.checkpoint({ messages: [user("a")], system: "sys" });
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it("latest() serves the seeded head before any checkpoint", () => {
+    const { store } = makeStore();
+    const r = createRunContextRecorder({
+      runId: "run_1",
+      attemptId: "attempt_1",
+      store,
+      initial: seed,
+    });
+
+    expect(r.latest()).toEqual([user("a")]);
+  });
+
+  it("the seed is deep-cloned synchronously: later mutation cannot reach a commit", async () => {
+    const { store, calls } = makeStore(undefined, { startEpoch: 2 });
+    const mutable = {
+      epoch: 2,
+      revision: 5,
+      messages: [user("a")],
+      system: "sys",
+    };
+    const r = createRunContextRecorder({
+      runId: "run_1",
+      attemptId: "attempt_1",
+      store,
+      initial: mutable,
+    });
+
+    mutable.messages.push(user("mutated"));
+    mutable.system = "tampered";
+
+    await r.checkpoint({ messages: [user("a"), user("mutated")] });
+
+    expect(calls[0]?.change).toEqual({
+      kind: "append",
+      messages: [user("mutated")],
+    });
+    const latest = r.latest();
+    expect(latest).toEqual([user("a"), user("mutated")]);
   });
 });

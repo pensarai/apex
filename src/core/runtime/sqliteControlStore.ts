@@ -104,6 +104,7 @@ export function createSqliteControlStore(input: {
   db: ControlDatabase;
   transaction<T>(operation: () => T): T;
   getRun(runId: string): RunRecord | undefined;
+  assertExecutionLock?(runId: string): void;
   getContextReference(runId: string): ContextReference | null;
 }): {
   methods: RunControlStore;
@@ -248,6 +249,7 @@ export function createSqliteControlStore(input: {
   const methods: RunControlStore = {
     async initializeControl(runId, executionAttemptId) {
       transaction(() => {
+        input.assertExecutionLock?.(runId);
         const run = input.getRun(runId);
         if (!run || run.attemptId !== executionAttemptId) {
           throw new Error("Execution attempt does not own this run");
@@ -321,6 +323,7 @@ export function createSqliteControlStore(input: {
       const toolName = z.string().min(1).parse(request.toolName);
       const candidate = durableInput(request.input);
       return transaction(() => {
+        input.assertExecutionLock?.(runId);
         const { run, control } = enrolledControl(runId, executionAttemptId);
         assertDispatchAllowed(runId);
         if (!run.spec.activeTools.some((name) => name === toolName)) {

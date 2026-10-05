@@ -164,8 +164,13 @@ export { runPatchingAgent } from "./patching";
 export type {
   RecordedRunAgentInput,
   RecordedRunOutcome,
+  ResumeRecordedAgentInput,
 } from "./recordedRun";
-export { runRecordedAgent } from "./recordedRun";
+export {
+  RunRecoveryBlockedError,
+  resumeRecordedAgent,
+  runRecordedAgent,
+} from "./recordedRun";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,

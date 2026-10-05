@@ -4,12 +4,27 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runRecordedAgent = vi.hoisted(() => vi.fn());
+const resumeRecordedAgent = vi.hoisted(() => vi.fn());
 const inspectSessionEvidence = vi.hoisted(() => vi.fn());
 const openSqliteRunStore = vi.hoisted(() => vi.fn());
 const configGet = vi.hoisted(() => vi.fn());
 const buildAuthConfig = vi.hoisted(() => vi.fn());
 
-vi.mock("../core/api", () => ({ runRecordedAgent, inspectSessionEvidence }));
+vi.mock("../core/api", () => {
+  class RunRecoveryBlockedError extends Error {
+    constructor(readonly blockers: string[]) {
+      super(`Run recovery blocked: ${blockers.join("; ")}`);
+      this.name = "RunRecoveryBlockedError";
+    }
+  }
+  return {
+    runRecordedAgent,
+    resumeRecordedAgent,
+    inspectSessionEvidence,
+    RunRecoveryBlockedError,
+  };
+});
+const { RunRecoveryBlockedError } = await import("../core/api");
 vi.mock("../core/runtime/sqliteRunStore", () => ({ openSqliteRunStore }));
 vi.mock("../core/config", () => ({ config: { get: configGet } }));
 vi.mock("../core/ai", () => ({ buildAuthConfig }));
@@ -31,6 +46,8 @@ function makeStore() {
     requestControl: vi.fn(),
     resolveApproval: vi.fn(),
     listApprovals: vi.fn(async () => []),
+    getRecoveryEnrollment: vi.fn(),
+    listRecoveries: vi.fn(async () => []),
     close: vi.fn(),
   };
 }
@@ -132,6 +149,13 @@ describe("help and invalid arguments open no store", () => {
     [["pause", "run-1", "--spec", "spec.json"]],
     [["stop", "run-1", "--control"]],
     [["start", "--spec", "spec.json", "--approval", "ap-1"]],
+    [["resume"]],
+    [["resume", "run-1", "extra"]],
+    [["list", "--recovery"]],
+    [["resume", "run-1", "--spec", "spec.json"]],
+    [["pause", "run-1", "--recovery"]],
+    [["resume", "run-1", "--approval", "ap-1"]],
+    [["start", "--spec", "spec.json", "--recovery"]],
   ])("rejects %j without opening the store", async (args) => {
     await expect(runAgentRunsCommand(args)).rejects.toThrow(
       /Invalid agent-runs arguments/,
@@ -602,5 +626,171 @@ describe("approve and reject", () => {
       runAgentRunsCommand(["reject", "run-1", "--approval", "ap-1"]),
     ).rejects.toThrow("run is stopped; approvals cannot change");
     expect(store.close).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("show --recovery", () => {
+  it("prints the enrollment and the recovery history", async () => {
+    store.get.mockResolvedValue({ status: "paused" });
+    const enrollment = {
+      schemaVersion: 1,
+      runId: "run-1",
+      protocol: 1,
+      enrolledAt: "2026-10-05T00:00:00.000Z",
+      executionAttemptId: "exec-1",
+      environment: { sessionRootPath: "/sessions/run-1" },
+    };
+    const history = [
+      {
+        schemaVersion: 1,
+        recoveryId: "rec-1",
+        runId: "run-1",
+        claimedAt: "2026-10-05T00:01:00.000Z",
+        fromAttemptId: "exec-1",
+        toAttemptId: "exec-2",
+        fromContext: { epoch: 1, revision: 3 },
+      },
+    ];
+    store.getRecoveryEnrollment.mockResolvedValue(enrollment);
+    store.listRecoveries.mockResolvedValue(history as never);
+    await runAgentRunsCommand(["show", "run-1", "--recovery"]);
+    const parsed = JSON.parse(output());
+    expect(parsed.recovery).toEqual({ enrollment, history });
+    expect(store.getRecoveryEnrollment).toHaveBeenCalledWith("run-1");
+    expect(store.listRecoveries).toHaveBeenCalledWith("run-1");
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("prints a null enrollment for runs admitted before recovery protocol", async () => {
+    store.get.mockResolvedValue({ status: "completed" });
+    store.getRecoveryEnrollment.mockResolvedValue(undefined);
+    await runAgentRunsCommand(["show", "run-legacy", "--recovery"]);
+    const parsed = JSON.parse(output());
+    expect(parsed.recovery).toEqual({ enrollment: null, history: [] });
+  });
+
+  it("does not read recovery state without the flag", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    await runAgentRunsCommand(["show", "run-1"]);
+    expect(store.getRecoveryEnrollment).not.toHaveBeenCalled();
+    expect(store.listRecoveries).not.toHaveBeenCalled();
+  });
+
+  it("errors for a missing run and still closes the store", async () => {
+    store.get.mockResolvedValue(null);
+    await expect(
+      runAgentRunsCommand(["show", "run-404", "--recovery"]),
+    ).rejects.toThrow("Run not found: run-404");
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resume", () => {
+  it("reuses the start execution wiring and passes exact opts", async () => {
+    resumeRecordedAgent.mockResolvedValue({
+      started: true,
+      record: { runId: "run-1", status: "running" },
+    });
+    const before = snapshotSignals();
+
+    await runAgentRunsCommand(["resume", "run-1", "--store", "/tmp/custom.db"]);
+
+    expect(openSqliteRunStore).toHaveBeenCalledWith("/tmp/custom.db");
+    expect(resumeRecordedAgent).toHaveBeenCalledTimes(1);
+    const opts = resumeRecordedAgent.mock.calls[0][0];
+    expect(opts.runId).toBe("run-1");
+    expect(opts.store).toBe(store);
+    expect(opts.authConfig).toEqual({ marker: "auth-config" });
+    expect(opts.eventBus).toBeInstanceOf(AgentEventBus);
+    expect(opts.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(opts.abortSignal.aborted).toBe(false);
+    expect(runRecordedAgent).not.toHaveBeenCalled();
+    expect(output()).toContain('"started": true');
+    expect(store.close).toHaveBeenCalledTimes(1);
+    assertSignalsRestored(before);
+  });
+
+  it("unsubscribes streamed text when the resumed run settles", async () => {
+    resumeRecordedAgent.mockResolvedValue({
+      started: true,
+      record: { runId: "run-1" },
+    });
+    const before = snapshotSignals();
+
+    await runAgentRunsCommand(["resume", "run-1"]);
+
+    const bus = resumeRecordedAgent.mock.calls[0][0].eventBus;
+    bus.emit("text-delta", { text: "straggler" });
+    expect(stderrWrite).not.toHaveBeenCalledWith("straggler");
+    assertSignalsRestored(before);
+  });
+
+  it("aborts the resumed run from the installed SIGINT listener", async () => {
+    resumeRecordedAgent.mockImplementation(
+      (opts: { abortSignal: AbortSignal }) =>
+        new Promise((resolve) => {
+          opts.abortSignal.addEventListener("abort", () =>
+            resolve({ started: true, record: { runId: "run-1" } }),
+          );
+        }),
+    );
+    const before = snapshotSignals();
+
+    const pending = runAgentRunsCommand(["resume", "run-1"]);
+    await vi.waitFor(() => expect(resumeRecordedAgent).toHaveBeenCalled());
+
+    const added = addedSince(process.listeners("SIGINT"), before.sigint);
+    expect(added.length).toBe(1);
+    added[0]("SIGINT");
+
+    await pending;
+    expect(resumeRecordedAgent.mock.calls[0][0].abortSignal.aborted).toBe(true);
+    assertSignalsRestored(before);
+  });
+
+  it("removes listeners and closes the store when the resume fails", async () => {
+    resumeRecordedAgent.mockRejectedValue(new Error("execution failed"));
+    const before = snapshotSignals();
+
+    await expect(runAgentRunsCommand(["resume", "run-1"])).rejects.toThrow(
+      "execution failed",
+    );
+
+    assertSignalsRestored(before);
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("prints structured blockers for a RunRecoveryBlockedError and rethrows", async () => {
+    resumeRecordedAgent.mockRejectedValue(
+      new RunRecoveryBlockedError([
+        "Session root does not match recovery enrollment",
+        "Run has an outcome_unknown tool operation",
+      ]),
+    );
+    const before = snapshotSignals();
+
+    await expect(
+      runAgentRunsCommand(["resume", "run-1"]),
+    ).rejects.toBeInstanceOf(RunRecoveryBlockedError);
+
+    const parsed = JSON.parse(output());
+    expect(parsed.blocked).toBe(true);
+    expect(parsed.blockers).toEqual([
+      "Session root does not match recovery enrollment",
+      "Run has an outcome_unknown tool operation",
+    ]);
+    assertSignalsRestored(before);
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the store when config cannot be read", async () => {
+    configGet.mockRejectedValue(new Error("config unreadable"));
+
+    await expect(runAgentRunsCommand(["resume", "run-1"])).rejects.toThrow(
+      "config unreadable",
+    );
+
+    expect(resumeRecordedAgent).not.toHaveBeenCalled();
+    expect(store.close).toHaveBeenCalledTimes(1);
   });
 });
