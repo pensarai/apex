@@ -453,6 +453,10 @@ describe("model-call helpers", () => {
           allow_fallbacks: false,
         },
       },
+      // Durable-runtime marker: tool-call repair runs off the checkpoint
+      // journal. The provider ignores this namespace; the openrouter pinning
+      // above is unchanged.
+      pensarRuntime: { ephemeral: true },
     });
   });
 });

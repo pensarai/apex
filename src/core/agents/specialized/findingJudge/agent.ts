@@ -9,7 +9,7 @@ import type {
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { type AgentHooks, OffensiveSecurityAgent } from "../../offSecAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
 import type { StreamIdFactory } from "../../offSecAgent/types";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -23,7 +23,7 @@ import {
   FindingJudgeOutputSchema,
 } from "./types";
 
-export interface FindingJudgeAgentInput {
+export interface FindingJudgeAgentInput extends AgentHooks {
   finding: FindingJudgeInput;
   model: AIModel;
   session: SessionInfo;

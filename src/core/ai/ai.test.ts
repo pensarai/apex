@@ -9,8 +9,10 @@ import {
   isRepairFailClosedTool,
   modelSupportsOpenAIReasoning,
   normalizeOpenAIReasoningEffort,
+  restrictToolsToActive,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
+  withResponseToolActive,
 } from "./ai";
 import { consumeStream } from "./utils";
 
@@ -56,6 +58,81 @@ describe("applySequentialToolCallPolicy", () => {
     expect(
       applySequentialToolCallPolicy("Base.", tools, "claude-haiku-4-5"),
     ).toBe("Base.");
+  });
+});
+
+describe("restrictToolsToActive", () => {
+  const tools = {
+    read_file: {
+      description: "read",
+      inputSchema: z.object({ p: z.string() }),
+    },
+    execute_command: {
+      description: "exec",
+      inputSchema: z.object({ c: z.string() }),
+    },
+    delete_file: {
+      description: "delete",
+      inputSchema: z.object({ p: z.string() }),
+    },
+  };
+
+  it("filters the tools map down to the activeTools allowlist", () => {
+    const result = restrictToolsToActive(tools, ["read_file", "delete_file"]);
+    expect(Object.keys(result ?? {}).sort()).toEqual([
+      "delete_file",
+      "read_file",
+    ]);
+    // execute_command must not be advertised, executable, or enumerable.
+    expect(result).not.toHaveProperty("execute_command");
+    // Retained tools keep their original definition (same reference).
+    expect(result?.read_file).toBe(tools.read_file);
+  });
+
+  it("is a no-op when activeTools is empty (means: all tools)", () => {
+    expect(restrictToolsToActive(tools, [])).toBe(tools);
+  });
+
+  it("is a no-op when activeTools is undefined", () => {
+    expect(restrictToolsToActive(tools, undefined)).toBe(tools);
+  });
+
+  it("returns tools unchanged when tools is undefined", () => {
+    expect(restrictToolsToActive(undefined, ["read_file"])).toBeUndefined();
+  });
+
+  it("ignores allowlist entries that are not present in the tools map", () => {
+    const result = restrictToolsToActive(tools, ["read_file", "no_such_tool"]);
+    expect(Object.keys(result ?? {})).toEqual(["read_file"]);
+  });
+});
+
+describe("withResponseToolActive", () => {
+  const tool = { description: "t", inputSchema: z.object({}) };
+  const withResponse = { read_file: tool, response: tool };
+
+  it("keeps an injected response tool reachable through a curated allowlist", () => {
+    const allowed = withResponseToolActive(withResponse, ["read_file"]);
+    expect(allowed).toEqual(["read_file", "response"]);
+    expect(
+      Object.keys(restrictToolsToActive(withResponse, allowed) ?? {}).sort(),
+    ).toEqual(["read_file", "response"]);
+  });
+
+  it("does not add response when the caller did not inject it", () => {
+    expect(withResponseToolActive({ read_file: tool }, ["read_file"])).toEqual([
+      "read_file",
+    ]);
+  });
+
+  it("leaves an allowlist that already names response untouched", () => {
+    const active = ["response", "read_file"];
+    expect(withResponseToolActive(withResponse, active)).toBe(active);
+  });
+
+  it("is a no-op when activeTools is empty or undefined", () => {
+    expect(withResponseToolActive(withResponse, [])).toEqual([]);
+    expect(withResponseToolActive(withResponse, undefined)).toBeUndefined();
   });
 });
 
