@@ -19,7 +19,11 @@ import {
   type FindingJudgeResult,
   judgeFinding,
 } from "../../specialized/findingJudge";
-import { inProcessSubagentSpawner } from "../subagentSpawner";
+import {
+  inProcessSubagentSpawner,
+  type SpawnOptions,
+  type SubagentSpawner,
+} from "../subagentSpawner";
 import {
   documentVulnerability,
   validatePocPortability,
@@ -476,10 +480,22 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
       return makeAcceptedJudgeResult();
     });
 
+    const base = makeToolContext(rootPath);
+    const scheduling: Array<SpawnOptions["scheduling"]> = [];
+    const subagentSpawner: SubagentSpawner = {
+      spawn: async <TResult>(opts: SpawnOptions<TResult>) => {
+        scheduling.push(opts.scheduling);
+        return inProcessSubagentSpawner.spawn<TResult>(opts);
+      },
+      spawnMany: inProcessSubagentSpawner.spawnMany.bind(
+        inProcessSubagentSpawner,
+      ),
+    };
     const ctx = {
-      ...makeToolContext(rootPath),
+      ...base,
       eventBus: parentBus,
       subagentId: "pentest-agent-worker-1",
+      subagentSpawner,
     };
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(makeDocumentInput(), {
@@ -488,6 +504,9 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     })) as DocumentToolResult;
 
     expect(result.success).toBe(true);
+    expect(scheduling[0]).toEqual({
+      class: "sandbox-leaf",
+    });
 
     // Lifecycle: one spawn + one complete, anchored to the worker.
     expect(spawns).toHaveLength(1);

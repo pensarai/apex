@@ -131,5 +131,8 @@ describe("remaining runtime backend consumers", () => {
     });
     expect(spawn).toHaveBeenCalledOnce();
     expect(spawn.mock.calls[0][0].runtime.backends).toBe(ctx.backends);
+    expect(spawn.mock.calls[0][0].scheduling).toEqual({
+      class: "sandbox-leaf",
+    });
   });
 });

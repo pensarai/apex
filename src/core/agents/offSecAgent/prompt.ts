@@ -293,6 +293,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 ## Reconnaissance & Asset Discovery
 - **document_app** — Record a discovered application in this session's reconnaissance artifacts. This does not update the authenticated Pensar workspace.
 - **document_endpoint** — Record a discovered endpoint in this session and enrich it through endpoint threat modeling. This does not update the authenticated Pensar workspace. Must specify the parent app name.
+- **document_endpoints** — Record and enrich a bounded batch of up to four discovered endpoints concurrently. Use this during broad source discovery; do not build whole-app manifests.
 - **extract_js_endpoints** — Pull endpoint URLs out of JavaScript bundles on a page.
 - **crawl_authenticated_area** — Recursively crawl an authenticated area, extracting forms and JS endpoints on each page.
 - **test_endpoint_variations** — Probe multiple endpoint URLs for accessibility and status codes.

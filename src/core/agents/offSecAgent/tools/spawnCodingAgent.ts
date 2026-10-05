@@ -25,7 +25,7 @@ export function spawnCodingAgent(ctx: ToolContext) {
 
 Each task gets its own autonomous CodeAgent with filesystem tools plus whitebox helpers
 (profile_codebase, query_whitebox_catalog, run_code_query, run_whitebox_scan, candidates, bounded jobs,
-read_whitebox_artifact), plus execute_command, http_request, web_search, and document_app/document_endpoint.
+read_whitebox_artifact), plus execute_command, http_request, web_search, and document_app/document_endpoint/document_endpoints.
 The agents work independently and return their text output when done.
 
 Use this to fan out analysis work — e.g. analyze multiple apps, modules, or concerns in parallel for higher fidelity.

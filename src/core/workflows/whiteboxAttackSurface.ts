@@ -292,7 +292,7 @@ export async function runWhiteboxAttackSurfaceApp(
             codebasePath,
             objective,
             system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-            excludeTools: ["document_app"],
+            excludeTools: ["document_app", "document_endpoint"],
             responseSchema: DiscoverySummarySchema,
             projectThreatModel,
             attackSurfaceRegistry,
@@ -426,7 +426,7 @@ export async function runWhiteboxAttackSurfaceApp(
  *           `surfaceIntegrationEnabled` is false, every service app uses the
  *           legacy pair directly. Cloud resources always use the specialized
  *           cloud-resource agent. Threat models and risk scores are generated
- *           inline by document_endpoint.
+ *           inline by document_endpoint/document_endpoints.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Final assembly.
  */
@@ -503,10 +503,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         ) +
         "\nTrace changed shared libraries, deleted files, and root/build/deployment configuration to the applications that consume them. A path outside an application directory does not prove that application is unaffected. Leave unrelated endpoint artifacts unchanged."
       : buildAppsDiscoveryObjective(codebasePath, domains, environments),
-    // Phase 1 uses an apps-only system prompt (no document_endpoint guidance)
-    // paired with `excludeTools: ["document_endpoint"]`. The shared
+    // Phase 1 uses an apps-only system prompt (no endpoint guidance)
+    // paired with both endpoint-output tools excluded. The shared
     // WHITEBOX_DISCOVERY_SYSTEM_PROMPT instructs every agent to call
-    // document_endpoint per route — strong enough that Phase 1 would
+    // document_endpoints — strong enough that Phase 1 would
     // improvise by abusing document_app for individual routes if the prompt
     // mentioned the tool at all. The variant below removes those mentions.
     system: input.incremental
@@ -530,7 +530,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     projectThreatModel,
     // Reserved for Phase 2's per-app task agents. Inline documentation
     // here would flatten the UI hierarchy under Phase 1.
-    excludeTools: input.incremental ? [] : ["document_endpoint"],
+    excludeTools: input.incremental
+      ? ["document_endpoint"]
+      : ["document_endpoint", "document_endpoints"],
     ...sharedHooks,
     ...(input.incremental
       ? { attackSurfaceArtifactsPath: input.incremental.assetsPath }
@@ -727,7 +729,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   // =========================================================================
   // Phase 4: Final assembly (risk scores are already attached inline
-  //          by document_endpoint during Phase 2)
+  //          by the endpoint documentation tools during Phase 2)
   // =========================================================================
 
   const apps: App[] = parsedApps;
@@ -1068,7 +1070,7 @@ Find ALL web pages, views, and routes that render HTML or serve client-side UI *
 - **Spring**: @Controller methods returning view names, Thymeleaf templates
 
 ### How to document each page
-For each page, call \`document_endpoint\` with:
+For each page, include one endpoint object in a \`document_endpoints\` call with:
 - **appName**: \`${appInfo.name}\`
 - **endpointType**: \`"web-endpoint"\`
 - **description**: Brief description of what this page shows
@@ -1080,20 +1082,20 @@ For each page, call \`document_endpoint\` with:
 - **authRequired**: Whether the page requires authentication
 - **riskLevel**: CRITICAL for admin/auth pages, HIGH for user data, MEDIUM for general, LOW for static/public
 
-### Required workflow — NO MANIFESTS, NO BATCHING
-**You MUST call \`document_endpoint\` directly, one page at a time, the moment you identify a route.** It is a hard error to:
+### Required workflow — BOUNDED BATCHES, NO MANIFESTS
+Keep one in-memory batch of at most 4 fully inspected pages. Call \`document_endpoints\` as soon as the batch reaches 4, then continue with a fresh batch. Flush the final partial batch before \`response\`. It is a hard error to:
 - Build a JSON file, array, or list of pages-to-document and then "process" it (e.g. \`cat > /tmp/pages.json << EOF [...] EOF\`).
-- Write a Python or shell script that emits \`document_endpoint\` calls.
-- Defer documentation until "the end" or until "you have the full picture."
+- Write a Python or shell script that emits endpoint-documentation calls.
+- Defer all documentation until "the end" or until "you have the full picture."
 - Stop early because the calls feel repetitive or because you've documented "the important ones."
 
-These patterns hit per-message output-token limits and silently drop pages — usually the alphabetically-later ones. The only correct loop is: identify route → call \`document_endpoint\` → identify next route → call \`document_endpoint\` → ...
+These patterns hit per-message output-token limits and silently drop pages — usually the alphabetically-later ones. The only correct loop is: identify and inspect up to 4 routes → call \`document_endpoints\` → continue with the next bounded batch.
 
-You may use \`list_files\`, \`grep\`, or \`execute_command\` (e.g. \`find ... -name page.tsx\`) to **enumerate** the routes that exist. That enumeration step is fine and encouraged. What is not allowed is using a script to **emit the documentation calls themselves** — those must come directly from you, one tool call per route.
+You may use \`list_files\`, \`grep\`, or \`execute_command\` (e.g. \`find ... -name page.tsx\`) to **enumerate** the routes that exist. That enumeration step is fine and encouraged. What is not allowed is using a script to **emit the documentation calls themselves**.
 
-Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**. Every page surfaced by your enumeration must result in its own \`document_endpoint\` call. Repetitive calls are expected; do not summarize, deduplicate to "interesting" routes, or skip any.
+Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**. Every page surfaced by your enumeration must appear in exactly one \`document_endpoints\` batch. Repetitive calls are expected; do not summarize, deduplicate to "interesting" routes, or skip any.
 
-When finished, call \`response\` with a summary of how many pages you documented. The reported count must equal the number of successful \`document_endpoint\` calls you made.`;
+When finished, call \`response\` with a summary of how many pages you documented. The reported count must equal the total successful endpoint results across your \`document_endpoints\` calls.`;
 }
 
 function buildApiEndpointsDiscoveryObjective(
@@ -1130,7 +1132,7 @@ Find ALL API endpoints **whose route definitions live in this application's sour
 - **gRPC**: \`.proto\` service definitions (\`service X { rpc Method (Req) returns (Resp); }\`), \`buf.yaml\`/\`buf.gen.yaml\`, or generated gRPC stubs
 
 ### gRPC / Connect services — do NOT flatten into HTTP paths
-A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP route. When this app defines gRPC/Connect services, document **one \`document_endpoint\` per \`rpc\` method** with:
+A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP route. When this app defines gRPC/Connect services, include **one endpoint object per \`rpc\` method** in your bounded \`document_endpoints\` calls with:
 - **endpointType**: \`"api-endpoint"\` (a gRPC method is still an API endpoint)
 - **transport**: \`"grpc"\` (or \`"grpc_web"\` / \`"connect"\` if the service is served that way)
 - **routePath**: the wire path \`/package.Service/Method\` (e.g. \`/account.v1.AccountService/GetAccount\`) — do NOT prepend a host
@@ -1138,7 +1140,7 @@ A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP
 - If a REST/GraphQL gateway (e.g. grpc-gateway annotations, a GraphQL resolver, a Connect handler) maps to this rpc, set \`grpc.frontingGatewayOperation\` — prefer marking this whenever a gateway mapping exists, since it's what lets us later compute "shadow" methods (proto methods reachable directly but NOT exposed via the gateway, where auth checks usually live).
 
 ### How to document each endpoint
-For each **unique route path**, call \`document_endpoint\` with:
+For each **unique route path**, include one endpoint object in a \`document_endpoints\` call with:
 - **appName**: \`${appInfo.name}\`
 - **endpointType**: \`"api-endpoint"\`
 - **description**: Brief description of what this endpoint does across all its methods
@@ -1153,22 +1155,22 @@ For each **unique route path**, call \`document_endpoint\` with:
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
-**IMPORTANT — Method consolidation for document_endpoint:** When using the \`document_endpoint\` tool, do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods.
+**IMPORTANT — Method consolidation:** Do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
 
-### Required workflow — NO MANIFESTS, NO BATCHING
-**You MUST call \`document_endpoint\` directly, one route at a time, the moment you identify it.** It is a hard error to:
+### Required workflow — BOUNDED BATCHES, NO MANIFESTS
+Keep one in-memory batch of at most 4 fully inspected routes. Call \`document_endpoints\` as soon as the batch reaches 4, then continue with a fresh batch. Flush the final partial batch before \`response\`. It is a hard error to:
 - Build a JSON file, array, or list of endpoints-to-document and then "process" it (e.g. \`cat > /tmp/endpoints.json << EOF [...] EOF\`).
-- Write a Python or shell script that emits \`document_endpoint\` calls.
-- Defer documentation until you've "mapped everything out."
+- Write a Python or shell script that emits endpoint-documentation calls.
+- Defer all documentation until you've "mapped everything out."
 - Stop early because the calls feel repetitive or because you've covered "the important ones."
 
-These patterns hit per-message output-token limits and silently drop endpoints — usually the alphabetically-later ones. The only correct loop is: identify route → call \`document_endpoint\` → identify next route → call \`document_endpoint\` → ...
+These patterns hit per-message output-token limits and silently drop endpoints — usually the alphabetically-later ones. The only correct loop is: identify and inspect up to 4 routes → call \`document_endpoints\` → continue with the next bounded batch.
 
-You may use \`list_files\`, \`grep\`, or \`execute_command\` to **enumerate** routes (e.g. extracting all route registrations into a list to read). That enumeration step is fine. What is not allowed is using a script to **emit the documentation calls themselves** — those must come directly from you, one tool call per unique route path.
+You may use \`list_files\`, \`grep\`, or \`execute_command\` to **enumerate** routes (e.g. extracting all route registrations into a list to read). That enumeration step is fine. What is not allowed is using a script to **emit the documentation calls themselves**.
 
-Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**. Every unique route path your enumeration surfaces must result in its own \`document_endpoint\` call.
+Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**. Every unique route path your enumeration surfaces must appear in exactly one \`document_endpoints\` batch.
 
-When finished, call \`response\` with a summary of how many endpoints you documented. The reported count must equal the number of successful \`document_endpoint\` calls you made.`;
+When finished, call \`response\` with a summary of how many endpoints you documented. The reported count must equal the total successful endpoint results across your \`document_endpoints\` calls.`;
 }
 
 function buildCloudResourceEndpointsObjective(
@@ -1221,7 +1223,7 @@ Find the **distinct access patterns and resource identifiers** for this cloud re
 - **DynamoDB / ElastiCache / Redis**: Connection endpoint URL, ARN
 
 ### How to document each entry point
-For each entry point, call \`document_endpoint\` with:
+For each entry point, include one endpoint object in a \`document_endpoints\` call with:
 - **appName**: \`${appInfo.name}\`
 - **endpointType**: \`"asset"\`
 - **description**: What this entry point exposes (e.g., "Pre-signed HTTP URLs for temporary read access to objects", "AWS resource ARN for programmatic access through IAM policies")
@@ -1232,10 +1234,10 @@ For each entry point, call \`document_endpoint\` with:
 - **authRequired**: Whether external access requires authentication
 - **riskLevel**: CRITICAL for publicly accessible storage with write access or sensitive data, HIGH for resources with broad IAM permissions, MEDIUM for internal resources, LOW for read-only public assets
 
-### Required workflow — NO MANIFESTS, NO BATCHING
-**You MUST call \`document_endpoint\` directly, one entry point at a time, the moment you identify it.** Do not build a JSON file or list of entry points to "process later," and do not write a script that emits \`document_endpoint\` calls. Those patterns hit per-message output-token limits and silently drop entries. The only correct loop is: identify entry point → call \`document_endpoint\` → identify next → call \`document_endpoint\` → ...
+### Required workflow — BOUNDED BATCHES, NO MANIFESTS
+Keep one in-memory batch of at most 4 fully inspected entry points. Call \`document_endpoints\` as soon as it reaches 4, then continue with a fresh batch. Flush the final partial batch before \`response\`. Do not build a JSON file or whole-resource list to "process later," and do not write a script that emits endpoint-documentation calls. Those patterns hit per-message output-token limits and silently drop entries.
 
-When finished, call \`response\` with a summary of how many entry points you documented. The reported count must equal the number of successful \`document_endpoint\` calls you made.`;
+When finished, call \`response\` with a summary of how many entry points you documented. The reported count must equal the total successful endpoint results across your \`document_endpoints\` calls.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1249,7 +1251,7 @@ When finished, call \`response\` with a summary of how many entry points you doc
  * 1. Run `git diff` between the two commits and write the output to a file.
  * 2. Serialize existing assets into the session's assets directory (app folder structure).
  * 3. Spawn a CodeAgent to analyze the diff and update assets in-place.
- *    New endpoints get risk scores inline via document_endpoint.
+ *    New endpoints get risk scores inline via document_endpoints.
  * 4. Read the final assets directory and reconstruct the result.
  * 5. Carry forward existing risk scores for unchanged endpoints.
  */
@@ -1554,13 +1556,13 @@ Read the diff file at \`${diffPath}\`. If it's very large, read it in chunks. Id
 
 ### Step 2: Determine impact on the attack surface
 For each changed file, determine if it affects any endpoints:
-- **New route/endpoint definitions** → use \`document_endpoint\` with the appropriate \`appName\`
+- **New route/endpoint definitions** → include them in bounded \`document_endpoints\` calls with the appropriate \`appName\`
 - **Modified route handlers** → read the existing asset file, then use \`execute_command\` to update it
 - **Deleted route files or endpoint definitions** → delete the corresponding asset file
 - **Non-route changes** (e.g. utility functions, configs, tests) → skip
 
 ### Step 3: Update assets
-For new endpoints, use \`document_endpoint\` with:
+For new endpoints, include one endpoint object in \`document_endpoints\` with:
 - \`appName\` set to the correct application name
 - \`routePath\` set to the HTTP route (e.g., \`/api/users\`) — this is NOT a file path
 - \`method\` as an array of ALL HTTP methods the path supports
@@ -1572,7 +1574,7 @@ For removed endpoints, delete the file via \`execute_command\`.
 
 **IMPORTANT: ONE entry per route path.** Do NOT create separate entries for different HTTP methods on the same path.
 
-**IMPORTANT: NO MANIFESTS, NO BATCHING.** Call \`document_endpoint\` directly, one new endpoint at a time, the moment you identify it. Do not build a JSON file or list of endpoints-to-document and process it later, and do not write a script that emits \`document_endpoint\` calls — that pattern hits output-token limits and silently drops endpoints.
+**IMPORTANT: BOUNDED BATCHES, NO MANIFESTS.** Keep at most 4 fully inspected new endpoints in memory, call \`document_endpoints\`, then continue. Flush the final partial batch before \`response\`. Do not build a whole-diff manifest or write a script that emits endpoint-documentation calls — those patterns hit output-token limits and silently drop endpoints.
 
 ### Step 4: Report
 When finished, call the \`response\` tool with a summary of your changes.

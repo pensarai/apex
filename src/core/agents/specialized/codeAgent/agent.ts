@@ -24,6 +24,7 @@ const CODE_AGENT_TOOLS: string[] = [
   "http_request",
   "document_app",
   "document_endpoint",
+  "document_endpoints",
   // Web search tools — research vulnerable library versions, look up API docs
   "web_search",
   "get_page",

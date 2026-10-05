@@ -47,6 +47,7 @@ describe("CodeAgent stays a read-focused analysis agent", () => {
       "run_code_query",
       "document_app",
       "document_endpoint",
+      "document_endpoints",
       "web_search",
       "get_page",
     ]) {

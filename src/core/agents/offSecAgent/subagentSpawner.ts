@@ -126,6 +126,11 @@ export interface SpawnRuntime {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
 }
 
+/** Host scheduling intent for a child whose model loop never awaits descendants. */
+export interface SpawnScheduling {
+  class: "sandbox-leaf";
+}
+
 /** @public Consumed by Console's durable subagent runtime. */
 export interface SpawnOptions<TResult = unknown> {
   /** Type-specific construction fields + the registry discriminator. */
@@ -133,6 +138,9 @@ export interface SpawnOptions<TResult = unknown> {
 
   /** Harness inherited from the parent runtime. */
   runtime: SpawnRuntime;
+
+  /** Optional scheduling intent interpreted by durable hosts; ignored in-process. */
+  scheduling?: SpawnScheduling;
 
   /** Parent bus the child's events bubble to via {@link AgentEventBus.attachChild}. */
   parentBus?: AgentEventBus;

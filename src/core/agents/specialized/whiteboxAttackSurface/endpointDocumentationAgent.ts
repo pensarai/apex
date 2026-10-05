@@ -250,7 +250,12 @@ async function runEndpointDocumentationAgent(
         // - list_files / grep: route enumeration is surface's job; without this,
         //   soft prompt guidance gets overridden by the model's discovery instinct
         //   and the agent orients-first, looking like a discovery pass.
-        excludeTools: ["document_app", "list_files", "grep"],
+        excludeTools: [
+          "document_app",
+          "document_endpoints",
+          "list_files",
+          "grep",
+        ],
         responseSchema: DiscoverySummarySchema,
         projectThreatModel,
         attackSurfaceRegistry,

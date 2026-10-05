@@ -276,6 +276,11 @@ describe("runWhiteboxAttackSurfaceApp — standalone, no runWhiteboxAttackSurfac
     expect(mocks.codeAgentInputs).toHaveLength(2);
     expect(mocks.codeAgentInputs[0]?.backends).toBe(backends);
     expect(mocks.codeAgentInputs[1]?.backends).toBe(backends);
+    for (const input of mocks.codeAgentInputs) {
+      expect(input.excludeTools).toEqual(["document_app", "document_endpoint"]);
+      expect(input.objective).toContain("document_endpoints");
+      expect(input.objective).toContain("at most 4");
+    }
   });
 
   it("reports failure when a discovery agent throws, without throwing itself", async () => {
@@ -394,7 +399,7 @@ describe("opt-in incremental recon on the existing root", () => {
     };
     mocks.consumeImpl = async (input) => {
       expect(input.subagentId).toBe("whitebox-apps-discovery:0");
-      expect(input.excludeTools).toEqual([]);
+      expect(input.excludeTools).toEqual(["document_endpoint"]);
       expect(input.attackSurfaceArtifactsPath).toBe(assetsPath);
       expect(input.objective).toContain("shared libraries");
       expect(input.objective).not.toContain(
@@ -518,7 +523,10 @@ describe("opt-in incremental recon on the existing root", () => {
       /^# Identify All Applications in the Repository/,
     );
     expect(input.objective).not.toContain("Incremental Attack Surface");
-    expect(input.excludeTools).toEqual(["document_endpoint"]);
+    expect(input.excludeTools).toEqual([
+      "document_endpoint",
+      "document_endpoints",
+    ]);
     expect(input).not.toHaveProperty("attackSurfaceArtifactsPath");
     expect(ids.newSessionId.mock.calls).toEqual([
       ["whitebox-apps-discovery", 0],

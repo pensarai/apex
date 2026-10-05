@@ -15,7 +15,7 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
-const documentEndpointInputSchema = z.object({
+export const documentEndpointInputSchema = z.object({
   appName: z
     .string()
     .describe(
@@ -109,7 +109,7 @@ const documentEndpointInputSchema = z.object({
     ),
 });
 
-type DocumentEndpointInput = z.infer<typeof documentEndpointInputSchema>;
+export type DocumentEndpointInput = z.infer<typeof documentEndpointInputSchema>;
 
 /**
  * Factory for the `document_endpoint` tool.

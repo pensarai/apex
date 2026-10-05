@@ -419,6 +419,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               usageRecorder: ctx.usageRecorder,
               streamIdFactory: ctx.streamIdFactory,
             },
+            scheduling: { class: "sandbox-leaf" },
             parentBus: ctx.eventBus,
             subagentName: "Finding Judge",
             lifecycleInput: { title: input.title, endpoint: input.endpoint },

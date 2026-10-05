@@ -28,15 +28,15 @@ When your objective includes structured output, call \`response\` with your fina
 
 const NO_MANIFEST_HARD_RULES = `**You MUST NOT, under any circumstances:**
 - Build a manifest, JSON file, list, or array of routes to document later (e.g. \`cat > /tmp/pages.json << EOF [...] EOF\`).
-- Write a shell, Python, or any other script whose purpose is to generate \`document_endpoint\` tool calls.
+- Write a shell, Python, or any other script whose purpose is to generate endpoint-documentation tool calls.
 - Use a single message to "summarize all the routes I'll document" before documenting them.
-- Stop documentation early because you "have enough" or it's "getting repetitive." If you discovered N routes, you must produce N \`document_endpoint\` calls.
+- Stop documentation early because you "have enough" or it's "getting repetitive." If you discovered N routes, every route must appear in a \`document_endpoints\` call.
 
-These patterns silently truncate at output-token limits and routes get dropped. The only correct workflow is: discover a route → call \`document_endpoint\` for it → discover the next route → call \`document_endpoint\` for it → ... until every route is documented. Repetition is expected and required.`;
+These patterns silently truncate at output-token limits and routes get dropped. Keep one in-memory batch of at most 4 routes: discover and inspect a route → add it to the current batch → call \`document_endpoints\` as soon as the batch reaches 4 → continue with a fresh batch. Flush the final partial batch before finishing.`;
 
 const SUBMODULE_IGNORE_STEP = `**Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.`;
 
-const DOCUMENT_IMMEDIATELY_RULE = `**Document each item the instant you discover it** — every output tool call must be made directly, one item per call, immediately after you identify it. Never collect items into a manifest, JSON file, or batch script. If you find yourself thinking "let me list all of these and then document them," stop — that pattern silently drops items when output tokens run out.`;
+const DOCUMENT_IMMEDIATELY_RULE = `**Document in bounded batches as you discover items** — keep at most 4 fully inspected endpoints in memory, call \`document_endpoints\`, then continue. Never collect the whole application into a manifest, JSON file, or batch script.`;
 
 // ---------------------------------------------------------------------------
 // Workflow phase system prompts
@@ -147,7 +147,7 @@ When you have called \`document_endpoint\` for every endpoint in your input list
  * enumerate a framework) and the entire incremental workflow.
  *
  * This is the "general-purpose" code-agent prompt: filesystem tools +
- * document_app + document_endpoint, with the no-manifest hard rules.
+ * document_app + document_endpoints, with the no-manifest hard rules.
  */
 export const WHITEBOX_DISCOVERY_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
 
@@ -169,10 +169,10 @@ ${EXECUTE_COMMAND_DOC}
 ## document_app
 Use this to document each application/service you identify. Persists a JSON record to the session's apps directory.
 
-## document_endpoint
-**This is your primary output tool for endpoints.** Use it to document every endpoint you discover. Each call persists a JSON record to the session's endpoints directory, organized by app.
+## document_endpoints
+**This is your primary output tool for endpoints.** Use it to document every endpoint you discover. Each call accepts 1–4 endpoint records and processes their threat models concurrently.
 
-**HARD RULE — call this tool DIRECTLY, one route at a time.** The moment you have enough information about a route to document it, your very next tool call must be \`document_endpoint\` for that route. Do not defer. Do not batch. Do not collect routes into a list to "process later."
+**HARD RULE — bounded batches only.** Keep at most 4 fully inspected routes in the current batch. Call \`document_endpoints\` immediately when it reaches 4, and flush the final partial batch before \`response\`. Do not build a whole-app manifest or defer documentation until the end.
 
 ${NO_MANIFEST_HARD_RULES}
 
@@ -195,7 +195,7 @@ ${RESPONSE_TOOL_DOC}
 3. **Search, then read** — use grep to locate what you need, then read the relevant files.
 4. ${DOCUMENT_IMMEDIATELY_RULE}
 5. **Follow the trail** — trace through imports, function calls, and references to build full understanding.
-6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective. Repetitive \`document_endpoint\` calls are expected; do not summarize, deduplicate, or shortcut them.
+6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective. Repetitive bounded \`document_endpoints\` calls are expected; do not summarize, deduplicate, or shortcut them.
 `;
 
 // ---------------------------------------------------------------------------

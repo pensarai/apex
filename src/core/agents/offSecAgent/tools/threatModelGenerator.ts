@@ -370,7 +370,11 @@ export async function generateThreatModelForEndpoint(
           system: THREAT_MODEL_SYSTEM_PROMPT,
           responseSchema: ThreatModelResultSchema,
           stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
-          excludeTools: ["document_endpoint", "document_app"],
+          excludeTools: [
+            "document_endpoint",
+            "document_endpoints",
+            "document_app",
+          ],
         },
         runtime: {
           session: ctx.session,
@@ -382,6 +386,7 @@ export async function generateThreatModelForEndpoint(
           usageRecorder: ctx.usageRecorder,
           streamIdFactory: ctx.streamIdFactory,
         },
+        scheduling: { class: "sandbox-leaf" },
         parentBus: ctx.eventBus,
         subagentName,
         lifecycleInput: { app: input.appName, endpoint: input.routePath },

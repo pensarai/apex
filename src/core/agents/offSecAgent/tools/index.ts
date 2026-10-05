@@ -30,6 +30,7 @@ export { detectAuthScheme } from "./detectAuthScheme";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
+export { documentEndpoints } from "./documentEndpoints";
 export { documentVulnerability } from "./documentFinding";
 // Email tools
 export {
@@ -208,6 +209,7 @@ import { deleteFile } from "./deleteFile";
 import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
+import { documentEndpoints } from "./documentEndpoints";
 import { documentVulnerability } from "./documentFinding";
 import {
   emailGetAttachments,
@@ -340,6 +342,7 @@ const TOOL_REGISTRY = [
   // Attack surface / recon tools
   { name: "document_app", factory: documentApp },
   { name: "document_endpoint", factory: documentEndpoint },
+  { name: "document_endpoints", factory: documentEndpoints },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
   { name: "create_workspace_domain", factory: createWorkspaceDomain },
   { name: "list_workspace_apps", factory: listWorkspaceApps },
@@ -604,6 +607,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "git_diff",
   "document_app",
   "document_endpoint",
+  "document_endpoints",
   ...WORKSPACE_TOOL_NAMES,
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
@@ -687,7 +691,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, document_vulnerability,
- * document_app, document_endpoint, create_workspace_domain,
+ * document_app, document_endpoint, document_endpoints, create_workspace_domain,
  * create_workspace_app, update_workspace_app, create_workspace_endpoint,
  * update_workspace_endpoint, profile_codebase, run_code_query,
  * run_whitebox_scan (they persist session artifacts). These should not be available
