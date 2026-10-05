@@ -44,7 +44,7 @@ vi.mock("../session", async () => ({
   get: async () => state.session,
 }));
 
-const { runRecordedAgent } = await import("./recordedRun");
+const { runRecordedAgent, resumeRecordedAgent } = await import("./recordedRun");
 type Store = Awaited<ReturnType<typeof openSqliteRunStore>>;
 let store: Store;
 let root: string;
@@ -147,6 +147,85 @@ afterEach(async () => {
 });
 
 describe("recorded runs through the real agent and SDK loop", () => {
+  it("settles an accepted request before pausing and resumes without repeating it", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    target.removeAllListeners("request");
+    target.on("request", async (request, response) => {
+      hits.push(request.url ?? "");
+      if (request.url === "/first") await held;
+      response.end("ok");
+    });
+    const doStream = vi
+      .fn()
+      .mockImplementationOnce(async () => httpStep("first"))
+      .mockImplementationOnce(async () => httpStep("second"))
+      .mockImplementation(async () => finalStep());
+    state.model = new MockLanguageModelV3({ doStream });
+    const input = spec("run_pause_between_turns");
+    const running = runRecordedAgent({ spec: input, store });
+    void running.catch(() => {});
+
+    try {
+      await vi.waitFor(() => expect(hits).toEqual(["/first"]));
+      const client = await openSqliteRunStore(join(root, "runs.sqlite"));
+      try {
+        const control = await client.getControl(input.runId);
+        if (!control) throw new Error("Missing run control");
+        await client.requestControl(input.runId, "pause", control.revision);
+      } finally {
+        client.close();
+      }
+    } finally {
+      release();
+    }
+    const paused = await running;
+    expect(paused.record.status).toBe("paused");
+    expect(hits).toEqual(["/first"]);
+    expect(doStream).toHaveBeenCalledTimes(1);
+    expect(await store.listToolOperations(input.runId)).toMatchObject([
+      { toolCallId: "tc_first", state: "settled" },
+    ]);
+    expect(await store.listModelAttempts(input.runId)).toHaveLength(1);
+
+    store.close();
+    store = await openSqliteRunStore(join(root, "runs.sqlite"));
+    const resumed = await resumeRecordedAgent({ runId: input.runId, store });
+
+    expect(resumed.record.status).toBe("completed");
+    expect(resumed.record.sessionId).toBe(paused.record.sessionId);
+    expect(resumed.record.attemptId).not.toBe(paused.record.attemptId);
+    expect(hits).toEqual(["/first", "/second"]);
+    expect(doStream).toHaveBeenCalledTimes(3);
+    expect(state.model.doStreamCalls[1]?.prompt).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "tool",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-result",
+              toolCallId: "tc_first",
+              output: {
+                type: "json",
+                value: expect.objectContaining({ success: true, body: "ok" }),
+              },
+            }),
+          ]),
+        }),
+      ]),
+    );
+    expect(await store.listModelAttempts(input.runId)).toHaveLength(3);
+    expect(await store.listToolOperations(input.runId)).toMatchObject([
+      { toolCallId: "tc_first", state: "settled" },
+      { toolCallId: "tc_second", state: "settled" },
+    ]);
+    expect(await resumed.result?.streamResult.text).toBe(
+      "Both requests completed.",
+    );
+  });
+
   it("continues across tool turns to a final answer without duplicate admission", async () => {
     const doStream = vi
       .fn()
