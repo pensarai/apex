@@ -63,6 +63,9 @@ function evidenceDirectories(session: SessionInfo): string[] {
     session.pocsPath,
     join(session.rootPath, "tasks"),
     join(session.rootPath, "tool-results"),
+    // Retained command/search output (agentScratch.agentLogsDir for the
+    // root agent); other files under logs/ stay unreferenced.
+    join(session.logsPath, "tool-output"),
   ];
 }
 

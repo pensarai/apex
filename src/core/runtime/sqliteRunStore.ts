@@ -14,10 +14,15 @@ import {
   type RunRecord,
   RunRecordSchema,
 } from "./runStore";
+import type { RunToolStore } from "./runToolStore";
 import {
   createSqliteModelStore,
   MODEL_STORE_SCHEMA_SQL,
 } from "./sqliteModelStore";
+import {
+  createSqliteToolStore,
+  TOOL_STORE_SCHEMA_SQL,
+} from "./sqliteToolStore";
 
 type SqlValue = string | number | null;
 interface Database {
@@ -31,7 +36,7 @@ interface Database {
 }
 
 const APPLICATION_ID = 0x41505258;
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 
 const EvidenceSchema = z
   .object({
@@ -136,7 +141,7 @@ export async function openSqliteRunStore(
     "runtime",
     "runs.sqlite",
   ),
-): Promise<RunModelStore & { close(): void }> {
+): Promise<RunModelStore & RunToolStore & { close(): void }> {
   // Leave the other runtime's builtin unresolved in both bundled distributions.
   const moduleName = typeof Bun !== "undefined" ? "bun:sqlite" : "node:sqlite";
   let sqlite: {
@@ -172,7 +177,7 @@ export async function openSqliteRunStore(
       ) {
         throw new Error("Database is not an Apex run store");
       }
-      if (![0, 1, 2, STORE_VERSION].includes(version.user_version)) {
+      if (![0, 1, 2, 3, STORE_VERSION].includes(version.user_version)) {
         throw new Error(
           `Unsupported run store version: ${version.user_version}`,
         );
@@ -213,6 +218,10 @@ export async function openSqliteRunStore(
       }
       if (version.user_version < 3) {
         db.exec(MODEL_STORE_SCHEMA_SQL);
+        db.exec("PRAGMA user_version = 3");
+      }
+      if (version.user_version < 4) {
+        db.exec(TOOL_STORE_SCHEMA_SQL);
         db.exec(`PRAGMA user_version = ${STORE_VERSION}`);
       }
     });
@@ -250,7 +259,42 @@ export async function openSqliteRunStore(
       }
     };
 
+    const commitEvidence = (
+      runId: string,
+      evidence: z.infer<typeof EvidenceSchema>,
+    ) => {
+      const nextEvidence = EvidenceSchema.parse(evidence);
+      const previousEvidence = getEvidence(runId);
+      if (
+        previousEvidence &&
+        previousEvidence.rootPath !== nextEvidence.rootPath
+      ) {
+        throw new Error("Session evidence location changed");
+      }
+      const files = new Map(
+        previousEvidence?.files.map((ref) => [ref.path, ref]),
+      );
+      for (const ref of nextEvidence.files) files.set(ref.path, ref);
+      const snapshot = {
+        rootPath: nextEvidence.rootPath,
+        files: [...files.values()].sort((a, b) => a.path.localeCompare(b.path)),
+      };
+      db.prepare(
+        "INSERT INTO run_evidence (run_id, evidence_json) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET evidence_json = excluded.evidence_json",
+      ).run(runId, JSON.stringify(snapshot));
+    };
+
     return {
+      ...createSqliteToolStore({
+        db,
+        transaction: (operation) => transaction(db, operation),
+        getRun: get,
+        getContextReference: (runId) => {
+          const head = headContext(runId);
+          return head ? { epoch: head.epoch, revision: head.revision } : null;
+        },
+        commitEvidence,
+      }),
       ...createSqliteModelStore({
         db,
         transaction: (operation) => transaction(db, operation),
@@ -296,26 +340,7 @@ export async function openSqliteRunStore(
             "INSERT INTO run_context (run_id, revision, epoch, change_json) VALUES (?, ?, ?, ?)",
           ).run(runId, reference.revision, reference.epoch, serialized);
           if (nextEvidence) {
-            const previousEvidence = getEvidence(runId);
-            if (
-              previousEvidence &&
-              previousEvidence.rootPath !== nextEvidence.rootPath
-            ) {
-              throw new Error("Session evidence location changed");
-            }
-            const files = new Map(
-              previousEvidence?.files.map((ref) => [ref.path, ref]),
-            );
-            for (const ref of nextEvidence.files) files.set(ref.path, ref);
-            const snapshot = {
-              rootPath: nextEvidence.rootPath,
-              files: [...files.values()].sort((a, b) =>
-                a.path.localeCompare(b.path),
-              ),
-            };
-            db.prepare(
-              "INSERT INTO run_evidence (run_id, evidence_json) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET evidence_json = excluded.evidence_json",
-            ).run(runId, JSON.stringify(snapshot));
+            commitEvidence(runId, nextEvidence);
           }
           return reference;
         });

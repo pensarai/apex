@@ -44,6 +44,7 @@ import {
   resolveCommandPlatform,
   UNKNOWN_FACTS,
 } from "./runtimeContext";
+import { wrapRecordedTools } from "./recordedTools";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";
@@ -654,6 +655,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     let tools: ToolSet = input.extraTools
       ? { ...builtinTools, ...input.extraTools }
       : { ...builtinTools };
+
+    // Only approved calls may reach the execution journal.
+    if (input.toolExecutionRecorder) {
+      tools = wrapRecordedTools(tools, input.toolExecutionRecorder);
+    }
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {

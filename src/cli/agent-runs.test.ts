@@ -25,6 +25,8 @@ function makeStore() {
     getEvidence: vi.fn(),
     listModelAttempts: vi.fn(async () => []),
     listRetries: vi.fn(async () => []),
+    hasToolJournal: vi.fn(async () => false),
+    listToolOperations: vi.fn(async () => []),
     close: vi.fn(),
   };
 }
@@ -372,6 +374,39 @@ describe("model inspection", () => {
       JSON.parse(output()).models.limits.remainingModelAttempts,
     ).toBeNull();
     await expect(runAgentRunsCommand(["list", "--models"])).rejects.toThrow(
+      "Invalid agent-runs arguments",
+    );
+  });
+});
+
+describe("tool inspection", () => {
+  it("distinguishes pre-journal runs from an empty recorded journal", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    await runAgentRunsCommand(["show", "run_old", "--tools"]);
+    expect(JSON.parse(output()).tools).toEqual({
+      journaled: false,
+      operations: [],
+    });
+    expect(store.hasToolJournal).toHaveBeenCalledWith("run_old");
+    expect(store.listToolOperations).toHaveBeenCalledWith("run_old");
+    expect(store.close).toHaveBeenCalledOnce();
+  });
+
+  it("exposes unfinished effects without presenting them as settled results", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    store.hasToolJournal.mockResolvedValue(true);
+    const operation = {
+      toolCallId: "tc_1",
+      state: "outcome_unknown",
+      input: { method: "POST" },
+    };
+    store.listToolOperations.mockResolvedValue([operation] as never);
+    await runAgentRunsCommand(["show", "run_tool", "--tools"]);
+    expect(JSON.parse(output()).tools).toEqual({
+      journaled: true,
+      operations: [operation],
+    });
+    await expect(runAgentRunsCommand(["list", "--tools"])).rejects.toThrow(
       "Invalid agent-runs arguments",
     );
   });

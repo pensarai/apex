@@ -11,6 +11,7 @@ import {
   RecordedRunSpecSchema,
   type RunRecord,
 } from "../runtime/runStore";
+import type { RunToolStore } from "../runtime/runToolStore";
 
 const calls = vi.hoisted(() => [] as string[]);
 const sessionCreate = vi.hoisted(() => vi.fn());
@@ -62,7 +63,15 @@ function makeRecord(spec: RecordedRunSpec): RunRecord {
 function makeStore() {
   let record: RunRecord | undefined;
   const transitionFailures = new Map<string, unknown>();
-  const store: RunModelStore = {
+  const store: RunModelStore & RunToolStore = {
+    initializeToolJournal: vi.fn(async () => {}),
+    hasToolJournal: vi.fn(async () => true),
+    startToolOperation: vi.fn(async () => {
+      throw new Error("Unexpected tool dispatch");
+    }),
+    settleToolOperation: vi.fn(async () => {}),
+    markToolOutcomeUnknown: vi.fn(async () => {}),
+    listToolOperations: vi.fn(async () => []),
     startModelAttempt: vi.fn(async () => {}),
     observeModelToolCall: vi.fn(async () => {}),
     settleModelAttempt: vi.fn(async () => {}),
@@ -181,6 +190,18 @@ describe("duplicate admission never executes", () => {
 });
 
 describe("critical failures settle failed without dispatching the agent", () => {
+  it("rejects journal enrollment failure before agent dispatch", async () => {
+    const { store, current } = makeStore();
+    vi.mocked(store.initializeToolJournal).mockRejectedValue(
+      new Error("journal unavailable"),
+    );
+    await expect(
+      runRecordedAgent({ spec: baseSpec(tempCwd()), store }),
+    ).rejects.toThrow("journal unavailable");
+    expect(runAgent).not.toHaveBeenCalled();
+    expect(current()?.status).toBe("failed");
+  });
+
   it("rejects an unregistered model before session creation", async () => {
     const { store, current } = makeStore();
     await expect(
@@ -300,6 +321,7 @@ describe("recorded context and evidence wiring", () => {
     sessionCreate.mockResolvedValue({
       rootPath,
       findingsPath: join(rootPath, "findings"),
+      logsPath: join(rootPath, "logs"),
       pocsPath: join(rootPath, "pocs"),
     });
     runAgent.mockImplementationOnce(async ({ contextRecorder }) => {
@@ -340,6 +362,7 @@ describe("recorded context and evidence wiring", () => {
     sessionCreate.mockResolvedValue({
       rootPath,
       findingsPath: join(rootPath, "findings"),
+      logsPath: join(rootPath, "logs"),
       pocsPath: join(rootPath, "pocs"),
     });
     vi.mocked(store.commitContext).mockRejectedValueOnce(
