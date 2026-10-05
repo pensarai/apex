@@ -13,7 +13,7 @@ const getPageInputSchema = z.object({
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Fetching CVE details from NVD')",
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Reading the target login page')",
     ),
 });
 
@@ -33,17 +33,11 @@ export interface GetPageResponse {
 
 export function getPage(ctx: ToolContext) {
   return tool({
-    description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
+    description: `Fetch and extract readable content from an in-scope target page. Returns the page title and main text content.
 
 USAGE GUIDANCE:
-- Use this tool to read full content from URLs found via web_search
-- Fetch CVE details, security advisories, and vulnerability write-ups
-- Read documentation, API references, and technical guides
-- Extract exploit code, payloads, and proof-of-concept details from security blogs
-
-BEST PRACTICES:
-- First use web_search to find relevant URLs, then use get_page to read the full content
-- Prefer authoritative sources (NVD, vendor advisories, security researcher blogs)
+- Use this tool only for pages already present in the immutable run scope
+- Use web_search for external security research; do not fetch those URLs directly
 - For large pages, focus on the most relevant sections
 - If content is truncated, the important information is usually near the beginning`,
     inputSchema: getPageInputSchema,

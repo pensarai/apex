@@ -241,6 +241,41 @@ describe("LocalBackends.http destructive guard", () => {
   });
 });
 
+describe("LocalBackends.http redirect policy", () => {
+  it("blocks an out-of-scope sandbox redirect before a second request", async () => {
+    const execute = vi.fn(async (command: string) => {
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: Buffer.from(
+          `HTTP/1.1 302 Found\r\nLocation: https://outside.example/admin\r\n\r\n\n__APEX_${nonce}_CURL_EXIT_0\n`,
+        ).toString("base64"),
+        stderr: "",
+      };
+    });
+    const ctx = makeCtx({
+      target: "https://target.example",
+      sandbox: {
+        type: "linux",
+        execute,
+      } as unknown as NonNullable<ToolContext["sandbox"]>,
+    });
+
+    const result = await LocalBackends(ctx).http.request({
+      url: "https://target.example/start",
+      method: "GET",
+      followRedirects: true,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/scope violation/i),
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+});
+
 describe("LocalBackends.http timeout", () => {
   afterEach(() => {
     vi.useRealTimers();

@@ -254,6 +254,64 @@ describe("targetFetch", () => {
 
     spy.mockRestore();
   });
+
+  it("blocks a default strict-scope redirect before connecting to its destination", async () => {
+    const session = makeSession({
+      config: {
+        headers: { Authorization: "Bearer secret" },
+        scopeConstraints: {
+          strictScope: true,
+          allowedHosts: ["example.com"],
+        },
+      },
+    });
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("", {
+        status: 302,
+        headers: { location: "https://outside.example/admin" },
+      }),
+    );
+
+    await expect(
+      targetFetch(session, "https://example.com/start"),
+    ).rejects.toThrow(/redirect destination.*immutable run policy/i);
+    expect(spy).toHaveBeenCalledOnce();
+
+    spy.mockRestore();
+  });
+
+  it("authorizes each strict-scope redirect hop", async () => {
+    const session = makeSession({
+      config: {
+        headers: { "X-API-Key": "abc" },
+        scopeConstraints: {
+          strictScope: true,
+          allowedHosts: ["example.com"],
+        },
+      },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 302,
+          headers: { location: "/final" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+
+    await targetFetch(session, "https://example.com/start", {
+      redirect: "follow",
+    });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1]?.[0]).toBe("https://example.com/final");
+    expect(spy.mock.calls[1]?.[1]?.headers).toMatchObject({
+      "X-API-Key": "abc",
+    });
+
+    spy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------

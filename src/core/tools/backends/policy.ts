@@ -55,8 +55,11 @@ interface HttpPolicyArgs {
   url: string;
   body?: string;
   headers?: Record<string, string>;
-  /** `get_page`'s readability fetch: never scope- or destructive-checked. */
   extract?: "readability";
+}
+
+interface BrowserNavigatePolicyArgs {
+  url: string;
 }
 
 const ALLOW: PolicyDecision = { allow: true };
@@ -89,9 +92,7 @@ export const defaultPolicy: ToolPolicy = {
     }
 
     if (call.backend === "http" && call.op === "request") {
-      const { method, url, body, headers, extract } =
-        call.args as HttpPolicyArgs;
-      if (extract === "readability") return ALLOW;
+      const { method, url, body, headers } = call.args as HttpPolicyArgs;
       try {
         assertUrlInScope(url, ctx);
         assertHttpActionAllowed({ method, url, body, headers }, ctx);
@@ -100,6 +101,19 @@ export const defaultPolicy: ToolPolicy = {
           e instanceof ScopeViolationError ||
           e instanceof DestructiveActionError
         ) {
+          return { allow: false, reason: e.message };
+        }
+        throw e;
+      }
+      return ALLOW;
+    }
+
+    if (call.backend === "browser" && call.op === "navigate") {
+      const { url } = call.args as BrowserNavigatePolicyArgs;
+      try {
+        assertUrlInScope(url, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
           return { allow: false, reason: e.message };
         }
         throw e;

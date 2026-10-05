@@ -184,6 +184,60 @@ describe("httpRequest rate limiting", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("blocks an out-of-scope redirect before the second connection", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response("", {
+          status: 302,
+          headers: { location: "https://prod.example.com/admin" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = (await httpRequest(makeCtx()).execute?.(
+      {
+        url: "https://example.com/start",
+        method: "GET",
+        followRedirects: true,
+        timeout: 1000,
+        toolCallDescription: "Follow a scoped redirect",
+      },
+      { toolCallId: "tc_redirect", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scope violation/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows an in-scope redirect one authorized hop at a time", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 302,
+          headers: { location: "/final" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = (await httpRequest(makeCtx()).execute?.(
+      {
+        url: "https://example.com/start",
+        method: "GET",
+        followRedirects: true,
+        timeout: 1000,
+        toolCallDescription: "Follow a scoped redirect",
+      },
+      { toolCallId: "tc_redirect", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe("https://example.com/final");
+  });
+
   it("acquires one slot before the sandbox curl dispatch", async () => {
     const { ctx, acquireSlot } = ctxWithLimiter();
     const execute = vi.fn(async () => ({
