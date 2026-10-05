@@ -495,7 +495,7 @@ describe("getPage research broker", () => {
     process.env.PENSAR_API_URL = "https://api.pensar.test";
     process.env.PENSAR_API_KEY = "service-key";
     const fetchMock = vi.fn(
-      async () =>
+      async (_input: string | URL | Request) =>
         new Response(
           JSON.stringify({
             url: "https://security.example/advisory",
