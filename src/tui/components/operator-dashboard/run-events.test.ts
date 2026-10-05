@@ -567,7 +567,7 @@ describe("createDisplayEventHandlers", () => {
           (callback, delay = 0, ...args) =>
             schedule(() => {
               timerCallbacks++;
-              callback(...args);
+              (callback as (...callbackArgs: unknown[]) => void)(...args);
             }, delay),
         );
       }
