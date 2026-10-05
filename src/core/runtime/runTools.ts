@@ -1,5 +1,6 @@
 import type { ToolResultPart } from "ai";
 import { RunPersistenceError } from "./persistenceError";
+import { RunControlInterruption } from "./runControlStore";
 import type {
   RecordedToolInput,
   RecordedToolPolicy,
@@ -34,6 +35,9 @@ export interface RunToolRecorderOptions {
   /** Logical execution-attempt id (B1 run record). */
   executionAttemptId: string;
   store: RunToolStore;
+  beforeTool?: (
+    input: Omit<RecordedToolInput, "policy">,
+  ) => Promise<ToolResultPart["output"] | undefined>;
   /** Collects evidence references to commit alongside a settled output. */
   collectEvidence: () => Promise<{
     rootPath: string;
@@ -47,11 +51,14 @@ export function createRunToolRecorder(
   options: RunToolRecorderOptions,
 ): ToolExecutionRecorder {
   const { runId, executionAttemptId, store, collectEvidence } = options;
-  let latched: RunPersistenceError | undefined;
+  let latched: Error | undefined;
   let tail: Promise<void> = Promise.resolve();
 
-  const latch = (cause: unknown): RunPersistenceError => {
-    latched ??= new RunPersistenceError(cause);
+  const latch = (cause: unknown): Error => {
+    latched ??=
+      cause instanceof RunControlInterruption
+        ? cause
+        : new RunPersistenceError(cause);
     return latched;
   };
 
@@ -109,6 +116,15 @@ export function createRunToolRecorder(
       input: snap.value,
       policy,
     };
+
+    if (options.beforeTool) {
+      try {
+        const blocked = await options.beforeTool(recorded);
+        if (blocked) return { kind: "reuse", output: structuredClone(blocked) };
+      } catch (cause) {
+        throw latch(cause);
+      }
+    }
 
     // The start write is the dispatch gate — it must settle before this
     // call returns, so enqueue and await it directly.

@@ -5,6 +5,7 @@ import type {
   ObservedModelToolCall,
 } from "../ai";
 import { RunPersistenceError } from "./persistenceError";
+import { RunControlInterruption } from "./runControlStore";
 import { RunLimitError, type RunModelStore } from "./runModelStore";
 
 interface RunInferenceRecorderOptions {
@@ -24,7 +25,9 @@ export function createRunInferenceRecorder(
   const latch = (cause: unknown): Error => {
     if (latched) return latched;
     latched =
-      cause instanceof RunLimitError || cause instanceof RunPersistenceError
+      cause instanceof RunLimitError ||
+      cause instanceof RunPersistenceError ||
+      cause instanceof RunControlInterruption
         ? cause
         : new RunPersistenceError(cause);
     return latched;

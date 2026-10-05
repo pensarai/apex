@@ -1,6 +1,6 @@
 # Recorded local runs
 
-Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
+Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They support durable pause/stop requests and optional tool approvals. Resume, detached execution, and managed workers are not enabled yet.
 
 This path requires Bun or Node 22.13+. It uses the runtime's built-in SQLite implementation and adds no native package dependency. Existing commands retain their current runtime requirements. Run the commands through `bun src/cli.ts` during development or `pensar` after building/installing.
 
@@ -92,6 +92,37 @@ Schema version 3 introduced model history; upgrades remain transactional. Missin
 Conflicting inputs for the same call ID fail explicitly. Read-only, external-effect, local-mutation, and shell-dependent classifications are diagnostic; none enables automatic retries in this version. A journal write failure blocks dependent model dispatch and canonical context writes even when the SDK converts the exception into a tool error.
 
 Schema version 4 adds journal enrollment and operation records transactionally. Existing runs remain readable with `journaled: false`; migration does not manufacture missing tool history. These records support inspection and later recovery work. They do not enable resume or restore a lost environment.
+
+## Pause, stop, and approvals
+
+New runs enroll durable controls before execution. Inspect them from another terminal:
+
+```sh
+bun src/cli.ts agent-runs show run_local_smoke_01 --control --tools
+bun src/cli.ts agent-runs pause run_local_smoke_01
+bun src/cli.ts agent-runs stop run_local_smoke_01
+```
+
+Commands acknowledge a saved request. `running` with pause intent means the executor has not yet acknowledged a pause; `paused` means it reached a control boundary. Already accepted work may finish. Stop also sends cooperative cancellation to the live executor and denies pending approvals. Neither command proves that external effects were undone. Older runs without control enrollment reject these commands rather than pretending an old executor observes them.
+
+Clients use revision checks to prevent stale commands from replacing newer intent. A conflict requires inspecting the current record and retrying deliberately. Detaching or losing a client does not approve work or change intent. Ctrl+C/SIGTERM on the foreground start command still means stop; the runtime persists that intent before forwarding cancellation.
+
+To require approval, add an explicit policy to the spec before admission:
+
+```json
+{ "approval": { "requiredTools": ["http_request", "execute_command"] } }
+```
+
+Every listed tool must also be in `activeTools`. Omit the policy for the existing ungated behavior. A pending request contains its approval ID and exact validated input in `show --control`. Resolve it explicitly:
+
+```sh
+bun src/cli.ts agent-runs approve run_local_smoke_01 --approval <approvalId>
+bun src/cli.ts agent-runs reject run_local_smoke_01 --approval <approvalId>
+```
+
+A decision only authorizes that call's input under the admitted scope. Conflicting decisions fail. Denial returns a blocked result without dispatching the tool. Pending decisions survive process loss; they never auto-approve or silently expire. A deadline or explicit stop cancels the wait. The current TUI approval flow is unchanged.
+
+Schema version 5 introduces these records transactionally. Paused and interrupted runs still require the subsequent explicit recovery implementation; repeating `start` only returns their saved status.
 
 ## Smoke checks
 

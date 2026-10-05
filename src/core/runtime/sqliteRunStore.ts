@@ -7,6 +7,7 @@ import { type ModelMessage, modelMessageSchema } from "ai";
 import { z } from "zod";
 import { newSessionId } from "../id/id";
 import { getCurrentVersion } from "../installation";
+import type { RunControlStore } from "./runControlStore";
 import type { RunModelStore } from "./runModelStore";
 import {
   type RecordedRunSpec,
@@ -15,6 +16,10 @@ import {
   RunRecordSchema,
 } from "./runStore";
 import type { RunToolStore } from "./runToolStore";
+import {
+  CONTROL_STORE_SCHEMA_SQL,
+  createSqliteControlStore,
+} from "./sqliteControlStore";
 import {
   createSqliteModelStore,
   MODEL_STORE_SCHEMA_SQL,
@@ -36,7 +41,7 @@ interface Database {
 }
 
 const APPLICATION_ID = 0x41505258;
-const STORE_VERSION = 4;
+const STORE_VERSION = 5;
 
 const EvidenceSchema = z
   .object({
@@ -141,7 +146,7 @@ export async function openSqliteRunStore(
     "runtime",
     "runs.sqlite",
   ),
-): Promise<RunModelStore & RunToolStore & { close(): void }> {
+): Promise<RunModelStore & RunToolStore & RunControlStore & { close(): void }> {
   // Leave the other runtime's builtin unresolved in both bundled distributions.
   const moduleName = typeof Bun !== "undefined" ? "bun:sqlite" : "node:sqlite";
   let sqlite: {
@@ -177,7 +182,7 @@ export async function openSqliteRunStore(
       ) {
         throw new Error("Database is not an Apex run store");
       }
-      if (![0, 1, 2, 3, STORE_VERSION].includes(version.user_version)) {
+      if (![0, 1, 2, 3, 4, STORE_VERSION].includes(version.user_version)) {
         throw new Error(
           `Unsupported run store version: ${version.user_version}`,
         );
@@ -222,6 +227,10 @@ export async function openSqliteRunStore(
       }
       if (version.user_version < 4) {
         db.exec(TOOL_STORE_SCHEMA_SQL);
+        db.exec("PRAGMA user_version = 4");
+      }
+      if (version.user_version < 5) {
+        db.exec(CONTROL_STORE_SCHEMA_SQL);
         db.exec(`PRAGMA user_version = ${STORE_VERSION}`);
       }
     });
@@ -284,9 +293,21 @@ export async function openSqliteRunStore(
       ).run(runId, JSON.stringify(snapshot));
     };
 
+    const controlStore = createSqliteControlStore({
+      db,
+      transaction: (operation) => transaction(db, operation),
+      getRun: get,
+      getContextReference: (runId) => {
+        const head = headContext(runId);
+        return head ? { epoch: head.epoch, revision: head.revision } : null;
+      },
+    });
+
     return {
+      ...controlStore.methods,
       ...createSqliteToolStore({
         db,
+        assertToolApproved: controlStore.assertToolApproved,
         transaction: (operation) => transaction(db, operation),
         getRun: get,
         getContextReference: (runId) => {
@@ -297,6 +318,7 @@ export async function openSqliteRunStore(
       }),
       ...createSqliteModelStore({
         db,
+        assertDispatchAllowed: controlStore.assertDispatchAllowed,
         transaction: (operation) => transaction(db, operation),
         getRun: get,
         getContextReference: (runId) => {
@@ -423,7 +445,11 @@ export async function openSqliteRunStore(
           });
       },
       async transition(runId, attemptId, status) {
-        if (!["running", "completed", "failed", "cancelled"].includes(status)) {
+        if (
+          !["running", "paused", "completed", "failed", "cancelled"].includes(
+            status,
+          )
+        ) {
           throw new Error("Invalid run transition status");
         }
         return transaction(db, () => {
@@ -431,6 +457,11 @@ export async function openSqliteRunStore(
           if (!previous) throw new Error("Run does not exist");
           if (previous.attemptId !== attemptId) {
             throw new Error("Execution attempt does not own this run");
+          }
+          const intent = controlStore.readControl(runId)?.intent;
+          if (intent === "stop" && status !== "failed") status = "cancelled";
+          if (status === "paused" && intent !== "pause") {
+            throw new Error("Pausing requires a persisted pause request");
           }
           if (previous.status === status) return previous;
           if (

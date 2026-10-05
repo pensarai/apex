@@ -36,6 +36,7 @@ import {
 } from "../observability";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import type { RunContextRecorder } from "../runtime/runContext";
+import { RunControlInterruption } from "../runtime/runControlStore";
 import { RunLimitError } from "../runtime/runModelStore";
 import { scopedLogger } from "../util/lazyLogger";
 import {
@@ -791,7 +792,8 @@ function wrapStreamWithErrorHandler(
               // dispatch a turn whose context was never durably committed.
               if (
                 error instanceof RunPersistenceError ||
-                error instanceof RunLimitError
+                error instanceof RunLimitError ||
+                error instanceof RunControlInterruption
               ) {
                 throw error;
               }
@@ -2266,7 +2268,8 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
           await getInferenceRecorder(opts)?.flush();
           if (
             error instanceof RunPersistenceError ||
-            error instanceof RunLimitError
+            error instanceof RunLimitError ||
+            error instanceof RunControlInterruption
           ) {
             throw error;
           }

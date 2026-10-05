@@ -338,7 +338,7 @@ describe("startToolOperation", () => {
       ]) {
         await expect(
           store.startToolOperation(runId, exec, conflicting),
-        ).rejects.toThrow(/different inputs/);
+        ).rejects.toThrow(/different inputs|active tool allowlist/);
       }
 
       // The original was never changed by the conflicting attempts.

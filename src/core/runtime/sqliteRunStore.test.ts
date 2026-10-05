@@ -627,3 +627,72 @@ describe("subprocess contention and crash persistence", () => {
     });
   });
 });
+
+describe("durable control status boundaries", () => {
+  it("requires admitted approval tools and rejects undeclared policy before admission", async () => {
+    await withStore(
+      join(tempDir("control-spec-"), "runs.sqlite"),
+      async (store) => {
+        const candidate = {
+          ...spec("run_bad_policy"),
+          activeTools: ["http_request"],
+          approval: { requiredTools: ["execute_command"] },
+        };
+        await expect(store.admit(candidate as never)).rejects.toThrow(
+          /Approval tools/,
+        );
+        expect(await store.list()).toEqual([]);
+      },
+    );
+  });
+
+  it("acknowledges pause only after a durable request and cannot restart via transition", async () => {
+    await withStore(
+      join(tempDir("control-status-"), "runs.sqlite"),
+      async (store) => {
+        const { record } = await store.admit(spec("run_pause_status"));
+        await store.initializeControl(record.spec.runId, record.attemptId);
+        await store.transition(record.spec.runId, record.attemptId, "running");
+        await expect(
+          store.transition(record.spec.runId, record.attemptId, "paused"),
+        ).rejects.toThrow(/persisted pause/);
+        await store.requestControl(record.spec.runId, "pause", 0);
+        expect((await store.get(record.spec.runId))?.status).toBe("running");
+        expect(
+          (
+            await store.transition(
+              record.spec.runId,
+              record.attemptId,
+              "paused",
+            )
+          ).status,
+        ).toBe("paused");
+        await expect(
+          store.transition(record.spec.runId, record.attemptId, "running"),
+        ).rejects.toThrow(/Invalid run transition/);
+        expect((await store.admit(record.spec)).created).toBe(false);
+      },
+    );
+  });
+
+  it("honors a stop that races the executor's final completed write", async () => {
+    await withStore(
+      join(tempDir("control-stop-"), "runs.sqlite"),
+      async (store) => {
+        const { record } = await store.admit(spec("run_stop_race"));
+        await store.initializeControl(record.spec.runId, record.attemptId);
+        await store.transition(record.spec.runId, record.attemptId, "running");
+        await store.requestControl(record.spec.runId, "stop", 0);
+        expect(
+          (
+            await store.transition(
+              record.spec.runId,
+              record.attemptId,
+              "completed",
+            )
+          ).status,
+        ).toBe("cancelled");
+      },
+    );
+  });
+});

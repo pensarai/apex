@@ -171,6 +171,12 @@ export function createSqliteToolStore(input: {
   transaction<T>(operation: () => T): T;
   getRun(runId: string): RunRecord | undefined;
   getContextReference(runId: string): ContextReference | null;
+  assertToolApproved?(
+    runId: string,
+    toolName: string,
+    toolCallId: string,
+    toolInput: unknown,
+  ): void;
   /**
    * Merges refs into the run's current evidence snapshot on the same DB.
    * Synchronous by contract: it runs inside the caller's transaction and
@@ -289,6 +295,7 @@ export function createSqliteToolStore(input: {
       } = toolInput(candidate);
       return transaction(() => {
         enrolledRun(runId, executionAttemptId);
+        input.assertToolApproved?.(runId, toolName, toolCallId, durable);
         const context = input.getContextReference(runId);
         if (!context) {
           throw new Error("Tool operation requires a committed context");
