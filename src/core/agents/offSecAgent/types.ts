@@ -29,6 +29,7 @@ import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry
 import type { FindingsRegistry } from "../../findings/registry";
 import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
+import type { RunContextRecorder } from "../../runtime/runContext";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolBackends } from "../../tools/backends/types";
@@ -264,6 +265,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
   streamIdFactory?: StreamIdFactory;
+
+  /** Recorded-run durable context authority. Unset → no canonical persistence. */
+  contextRecorder?: RunContextRecorder;
 
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;

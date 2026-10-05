@@ -33,6 +33,8 @@ import {
   type GenerationSpanTracker,
   withModelCallDiagnostics,
 } from "../observability";
+import { RunPersistenceError } from "../runtime/persistenceError";
+import type { RunContextRecorder } from "../runtime/runContext";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -761,6 +763,12 @@ function wrapStreamWithErrorHandler(
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
 
+              // A latched persistence failure is terminal: retrying would
+              // dispatch a turn whose context was never durably committed.
+              if (error instanceof RunPersistenceError) {
+                throw error;
+              }
+
               // Handle stream idle timeout — resume from accumulated messages
               if (
                 !isCtxError &&
@@ -1435,6 +1443,12 @@ export interface StreamResponseOpts {
   /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
   sessionId?: string;
   /**
+   * Opt-in durable context authority for recorded runs. Turn-0 base and each
+   * step's cumulative context are checkpointed before selection/dispatch;
+   * unset → legacy behavior, no persistence.
+   */
+  contextRecorder?: RunContextRecorder;
+  /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
@@ -1512,7 +1526,13 @@ function streamResponseWithinOperation(
     thinkingEffort,
     openAIReasoningEffort,
     sessionId,
+    contextRecorder,
   } = opts;
+
+  // Recorded-run base, captured once at the first prepareStep of this
+  // streamText call; only used to reconstruct cumulative prefixes in
+  // onStepFinish (response.messages excludes the input base).
+  let recorderBase: ModelMessage[] | undefined;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1521,6 +1541,25 @@ function streamResponseWithinOperation(
   // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     const stepUsage = normalizeStepUsage(step);
+    // Canonical commit precedes every downstream use; the recorder latches
+    // rejections (SDK notify() swallows them) until the next turn gate or
+    // agent-side flush turns the latch into a stream failure.
+    // Synthetic summarization/tool-repair events re-report context that
+    // already includes the base (messagesContainer.current) — committing
+    // them would duplicate the prefix.
+    if (
+      contextRecorder &&
+      step.response.id !== "summarization" &&
+      step.response.id !== "tool-repair"
+    ) {
+      if (!recorderBase) {
+        throw new Error("context recorder active without a committed base");
+      }
+      await contextRecorder.checkpoint({
+        messages: [...recorderBase, ...step.response.messages],
+        system: effectiveSystem ?? null,
+      });
+    }
     if (
       onCacheMetrics &&
       (stepUsage.cacheReadTokens > 0 || stepUsage.cacheWriteTokens > 0)
@@ -1721,7 +1760,22 @@ function streamResponseWithinOperation(
         authConfig?.customProviders,
         authConfig?.hoonifyModels,
       ),
-      prepareStep: (opts) => {
+      // Awaiting inside prepareStep keeps streamResponse synchronous; the
+      // SDK awaits it before provider dispatch, so every turn and every
+      // recovery re-entry commits before use.
+      prepareStep: async (opts) => {
+        if (contextRecorder) {
+          if (recorderBase === undefined) {
+            recorderBase = structuredClone(opts.messages);
+          }
+          // Full logical context each turn — accepted step outputs must
+          // survive into every later commit, and system is explicit (when
+          // cached into messages, effectiveSystem is undefined → null).
+          await contextRecorder.checkpoint({
+            messages: opts.messages,
+            system: effectiveSystem ?? null,
+          });
+        }
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
         // Mark the last message so the growing conversation caches incrementally

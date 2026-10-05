@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { buildAuthConfig } from "../core/ai";
-import { runRecordedAgent } from "../core/api";
+import { inspectSessionEvidence, runRecordedAgent } from "../core/api";
 import { config } from "../core/config";
 import { AgentEventBus } from "../core/eventBus";
 import { openSqliteRunStore } from "../core/runtime/sqliteRunStore";
@@ -11,7 +11,7 @@ const HELP = `pensar agent-runs — Record and inspect local agent runs
 Usage:
   pensar agent-runs start --spec <file> [--store <database>]
   pensar agent-runs list [--store <database>]
-  pensar agent-runs show <runId> [--store <database>]
+  pensar agent-runs show <runId> [--context] [--evidence] [--store <database>]
 
 The JSON spec supplies a stable runId and explicit model, tools and scope.
 Repeating a runId never starts another execution. Changed inputs are rejected.
@@ -27,6 +27,8 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     options: {
       spec: { type: "string" },
       store: { type: "string" },
+      context: { type: "boolean" },
+      evidence: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -43,6 +45,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     !["start", "list", "show"].includes(command) ||
     (command === "show" && !runId) ||
     (command === "start" && !values.spec) ||
+    (command !== "show" && (values.context || values.evidence)) ||
     (command !== "start" && values.spec !== undefined)
   ) {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
@@ -57,7 +60,34 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     if (command === "show" && runId) {
       const record = await store.get(runId);
       if (!record) throw new Error(`Run not found: ${runId}`);
-      console.log(JSON.stringify(record, null, 2));
+      const evidence = values.evidence
+        ? await store.getEvidence(runId)
+        : undefined;
+      console.log(
+        JSON.stringify(
+          {
+            ...record,
+            ...(values.context
+              ? { context: (await store.getContext(runId)) ?? null }
+              : {}),
+            ...(values.evidence
+              ? {
+                  evidence: evidence
+                    ? {
+                        rootPath: evidence.rootPath,
+                        files: await inspectSessionEvidence(
+                          evidence,
+                          evidence.files,
+                        ),
+                      }
+                    : null,
+                }
+              : {}),
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
 

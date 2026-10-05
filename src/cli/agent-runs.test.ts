@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runRecordedAgent = vi.hoisted(() => vi.fn());
+const inspectSessionEvidence = vi.hoisted(() => vi.fn());
 const openSqliteRunStore = vi.hoisted(() => vi.fn());
 const configGet = vi.hoisted(() => vi.fn());
 const buildAuthConfig = vi.hoisted(() => vi.fn());
 
-vi.mock("../core/api", () => ({ runRecordedAgent }));
+vi.mock("../core/api", () => ({ runRecordedAgent, inspectSessionEvidence }));
 vi.mock("../core/runtime/sqliteRunStore", () => ({ openSqliteRunStore }));
 vi.mock("../core/config", () => ({ config: { get: configGet } }));
 vi.mock("../core/ai", () => ({ buildAuthConfig }));
@@ -17,7 +18,13 @@ const { runAgentRunsCommand } = await import("./agent-runs");
 const { AgentEventBus } = await import("../core/eventBus");
 
 function makeStore() {
-  return { list: vi.fn(), get: vi.fn(), close: vi.fn() };
+  return {
+    list: vi.fn(),
+    get: vi.fn(),
+    getContext: vi.fn(),
+    getEvidence: vi.fn(),
+    close: vi.fn(),
+  };
 }
 
 // Inferred per-spy types: `ReturnType<typeof vi.spyOn>` cannot carry the
@@ -139,6 +146,38 @@ describe("list", () => {
 });
 
 describe("show", () => {
+  it("checks evidence at its persisted location and reports missing files", async () => {
+    const snapshot = {
+      rootPath: "/saved/session",
+      files: [{ path: "plan.md", sha256: "a".repeat(64), bytes: 3 }],
+    };
+    store.get.mockResolvedValue({ status: "running" });
+    store.getEvidence.mockResolvedValue(snapshot);
+    inspectSessionEvidence.mockResolvedValue([
+      { ref: snapshot.files[0], status: "missing" },
+    ]);
+    await runAgentRunsCommand(["show", "run-1", "--evidence"]);
+    expect(inspectSessionEvidence).toHaveBeenCalledWith(
+      snapshot,
+      snapshot.files,
+    );
+    expect(JSON.parse(output()).evidence.files[0].status).toBe("missing");
+  });
+  it("includes the committed context only when requested", async () => {
+    const context = {
+      epoch: 2,
+      revision: 7,
+      system: null,
+      messages: [{ role: "user", content: "compacted objective" }],
+    };
+    store.get.mockResolvedValue({ status: "running" });
+    store.getContext.mockResolvedValue(context);
+    await runAgentRunsCommand(["show", "run-1", "--context"]);
+    expect(JSON.parse(output()).context).toEqual(context);
+    expect(store.getContext).toHaveBeenCalledWith("run-1");
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
   it("prints the record and closes the store", async () => {
     store.get.mockResolvedValue({ runId: "run-1", status: "completed" });
 

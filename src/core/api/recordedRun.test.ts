@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CredentialManager } from "../credentials";
 import { newSessionId } from "../id/id";
+import type { RunCheckpointStore } from "../runtime/runCheckpointStore";
 import {
   type RecordedRunSpec,
   RecordedRunSpecSchema,
   type RunRecord,
-  type RunStore,
 } from "../runtime/runStore";
 
 const calls = vi.hoisted(() => [] as string[]);
@@ -62,7 +62,10 @@ function makeRecord(spec: RecordedRunSpec): RunRecord {
 function makeStore() {
   let record: RunRecord | undefined;
   const transitionFailures = new Map<string, unknown>();
-  const store: RunStore = {
+  const store: RunCheckpointStore = {
+    commitContext: vi.fn(async () => ({ epoch: 1, revision: 1 })),
+    getContext: vi.fn(async () => undefined),
+    getEvidence: vi.fn(async () => undefined),
     admit: vi.fn(async (spec: RecordedRunSpec) => {
       if (record) return { created: false, record };
       record = makeRecord(spec);
@@ -280,6 +283,74 @@ describe("pre-aborted signal cancels before execution", () => {
     expect(sessionCreate).not.toHaveBeenCalled();
     expect(runAgent).not.toHaveBeenCalled();
     expect(current()?.status).toBe("cancelled");
+  });
+});
+
+describe("recorded context and evidence wiring", () => {
+  it("commits evidence references with context before dependent work", async () => {
+    const { store } = makeStore();
+    const rootPath = tempCwd();
+    writeFileSync(join(rootPath, "plan.md"), "Assess local target");
+    sessionCreate.mockResolvedValue({
+      rootPath,
+      findingsPath: join(rootPath, "findings"),
+      pocsPath: join(rootPath, "pocs"),
+    });
+    runAgent.mockImplementationOnce(async ({ contextRecorder }) => {
+      await contextRecorder.checkpoint({
+        messages: [{ role: "user", content: "objective" }],
+        system: "scope",
+      });
+      calls.push("dependent-work");
+      return RUN_RESULT;
+    });
+    await runRecordedAgent({ spec: baseSpec(rootPath), store });
+    expect(store.commitContext).toHaveBeenCalledWith(
+      "run_local_test_01",
+      expect.stringMatching(/^exec_/),
+      0,
+      {
+        kind: "replace",
+        system: "scope",
+        messages: [{ role: "user", content: "objective" }],
+      },
+      {
+        rootPath,
+        files: [
+          {
+            path: "plan.md",
+            bytes: 19,
+            sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+          },
+        ],
+      },
+    );
+    expect(calls).toContain("dependent-work");
+  });
+
+  it("fails the run when a context write prevents dependent work", async () => {
+    const { store, current } = makeStore();
+    const rootPath = tempCwd();
+    sessionCreate.mockResolvedValue({
+      rootPath,
+      findingsPath: join(rootPath, "findings"),
+      pocsPath: join(rootPath, "pocs"),
+    });
+    vi.mocked(store.commitContext).mockRejectedValueOnce(
+      new Error("disk full"),
+    );
+    runAgent.mockImplementationOnce(async ({ contextRecorder }) => {
+      await contextRecorder.checkpoint({
+        messages: [{ role: "user", content: "objective" }],
+      });
+      calls.push("dependent-work");
+      return RUN_RESULT;
+    });
+    await expect(
+      runRecordedAgent({ spec: baseSpec(rootPath), store }),
+    ).rejects.toThrow(/persistence failed/);
+    expect(calls).not.toContain("dependent-work");
+    expect(current()?.status).toBe("failed");
   });
 });
 

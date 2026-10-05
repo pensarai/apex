@@ -1,6 +1,6 @@
 # Recorded local runs
 
-Recorded runs are an opt-in path for inspecting a local agent's admission and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
+Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
 
 This path requires Bun or Node 22.13+. It uses the runtime's built-in SQLite implementation and adds no native package dependency. Existing commands retain their current runtime requirements. Run the commands through `bun src/cli.ts` during development or `pensar` after building/installing.
 
@@ -34,6 +34,7 @@ Create an explicit JSON spec. The working directory must be absolute and already
 bun src/cli.ts agent-runs start --spec run.json
 bun src/cli.ts agent-runs list
 bun src/cli.ts agent-runs show run_local_smoke_01
+bun src/cli.ts agent-runs show run_local_smoke_01 --context --evidence
 ```
 
 Repeating the same spec returns the existing run without starting another agent. Reusing its ID with changed inputs fails. Use a new ID only when you intend a new execution. This also applies to an admitted run whose process died before it could begin execution.
@@ -48,7 +49,17 @@ Admission commits before session creation or model execution. It fixes the input
 
 The store rejects unsupported versions, invalid records, and incompatible existing databases. A failed critical write is an execution error; the API does not silently switch to the legacy path. Provider credentials are supplied at runtime; the record stores credential references rather than copying credential objects. Prompts and tool outputs can still contain sensitive assessment content, so treat the run database like other session evidence.
 
-The supported path is a fresh local solo agent using the explicitly supported tool set. Existing sessions, TUI workflows, child agents, custom tool backends, browser sessions, and Daytona workers are not migrated by this feature. Session files remain the authority for assessment artifacts; admission/status records do not claim to reconstruct those artifacts after environment loss.
+## Context and evidence
+
+The database holds canonical context at model-turn boundaries. It commits the input before dispatch, then commits the cumulative conversation after a completed step. New messages append within a context epoch; a rewritten or compacted conversation opens a new epoch. The next turn cannot select that context until its commit succeeds. Provider cache markers added for an individual request remain derived transport options.
+
+`--context` prints the selected epoch, revision, system text, and ordered messages. A partial stream is not a completed context checkpoint. Existing `messages.json` and trace exports stay readable, but are compatibility projections rather than recovery authority; interrupted transcripts may contain synthetic tool closures that are not committed tool outcomes.
+
+Context commits also retain SHA-256 references to the session's findings, informational notes, POC files, plan, tasks, and tool-output spill files. Those domain files remain authoritative. `--evidence` checks their persisted location and reports `match`, `modified`, `missing`, or a read error. Deleted references remain visible. A hash reference detects loss or change; it is not an independent backup. Files created by an interrupted step before its checkpoint may exist without a committed reference.
+
+The local schema upgrades version 1 stores transactionally. Older binaries reject the newer schema; there is no downgrade fallback. Runs admitted before context recording was available can have no saved context. Neither that absence nor a corrupt checkpoint permits a fresh execution under the same run ID.
+
+The supported path is a fresh local solo agent using the explicitly supported tool set. Existing sessions, TUI workflows, child agents, custom tool backends, browser sessions, and Daytona workers are not migrated by this feature. Session files remain the authority for assessment artifacts; recorded runs do not reconstruct those artifacts after environment loss.
 
 ## Smoke checks
 
