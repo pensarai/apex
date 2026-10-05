@@ -31,6 +31,7 @@ const PlanningRequirementV1 = z.object({
   id: z.string().min(1).max(120),
   description: z.string().min(1).max(4_000),
   rationale: z.string().min(1).max(4_000),
+  nonConsolidationReason: z.string().min(1).max(4_000).optional(),
   coverage: z.array(CoverageAssociation).min(1).max(100),
 });
 
@@ -40,7 +41,7 @@ const PlanningMissionV1 = z
     purpose: z.string().min(1).max(4_000),
     rationale: z.string().min(1).max(4_000),
     singletonJustification: z.string().min(1).max(4_000).optional(),
-    requirements: z.array(PlanningRequirementV1).min(1).max(25),
+    requirements: z.array(PlanningRequirementV1).min(1).max(100),
     supportingTargetIds: z.array(z.string()).max(100).default([]),
     contextTargetIds: z.array(z.string()).max(100).default([]),
     prerequisiteMissionIds: z.array(z.string()).max(100).default([]),
@@ -118,7 +119,7 @@ const PlanningMissionV2 = z.object({
   purpose: z.string().min(1).max(4_000),
   rationale: z.string().min(1).max(4_000),
   singletonJustification: z.string().min(1).max(4_000).optional(),
-  requirementIds: z.array(z.string().min(1).max(120)).min(1).max(25),
+  requirementIds: z.array(z.string().min(1).max(120)).min(1).max(100),
   supportingTargetIds: z.array(z.string()).max(100).default([]),
   contextTargetIds: z.array(z.string()).max(100).default([]),
   prerequisiteMissionIds: z.array(z.string()).max(100).default([]),
@@ -219,17 +220,17 @@ export type EngagementPlanningArtifacts = {
 };
 
 export const ENGAGEMENT_PLANNING_PROMPT = `Plan coherent testing missions for this authorized engagement before testing begins.
-Use code mode to read the complete immutable planning manifest and maintain the mission plan as the external JSON artifact named in the user prompt. Keep working memory, clustering notes, and the authoritative draft in that file rather than repeating the full plan in conversation. The manifest's contractHash must remain unchanged. Set the plan status to ready only after checking the whole artifact.
+The immutable manifest and editable mission plan are external artifacts, not prompt material. Use code mode to query only the records needed for the current decision. Keep working memory, clustering notes, and the authoritative draft in the plan file rather than repeating the full surface or plan in conversation. The manifest's contractHash must remain unchanged. Set the plan status to ready after validating its structure and coverage in code.
 
-Planning read_file returns numbered content, totalLines, and linesReturned. Advance startLine by linesReturned until totalLines is exhausted, including when your requested endLine was reached without a truncation marker. Large artifacts can exceed a single code cell's nested-result budget: read a few pages per cell, extract compact records, and preserve those records with store/load across cells. Do not load all raw chunks back into one cell if their combined size exceeds the budget. Objective text appears once in the manifest's objectives list; each target's objectiveIds references that list. Coverage must use the exact targetId and objectiveId pairs from the manifest; wildcards are not valid objective IDs.
+Reading the manifest without line bounds returns only its compact summary and plan schema. Use read_file with query.section set to targets, objectives, or coverage; filter by targetId, objectiveId, or search, and use offset/limit for bounded pages. Objective text is separately paged with textOffset/textLimit. Query and transform these records inside code mode, emitting only compact decision-relevant results. Use store/load for compact intermediate records, not the whole manifest. Explicit line reads remain available for selected artifact sections. Do not exhaust every page just to satisfy a read gate: there is none. Coverage must use exact targetId and objectiveId pairs; wildcards are not valid objective IDs.
 
-Review each target through the read-only engagement context capability, starting with a bounded page and reading further where needed. A partial read is not a complete context review. Before consolidating multiple source associations into one requirement, read the complete context of every affected target. When context is too large to fully review within the planning budget, or is unavailable, keep each source association as a separate requirement and explain which equivalence dimensions remain unverified in its nonConsolidationReason. Related independent requirements can still share a mission; do not retry whole-document reads merely to seal the plan. Workers and the finding judge retain full context access and live validation remains the final oracle. First define the top-level requirements, then assign those requirement IDs to missions. Group related endpoints by authentication, shared resources, trust boundaries, and causal flow. Application code does not choose groups.
+Consult read-only target context where it helps a planning decision. Reading every target or document is not required to seal a plan. A partial read is not a complete context review. You may propose consolidated requirements, but the host will automatically expand each unreviewed consolidation into independent source checks within the same mission, preserving actor roles and prerequisites. Shared coverage credit is retained only when every affected target has complete context review. Do not reread whole documents or rewrite the plan merely to satisfy that condition. Workers and the finding judge retain full context access and live validation remains the final oracle. First define the top-level requirements, then assign those requirement IDs to missions. Group related endpoints by authentication, shared resources, trust boundaries, and causal flow. Application code does not choose groups.
 
 Every canonical requirement must state its trust boundary, authentication state, expected behavior, and evidence plan. It may consolidate source endpoint/objective associations only when those dimensions are materially equivalent. Preserve all source associations in requirement coverage and explain why consolidation is sound. For a requirement that remains a singleton, give a concrete nonConsolidationReason naming the dimension that prevents a safe merge. Do not use generic statements such as "keep exact" or "test independently." Reference deployment prerequisite capability IDs when the preflight artifact supplies them.
 
 Every mission must reference canonical requirement IDs and include rationale, context target references, supporting targets, prerequisite mission IDs, and the official actor roles needed to execute it. Use an empty requiredActorRoles array only for genuinely anonymous work. Keep meaningful distinctions separate. Supporting/context targets do not earn coverage credit.
 
-Every source association must be assigned to exactly one canonical requirement. Every singleton mission needs a justification. For eight or more targets, at most 25% of targets may have singleton missions and the plan must average at least two primary targets per mission. Keep missions bounded to 100 source associations and 25 canonical requirements. Never force unrelated endpoints together just to pass a gate. Add prerequisites only for genuine execution dependencies; shared setup alone is not a reason to serialize otherwise independent missions.
+Every source association must be assigned to exactly one requirement. The host validates complete coverage against its ledger without requiring the surface in model context. Every singleton mission needs a justification. For eight or more targets, at most 25% of targets may have singleton missions and the plan must average at least two primary targets per mission. Prefer at most 25 proposed requirements per mission; the hard limit is 100 source associations, which may become up to 100 independent checks after host expansion. Never force unrelated endpoints together just to pass a gate. Add prerequisites only for genuine execution dependencies; shared setup alone is not a reason to serialize otherwise independent missions.
 
 Only the scoped read_file, create_file, and read-only engagement context capabilities are available during planning. Do not test the target. When the artifact is ready, call response with planComplete=true and a concise summary. The host will validate and seal the artifact deterministically; do not reproduce the plan in the response.`;
 
@@ -325,7 +326,7 @@ export function prepareEngagementPlanningArtifacts(
     coverageAssociationCount: state.coverage.length,
     constraints: {
       maximumSourceAssociationsPerMission: 100,
-      maximumRequirementsPerMission: 25,
+      maximumRequirementsPerMission: 100,
       maximumSingletonTargetRatioWhenEightOrMoreTargets: 0.25,
       minimumAveragePrimaryTargetsPerMissionWhenEightOrMoreTargets: 2,
     },
@@ -402,13 +403,129 @@ function resolvedArtifactPath(sessionRootPath: string, path: string): string {
   return isAbsolute(path) ? resolve(path) : resolve(sessionRootPath, path);
 }
 
+const ManifestQuery = z.object({
+  section: z.enum(["summary", "targets", "objectives", "coverage"]),
+  targetId: z.string().optional(),
+  objectiveId: z.string().optional(),
+  search: z.string().optional(),
+  offset: z.number().int().min(0).default(0),
+  limit: z.number().int().min(1).max(100).default(25),
+  textOffset: z.number().int().min(0).default(0),
+  textLimit: z.number().int().min(1).max(16_000).default(1_000),
+});
+
+function queryPlanningManifest(
+  artifacts: EngagementPlanningArtifacts,
+  store: EngagementStore,
+  query: z.infer<typeof ManifestQuery>,
+) {
+  const state = store.snapshot();
+  const counts = {
+    targets: state.targets.length,
+    objectives: state.objectives.length,
+    coverage: state.coverage.length,
+  };
+  if (query.section === "summary") {
+    const { planSchema, constraints } = JSON.parse(
+      readFileSync(artifacts.manifestPath, "utf8"),
+    );
+    return {
+      contractHash: artifacts.contractHash,
+      counts,
+      planSchema,
+      constraints,
+    };
+  }
+  const target = query.targetId ? store.getTarget(query.targetId) : undefined;
+  const search = query.search?.toLowerCase();
+  let records: Array<Record<string, unknown>>;
+  if (query.section === "targets") {
+    records = state.targets
+      .filter(
+        (item) =>
+          (!target || item.id === target.id) &&
+          (!query.objectiveId ||
+            item.objectiveIds.includes(query.objectiveId)) &&
+          (!search ||
+            `${item.id} ${item.target}`.toLowerCase().includes(search)),
+      )
+      .map(({ objectiveIds, ...item }) => ({
+        ...item,
+        objectiveCount: objectiveIds.length,
+      }));
+  } else if (query.section === "objectives") {
+    records = state.objectives
+      .filter(
+        (item) =>
+          (!target || target.objectiveIds.includes(item.id)) &&
+          (!query.objectiveId || item.id === query.objectiveId) &&
+          (!search || `${item.id} ${item.text}`.toLowerCase().includes(search)),
+      )
+      .map((item) => ({
+        id: item.id,
+        text: item.text.slice(
+          query.textOffset,
+          query.textOffset + query.textLimit,
+        ),
+        textOffset: query.textOffset,
+        totalChars: item.text.length,
+        nextTextOffset:
+          query.textOffset + query.textLimit < item.text.length
+            ? query.textOffset + query.textLimit
+            : null,
+      }));
+  } else {
+    records = state.coverage
+      .filter(
+        (item) =>
+          (!target || item.targetId === target.id) &&
+          (!query.objectiveId || item.objectiveId === query.objectiveId) &&
+          (!search ||
+            `${item.targetId} ${item.objectiveId}`
+              .toLowerCase()
+              .includes(search)),
+      )
+      .map(({ targetId, objectiveId }) => ({ targetId, objectiveId }));
+  }
+  const items: Array<Record<string, unknown>> = [];
+  let chars = 0;
+  for (const record of records.slice(
+    query.offset,
+    query.offset + query.limit,
+  )) {
+    const size = JSON.stringify(record).length;
+    if (chars + size > 80_000) {
+      if (!items.length)
+        throw new Error(
+          "Planning record exceeds the page budget; reduce textLimit or narrow the query",
+        );
+      break;
+    }
+    items.push(record);
+    chars += size;
+  }
+  if (query.section === "targets") {
+    store.recordInspectedTargets(items.map((item) => String(item.id)));
+  }
+  return {
+    contractHash: artifacts.contractHash,
+    section: query.section,
+    items,
+    total: records.length,
+    offset: query.offset,
+    nextOffset:
+      query.offset + items.length < records.length
+        ? query.offset + items.length
+        : null,
+  };
+}
+
 export function createEngagementPlanningFileTools(
   sessionRootPath: string,
   artifacts: EngagementPlanningArtifacts,
   store: EngagementStore,
   readOnlyArtifactPaths: readonly string[] = [],
 ) {
-  const manifestLinesRead = new Set<number>();
   const readablePaths = new Set([
     artifacts.manifestPath,
     artifacts.planPath,
@@ -419,19 +536,44 @@ export function createEngagementPlanningFileTools(
   return {
     read_file: tool({
       description:
-        "Read an authorized engagement planning artifact, including the immutable manifest, mutable plan, and sealed deployment preflight. Other filesystem paths are unavailable during planning.",
+        "Read an authorized engagement planning artifact. A manifest read defaults to a compact summary; query selects bounded target, objective-text, or coverage pages by IDs or search. Use explicit line bounds only for relevant file sections. Other filesystem paths are unavailable during planning.",
       inputSchema: z.object({
         path: z.string(),
         startLine: z.number().int().min(1).optional(),
         endLine: z.number().int().min(1).optional(),
+        query: ManifestQuery.optional(),
         toolCallDescription: z.string(),
       }),
-      execute: async ({ path, startLine, endLine }) => {
+      execute: async ({ path, startLine, endLine, query }) => {
         const resolved = resolvedArtifactPath(sessionRootPath, path);
         if (!readablePaths.has(resolved)) {
           throw new Error(
             "Planning may only read authorized engagement planning artifacts",
           );
+        }
+        if (
+          query &&
+          (resolved !== artifacts.manifestPath ||
+            startLine !== undefined ||
+            endLine !== undefined)
+        ) {
+          throw new Error(
+            "Manifest queries require the manifest path and cannot be combined with line bounds",
+          );
+        }
+        if (
+          resolved === artifacts.manifestPath &&
+          (query || (startLine === undefined && endLine === undefined))
+        ) {
+          return {
+            success: true,
+            path,
+            ...queryPlanningManifest(
+              artifacts,
+              store,
+              ManifestQuery.parse(query ?? { section: "summary" }),
+            ),
+          };
         }
         const lines = readFileSync(resolved, "utf8").split("\n");
         const start = startLine ?? 1;
@@ -444,16 +586,10 @@ export function createEngagementPlanningFileTools(
           if (nextLength > 100_000) break;
           selected.push(line);
           selectedLength += line.length;
-          if (resolved === artifacts.manifestPath) {
-            manifestLinesRead.add(lineNumber);
-          }
         }
-        if (
-          resolved === artifacts.manifestPath &&
-          manifestLinesRead.size === lines.length
-        ) {
-          store.recordInspectedTargets(
-            store.snapshot().targets.map((target) => target.id),
+        if (!selected.length && start <= requestedEnd) {
+          throw new Error(
+            "Artifact line exceeds the read budget; use a bounded manifest query for objective text",
           );
         }
         const content = selected.join("\n");
@@ -503,11 +639,73 @@ export function createEngagementPlanningFileTools(
   };
 }
 
+function expandUnreviewedRequirements(
+  artifact: z.infer<typeof EngagementPlanArtifact>,
+  store: EngagementStore,
+): z.infer<typeof EngagementPlanArtifact> {
+  const contextReads = store.snapshot().contextReads ?? {};
+  const requirements =
+    artifact.version === 2
+      ? artifact.requirements
+      : artifact.missions.flatMap((mission) => mission.requirements);
+  const ids = new Set(requirements.map((requirement) => requirement.id));
+  function expand<T extends EngagementMissionRequirement>(requirement: T): T[] {
+    if (
+      requirement.coverage.length === 1 ||
+      requirement.coverage.every(
+        ({ targetId }) => contextReads[targetId]?.complete,
+      )
+    )
+      return [requirement];
+
+    return requirement.coverage.map((association, index) => {
+      const base = `${requirement.id.slice(0, 90)}_source_${index + 1}`;
+      let id = base;
+      let suffix = 1;
+      while (ids.has(id)) id = `${base}_${suffix++}`;
+      ids.add(id);
+      return {
+        ...requirement,
+        id,
+        coverage: [association],
+        nonConsolidationReason: `Host expanded ${requirement.id}: equivalence of the trust boundary, authentication state, expected behavior, and evidence plan is unverified without complete context for every source target. Validate this association independently.`,
+      };
+    });
+  }
+  if (artifact.version === 1) {
+    return {
+      ...artifact,
+      missions: artifact.missions.map((mission) => ({
+        ...mission,
+        requirements: mission.requirements.flatMap((requirement) =>
+          expand(requirement),
+        ),
+      })),
+    };
+  }
+  const expanded = new Map(
+    artifact.requirements.map((requirement) => [
+      requirement.id,
+      expand(requirement),
+    ]),
+  );
+  return {
+    ...artifact,
+    requirements: [...expanded.values()].flat(),
+    missions: artifact.missions.map((mission) => ({
+      ...mission,
+      requirementIds: mission.requirementIds.flatMap((id) =>
+        (expanded.get(id) ?? []).map((requirement) => requirement.id),
+      ),
+    })),
+  };
+}
+
 export function sealEngagementPlanArtifact(
   artifacts: EngagementPlanningArtifacts,
   store: EngagementStore,
 ): EngagementMissionState {
-  const artifact = EngagementPlanArtifact.parse(
+  let artifact = EngagementPlanArtifact.parse(
     JSON.parse(readFileSync(artifacts.planPath, "utf8")),
   );
   if (artifact.status !== "ready") {
@@ -517,23 +715,9 @@ export function sealEngagementPlanArtifact(
     throw new Error("Engagement plan contractHash was changed");
   }
 
-  if (artifact.version === 2) {
-    const contextReads = store.snapshot().contextReads ?? {};
-    const reviewedTargetIds = new Set(
-      artifact.requirements.flatMap((requirement) =>
-        requirement.coverage.map((association) => association.targetId),
-      ),
-    );
-    const missingContext = [...reviewedTargetIds].filter((targetId) => {
-      const receipt = contextReads[targetId];
-      return receipt?.status !== "unavailable" && receipt?.status !== "read";
-    });
-    if (missingContext.length > 0) {
-      throw new Error(
-        `Review target context before sealing the canonical requirements: ${missingContext.join(", ")}. A bounded read is sufficient for independent requirements; consolidating multiple source associations still requires complete context.`,
-      );
-    }
-  }
+  artifact = EngagementPlanArtifact.parse(
+    expandUnreviewedRequirements(artifact, store),
+  );
 
   const previousCheckpoint = store.checkpoint();
   const previousMissions = store.snapshot().missions;

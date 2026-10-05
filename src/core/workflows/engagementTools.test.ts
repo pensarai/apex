@@ -600,6 +600,32 @@ describe("engagement worker tools", () => {
     ]);
   });
 
+  it("does not inject unrelated service targets into a worker's assigned context", async () => {
+    const { seed, planMissions, startPlannedMissions } = makeRuntime(true);
+    planMissions(
+      seed.coverage.map((cell, index) => ({
+        purpose: `Assess assigned resource ${index}`,
+        rationale: "Independent target scope",
+        singletonJustification: "Exercise scoped worker context",
+        coverage: [{ targetId: cell.targetId, objectiveId: cell.objectiveId }],
+      })),
+    );
+    await startPlannedMissions();
+    expect(groupedCalls).toHaveLength(2);
+    for (const [index, target] of seed.targets.entries()) {
+      const prompt = groupedCalls[index]?.prompt as string;
+      expect(prompt).toContain(target.target);
+      for (const other of seed.targets.filter(
+        (item) => item.id !== target.id,
+      )) {
+        expect(prompt).not.toContain(`- ${other.id}: ${other.target}`);
+        expect(prompt).not.toContain(
+          `Targets: ${seed.services[0]?.targets.join(", ")}`,
+        );
+      }
+    }
+  });
+
   it("runs one model-planned grouped mission with exact per-target results", async () => {
     const { planMissions, startPlannedMissions, store, seed } =
       makeRuntime(true);

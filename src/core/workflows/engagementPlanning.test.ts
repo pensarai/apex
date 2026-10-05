@@ -7,11 +7,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createEngagementPlanningFileTools,
   ENGAGEMENT_PLANNING_PROMPT,
+  EngagementPlanArtifact,
   prepareEngagementPlanningArtifacts,
   sealEngagementPlanArtifact,
 } from "./engagementPlanning";
 import { buildEngagementState, EngagementStore } from "./engagementState";
-import { EngagementContext } from "./engagementSurface";
 
 const directories: string[] = [];
 
@@ -161,13 +161,13 @@ describe("engagement mission planning artifacts", () => {
 
   it("guides bounded planning without weakening consolidation or live validation", () => {
     expect(ENGAGEMENT_PLANNING_PROMPT).toContain(
-      "starting with a bounded page",
+      "external artifacts, not prompt material",
     );
     expect(ENGAGEMENT_PLANNING_PROMPT).toContain(
-      "keep each source association as a separate requirement",
+      "automatically expand each unreviewed consolidation",
     );
     expect(ENGAGEMENT_PLANNING_PROMPT).toContain(
-      "read the complete context of every affected target",
+      "Reading every target or document is not required",
     );
     expect(ENGAGEMENT_PLANNING_PROMPT).toContain(
       "live validation remains the final oracle",
@@ -175,12 +175,13 @@ describe("engagement mission planning artifacts", () => {
   });
 
   it.each([
+    "missing",
     "read",
     "unavailable",
   ] as const)("seals independent requirements with an incomplete %s receipt without claiming full review", (status) => {
     const { artifacts, store, state } = setup(2);
-    store.recordInspectedTargets(state.targets.map((target) => target.id));
     for (const target of state.targets) {
+      if (status === "missing") continue;
       store.recordContextRead(target.id, {
         status,
         complete: false,
@@ -203,14 +204,18 @@ describe("engagement mission planning artifacts", () => {
     );
   });
 
-  it("rejects v2 consolidation after partial reads and explains the bounded alternative", () => {
+  it.each([
+    "missing",
+    "read",
+    "unavailable",
+  ] as const)("expands v2 consolidation with %s context without forging complete review", (status) => {
     const { artifacts, store, state } = setup(2);
-    store.recordInspectedTargets(state.targets.map((target) => target.id));
     for (const target of state.targets) {
+      if (status === "missing") continue;
       store.recordContextRead(target.id, {
-        status: "read",
+        status,
         complete: false,
-        hasProductContext: true,
+        hasProductContext: status === "read",
       });
     }
     const plan = independentPlan(artifacts, store);
@@ -221,21 +226,33 @@ describe("engagement mission planning artifacts", () => {
     plan.requirements.splice(1);
     group.requirementIds.splice(1);
     writeFileSync(artifacts.planPath, JSON.stringify(plan));
-    const before = store.checkpoint();
-
-    expect(() => sealEngagementPlanArtifact(artifacts, store)).toThrow(
-      "split its coverage into separate requirements",
+    const contextBefore = store.snapshot().contextReads;
+    const sealed = sealEngagementPlanArtifact(artifacts, store);
+    expect(sealed.planningStatus).toBe("complete");
+    expect(sealed.missions).toHaveLength(1);
+    expect(sealed.missions[0]?.id).toBe(group.id);
+    expect(sealed.missions[0]?.requirements).toEqual(
+      first.coverage.map((cell, index) => ({
+        ...first,
+        id: `${first.id}_source_${index + 1}`,
+        coverage: [cell],
+        prerequisiteCapabilityIds: [],
+        nonConsolidationReason: expect.stringContaining(
+          `Host expanded ${first.id}`,
+        ),
+      })),
     );
-    expect(store.checkpoint()).toEqual({
-      ...before,
-      updatedAt: expect.any(String),
-    });
-    expect(JSON.parse(readFileSync(artifacts.planPath, "utf8")).status).toBe(
-      "ready",
+    expect(store.snapshot().contextReads).toEqual(contextBefore);
+    expect(store.snapshot().missions?.inspectedTargetIds ?? []).toEqual([]);
+    const persisted = EngagementPlanArtifact.parse(
+      JSON.parse(readFileSync(artifacts.planPath, "utf8")),
     );
+    assert(persisted.version === 2);
+    expect(persisted.status).toBe("sealed");
+    expect(persisted.requirements).toEqual(sealed.missions[0]?.requirements);
   });
 
-  it("seals 131 targets and 1426 independent checks after bounded context reads", async () => {
+  it("seals 131 targets and 1426 source checks without reading the whole manifest or context", async () => {
     const directory = mkdtempSync(join(tmpdir(), "apex-planning-scale-"));
     directories.push(directory);
     const state = buildEngagementState(
@@ -292,58 +309,35 @@ describe("engagement mission planning artifacts", () => {
         .digest("hex"),
     );
 
-    let startLine = 1;
-    let totalLines = Infinity;
-    while (startLine <= totalLines) {
-      const page = (await execute(tools.read_file, {
-        path: artifacts.manifestRelativePath,
-        startLine,
-        toolCallDescription: "Read a bounded manifest page",
-      })) as { linesReturned: number; totalLines: number; content: string };
-      expect(page.linesReturned).toBeGreaterThan(0);
-      expect(page.content.length).toBeLessThan(100_100);
-      startLine += page.linesReturned;
-      totalLines = page.totalLines;
-    }
-    const targetsById = new Map(
-      state.targets.map((target) => [target.id, target]),
-    );
-    const context = new EngagementContext({
-      targetIds: targetsById.keys(),
-      provider: {
-        search: async () => ({ targets: [], total: 131 }),
-        getTarget: async (id) => {
-          const target = targetsById.get(id);
-          assert(target);
-          return {
-            id,
-            applicationId: "resources",
-            applicationName: "Resource service",
-            target: target.target,
-            businessLogic: "Only owners may read their resources. ".repeat(
-              2000,
-            ),
-            threatModel: "Peers must not cross the ownership boundary",
-            objectives: target.objectiveIds.map((objectiveId) => {
-              const objective = objectivesById.get(objectiveId);
-              assert(objective);
-              return objective.text;
-            }),
-          };
-        },
-      },
-      onRead: ({ targetId, ...receipt }) =>
-        store.recordContextRead(targetId, receipt),
+    const summary = await execute(tools.read_file, {
+      path: artifacts.manifestRelativePath,
+      toolCallDescription: "Inspect manifest counts and schema",
     });
-    for (const target of state.targets) {
-      const page = await context.read(target.id);
-      expect(page.success).toBe(true);
-      if (!page.success) throw new Error("Expected available context");
-      expect(page.contextJson.length).toBe(12_000);
-      expect(page.nextOffset).not.toBeNull();
-    }
-    expect(context.receipts().every((receipt) => !receipt.complete)).toBe(true);
+    expect(summary).toMatchObject({
+      counts: { targets: 131, objectives: 1426, coverage: 1426 },
+    });
+    expect(JSON.stringify(summary).length).toBeLessThan(20_000);
+    const page = await execute(tools.read_file, {
+      path: artifacts.manifestRelativePath,
+      query: { section: "targets", limit: 2 },
+      toolCallDescription: "Inspect two relevant targets",
+    });
+    expect(page).toMatchObject({ total: 131, nextOffset: 2 });
+    expect(store.snapshot().missions?.inspectedTargetIds).toHaveLength(2);
+    expect(store.snapshot().contextReads ?? {}).toEqual({});
     const plan = independentPlan(artifacts, store);
+    const requirementsById = new Map(
+      plan.requirements.map((item) => [item.id, item]),
+    );
+    plan.requirements = plan.missions.map((mission) => {
+      const first = requirementsById.get(mission.requirementIds[0] ?? "");
+      assert(first);
+      const coverage = mission.requirementIds.flatMap(
+        (id) => requirementsById.get(id)?.coverage ?? [],
+      );
+      mission.requirementIds = [first.id];
+      return { ...first, coverage };
+    });
     writeFileSync(artifacts.planPath, JSON.stringify(plan));
     const restored = EngagementStore.open(directory, state);
 
@@ -366,6 +360,16 @@ describe("engagement mission planning artifacts", () => {
       restored.snapshot().coverage.every((cell) => cell.status === "assigned"),
     ).toBe(true);
     expect(restored.snapshot().workers).toEqual([]);
+    expect(restored.snapshot().missions?.inspectedTargetIds).toHaveLength(2);
+    expect(restored.snapshot().contextReads ?? {}).toEqual({});
+    expect(sealed.missions.map((mission) => mission.id)).toEqual(
+      plan.missions.map((mission) => mission.id),
+    );
+    expect(
+      EngagementPlanArtifact.parse(
+        JSON.parse(readFileSync(artifacts.planPath, "utf8")),
+      ).status,
+    ).toBe("sealed");
   });
 
   it("preserves an interrupted draft for the resumed planner to repair", () => {
@@ -375,6 +379,245 @@ describe("engagement mission planning artifacts", () => {
     prepareEngagementPlanningArtifacts(directory, store);
 
     expect(readFileSync(artifacts.planPath, "utf8")).toBe("{ interrupted");
+  });
+
+  it("queries bounded target, objective-text, and coverage pages without automatic surface reads", async () => {
+    const { artifacts, state, store, tools } = setup(3);
+    const [first, second] = state.targets;
+    const [objective] = state.objectives;
+    assert(first && second && objective);
+    const query = (input: Record<string, unknown>) =>
+      execute(tools.read_file, {
+        path: artifacts.manifestRelativePath,
+        query: input,
+        toolCallDescription: "Query relevant planning records",
+      });
+    expect(
+      await query({ section: "targets", offset: 1, limit: 1 }),
+    ).toMatchObject({
+      total: 3,
+      nextOffset: 2,
+      items: [{ id: second.id, target: second.target, objectiveCount: 1 }],
+    });
+    expect(store.snapshot().missions?.inspectedTargetIds).toEqual([second.id]);
+    expect(
+      await query({ section: "targets", search: "/resources/0" }),
+    ).toMatchObject({
+      total: 1,
+      nextOffset: null,
+      items: [{ id: first.id }],
+    });
+    expect(
+      await query({ section: "objectives", targetId: first.id, textLimit: 4 }),
+    ).toMatchObject({
+      items: [
+        {
+          id: objective.id,
+          text: "Test",
+          totalChars: objective.text.length,
+          nextTextOffset: 4,
+        },
+      ],
+    });
+    expect(
+      await query({
+        section: "objectives",
+        objectiveId: objective.id,
+        textOffset: 4,
+      }),
+    ).toMatchObject({
+      items: [{ text: " authorization", nextTextOffset: null }],
+    });
+    expect(
+      await query({
+        section: "coverage",
+        targetId: first.id,
+        objectiveId: objective.id,
+      }),
+    ).toMatchObject({
+      total: 1,
+      nextOffset: null,
+      items: [{ targetId: first.id, objectiveId: objective.id }],
+    });
+    expect(
+      await query({ section: "coverage", objectiveId: objective.id, limit: 2 }),
+    ).toMatchObject({ total: 3, nextOffset: 2 });
+    expect(
+      await query({ section: "objectives", search: "no matching objective" }),
+    ).toMatchObject({ total: 0, items: [], nextOffset: null });
+    await expect(
+      query({ section: "targets", targetId: "unknown" }),
+    ).rejects.toThrow("Unknown engagement target");
+    await expect(query({ section: "targets", limit: 101 })).rejects.toThrow();
+    await expect(
+      execute(tools.read_file, {
+        path: artifacts.planRelativePath,
+        query: { section: "targets" },
+      }),
+    ).rejects.toThrow("Manifest queries require the manifest path");
+    await expect(
+      execute(tools.read_file, {
+        path: artifacts.manifestRelativePath,
+        startLine: 1,
+        query: { section: "targets" },
+      }),
+    ).rejects.toThrow("cannot be combined with line bounds");
+  });
+
+  it("bounds large objective text independently of record pagination", async () => {
+    const { directory } = setup(1);
+    const state = buildEngagementState("https://example.test", [
+      {
+        target: "https://example.test/large",
+        objectives: Array.from(
+          { length: 12 },
+          (_, index) => `${index}:${"Owner policy. ".repeat(10_000)}`,
+        ),
+      },
+    ]);
+    const store = EngagementStore.open(join(directory, "large"), state);
+    const artifacts = prepareEngagementPlanningArtifacts(
+      join(directory, "large"),
+      store,
+    );
+    const tools = createEngagementPlanningFileTools(
+      join(directory, "large"),
+      artifacts,
+      store,
+    );
+    const page = (await execute(tools.read_file, {
+      path: artifacts.manifestPath,
+      query: { section: "objectives", limit: 12, textLimit: 16_000 },
+    })) as {
+      items: Array<{ text: string; nextTextOffset: number }>;
+      nextOffset: number;
+    };
+    expect(page.items.length).toBeGreaterThan(0);
+    expect(page.items.length).toBeLessThan(12);
+    expect(page.nextOffset).toBe(page.items.length);
+    expect(JSON.stringify(page).length).toBeLessThan(81_000);
+    expect(
+      page.items.every(
+        (item) => item.text.length === 16_000 && item.nextTextOffset === 16_000,
+      ),
+    ).toBe(true);
+    const line =
+      readFileSync(artifacts.manifestPath, "utf8")
+        .split("\n")
+        .findIndex((value) => value.length > 100_000) + 1;
+    expect(line).toBeGreaterThan(0);
+    await expect(
+      execute(tools.read_file, {
+        path: artifacts.manifestPath,
+        startLine: line,
+        endLine: line,
+      }),
+    ).rejects.toThrow("use a bounded manifest query");
+    const summary = await execute(tools.read_file, {
+      path: artifacts.manifestPath,
+    });
+    expect(JSON.stringify(summary).length).toBeLessThan(20_000);
+  });
+
+  it("expands 100 source checks without changing mission identity, roles, prerequisites, or coverage", () => {
+    const { artifacts, store, state } = setup(104);
+    const plan = independentPlan(artifacts, store);
+    const [first] = plan.requirements;
+    const [initialMission] = plan.missions;
+    const [target] = state.targets;
+    assert(first && initialMission && target);
+    const requirements = [
+      {
+        ...first,
+        id: "shared",
+        coverage: plan.requirements
+          .slice(0, 100)
+          .flatMap((item) => item.coverage),
+        prerequisiteCapabilityIds: ["two-users"],
+      },
+      ...plan.requirements.slice(100).map((item, index) => ({
+        ...item,
+        id: index === 0 ? "shared_source_1" : item.id,
+      })),
+    ];
+    const missions = [
+      {
+        ...initialMission,
+        id: "setup",
+        requirementIds: requirements.slice(1).map((item) => item.id),
+      },
+      {
+        ...initialMission,
+        id: "flow",
+        requirementIds: ["shared"],
+        requiredActorRoles: ["owner", "peer"],
+        prerequisiteMissionIds: ["setup"],
+        supportingTargetIds: [target.id],
+        contextTargetIds: [target.id],
+      },
+    ];
+    writeFileSync(
+      artifacts.planPath,
+      JSON.stringify({ ...plan, requirements, missions }),
+    );
+
+    const sealed = sealEngagementPlanArtifact(artifacts, store);
+    const flow = sealed.missions.find((mission) => mission.id === "flow");
+    assert(flow);
+    expect(flow).toMatchObject({
+      id: "flow",
+      requiredActorRoles: ["owner", "peer"],
+      prerequisiteMissionIds: ["setup"],
+      supportingTargetIds: [target.id],
+      contextTargetIds: [target.id],
+    });
+    expect(flow.requirements).toHaveLength(100);
+    expect(
+      flow.requirements?.every(
+        (item) =>
+          item.prerequisiteCapabilityIds?.[0] === "two-users" &&
+          item.coverage.length === 1,
+      ),
+    ).toBe(true);
+    expect(flow.coverage).toEqual(requirements[0]?.coverage);
+    const persisted = EngagementPlanArtifact.parse(
+      JSON.parse(readFileSync(artifacts.planPath, "utf8")),
+    );
+    assert(persisted.version === 2);
+    const ids = persisted.requirements.map((item) => item.id);
+    expect(new Set(ids).size).toBe(104);
+    expect(ids).toContain("shared_source_1_1");
+    expect(
+      persisted.missions.find((mission) => mission.id === "flow")
+        ?.requirementIds,
+    ).toEqual(flow.requirements?.map((item) => item.id));
+  });
+
+  it.each([
+    "duplicate",
+    "unknown",
+    "omitted",
+  ] as const)("rejects %s source coverage atomically even when expansion is needed", (kind) => {
+    const { artifacts, store } = setup(3);
+    const plan = independentPlan(artifacts, store);
+    const [first, second, third] = plan.requirements;
+    const [group] = plan.missions;
+    assert(first && second && third?.coverage[0] && group);
+    first.coverage.push(...second.coverage);
+    if (kind === "duplicate") first.coverage.push(...second.coverage);
+    if (kind === "unknown") third.coverage[0].objectiveId = "unknown-objective";
+    plan.requirements = kind === "omitted" ? [first] : [first, third];
+    group.requirementIds = plan.requirements.map((item) => item.id);
+    const draft = JSON.stringify(plan);
+    writeFileSync(artifacts.planPath, draft);
+    const before = store.checkpoint();
+
+    expect(() => sealEngagementPlanArtifact(artifacts, store)).toThrow();
+    expect(store.checkpoint()).toEqual({
+      ...before,
+      updatedAt: expect.any(String),
+    });
+    expect(readFileSync(artifacts.planPath, "utf8")).toBe(draft);
   });
 
   it("limits planning file access to explicitly authorized artifacts", async () => {
@@ -395,8 +638,13 @@ describe("engagement mission planning artifacts", () => {
       path: artifacts.manifestRelativePath,
       toolCallDescription: "Read manifest",
     });
-    expect(result).toMatchObject({ success: true });
-    expect(store.snapshot().missions?.inspectedTargetIds).toHaveLength(2);
+    expect(result).toMatchObject({
+      success: true,
+      counts: { targets: 2, objectives: 1, coverage: 2 },
+    });
+    expect(result).not.toHaveProperty("content");
+    expect(result).not.toHaveProperty("targets");
+    expect(store.snapshot().missions?.inspectedTargetIds ?? []).toEqual([]);
     await expect(
       execute(tools.read_file, {
         path: "coordination/engagement-preflight.json",
@@ -407,6 +655,7 @@ describe("engagement mission planning artifacts", () => {
     await expect(
       execute(tools.read_file, {
         path: "../secret.txt",
+        query: { section: "summary" },
         toolCallDescription: "Read another file",
       }),
     ).rejects.toThrow("only read authorized engagement planning artifacts");
@@ -471,7 +720,7 @@ describe("engagement mission planning artifacts", () => {
     expect(store.snapshot().missions).toEqual(priorMissions);
   });
 
-  it("requires complete threat-model context before consolidation", () => {
+  it("expands unreviewed v1 consolidation into independent checks", () => {
     const { artifacts, state, store } = setup(2);
     store.recordInspectedTargets(state.targets.map((target) => target.id));
     const coverage = state.coverage.map(({ targetId, objectiveId }) => ({
@@ -484,20 +733,16 @@ describe("engagement mission planning artifacts", () => {
       ]),
     ]);
 
-    expect(() => sealEngagementPlanArtifact(artifacts, store)).toThrow(
-      "Read complete target context",
-    );
-    for (const target of state.targets) {
-      store.recordContextRead(target.id, {
-        status: "read",
-        version: `version-${target.id}`,
-        complete: true,
-        hasProductContext: true,
-      });
-    }
-    expect(sealEngagementPlanArtifact(artifacts, store).planningStatus).toBe(
-      "complete",
-    );
+    const sealed = sealEngagementPlanArtifact(artifacts, store);
+    expect(sealed.planningStatus).toBe("complete");
+    expect(
+      sealed.missions[0]?.requirements?.map((item) => item.coverage),
+    ).toEqual(coverage.map((cell) => [cell]));
+    expect(
+      sealed.missions[0]?.requirements?.every((item) =>
+        item.nonConsolidationReason?.includes("Host expanded"),
+      ),
+    ).toBe(true);
   });
 
   it("canonicalizes source associations before assigning requirements to v2 missions", () => {
@@ -565,6 +810,27 @@ describe("engagement mission planning artifacts", () => {
       }),
     ]);
     expect(sealed.missions[0]?.coverage).toEqual(coverage);
+  });
+
+  it("still rejects unreviewed shared coverage if the artifact normalizer is bypassed", () => {
+    const { store, state } = setup(2);
+    const coverage = state.coverage.map(({ targetId, objectiveId }) => ({
+      targetId,
+      objectiveId,
+    }));
+    store.defineMission({
+      ...mission("direct", [requirement("shared", coverage)]),
+      coverage,
+      workerId: "worker-direct",
+      status: "planned",
+      createdAt: new Date().toISOString(),
+    });
+    expect(() => store.setMissionPlanningComplete()).toThrow(
+      "Read complete target context",
+    );
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "pending"),
+    ).toBe(true);
   });
 
   it("rejects singleton v2 requirements without a non-consolidation reason", () => {
@@ -675,11 +941,10 @@ describe("engagement mission planning artifacts", () => {
     );
   });
 
-  it("requires every v2 requirement target context to be reviewed", () => {
+  it("seals a singleton without requiring target context review", () => {
     const { artifacts, state, store } = setup(1);
     const cell = state.coverage[0];
     if (!cell) throw new Error("Missing test coverage");
-    store.recordInspectedTargets([cell.targetId]);
     writeFileSync(
       artifacts.planPath,
       `${JSON.stringify({
@@ -722,8 +987,9 @@ describe("engagement mission planning artifacts", () => {
       "utf8",
     );
 
-    expect(() => sealEngagementPlanArtifact(artifacts, store)).toThrow(
-      "Review target context",
+    expect(sealEngagementPlanArtifact(artifacts, store).planningStatus).toBe(
+      "complete",
     );
+    expect(store.snapshot().contextReads ?? {}).toEqual({});
   });
 });

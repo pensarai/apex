@@ -1027,11 +1027,6 @@ export class EngagementStore {
       throw new Error(
         "Regroup the plan: at most 25% singleton targets and at least two primary targets per mission on average are required",
       );
-    const inspected = new Set(missions.inspectedTargetIds ?? []);
-    if (this.state.targets.some((target) => !inspected.has(target.id)))
-      throw new Error(
-        "Read the complete target manifest before sealing the mission plan",
-      );
     for (const mission of missions.missions) {
       for (const requirement of mission.requirements ?? []) {
         if (requirement.coverage.length < 2) continue;

@@ -189,10 +189,7 @@ function buildWorkerContext(
       ? `Engagement context:\n${state.operatorContext}`
       : "",
     `Assigned services:\n${services
-      .map(
-        (service) =>
-          `- ${service.id}: ${service.origin}\n  Targets: ${service.targets.join(", ")}`,
-      )
+      .map((service) => `- ${service.id}: ${service.origin}`)
       .join("\n")}`,
     `Assigned targets:\n${targets
       .map((target) => `- ${target.id}: ${target.target}`)

@@ -9,6 +9,7 @@ import { buildEngagementState } from "./engagementState";
 import type { EngagementSurfaceProvider } from "./engagementSurface";
 
 type PlannerInput = {
+  prompt: string;
   extraTools: {
     get_engagement_target?: {
       execute: (input: { targetId: string }) => Promise<unknown>;
@@ -45,6 +46,7 @@ vi.mock("./engagementTools", () => ({
   createEngagementTools: () => ({
     tools: {},
     startPlannedMissions: mocks.startPlannedMissions,
+    takeLeadHandoffs: () => [],
     dispose: mocks.dispose,
   }),
   findEngagementChainCoverageGaps: vi.fn(),
@@ -107,12 +109,7 @@ describe("engagement planning completion boundary", () => {
   it("validates and seals a ready artifact even when the planner omits its final response", async () => {
     const { rootPath, target, targets, run } = setup();
     const planPath = join(rootPath, "coordination/engagement-plan.json");
-    mocks.consume.mockImplementation(async (input: PlannerInput) => {
-      await input.extraTools.read_file.execute({
-        path: "coordination/engagement-planning-manifest.json",
-        startLine: 1,
-        endLine: 10_000,
-      });
+    mocks.consume.mockImplementation(async () => {
       const draft = JSON.parse(readFileSync(planPath, "utf8"));
       const state = buildEngagementState(target, targets);
       writeFileSync(
@@ -148,36 +145,23 @@ describe("engagement planning completion boundary", () => {
     expect(mocks.startPlannedMissions).toHaveBeenCalledOnce();
   });
 
-  it("reaches dispatch with v2 independent requirements after bounded context review", async () => {
+  it("expands unreviewed consolidation before dispatch and keeps the full surface out of agent prompts", async () => {
+    const getTarget = vi.fn();
     const { rootPath, target, targets, run } = setup({
       search: vi.fn(),
-      getTarget: async (id) => ({
-        id,
-        applicationId: "resources",
-        applicationName: "Resource service",
-        target: "https://example.test",
-        objectives: ["Test authorization"],
-        businessLogic: "Users must own the resource. ".repeat(2000),
-      }),
+      getTarget,
     });
     const planPath = join(rootPath, "coordination/engagement-plan.json");
-    mocks.consume.mockImplementation(async (input: PlannerInput) => {
-      await input.extraTools.read_file.execute({
-        path: "coordination/engagement-planning-manifest.json",
-        startLine: 1,
-        endLine: 10_000,
-      });
+    mocks.consume.mockImplementationOnce(async (input: PlannerInput) => {
+      expect(input.prompt).toContain("on demand");
+      expect(input.prompt).not.toContain("Test authorization");
+      for (const target of targets)
+        expect(input.prompt).not.toContain(target.target);
       const draft = JSON.parse(readFileSync(planPath, "utf8"));
       const state = buildEngagementState(target, targets);
-      for (const record of state.targets) {
-        const page = await input.extraTools.get_engagement_target?.execute({
-          targetId: record.id,
-        });
-        expect(page).toMatchObject({ success: true, nextOffset: 12_000 });
-      }
-      const requirements = state.coverage.map(
-        ({ targetId, objectiveId }, index) => ({
-          id: `authorization-${index}`,
+      const requirements = [
+        {
+          id: "authorization",
           description: "Unauthorized access must be rejected",
           rationale: "Each resource needs its own authorization observation",
           equivalenceBasis: {
@@ -188,9 +172,12 @@ describe("engagement planning completion boundary", () => {
           },
           nonConsolidationReason:
             "Unreviewed ownership context could distinguish the resource policies",
-          coverage: [{ targetId, objectiveId }],
-        }),
-      );
+          coverage: state.coverage.map(({ targetId, objectiveId }) => ({
+            targetId,
+            objectiveId,
+          })),
+        },
+      ];
       writeFileSync(
         planPath,
         JSON.stringify({
@@ -214,13 +201,27 @@ describe("engagement planning completion boundary", () => {
       );
     });
     mocks.startPlannedMissions.mockImplementation(() => {
-      expect(JSON.parse(readFileSync(planPath, "utf8")).status).toBe("sealed");
-      throw new Error("Dispatch reached after bounded planning");
+      const plan = JSON.parse(readFileSync(planPath, "utf8"));
+      expect(plan.status).toBe("sealed");
+      expect(plan.requirements).toHaveLength(2);
+      expect(plan.missions).toMatchObject([
+        {
+          id: "authorization-flow",
+          requirementIds: ["authorization_source_1", "authorization_source_2"],
+        },
+      ]);
+      return Promise.resolve();
+    });
+    mocks.consume.mockImplementationOnce(async (input: PlannerInput) => {
+      expect(input.prompt).toContain('"targetCount": 2');
+      expect(input.prompt).not.toContain("Test authorization");
+      for (const target of targets)
+        expect(input.prompt).not.toContain(target.target);
+      throw new Error("Lead reached with a compact prompt");
     });
 
-    await expect(run()).rejects.toThrow(
-      "Dispatch reached after bounded planning",
-    );
+    await expect(run()).rejects.toThrow("Lead reached with a compact prompt");
     expect(mocks.startPlannedMissions).toHaveBeenCalledOnce();
+    expect(getTarget).not.toHaveBeenCalled();
   });
 });

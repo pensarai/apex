@@ -351,7 +351,7 @@ export async function runEngagementLead(input: {
       system: ENGAGEMENT_PLANNING_PROMPT,
       prompt: [
         `Plan the engagement for ${workflow.target}.`,
-        `Read the complete immutable manifest at ${planningArtifacts.manifestRelativePath}.`,
+        `Query the external immutable manifest at ${planningArtifacts.manifestRelativePath} on demand through read_file in code mode. Read only the records needed for each decision; do not emit the full manifest or attack surface into conversation.`,
         `Maintain the authoritative draft at ${planningArtifacts.planRelativePath}; replace it with create_file(overwrite=true) as the plan evolves.`,
         `Read the sealed deployment facts at ${preflightArtifacts.relativePath}. Treat unavailable capabilities as evidence-backed blockers and unknown capabilities as runnable unknowns.`,
         `The manifest contains ${store.snapshot().targets.length} authorized targets. Preserve contractHash ${planningArtifacts.contractHash}.`,
@@ -428,13 +428,13 @@ export async function runEngagementLead(input: {
     );
   const prompt = [
     `Root target: ${input.workflow.target}`,
-    "The engagement summary follows. Use read_engagement_state and the engagement-surface tools to page through the complete contract; use IDs exactly when calling coordination tools.",
+    "The engagement counts follow. The attack surface and coverage ledger remain external. Use read_engagement_state and the engagement-surface tools in code mode to query relevant records on demand; emit only decision-relevant results and use exact IDs for coordination.",
     JSON.stringify(
       {
         serviceCount: state.services.length,
         objectiveCount: state.objectives.length,
-        services: state.services.slice(0, 10),
-        objectives: state.objectives.slice(0, 10),
+        targetCount: state.targets.length,
+        coverageCount: state.coverage.length,
         operatorContext: state.operatorContext,
       },
       null,
