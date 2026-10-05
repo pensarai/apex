@@ -6,9 +6,13 @@ import type { FindingsRegistry } from "../findings/registry";
 import type { SessionInfo } from "../session";
 import { runEngagementLead } from "./engagementLead";
 import { buildEngagementState } from "./engagementState";
+import type { EngagementSurfaceProvider } from "./engagementSurface";
 
 type PlannerInput = {
   extraTools: {
+    get_engagement_target?: {
+      execute: (input: { targetId: string }) => Promise<unknown>;
+    };
     read_file: {
       execute: (input: {
         path: string;
@@ -54,7 +58,7 @@ afterEach(() => {
     rmSync(path, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(surfaceProvider?: EngagementSurfaceProvider) {
   const rootPath = mkdtempSync(join(tmpdir(), "apex-lead-planning-"));
   directories.push(rootPath);
   const target = "https://example.test";
@@ -75,6 +79,7 @@ function setup() {
       runEngagementLead({
         workflow: { target, model: "test-model", session },
         targets,
+        surfaceProvider,
         findingsRegistry: {} as FindingsRegistry,
       }),
   };
@@ -140,6 +145,82 @@ describe("engagement planning completion boundary", () => {
     });
 
     await expect(run()).rejects.toThrow("Dispatch reached after sealing");
+    expect(mocks.startPlannedMissions).toHaveBeenCalledOnce();
+  });
+
+  it("reaches dispatch with v2 independent requirements after bounded context review", async () => {
+    const { rootPath, target, targets, run } = setup({
+      search: vi.fn(),
+      getTarget: async (id) => ({
+        id,
+        applicationId: "resources",
+        applicationName: "Resource service",
+        target: "https://example.test",
+        objectives: ["Test authorization"],
+        businessLogic: "Users must own the resource. ".repeat(2000),
+      }),
+    });
+    const planPath = join(rootPath, "coordination/engagement-plan.json");
+    mocks.consume.mockImplementation(async (input: PlannerInput) => {
+      await input.extraTools.read_file.execute({
+        path: "coordination/engagement-planning-manifest.json",
+        startLine: 1,
+        endLine: 10_000,
+      });
+      const draft = JSON.parse(readFileSync(planPath, "utf8"));
+      const state = buildEngagementState(target, targets);
+      for (const record of state.targets) {
+        const page = await input.extraTools.get_engagement_target?.execute({
+          targetId: record.id,
+        });
+        expect(page).toMatchObject({ success: true, nextOffset: 12_000 });
+      }
+      const requirements = state.coverage.map(
+        ({ targetId, objectiveId }, index) => ({
+          id: `authorization-${index}`,
+          description: "Unauthorized access must be rejected",
+          rationale: "Each resource needs its own authorization observation",
+          equivalenceBasis: {
+            trustBoundary: "User to resource ownership",
+            authenticationState: "Owner and peer users",
+            expectedBehavior: "Only owners can read the resource",
+            evidencePlan: "Compare access for this resource's owner and peer",
+          },
+          nonConsolidationReason:
+            "Unreviewed ownership context could distinguish the resource policies",
+          coverage: [{ targetId, objectiveId }],
+        }),
+      );
+      writeFileSync(
+        planPath,
+        JSON.stringify({
+          version: 2,
+          status: "ready",
+          contractHash: draft.contractHash,
+          requirements,
+          missions: [
+            {
+              id: "authorization-flow",
+              purpose: "Test both resource boundaries independently",
+              rationale: "Share actor setup, not coverage credit",
+              requirementIds: requirements.map((item) => item.id),
+            },
+          ],
+          consolidationReview: {
+            status: "complete",
+            summary: "Ownership-policy equivalence remains unverified",
+          },
+        }),
+      );
+    });
+    mocks.startPlannedMissions.mockImplementation(() => {
+      expect(JSON.parse(readFileSync(planPath, "utf8")).status).toBe("sealed");
+      throw new Error("Dispatch reached after bounded planning");
+    });
+
+    await expect(run()).rejects.toThrow(
+      "Dispatch reached after bounded planning",
+    );
     expect(mocks.startPlannedMissions).toHaveBeenCalledOnce();
   });
 });

@@ -221,9 +221,9 @@ export type EngagementPlanningArtifacts = {
 export const ENGAGEMENT_PLANNING_PROMPT = `Plan coherent testing missions for this authorized engagement before testing begins.
 Use code mode to read the complete immutable planning manifest and maintain the mission plan as the external JSON artifact named in the user prompt. Keep working memory, clustering notes, and the authoritative draft in that file rather than repeating the full plan in conversation. The manifest's contractHash must remain unchanged. Set the plan status to ready only after checking the whole artifact.
 
-Planning read_file returns numbered content, totalLines, and linesReturned. Advance startLine by linesReturned until totalLines is exhausted, including when your requested endLine was reached without a truncation marker. Large artifacts can exceed a single code cell's nested-result budget: read a few pages per cell and preserve chunks with store/load across cells before parsing. Coverage must use the exact targetId and objectiveId pairs from the manifest; wildcards are not valid objective IDs.
+Planning read_file returns numbered content, totalLines, and linesReturned. Advance startLine by linesReturned until totalLines is exhausted, including when your requested endLine was reached without a truncation marker. Large artifacts can exceed a single code cell's nested-result budget: read a few pages per cell, extract compact records, and preserve those records with store/load across cells. Do not load all raw chunks back into one cell if their combined size exceeds the budget. Objective text appears once in the manifest's objectives list; each target's objectiveIds references that list. Coverage must use the exact targetId and objectiveId pairs from the manifest; wildcards are not valid objective IDs.
 
-Read the complete target context available through the read-only engagement context capability before deciding equivalence. First canonicalize the source associations into top-level requirements, then assign those requirement IDs to missions. Group related endpoints by authentication, shared resources, trust boundaries, and causal flow. Application code does not choose groups.
+Review each target through the read-only engagement context capability, starting with a bounded page and reading further where needed. A partial read is not a complete context review. Before consolidating multiple source associations into one requirement, read the complete context of every affected target. When context is too large to fully review within the planning budget, or is unavailable, keep each source association as a separate requirement and explain which equivalence dimensions remain unverified in its nonConsolidationReason. Related independent requirements can still share a mission; do not retry whole-document reads merely to seal the plan. Workers and the finding judge retain full context access and live validation remains the final oracle. First define the top-level requirements, then assign those requirement IDs to missions. Group related endpoints by authentication, shared resources, trust boundaries, and causal flow. Application code does not choose groups.
 
 Every canonical requirement must state its trust boundary, authentication state, expected behavior, and evidence plan. It may consolidate source endpoint/objective associations only when those dimensions are materially equivalent. Preserve all source associations in requirement coverage and explain why consolidation is sound. For a requirement that remains a singleton, give a concrete nonConsolidationReason naming the dimension that prevents a safe merge. Do not use generic statements such as "keep exact" or "test independently." Reference deployment prerequisite capability IDs when the preflight artifact supplies them.
 
@@ -369,6 +369,8 @@ export function prepareEngagementPlanningArtifacts(
       },
     },
     ...contract,
+    // Deduplicate text without changing the contract hash of resumable drafts.
+    targets: state.targets,
   });
 
   if (!existsSync(planPath)) {
@@ -524,11 +526,11 @@ export function sealEngagementPlanArtifact(
     );
     const missingContext = [...reviewedTargetIds].filter((targetId) => {
       const receipt = contextReads[targetId];
-      return receipt?.status !== "unavailable" && receipt?.complete !== true;
+      return receipt?.status !== "unavailable" && receipt?.status !== "read";
     });
     if (missingContext.length > 0) {
       throw new Error(
-        `Review complete target context before sealing the canonical requirements: ${missingContext.join(", ")}`,
+        `Review target context before sealing the canonical requirements: ${missingContext.join(", ")}. A bounded read is sufficient for independent requirements; consolidating multiple source associations still requires complete context.`,
       );
     }
   }

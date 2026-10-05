@@ -128,4 +128,26 @@ describe("engagement surface tools", () => {
     ]);
     expect(() => scoped.scope(["target-2"])).toThrow("authorized read scope");
   });
+
+  it("does not mark partial, repeated, or tail-only reads as complete", async () => {
+    const scoped = context({
+      search: vi.fn(),
+      getTarget: vi.fn().mockResolvedValue({
+        id: "target-1",
+        applicationId: "app-1",
+        applicationName: "Example",
+        target: "https://example.test",
+        objectives: [],
+        businessLogic: "Ownership rules. ".repeat(4000),
+      }),
+    });
+    const first = await scoped.read("target-1");
+    if (!first.success) throw new Error("Expected context");
+    await scoped.read("target-1");
+    const last = await scoped.read("target-1", first.totalChars - 100);
+    expect(last).toMatchObject({ success: true, nextOffset: null });
+    expect(scoped.receipts()).toEqual([
+      expect.objectContaining({ status: "read", complete: false }),
+    ]);
+  });
 });

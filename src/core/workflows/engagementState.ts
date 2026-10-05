@@ -1040,7 +1040,7 @@ export class EngagementStore {
         ).filter((targetId) => !this.state.contextReads?.[targetId]?.complete);
         if (missingContext.length > 0) {
           throw new Error(
-            `Read complete target context before consolidating requirement ${requirement.id}: ${missingContext.join(", ")}`,
+            `Read complete target context before consolidating requirement ${requirement.id}: ${missingContext.join(", ")}. If full context is too large or unavailable, split its coverage into separate requirements with concrete nonConsolidationReason values; related requirements can remain in the same mission.`,
           );
         }
       }
