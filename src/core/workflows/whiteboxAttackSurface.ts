@@ -1403,6 +1403,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     subagentId: incrementalSubagentId,
     subagentName: "Incremental Recon",
+    excludeTools: ["document_endpoint"],
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
     enableThinking: input.enableThinking,
