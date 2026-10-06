@@ -310,6 +310,7 @@ describe("observe snapshots", () => {
 import { Database } from "bun:sqlite";
 const [dbPath, runId] = process.argv.slice(2);
 const db = new Database(dbPath);
+db.exec("PRAGMA busy_timeout = 5000");
 const control = JSON.parse(
   db.prepare("SELECT record_json FROM run_controls WHERE run_id = ?").get(runId).record_json,
 );
@@ -340,7 +341,6 @@ for (let contextRevision = 2; contextRevision <= 60; contextRevision++) {
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
 db.close();
-console.log("writer-done");
 `,
     );
 
@@ -350,6 +350,10 @@ console.log("writer-done");
     holdChildren.push(child);
 
     // Completion can fire at any moment; capture it before awaiting readiness.
+    let writerStderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      writerStderr += chunk.toString();
+    });
     const completion = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new Error("writer subprocess timed out")),
@@ -362,15 +366,17 @@ console.log("writer-done");
         clearTimeout(timer);
         error ? reject(error) : resolve();
       };
-      child.stdout!.on("data", (chunk: Buffer) => {
-        if (chunk.toString().includes("writer-done")) settle();
-      });
       child.on("error", settle);
-      child.on("close", () => {
-        // close without writer-done is surfaced by the final revision assert.
-        settle();
+      child.on("close", (code, signal) => {
+        settle(
+          code === 0
+            ? undefined
+            : new Error(`Writer exited ${code ?? signal}: ${writerStderr}`),
+        );
       });
     });
+    // The child can fail before the observation loop joins it below.
+    void completion.catch(() => {});
 
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
