@@ -564,7 +564,11 @@ describe("createDisplayEventHandlers", () => {
       for (const timer of ["setTimeout", "setInterval"] as const) {
         const schedule = globalThis[timer];
         vi.spyOn(globalThis, timer).mockImplementation(
-          (callback, delay = 0, ...args) =>
+          <TArgs extends unknown[]>(
+            callback: (...args: TArgs) => void,
+            delay = 0,
+            ...args: TArgs
+          ) =>
             schedule(() => {
               timerCallbacks++;
               callback(...args);
