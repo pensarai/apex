@@ -12,7 +12,10 @@ import {
   startObservabilityRuntime,
 } from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
-import { getSavedModelForConfig } from "../core/providers/utils";
+import {
+  getDefaultModelForConfig,
+  getSavedModelForConfig,
+} from "../core/providers/utils";
 import { type SessionConfig, sessions } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
 import { createClipboardManager } from "./clipboard";
@@ -789,13 +792,18 @@ export async function startTui(options: TuiOptions = {}) {
   const cleanup = () => exitWith(0);
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
+  // Herdr must be able to restore the session before dashboard effects run.
+  const resumeArgv = ["pensar"];
+  if (options.sessionId) {
+    resumeArgv.push("--resume", options.sessionId);
+    const model =
+      getSavedModelForConfig(appConfig) ?? getDefaultModelForConfig(appConfig);
+    if (model) resumeArgv.push("--model", model.id);
+  }
+  if (obfuscateEnabled) resumeArgv.push("--obfuscate");
   herdr.report({
     state: options.sessionId ? "working" : "idle",
-    ...(!options.sessionId && {
-      session: {
-        resumeArgv: ["pensar", ...(obfuscateEnabled ? ["--obfuscate"] : [])],
-      },
-    }),
+    session: { id: options.sessionId, resumeArgv },
   });
 
   createRoot(renderer).render(
