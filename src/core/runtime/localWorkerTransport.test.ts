@@ -324,6 +324,92 @@ describe("watch lifecycle", () => {
 });
 
 describe("server shutdown", () => {
+  it.each([
+    "snapshot",
+    "watch",
+  ] as const)("retries one interrupted %s without treating a live endpoint as absent", async (method) => {
+    const endpoint = socketPath();
+    let requests = 0;
+    const peer = http.createServer((_req, res) => {
+      if (++requests === 1) res.destroy();
+      else res.end(JSON.stringify(fixtureSnapshot()));
+    });
+    await new Promise<void>((resolve) => peer.listen(endpoint, resolve));
+    try {
+      await expect(
+        workerRequest(endpoint, { protocolVersion: 1, method }),
+      ).resolves.toEqual(fixtureSnapshot());
+      expect(requests).toBe(2);
+    } finally {
+      await new Promise<void>((resolve) => peer.close(() => resolve()));
+    }
+  });
+
+  it("rechecks actual absence when a retiring peer interrupts a read", async () => {
+    const endpoint = socketPath();
+    let requests = 0;
+    const peer = http.createServer((_req, res) => {
+      requests++;
+      peer.close();
+      res.destroy();
+    });
+    await new Promise<void>((resolve) => peer.listen(endpoint, resolve));
+    try {
+      const error = await expectFailure(
+        workerRequest(endpoint, snapshotRequest),
+      );
+      expect(error.code).toBe("ENOENT");
+      expect(error.uncertain).toBe(false);
+      expect(requests).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => peer.close(() => resolve()));
+    }
+  });
+
+  it("does not resend a mutation whose acknowledgement was lost", async () => {
+    const endpoint = socketPath();
+    let requests = 0;
+    const peer = http.createServer((_req, res) => {
+      requests++;
+      res.destroy();
+    });
+    await new Promise<void>((resolve) => peer.listen(endpoint, resolve));
+    try {
+      const error = await expectFailure(
+        workerRequest(endpoint, {
+          protocolVersion: 1,
+          method: "stop",
+          expectedRevision: 0,
+        }),
+      );
+      expect(error.code).toBeUndefined();
+      expect(error.uncertain).toBe(true);
+      expect(requests).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => peer.close(() => resolve()));
+    }
+  });
+
+  it("bounds interrupted reads without declaring a live peer absent", async () => {
+    const endpoint = socketPath();
+    let requests = 0;
+    const peer = http.createServer((_req, res) => {
+      requests++;
+      res.destroy();
+    });
+    await new Promise<void>((resolve) => peer.listen(endpoint, resolve));
+    try {
+      const error = await expectFailure(
+        workerRequest(endpoint, snapshotRequest),
+      );
+      expect(error.code).toBeUndefined();
+      expect(error.uncertain).toBe(false);
+      expect(requests).toBe(2);
+    } finally {
+      await new Promise<void>((resolve) => peer.close(() => resolve()));
+    }
+  });
+
   it("close is bounded with a stalled raw reader and unlinks the socket", async () => {
     const socketPathName = socketPath();
     const server = await serveWorkerTransport({
@@ -470,7 +556,7 @@ function aborted(signal: AbortSignal): Promise<never> {
 }
 
 describe("Bun connect race", () => {
-  function failHttpConnect(count: number) {
+  function failHttpConnect(count: number, code = "FailedToOpenSocket") {
     const original = http.request;
     let failures = 0;
     return vi.spyOn(http, "request").mockImplementation(((
@@ -484,7 +570,7 @@ describe("Bun connect race", () => {
           request.emit(
             "error",
             Object.assign(new Error("Bun connect failed"), {
-              code: "FailedToOpenSocket",
+              code,
             }),
           ),
         );
@@ -562,5 +648,17 @@ describe("Bun connect race", () => {
       spy.mockRestore();
       await peer.close();
     }
+  });
+
+  it.each([
+    "EACCES",
+    "HPE_INVALID_HEADER_TOKEN",
+  ])("does not retry a %s failure", async (code) => {
+    const spy = failHttpConnect(10, code);
+    const error = await expectFailure(
+      workerRequest(socketPath(), snapshotRequest),
+    );
+    expect(error.code).toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

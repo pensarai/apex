@@ -187,9 +187,9 @@ export interface WorkerRequestOptions {
   timeoutMs?: number;
 }
 
-class WorkerConnectRaceError extends LocalWorkerTransportError {}
+class WorkerConnectionError extends LocalWorkerTransportError {}
 
-// Only a read may retry when the endpoint appeared during Bun's errno probe.
+// Reads may retry once across endpoint arrival or retirement; mutations never do.
 export async function workerRequest(
   socketPath: string,
   request: LocalWorkerRequest,
@@ -201,7 +201,7 @@ export async function workerRequest(
   } catch (error) {
     const remaining = deadline - Date.now();
     if (
-      !(error instanceof WorkerConnectRaceError) ||
+      !(error instanceof WorkerConnectionError) ||
       (request.method !== "snapshot" && request.method !== "watch") ||
       options.signal?.aborted ||
       remaining <= 0
@@ -328,14 +328,14 @@ function requestOnce(
         });
         res.on("error", (cause) =>
           fail(
-            new LocalWorkerTransportError(cause.message, {
+            new WorkerConnectionError(cause.message, {
               uncertain: mutation,
             }),
           ),
         );
         res.on("aborted", () =>
           fail(
-            new LocalWorkerTransportError("Worker response was interrupted", {
+            new WorkerConnectionError("Worker response was interrupted", {
               uncertain: mutation,
             }),
           ),
@@ -360,7 +360,7 @@ function requestOnce(
           );
         diagnostic.once("connect", () =>
           fail(
-            new WorkerConnectRaceError(
+            new WorkerConnectionError(
               "Worker endpoint appeared during the connection probe",
               { uncertain: mutation },
             ),
@@ -375,14 +375,16 @@ function requestOnce(
       const absent =
         !connected &&
         (cause.code === "ENOENT" || cause.code === "ECONNREFUSED");
+      const interrupted =
+        !cause.code || cause.code === "ECONNRESET" || cause.code === "EPIPE";
+      const Failure = interrupted
+        ? WorkerConnectionError
+        : LocalWorkerTransportError;
       fail(
-        new LocalWorkerTransportError(
-          `Worker endpoint request failed: ${cause.message}`,
-          {
-            ...(absent ? { code: cause.code } : {}),
-            uncertain: mutation && !absent,
-          },
-        ),
+        new Failure(`Worker endpoint request failed: ${cause.message}`, {
+          ...(absent ? { code: cause.code } : {}),
+          uncertain: mutation && !absent,
+        }),
       );
     });
     timer = setTimeout(
