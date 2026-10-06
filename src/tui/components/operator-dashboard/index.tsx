@@ -83,6 +83,8 @@ import { useCommand } from "../../context/command";
 import { useConfig } from "../../context/config";
 import { useDialog } from "../../context/dialog";
 import { useFocus } from "../../context/focus";
+import { useHerdr } from "../../context/herdr";
+import { useObfuscation } from "../../context/obfuscation";
 import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
 import { openFileInDefaultApp } from "../../utils/open-file.js";
@@ -100,6 +102,7 @@ import {
   createDisplayMessageUpdater,
   markInFlightToolsErrored,
 } from "./display-state";
+import { buildHerdrSnapshot, buildHomeHerdrReport } from "./herdr-state";
 import {
   buildOperatorSystemPrompt,
   type DashboardStatus,
@@ -193,6 +196,8 @@ export default function OperatorDashboard({
     clear: clearDialog,
   } = useDialog();
   const { refocusPromptIfNoActiveEditor } = useFocus();
+  const herdr = useHerdr();
+  const { enabled: obfuscateEnabled } = useObfuscation();
   const initialStrikeModeRef = useRef(
     resolveOperatorStrikeMode({
       resuming: !!sessionId,
@@ -560,6 +565,50 @@ export default function OperatorDashboard({
       ...(metrics?.contextUsage ? { contextUsage: metrics.contextUsage } : {}),
     });
   }, [session, sessionId, usageStore]);
+
+  // The unmount cleanup closes over redaction state once, so it reads the
+  // latest value through a ref.
+  const obfuscateRef = useRef(obfuscateEnabled);
+  obfuscateRef.current = obfuscateEnabled;
+
+  const herdrSessionId = session?.id ?? sessionId ?? null;
+  const herdrApprovalCount = pendingApprovals.length;
+  const herdrHasQuestions = pendingQuestions !== null;
+
+  // One report per lifecycle change; primitive deps keep streaming renders
+  // (text deltas, tool args) from re-sending.
+  useEffect(() => {
+    herdr.report(
+      buildHerdrSnapshot({
+        status,
+        loading,
+        pendingApprovalCount: herdrApprovalCount,
+        hasPendingQuestions: herdrHasQuestions,
+        planReviewPending: showPlanReview,
+        sessionId: herdrSessionId,
+        modelId: model.id,
+        obfuscateEnabled,
+      }),
+    );
+  }, [
+    herdr,
+    status,
+    loading,
+    herdrApprovalCount,
+    herdrHasQuestions,
+    showPlanReview,
+    herdrSessionId,
+    model.id,
+    obfuscateEnabled,
+  ]);
+
+  // Leaving the dashboard returns the user to home: reset the resume argv
+  // instead of releasing — the process still owns the pane.
+  useEffect(() => {
+    return () => {
+      herdr.report(buildHomeHerdrReport(obfuscateRef.current));
+    };
+  }, [herdr]);
 
   // ---------------------------------------------------------------------------
   // Display event adapter — root display projections (partial text, tool-arg

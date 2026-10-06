@@ -15,8 +15,14 @@ import { setCurrentCommand } from "./core/api/clientIdentity";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolveExplicitCliModel } from "./core/cli/model";
 import { resolvePentestMode } from "./core/cli/pentestMode";
+import { parseTuiArgs } from "./core/cli/tuiArgs";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
+import {
+  createHerdrReporter,
+  type HerdrReport,
+  type HerdrState,
+} from "./core/integrations/herdr";
 import { logger } from "./core/logger";
 import {
   installObservabilityExitHandlers,
@@ -114,7 +120,20 @@ function attachCliAgentStreamListeners(bus: AgentEventBus): void {
 
 async function createInstrumentedBus(
   session: SessionInfo,
+  model: AIModel,
 ): Promise<{ bus: AgentEventBus; cleanup: () => Promise<void> }> {
+  headlessHerdrSession = {
+    id: session.id,
+    resumeArgv: [
+      "pensar",
+      "--resume",
+      session.id,
+      "--model",
+      model,
+      ...(process.env.PENSAR_OBFUSCATE === "1" ? ["--obfuscate"] : []),
+    ],
+  };
+  reportHerdrState("working");
   const bus = new AgentEventBus();
   attachCliAgentStreamListeners(bus);
   const { attachWandbToEventBus } = await import(
@@ -125,6 +144,10 @@ async function createInstrumentedBus(
     return null;
   });
   return { bus, cleanup: async () => wandbCleanup?.() };
+}
+
+function reportHerdrState(state: HerdrState): void {
+  headlessHerdr?.report({ state, session: headlessHerdrSession });
 }
 
 // Returns the merged headers (global defaults < file < CLI flags), or
@@ -233,6 +256,7 @@ function showHelp() {
 
 Usage:
   pensar                             Launch the TUI
+  pensar --resume <session-id>        Reopen a saved session in the TUI
   pensar -p <prompt>                 Start an operator session with a prompt
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
@@ -251,6 +275,9 @@ Usage:
   pensar doctor                       Check dependencies and install missing tools
   pensar help                         Show this help message
   pensar version                      Show version number
+
+resume options:
+  --model <model>            Restore the session with this model
 
 operator options (-p):
   -p, --prompt <text|@file>  (required) Prompt for the operator agent
@@ -393,7 +420,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
     outputDirectory: evidenceOutput,
     run: async () => {
       const { bus: pentestBus, cleanup: wandbCleanup } =
-        await createInstrumentedBus(session);
+        await createInstrumentedBus(session, model);
       try {
         const { findings, findingsPath, pocsPath, reportPath } =
           await runPentestAgent({
@@ -482,7 +509,7 @@ ${objectivesList}
     outputDirectory: evidenceOutput,
     run: async () => {
       const { bus: targetedBus, cleanup: wandbCleanup } =
-        await createInstrumentedBus(session);
+        await createInstrumentedBus(session, model);
       try {
         const { findings, findingsPath, pocsPath } =
           await runTargetedPentestAgent({
@@ -539,6 +566,7 @@ Model:    ${model}
   threatBus.on("tool-result", (d) => console.log(`  ✓ ${d.toolName}`));
   threatBus.on("error", (d) => console.error("Error:", d.error));
 
+  reportHerdrState("working");
   await runThreatModelWorkflow({
     codebasePath: process.cwd(),
     outputPath: resolvedPath,
@@ -614,8 +642,10 @@ ${sep}\n`);
     session,
     outputDirectory: evidenceOutput,
     run: async () => {
-      const { bus, cleanup: wandbCleanup } =
-        await createInstrumentedBus(session);
+      const { bus, cleanup: wandbCleanup } = await createInstrumentedBus(
+        session,
+        model,
+      );
 
       let currentPrompt = prompt;
       let messages: ModelMessage[] | undefined;
@@ -627,6 +657,7 @@ ${sep}\n`);
 
       const askFollowUp = (): Promise<string | null> =>
         new Promise((resolve) => {
+          reportHerdrState("idle");
           process.stdout.write(`\n${sep}\n`);
           rl.question("follow-up (empty to exit): ", (answer) => {
             const trimmed = answer.trim();
@@ -636,6 +667,7 @@ ${sep}\n`);
 
       try {
         for (;;) {
+          reportHerdrState("working");
           await runOffensiveSecurityAgent({
             prompt: currentPrompt,
             ...(systemPrompt ? { system: systemPrompt } : {}),
@@ -696,17 +728,41 @@ async function runUpgrade() {
 // Router
 // ---------------------------------------------------------------------------
 
+const tuiRequested = args.length === 0 || command === "--resume";
+const headlessHerdr =
+  !tuiRequested &&
+  process.stdin.isTTY &&
+  process.stdout.isTTY &&
+  (hasFlag("-p") ||
+    command === "--prompt" ||
+    command === "pentest" ||
+    command === "targeted-pentest" ||
+    command === "threat-model")
+    ? createHerdrReporter()
+    : null;
+let headlessHerdrSession: HerdrReport["session"];
+
 // Standalone CLI entrypoint: own the optional OTel runtime. No-op unless an
 // OTLP endpoint is configured; the TUI branch below takes over the process
 // and manages the runtime's lifecycle in its own exit path.
 const observabilityRuntime =
   command === "export-trajectory" ? null : startObservabilityRuntime();
+const standaloneRuntime = observabilityRuntime && {
+  ...observabilityRuntime,
+  shutdown: async () => {
+    const [result] = await Promise.all([
+      observabilityRuntime.shutdown().catch(() => "completed" as const),
+      headlessHerdr?.release(),
+    ]);
+    return result;
+  },
+};
 // Signals and fatal errors flush traces (bounded) before exiting — headless
 // commands only; the TUI installs its own handlers alongside renderer
 // teardown.
 const exitAfterObservabilityShutdown =
-  observabilityRuntime !== null && args.length !== 0
-    ? installObservabilityExitHandlers(observabilityRuntime, {
+  standaloneRuntime !== null && !tuiRequested
+    ? installObservabilityExitHandlers(standaloneRuntime, {
         onError: (error) => {
           console.error("Uncaught exception:", error);
         },
@@ -718,7 +774,20 @@ const exitAfterObservabilityShutdown =
 setCurrentCommand(command);
 
 try {
-  if (hasFlag("-p") || command === "--prompt") {
+  if (tuiRequested) {
+    const options = parseTuiArgs(args);
+    if (process.env.PENSAR_NO_TUI === "1") {
+      console.error(
+        "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
+      );
+      console.error("All other commands work with Node — run 'pensar --help'.");
+      await standaloneRuntime?.shutdown();
+      process.exitCode = 1;
+    } else {
+      const { startTui } = await import("./tui/index.tsx");
+      await startTui(options);
+    }
+  } else if (hasFlag("-p") || command === "--prompt") {
     await runOperator();
   } else if (
     command === "version" ||
@@ -769,19 +838,6 @@ try {
   } else if (command === "doctor") {
     const { runDoctor } = await import("./core/doctor");
     await runDoctor();
-  } else if (args.length === 0) {
-    if (process.env.PENSAR_NO_TUI === "1") {
-      console.error(
-        "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
-      );
-      console.error("All other commands work with Node — run 'pensar --help'.");
-      // This branch owns the runtime lifecycle (the TUI never imported): the
-      // bounded shutdown flushes any queued spans before the process exits.
-      await observabilityRuntime?.shutdown().catch(() => {});
-      process.exitCode = 1;
-    } else {
-      await import("./tui/index.tsx");
-    }
   } else {
     console.error(`Error: Unknown command '${command}'`);
     console.error();
@@ -795,17 +851,14 @@ try {
     observabilityRuntime !== null
   ) {
     await exitAfterObservabilityShutdown(1, error, "uncaughtException");
+  } else {
+    await standaloneRuntime?.shutdown();
   }
   throw error;
 } finally {
   // The TUI owns its runtime lifecycle after import.
-  if (
-    exitAfterObservabilityShutdown !== null &&
-    observabilityRuntime !== null
-  ) {
-    const shutdownResult = await observabilityRuntime
-      .shutdown()
-      .catch(() => "completed" as const);
+  if (exitAfterObservabilityShutdown !== null && standaloneRuntime !== null) {
+    const shutdownResult = await standaloneRuntime.shutdown();
     // A timed-out exporter can still own live HTTP handles, and pentest tool
     // subsystems can leave handles open after completion.
     if (

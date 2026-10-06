@@ -1,16 +1,19 @@
 import { createCliRenderer, FrameBufferRenderable, RGBA } from "@opentui/core";
 import { createRoot, extend } from "@opentui/react";
 import { useEffect, useState } from "react";
+import { parseTuiArgs, type TuiOptions } from "../core/cli/tuiArgs";
 import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
+import { createHerdrReporter } from "../core/integrations/herdr";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
 import {
   installObservabilityExitHandlers,
   startObservabilityRuntime,
 } from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
-import type { SessionConfig } from "../core/session";
+import { getSavedModelForConfig } from "../core/providers/utils";
+import { type SessionConfig, sessions } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
 import { createClipboardManager } from "./clipboard";
 import { ChatApp } from "./components/chat";
@@ -45,6 +48,7 @@ import { ConfigProvider, useConfig } from "./context/config";
 import { DialogProvider, useDialog } from "./context/dialog";
 import { TerminalDimensionsProvider } from "./context/dimensions";
 import { FocusProvider, useFocus } from "./context/focus";
+import { HerdrProvider } from "./context/herdr";
 import { InputProvider } from "./context/input";
 import { KeybindingProvider } from "./context/keybinding";
 import { ObfuscationProvider } from "./context/obfuscation";
@@ -87,9 +91,10 @@ declare module "@opentui/react" {
 interface AppProps {
   appConfig: Config;
   onExit: () => Promise<void>;
+  initialSessionId?: string;
 }
 
-function App({ appConfig, onExit }: AppProps) {
+function App({ appConfig, onExit, initialSessionId }: AppProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -118,7 +123,13 @@ function App({ appConfig, onExit }: AppProps) {
   return (
     <ConfigProvider config={appConfig}>
       <SessionProvider>
-        <RouteProvider>
+        <RouteProvider
+          initialRoute={
+            initialSessionId
+              ? { type: "operator", sessionId: initialSessionId }
+              : undefined
+          }
+        >
           <FocusProvider>
             <TerminalFocusHandler />
             <InputProvider>
@@ -697,11 +708,25 @@ function CommandDisplay({
   return null;
 }
 
-async function main() {
+export async function startTui(options: TuiOptions = {}) {
   // OpenTUI is about to own the screen — route logs to file, not stderr.
   routeLogsToErrorFile();
 
-  const appConfig = await config.get();
+  let appConfig = await config.get();
+  if (options.sessionId) {
+    if (!appConfig.responsibleUseAccepted) {
+      throw new Error(
+        "Run pensar to complete setup before resuming a session.",
+      );
+    }
+    await sessions.get(options.sessionId);
+  }
+  if (options.modelId) {
+    appConfig = { ...appConfig, selectedModelId: options.modelId };
+    if (!getSavedModelForConfig(appConfig)) {
+      throw new Error(`The saved model is unavailable: ${options.modelId}`);
+    }
+  }
 
   registerBuiltinThemes();
 
@@ -736,21 +761,42 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  const exitWith = installObservabilityExitHandlers(observabilityRuntime, {
-    cleanup: () => {
-      cleanupTerminalFocusMode();
-      renderer.destroy();
+  const herdr = createHerdrReporter();
+  const exitWith = installObservabilityExitHandlers(
+    {
+      ...observabilityRuntime,
+      shutdown: async () => {
+        const [result] = await Promise.all([
+          observabilityRuntime.shutdown().catch(() => "completed" as const),
+          herdr.release(),
+        ]);
+        return result;
+      },
     },
-    onError: (error, source) => {
-      const uncaught = source === "uncaughtException";
-      const label = uncaught ? "Uncaught exception:" : "Unhandled rejection:";
-      console.error(label, error);
-      writeErrorLog(error, uncaught ? "UNCAUGHT" : "UNHANDLED_REJECTION");
+    {
+      cleanup: () => {
+        cleanupTerminalFocusMode();
+        renderer.destroy();
+      },
+      onError: (error, source) => {
+        const uncaught = source === "uncaughtException";
+        const label = uncaught ? "Uncaught exception:" : "Unhandled rejection:";
+        console.error(label, error);
+        writeErrorLog(error, uncaught ? "UNCAUGHT" : "UNHANDLED_REJECTION");
+      },
     },
-  });
+  );
   const cleanup = () => exitWith(0);
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
+  herdr.report({
+    state: options.sessionId ? "working" : "idle",
+    ...(!options.sessionId && {
+      session: {
+        resumeArgv: ["pensar", ...(obfuscateEnabled ? ["--obfuscate"] : [])],
+      },
+    }),
+  });
 
   createRoot(renderer).render(
     <ObfuscationProvider initialEnabled={obfuscateEnabled}>
@@ -763,7 +809,13 @@ async function main() {
         <TerminalDimensionsProvider>
           <ToastProvider>
             <ErrorBoundary>
-              <App appConfig={appConfig} onExit={cleanup} />
+              <HerdrProvider reporter={herdr}>
+                <App
+                  appConfig={appConfig}
+                  onExit={cleanup}
+                  initialSessionId={options.sessionId}
+                />
+              </HerdrProvider>
             </ErrorBoundary>
             <ToastContainer />
           </ToastProvider>
@@ -773,4 +825,6 @@ async function main() {
   );
 }
 
-main();
+if (import.meta.main) {
+  await startTui(parseTuiArgs(process.argv.slice(2)));
+}
