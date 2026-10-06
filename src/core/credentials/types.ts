@@ -17,7 +17,8 @@ export type CredentialType =
   | "bearer-token"
   | "custom-headers"
   | "cookies"
-  | "composite";
+  | "composite"
+  | "managed-google";
 
 /** Safe Mobile OTP flow metadata surfaced to prompts. */
 export type MobileOtpAuthMethod = "sms-passwordless" | "sms-mfa";

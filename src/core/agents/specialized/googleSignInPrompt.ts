@@ -11,6 +11,13 @@ When a credential is marked Sign-in: Google:
 4. Fail closed: if Google shows "this browser or app may not be secure", a CAPTCHA, or a blocked-app interstitial, call \`complete_authentication\` with success=false and name the barrier. Do not try account recovery, password reset, or a different browser profile.
 5. After Google returns to the target, snapshot to confirm the session, then \`complete_authentication\` as usual.`;
 
+export const MANAGED_GOOGLE_OIDC_GUIDANCE = `## Managed Google identity
+
+When a credential type is managed-google:
+1. Navigate to the target login URL and locate the Google sign-in button. Do not enter a Google password.
+2. After accounts.google.com or the Pensar issuer origin loads, stop using evaluate, screenshot, console, and cookie tools. Trusted code completes OIDC.
+3. When returned to the target verification URL, call complete_authentication.`;
+
 export function browserEngineForGoogleSignIn(
   hasGoogleSignIn: boolean,
 ): BrowserEngine {

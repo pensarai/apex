@@ -33,15 +33,24 @@ function inferType(
     !!cred.tokens?.customHeaders &&
     Object.keys(cred.tokens.customHeaders).length > 0;
   const hasCookies = !!cred.tokens?.cookies;
+  const hasManagedGoogle = Boolean(
+    cred.metadata &&
+      typeof cred.metadata.managedGoogle === "object" &&
+      cred.metadata.managedGoogle &&
+      "identityId" in (cred.metadata.managedGoogle as object) &&
+      (cred.metadata.managedGoogle as { identityId?: string }).identityId,
+  );
 
   const count =
     (hasPwd ? 1 : 0) +
     (hasApiKey ? 1 : 0) +
     (hasBearer ? 1 : 0) +
     (hasHeaders ? 1 : 0) +
-    (hasCookies ? 1 : 0);
+    (hasCookies ? 1 : 0) +
+    (hasManagedGoogle ? 1 : 0);
 
   if (count > 1) return "composite";
+  if (hasManagedGoogle) return "managed-google";
   if (hasPwd) return "username-password";
   if (hasApiKey) return "api-key";
   if (hasBearer) return "bearer-token";
@@ -75,6 +84,11 @@ function toReference(stored: StoredCredential): CredentialReference {
   const ctx = stored.metadata?.context;
   if (typeof ctx === "string" && ctx) ref.context = ctx;
   if (stored.googleSignIn) ref.googleSignIn = true;
+  const managedEmail =
+    typeof stored.metadata?.managedGoogleEmail === "string"
+      ? stored.metadata.managedGoogleEmail
+      : undefined;
+  if (managedEmail && !ref.username) ref.username = managedEmail;
   return ref;
 }
 
@@ -150,16 +164,24 @@ export class CredentialManager {
     extra?: { label?: string; role?: string },
   ): string {
     const candidate = {
-      username: creds.username,
+      username: creds.username ?? creds.managedGoogle?.email,
       password: creds.password,
       apiKey: creds.apiKey,
-      loginUrl: creds.loginUrl,
+      loginUrl: creds.loginUrl ?? creds.managedGoogle?.verificationUrl,
       additionalFields: creds.additionalFields,
       tokens: creds.tokens,
       googleSignIn: creds.googleSignIn,
       label: extra?.label,
       role: extra?.role ?? creds.role,
-      metadata: creds.context ? { context: creds.context } : undefined,
+      metadata: {
+        ...(creds.context ? { context: creds.context } : {}),
+        ...(creds.managedGoogle
+          ? {
+              managedGoogle: creds.managedGoogle,
+              managedGoogleEmail: creds.managedGoogle.email,
+            }
+          : {}),
+      },
     };
 
     // A caller-supplied id is the durable identity (Console UUID). Keep it
@@ -205,6 +227,13 @@ export class CredentialManager {
   /** True when any stored credential is Sign in with Google. */
   hasGoogleSignIn(): boolean {
     return Array.from(this.store.values()).some((s) => s.googleSignIn === true);
+  }
+
+  /** True when any stored credential is a Pensar-managed Google identity. */
+  hasManagedGoogle(): boolean {
+    return Array.from(this.store.values()).some(
+      (s) => s.type === "managed-google",
+    );
   }
 
   /**
@@ -262,6 +291,10 @@ export class CredentialManager {
       result.additionalFields = stored.additionalFields;
     if (stored.tokens) result.tokens = { ...stored.tokens };
     if (stored.googleSignIn) result.googleSignIn = true;
+    const managed = stored.metadata?.managedGoogle;
+    if (managed && typeof managed === "object") {
+      result.managedGoogle = managed as AuthCredentials["managedGoogle"];
+    }
     return result;
   }
 
@@ -291,7 +324,11 @@ export class CredentialManager {
       if (ref.authMethod) {
         parts.push(`  Authentication method: ${ref.authMethod}`);
       }
-      if (ref.googleSignIn) {
+      if (ref.type === "managed-google") {
+        parts.push(
+          "  Managed Google OIDC — click the target's Google button. Do not enter a Google password. After accounts.google.com or the Pensar issuer loads, trusted code completes OIDC.",
+        );
+      } else if (ref.googleSignIn) {
         parts.push(
           "  Sign-in: Google — click the target's Google button; fill identifier, password, and Google employee ID on accounts.google.com via browser_fill + credentialId/credentialField. Do not fill the target's native username/password form.",
         );

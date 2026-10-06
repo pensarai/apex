@@ -20,6 +20,15 @@
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { isManagedGoogleAuthError } from "../../../auth/failures";
+import {
+  completeManagedGoogleTransit,
+  freezeModelToolsOnTransit,
+  getIssuerUrl,
+  type ManagedGoogleCredential,
+  mintManagedGoogleGrant,
+} from "../../../auth/managedGoogle";
+import { isAuthTransitUrl } from "../../../auth/transit";
 import {
   getPromptInjectionLibrary,
   redactPromptInjectionPayloads,
@@ -102,6 +111,7 @@ export function createBrowserToolsetFactories(ctx: ToolContext) {
       );
 
   const cm = ctx.credentialManager;
+  const transitFactories = wrapFactoriesForManagedGoogle(factories, ctx);
   // A prompt-injection payload library lets the agent deliver hidden payloads
   // into text fields (chat boxes, comments, profile fields) by reference —
   // the raw payload is resolved at execution time and never shown to the model,
@@ -113,10 +123,10 @@ export function createBrowserToolsetFactories(ctx: ToolContext) {
 
   // Nothing to wrap — return the raw member factories unchanged.
   if (!cm && !injectionEnabled) {
-    return factories;
+    return transitFactories;
   }
 
-  const rawFillFactory = factories.browser_fill;
+  const rawFillFactory = transitFactories.browser_fill;
 
   // Fill-only schemas build inside the factory so a selection that omits
   // browser_fill never allocates them.
@@ -303,9 +313,168 @@ export function createBrowserToolsetFactories(ctx: ToolContext) {
   };
 
   return {
-    ...factories,
+    ...transitFactories,
     browser_fill: wrappedFill,
   };
+}
+
+function managedGoogleFromCtx(
+  ctx: ToolContext,
+): ManagedGoogleCredential | null {
+  const cm = ctx.credentialManager;
+  if (!cm) return null;
+  for (const ref of cm.listReferences()) {
+    if (ref.type !== "managed-google") continue;
+    const stored = cm.resolve(ref.id);
+    const meta = stored?.metadata?.managedGoogle as
+      | ManagedGoogleCredential
+      | undefined;
+    if (meta?.identityId) {
+      return {
+        ...meta,
+        verificationUrl: meta.verificationUrl || stored?.loginUrl || ctx.target,
+      };
+    }
+  }
+  return null;
+}
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
+
+function wrapFactoriesForManagedGoogle<
+  T extends Record<string, () => { execute?: (...args: never[]) => unknown }>,
+>(factories: T, ctx: ToolContext): T {
+  const managed = managedGoogleFromCtx(ctx);
+  const session = ctx.browserSession;
+  if (!managed || !session || typeof session.currentUrl !== "function") {
+    return factories;
+  }
+
+  const issuerUrl = getIssuerUrl();
+  let grantPromise: Promise<void> | null = null;
+  const persist =
+    managed.workspaceId && managed.identityId
+      ? {
+          workspaceId: managed.workspaceId,
+          identityId: managed.identityId,
+          scanId: managed.scanId,
+          sessionRootPath: ctx.session.rootPath,
+        }
+      : undefined;
+
+  const ensureGrant = async () => {
+    if (!managed.workspaceId || !managed.identityId) return;
+    if (!grantPromise) {
+      grantPromise = mintManagedGoogleGrant({
+        workspaceId: managed.workspaceId,
+        identityId: managed.identityId,
+        scanId: managed.scanId,
+        browserSessionId: ctx.session.id,
+        targetOrigin: originOf(
+          managed.verificationUrl || ctx.target || "https://invalid.local",
+        ),
+      }).then(async (grant) => {
+        session.queueGrantCookie(grant.cookie);
+        if (ctx.sandbox) {
+          const encoded = Buffer.from(JSON.stringify(grant.cookie)).toString(
+            "base64",
+          );
+          await ctx.sandbox.execute(
+            `echo ${encoded} | base64 -d > /tmp/pw-oidc-grant.json`,
+            { timeout: 10 },
+          );
+        }
+      });
+    }
+    await grantPromise;
+  };
+
+  const wrapped = { ...factories };
+  for (const [name, factory] of Object.entries(factories)) {
+    wrapped[name as keyof T] = (() => {
+      const original = factory();
+      return {
+        ...original,
+        execute: async (...args: unknown[]) => {
+          await ensureGrant();
+          const url = await session.currentUrl();
+          if (url && isAuthTransitUrl(url, { issuerUrl })) {
+            if (name !== "browser_snapshot") {
+              try {
+                freezeModelToolsOnTransit(name, url, issuerUrl);
+              } catch (error) {
+                if (name === "browser_click" || name === "browser_navigate") {
+                  try {
+                    const done = await completeManagedGoogleTransit({
+                      session,
+                      verificationUrl:
+                        managed.verificationUrl || ctx.target || "",
+                      issuerUrl,
+                      persist,
+                    });
+                    return {
+                      success: true,
+                      url: done.url,
+                      result: "Trusted code completed Google OIDC transit",
+                    };
+                  } catch (transitError) {
+                    return {
+                      success: false,
+                      error: isManagedGoogleAuthError(transitError)
+                        ? `${transitError.code}: ${transitError.message}`
+                        : String(transitError),
+                    };
+                  }
+                }
+                return {
+                  success: false,
+                  error: isManagedGoogleAuthError(error)
+                    ? `${error.code}: ${error.message}`
+                    : String(error),
+                };
+              }
+            }
+          }
+          const result = await original.execute?.(...(args as never[]));
+          const next = await session.currentUrl();
+          if (
+            next &&
+            isAuthTransitUrl(next, { issuerUrl }) &&
+            (name === "browser_click" || name === "browser_navigate")
+          ) {
+            try {
+              const done = await completeManagedGoogleTransit({
+                session,
+                verificationUrl: managed.verificationUrl || ctx.target || "",
+                issuerUrl,
+                persist,
+              });
+              return {
+                ...(typeof result === "object" && result ? result : {}),
+                success: true,
+                url: done.url,
+              };
+            } catch (transitError) {
+              return {
+                success: false,
+                error: isManagedGoogleAuthError(transitError)
+                  ? `${transitError.code}: ${transitError.message}`
+                  : String(transitError),
+              };
+            }
+          }
+          return result;
+        },
+      };
+    }) as unknown as T[keyof T];
+  }
+  return wrapped;
 }
 
 /**

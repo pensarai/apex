@@ -62,6 +62,17 @@ const AuthCredentialsObject = z.object({
   // Target uses Sign in with Google; the auth agent must use Chrome and
   // fill accounts.google.com rather than the target's native login form.
   googleSignIn: z.boolean().optional(),
+  managedGoogle: z
+    .object({
+      identityId: z.string(),
+      email: z.string().optional(),
+      verificationUrl: z.string().optional(),
+      buttonSelector: z.string().optional(),
+      authBrokerHint: z.string().optional(),
+      workspaceId: z.string().optional(),
+      scanId: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type AuthCredentials = z.infer<typeof AuthCredentialsObject>;

@@ -13,15 +13,19 @@ import type {
   ThinkingEffort,
   UsageRecorder,
 } from "../../../ai";
+import { loadCachedTargetSession } from "../../../auth/managedGoogle";
+import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
+import type { PlaywrightMcpSession } from "../../offSecAgent/tools/playwrightMcp";
 import type { StreamIdFactory } from "../../offSecAgent/types";
 import {
   browserEngineForGoogleSignIn,
   GOOGLE_SIGNIN_PROMPT_GUIDANCE,
+  MANAGED_GOOGLE_OIDC_GUIDANCE,
 } from "../googleSignInPrompt";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -29,6 +33,44 @@ import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
 
 const log = scopedLogger(() => createLogger("authentication-agent"));
+
+function hasManagedGoogle(cm?: CredentialManager): boolean {
+  return Boolean(
+    cm?.listReferences().some((ref) => ref.type === "managed-google"),
+  );
+}
+
+async function restoreCachedGoogleSession(
+  browserSession: PlaywrightMcpSession,
+  cm: CredentialManager | undefined,
+  fallbackTarget: string,
+): Promise<void> {
+  if (!cm) return;
+  for (const ref of cm.listReferences()) {
+    if (ref.type !== "managed-google") continue;
+    const stored = cm.resolve(ref.id);
+    const meta = stored?.metadata?.managedGoogle as
+      | {
+          identityId?: string;
+          workspaceId?: string;
+          verificationUrl?: string;
+        }
+      | undefined;
+    if (!meta?.identityId || !meta.workspaceId) continue;
+    let targetOrigin = fallbackTarget;
+    try {
+      targetOrigin = new URL(meta.verificationUrl || fallbackTarget).origin;
+    } catch {
+      // keep fallback
+    }
+    const cached = await loadCachedTargetSession({
+      workspaceId: meta.workspaceId,
+      identityId: meta.identityId,
+      targetOrigin,
+    });
+    if (cached) await browserSession.seedStorageState(cached);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,14 +211,18 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
     const { session } = base;
 
     const cm = session.credentialManager;
-    const googleSignIn = cm?.hasGoogleSignIn() === true;
+    const managedGoogle = hasManagedGoogle(cm);
+    const googleSignIn = cm?.hasGoogleSignIn() === true || managedGoogle;
+    const googleGuidance = managedGoogle
+      ? MANAGED_GOOGLE_OIDC_GUIDANCE
+      : GOOGLE_SIGNIN_PROMPT_GUIDANCE;
 
     super({
       ...base,
       browserEngine: browserEngineForGoogleSignIn(googleSignIn),
       system: detectOSAndEnhancePrompt(
         googleSignIn
-          ? `${AUTH_SUBAGENT_SYSTEM_PROMPT}\n\n${GOOGLE_SIGNIN_PROMPT_GUIDANCE}`
+          ? `${AUTH_SUBAGENT_SYSTEM_PROMPT}\n\n${googleGuidance}`
           : AUTH_SUBAGENT_SYSTEM_PROMPT,
       ),
       activeTools: [
@@ -219,6 +265,14 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
           : undefined,
       ),
     });
+
+    if (managedGoogle && this.browserSession) {
+      void restoreCachedGoogleSession(
+        this.browserSession,
+        cm,
+        session.targets[0] ?? target,
+      );
+    }
   }
 }
 

@@ -516,6 +516,15 @@ export class PlaywrightMcpSession {
    * it kills, so clearing there would blind the sweep. A new launch overwrites.
    */
   private currentLaunchId: string | null = null;
+  private pendingGrantCookie: {
+    name: string;
+    value: string;
+    url: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+    path?: string;
+  } | null = null;
 
   /**
    * Each option is three-state: `undefined` → module default, value → use it,
@@ -828,6 +837,7 @@ export class PlaywrightMcpSession {
 
         this.mcpClient = client;
         this.mcpTransport = transport;
+        await this.flushPendingGrantCookie();
 
         client.onclose = () => {
           if (this.mcpClient === client) {
@@ -911,6 +921,60 @@ export class PlaywrightMcpSession {
   /** Check if this session's client is currently connected. */
   isConnected(): boolean {
     return this.mcpClient !== null;
+  }
+
+  queueGrantCookie(cookie: {
+    name: string;
+    value: string;
+    url: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+    path?: string;
+  }): void {
+    this.pendingGrantCookie = cookie;
+  }
+
+  async currentUrl(): Promise<string | null> {
+    if (!this.isConnected() && !this.connectionPromise) return null;
+    try {
+      const result = await this.callTool("browser_run_code", {
+        code: `async (page) => page.url()`,
+      });
+      if (typeof result === "string" && result.startsWith("http"))
+        return result;
+      if (result && typeof result === "object" && "url" in result) {
+        return String((result as { url: string }).url);
+      }
+      const text = typeof result === "string" ? result : JSON.stringify(result);
+      const match = text.match(/https?:\/\/[^\s"'\\]+/);
+      return match?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async flushPendingGrantCookie(): Promise<void> {
+    const cookie = this.pendingGrantCookie;
+    if (!cookie) return;
+    this.pendingGrantCookie = null;
+    const code = `async (page) => {
+      await page.context().addCookies([${JSON.stringify({
+        name: cookie.name,
+        value: cookie.value,
+        url: cookie.url,
+        httpOnly: cookie.httpOnly ?? true,
+        secure: cookie.secure ?? cookie.url.startsWith("https:"),
+        sameSite: cookie.sameSite ?? "Lax",
+        path: cookie.path ?? "/",
+      })}]);
+      return { ok: true };
+    }`;
+    try {
+      await this.callTool("browser_run_code", { code });
+    } catch {
+      this.pendingGrantCookie = cookie;
+    }
   }
 
   /**
