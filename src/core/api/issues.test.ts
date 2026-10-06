@@ -10,8 +10,8 @@ import {
   getIssue,
   listIssueRetests,
   listIssues,
-  reassociateIssueEndpoint,
   retestIssue,
+  updateIssue,
 } from "./issues";
 
 const ISSUE_ID = "11111111-1111-1111-1111-111111111111";
@@ -47,7 +47,7 @@ describe("retestIssue", () => {
   });
 });
 
-describe("retest history and endpoint reassociation", () => {
+describe("retest history and endpoint update", () => {
   beforeEach(() => apiRequest.mockReset());
 
   it("GETs the issue retest history", async () => {
@@ -62,12 +62,12 @@ describe("retest history and endpoint reassociation", () => {
   it.each([
     ["endpoint UUID", "22222222-2222-4222-8222-222222222222"],
     ["cleared association", null],
-  ])("PUTs the %s", async (_name, endpointId) => {
-    await reassociateIssueEndpoint("VULN-000175", endpointId);
+  ])("PATCHes the %s", async (_name, endpointId) => {
+    await updateIssue("VULN-000175", { endpointId });
 
     expect(apiRequest).toHaveBeenCalledWith(
-      "PUT",
-      "/issues/VULN-000175/endpoint",
+      "PATCH",
+      "/issues/VULN-000175",
       { endpointId },
     );
   });

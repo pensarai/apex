@@ -9,7 +9,6 @@
  *   pensar issues [filters]                       List issues in the workspace
  *   pensar issues get <issueId>                   Get issue details
  *   pensar issues update <issueId> [opts]         Update an issue
- *   pensar issues reassociate <issueId> [opts]    Repair endpoint association
  *   pensar issues retest <issueId>                Retest an issue
  *   pensar issues retests <issueId>               List retest attempts
  *   pensar issues link-pr <issueId> --url <url>   Link a pull request to an issue
@@ -28,7 +27,6 @@ import {
   listIssuePullRequests,
   listIssueRetests,
   listIssues,
-  reassociateIssueEndpoint,
   retestIssue,
   updateIssue,
 } from "../core/api";
@@ -48,7 +46,6 @@ Usage:
   pensar issues [filters]                        List issues in the workspace
   pensar issues get <issueId>                    Get issue details
   pensar issues update <issueId> [options]       Update an issue
-  pensar issues reassociate <issueId> [options]  Repair endpoint association
   pensar issues retest <issueId>                 Retest an issue
   pensar issues retests <issueId>                List retest attempts
   pensar issues link-pr <issueId> --url <url>    Link a pull request to an issue
@@ -77,10 +74,8 @@ Update options:
                             required with --disposition duplicate
   --false-positive          Flag as false positive
   --fp-reason <reason>      Reason for false positive flag
-
-Reassociate options:
   --endpoint <endpointId>   Link the finding to this inventory endpoint
-  --clear                   Clear its endpoint and application associations
+  --clear-endpoint          Clear its endpoint and application associations
 
 Link-pr options:
   --url <url>               URL of the pull request to link (required)
@@ -165,6 +160,18 @@ async function main(): Promise<void> {
         ? true
         : undefined;
       const userFlaggedFalsePositiveReason = getFlag("--fp-reason", args);
+      const endpointId = getFlag("--endpoint", args);
+      const clearEndpoint = args.includes("--clear-endpoint");
+      if (args.includes("--endpoint") && endpointId === undefined) {
+        console.error("Error: --endpoint requires <endpointId>");
+        return markCommandFailed();
+      }
+      if (endpointId !== undefined && clearEndpoint) {
+        console.error(
+          "Error: --endpoint <endpointId> and --clear-endpoint are mutually exclusive",
+        );
+        return markCommandFailed();
+      }
 
       const result = await updateIssue(issueId, {
         status,
@@ -174,32 +181,10 @@ async function main(): Promise<void> {
         duplicateOf,
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
+        ...(endpointId !== undefined || clearEndpoint
+          ? { endpointId: clearEndpoint ? null : endpointId }
+          : {}),
       });
-      console.log(JSON.stringify(result, null, 2));
-    } else if (sub === "reassociate") {
-      const issueId = args[1];
-      const endpointId = getFlag("--endpoint", args);
-      const clear = args.includes("--clear");
-      if (!issueId || issueId.startsWith("--")) {
-        console.error("Error: issue ID is required");
-        console.error(
-          "Usage: pensar issues reassociate <issueId> (--endpoint <endpointId> | --clear)",
-        );
-        return markCommandFailed();
-      }
-      if (
-        (endpointId === undefined && !clear) ||
-        (endpointId !== undefined && clear)
-      ) {
-        console.error(
-          "Error: provide exactly one of --endpoint <endpointId> or --clear",
-        );
-        return markCommandFailed();
-      }
-      const result = await reassociateIssueEndpoint(
-        issueId,
-        clear ? null : endpointId!,
-      );
       console.log(JSON.stringify(result, null, 2));
     } else if (sub === "retest") {
       const issueId = args[1];

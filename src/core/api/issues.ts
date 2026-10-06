@@ -121,6 +121,8 @@ export interface UpdateIssueResult {
     closedComments?: string | null;
     closedDisposition?: ClosedDisposition | null;
     duplicateOf?: string | null;
+    endpointId?: string | null;
+    applicationId?: string | null;
   };
 }
 
@@ -142,17 +144,6 @@ export interface RetestSummary {
   queuedAt?: string;
   startedAt?: string;
   completedAt?: string;
-}
-
-export interface ReassociateIssueEndpointResult {
-  success: boolean;
-  issue: {
-    id: string;
-    issueLabel: string | null;
-    name: string | null;
-    endpointId: string | null;
-    applicationId: string | null;
-  };
 }
 
 export interface PullRequestSummary {
@@ -323,6 +314,8 @@ export async function updateIssue(
     closedDisposition?: ClosedDisposition;
     /** UUID or label of the original; sent only with the `duplicate` disposition. */
     duplicateOf?: string;
+    /** Omit to preserve; null clears the endpoint and application association. */
+    endpointId?: string | null;
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
@@ -366,17 +359,6 @@ export async function listIssueRetests(
   issueId: string,
 ): Promise<RetestSummary[]> {
   return apiRequest<RetestSummary[]>("GET", `/issues/${issueId}/retests`);
-}
-
-export async function reassociateIssueEndpoint(
-  issueId: string,
-  endpointId: string | null,
-): Promise<ReassociateIssueEndpointResult> {
-  return apiRequest<ReassociateIssueEndpointResult>(
-    "PUT",
-    `/issues/${issueId}/endpoint`,
-    { endpointId },
-  );
 }
 
 /**

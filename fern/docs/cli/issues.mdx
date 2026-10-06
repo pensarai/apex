@@ -15,7 +15,6 @@ All commands operate on the **selected workspace**, which is chosen when you con
 pensar issues [filters]                        # List issues in the workspace (alias: pensar issues list)
 pensar issues get <issueId>                    # Get issue details
 pensar issues update <issueId> [options]       # Update an issue
-pensar issues reassociate <issueId> [options]  # Repair endpoint association
 pensar issues retest <issueId>                 # Queue an issue retest
 pensar issues retests <issueId>                # List retest attempts and verdicts
 pensar issues link-pr <issueId> --url <url>    # Link a pull request to an issue
@@ -92,6 +91,8 @@ pensar issues update <issueId> [options]
 | `--closed-comments <text>`  | Additional comments when closing                                        |
 | `--false-positive`          | Flag the issue as a false positive                                      |
 | `--fp-reason <reason>`      | Reason for the false positive flag                                      |
+| `--endpoint <endpointId>`   | Link the finding to this inventory endpoint                             |
+| `--clear-endpoint`          | Clear both endpoint and application associations                        |
 
 `--disposition` records *why* an issue is closed as a structured value, so it can
 be filtered and counted. Without it a close reads as a plain resolution whatever
@@ -102,27 +103,13 @@ workspace, must not be the issue itself, and must not itself be closed as a
 duplicate. Issue responses carry the link as `duplicateOf`, the original's UUID
 (`null` otherwise).
 
-### Repair the Endpoint Association
-
-```bash
-pensar issues reassociate <issueId> --endpoint <endpointId>
-pensar issues reassociate <issueId> --clear
-```
-
-Re-points a finding to the inventory endpoint it actually affects. The Console
-validates that the endpoint belongs to the selected workspace and updates the
-finding's endpoint and application together. Use `pensar apps endpoints
-<applicationId>` to find endpoint IDs.
-
-Pass exactly one of:
-
-| Option                    | Description                                      |
-| ------------------------- | ------------------------------------------------ |
-| `--endpoint <endpointId>` | Link the finding to this inventory endpoint      |
-| `--clear`                 | Clear both endpoint and application associations |
-
-The command returns HTTP 409 without changing the finding if the destination
-would duplicate another finding with the same pentest, title, and endpoint.
+`--endpoint` repairs a finding that was linked to the wrong inventory endpoint;
+`--clear-endpoint` removes a stale association. Omitting both preserves the
+current association. The Console validates workspace ownership, updates the
+endpoint and application together, and returns HTTP 409 without changing the
+finding if the destination would duplicate another finding with the same
+pentest, title, and endpoint. Use `pensar apps endpoints <applicationId>` to
+find endpoint IDs.
 
 ### Retest an Issue
 
@@ -244,7 +231,7 @@ pensar issues retest VULN-000123
 pensar issues retests VULN-000123
 
 # Repair a finding that was linked to the wrong inventory endpoint
-pensar issues reassociate VULN-000123 --endpoint 22222222-2222-4222-8222-222222222222
+pensar issues update VULN-000123 --endpoint 22222222-2222-4222-8222-222222222222
 
 # Reference an issue by its label instead of its UUID
 pensar issues get VULN-000123

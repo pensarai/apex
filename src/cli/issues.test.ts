@@ -76,7 +76,6 @@ describe("pensar issues CLI", () => {
   it.each([
     "get",
     "update",
-    "reassociate",
     "retest",
     "retests",
     "link-pr",
@@ -98,6 +97,8 @@ describe("pensar issues CLI", () => {
     expect(stdout).toContain("--disposition <value>");
     expect(stdout).toContain("resolved, duplicate, wont-fix");
     expect(stdout).toContain("--duplicate-of <issueId>");
+    expect(stdout).toContain("--endpoint <endpointId>");
+    expect(stdout).toContain("--clear-endpoint");
   });
 
   it("rejects a disposition outside the accepted set, naming the set", () => {
@@ -174,47 +175,57 @@ describe("pensar issues CLI", () => {
   it("links a finding to an endpoint", async () => {
     const endpointId = "22222222-2222-4222-8222-222222222222";
     const request = await captureRequest([
-      "reassociate",
+      "update",
       "VULN-000030",
       "--endpoint",
       endpointId,
     ]);
 
     expect(request).toEqual({
-      method: "PUT",
-      url: "/issues/VULN-000030/endpoint",
+      method: "PATCH",
+      url: "/issues/VULN-000030",
       body: { endpointId },
     });
   });
 
   it("clears a finding's stale endpoint association", async () => {
     const request = await captureRequest([
-      "reassociate",
+      "update",
       "VULN-000030",
-      "--clear",
+      "--clear-endpoint",
     ]);
 
     expect(request).toEqual({
-      method: "PUT",
-      url: "/issues/VULN-000030/endpoint",
+      method: "PATCH",
+      url: "/issues/VULN-000030",
       body: { endpointId: null },
     });
   });
 
-  it.each([
-    [[]],
-    [["--endpoint", "22222222-2222-4222-8222-222222222222", "--clear"]],
-  ])("requires exactly one reassociation mode (%j)", (flags) => {
+  it("rejects --endpoint with --clear-endpoint", () => {
     const { status, stderr } = runIssues([
-      "reassociate",
+      "update",
       "VULN-000030",
-      ...flags,
+      "--endpoint",
+      "22222222-2222-4222-8222-222222222222",
+      "--clear-endpoint",
     ]);
 
     expect(status).toBe(1);
     expect(stderr).toContain(
-      "provide exactly one of --endpoint <endpointId> or --clear",
+      "--endpoint <endpointId> and --clear-endpoint are mutually exclusive",
     );
+  });
+
+  it("requires a value for --endpoint", () => {
+    const { status, stderr } = runIssues([
+      "update",
+      "VULN-000030",
+      "--endpoint",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("--endpoint requires <endpointId>");
   });
 
   it("lists the retest verdict history", async () => {
