@@ -26,6 +26,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
+import type { BrowserProxy } from "../../../session";
 import {
   CAMOUFOX_OPTIONS,
   COMPUTER_USE_VIEWPORT_SIZE,
@@ -289,6 +290,7 @@ async function runPlaywrightScript(
   body: string,
   timeout = 60,
   extraHttpHeaders?: Record<string, string>,
+  proxy?: BrowserProxy,
 ): Promise<unknown> {
   const headersJson =
     extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
@@ -345,6 +347,7 @@ const fs = require('fs');
   try {
     context = await firefox.launchPersistentContext('/tmp/pw-user-data', {
       ...__camou,
+      ...${JSON.stringify(proxy ? { proxy } : {})},
       // Layer memory prefs over Camoufox's fingerprint prefs (ours win); see
       // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
       // fan-out that otherwise costs ~3 GB across the run.
@@ -585,7 +588,13 @@ export function createSandboxBrowserToolFactories(ctx: ToolContext) {
       : ctx.session.config?.headers;
     const headers = stripBrowserManagedHeaders(resolved);
     const next = scriptQueue.then(() =>
-      runPlaywrightScript(sandbox, body, timeout, headers),
+      runPlaywrightScript(
+        sandbox,
+        body,
+        timeout,
+        headers,
+        ctx.session.config?.browserProxy,
+      ),
     );
     scriptQueue = next.then(
       () => {},

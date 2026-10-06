@@ -433,6 +433,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
           display: input.display,
           engine: input.browserEngine,
+          proxy: input.session.config?.browserProxy,
         });
       // Owned sessions aren't wired through createBrowserTools' abort path
       // (existingSession skips that listener). Disconnect on abort so timeout/

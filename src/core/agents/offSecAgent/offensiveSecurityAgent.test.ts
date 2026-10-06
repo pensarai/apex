@@ -87,7 +87,9 @@ vi.mock("./tools", () => ({
     "update_workspace_endpoint",
   ],
   PerCommandShell: class {},
-  PlaywrightMcpSession: class {},
+  PlaywrightMcpSession: class {
+    constructor(readonly options: unknown) {}
+  },
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
@@ -394,6 +396,41 @@ describe("auxiliary model events", () => {
 });
 
 describe("tool context forwarding", () => {
+  it("inherits session browser proxy configuration for agents and shared workers", () => {
+    const proxy = {
+      server: "http://proxy.example.test:3128",
+      username: "user",
+      password: "password",
+    };
+    const session = {
+      id: "ses_proxy",
+      rootPath: "/tmp/apex-proxy-test",
+      config: { browserProxy: proxy },
+    };
+    const parent = new OffensiveSecurityAgent({
+      prompt: "test",
+      model: "test-model",
+      session,
+      activeTools: [],
+    } as never);
+    expect(parent.browserSession).toMatchObject({ options: { proxy } });
+    const worker = new OffensiveSecurityAgent({
+      prompt: "test",
+      model: "test-model",
+      session,
+      activeTools: [],
+      browserSession: parent.browserSession,
+    } as never);
+    expect(worker.browserSession).toBe(parent.browserSession);
+    const freshWorker = new OffensiveSecurityAgent({
+      prompt: "test",
+      model: "test-model",
+      session,
+      activeTools: [],
+    } as never);
+    expect(freshWorker.browserSession).toMatchObject({ options: { proxy } });
+  });
+
   it("forwards structured System scope to spawning tools", () => {
     toolContexts.length = 0;
     const systemScope = {

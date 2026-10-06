@@ -99,6 +99,8 @@ export function createBrowserToolsetFactories(ctx: ToolContext) {
         undefined,
         undefined,
         ctx.browserSession,
+        undefined,
+        ctx.session.config?.browserProxy,
       );
 
   const cm = ctx.credentialManager;
