@@ -1,6 +1,6 @@
+import { once } from "node:events";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type AIAuthConfig, buildAuthConfig } from "../core/ai";
 import {
@@ -21,6 +21,7 @@ import {
   workerRequest,
 } from "../core/runtime/localWorkerTransport";
 import { RecordedRunSpecSchema } from "../core/runtime/runStore";
+import { resolveRunDatabasePath } from "../core/runtime/runStorePath";
 import { openSqliteRunStore } from "../core/runtime/sqliteRunStore";
 
 const HELP = `pensar agent-runs — Record and inspect local agent runs
@@ -28,6 +29,7 @@ const HELP = `pensar agent-runs — Record and inspect local agent runs
 Usage:
   pensar agent-runs start --spec <file> [--detach] [--store <database>]
   pensar agent-runs resume <runId> [--detach] [--store <database>]
+  pensar agent-runs attach <runId> [--once] [--store <database>]
   pensar agent-runs list [--store <database>]
   pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--control] [--recovery] [--store <database>]
   pensar agent-runs pause <runId> [--store <database>]
@@ -44,6 +46,8 @@ lost client until decided. Resume continues an enrolled run in the same
 environment only; every failed prerequisite is reported as a blocker.
 --detach hosts the run in a local worker that outlives this process; the
 worker prints its log path and the run starts there, not here.
+Attach follows committed snapshots; Ctrl-C detaches without stopping the run.
+--once prints one snapshot. Connection state is separate from saved status.
 
 Recording requires Bun or Node 22.13+. See docs/recorded-runs.md.
 `;
@@ -51,6 +55,7 @@ Recording requires Bun or Node 22.13+. See docs/recorded-runs.md.
 const COMMANDS = [
   "start",
   "resume",
+  "attach",
   "list",
   "show",
   "pause",
@@ -60,18 +65,6 @@ const COMMANDS = [
 ] as const;
 
 type AgentRunsStore = Awaited<ReturnType<typeof openSqliteRunStore>>;
-
-// Mirrors openSqliteRunStore's default so the worker opens the same database.
-function absoluteDatabasePath(explicit?: string): string {
-  return resolve(
-    explicit ??
-      join(
-        process.env.PENSAR_DATA_DIR ?? join(homedir(), ".pensar"),
-        "runtime",
-        "runs.sqlite",
-      ),
-  );
-}
 
 export async function runAgentRunsCommand(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -88,6 +81,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       approval: { type: "string" },
       detach: { type: "boolean" },
       run: { type: "string" },
+      once: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -135,7 +129,8 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     command === "stop" ||
     command === "approve" ||
     command === "reject" ||
-    command === "resume";
+    command === "resume" ||
+    command === "attach";
   if (
     extra.length ||
     !COMMANDS.includes(command as (typeof COMMANDS)[number]) ||
@@ -148,9 +143,47 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       values.approval !== undefined) ||
     ((command === "approve" || command === "reject") && !values.approval) ||
     (values.detach && command !== "start" && command !== "resume") ||
+    (values.once && command !== "attach") ||
     (values.run !== undefined && command !== "worker")
   ) {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
+  }
+
+  if (command === "attach") {
+    const { openRecordedRunClient } = await import(
+      "../core/runtime/recordedRunClient"
+    );
+    const client = await openRecordedRunClient(values.store);
+    const controller = new AbortController();
+    const detach = () => controller.abort();
+    process.on("SIGINT", detach);
+    process.on("SIGTERM", detach);
+    try {
+      if (values.once) {
+        console.log(
+          JSON.stringify(
+            await client.observe(runId, controller.signal),
+            null,
+            2,
+          ),
+        );
+      } else {
+        for await (const view of client.watch(runId, controller.signal)) {
+          console.log(JSON.stringify(view));
+          if (process.stdout.writableNeedDrain) {
+            await once(process.stdout, "drain", { signal: controller.signal });
+          }
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+    } finally {
+      controller.abort();
+      process.off("SIGINT", detach);
+      process.off("SIGTERM", detach);
+      await client.close();
+    }
+    return;
   }
 
   const store: AgentRunsStore = await openSqliteRunStore(values.store);
@@ -320,7 +353,7 @@ async function detachExecution(
 ): Promise<void> {
   const launched = await launchLocalWorker({
     runId,
-    databasePath: absoluteDatabasePath(store),
+    databasePath: resolveRunDatabasePath(store),
     executable: resolveWorkerExecutable(),
   });
   // A lost acknowledgement is uncertain by contract: never auto-retried.

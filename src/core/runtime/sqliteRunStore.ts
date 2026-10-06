@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import { type ModelMessage, modelMessageSchema } from "ai";
 import { z } from "zod";
@@ -18,6 +17,7 @@ import {
   type RunRecord,
   RunRecordSchema,
 } from "./runStore";
+import { resolveRunDatabasePath } from "./runStorePath";
 import type { RunToolStore } from "./runToolStore";
 import {
   CONTROL_STORE_SCHEMA_SQL,
@@ -168,11 +168,7 @@ function readRecord(
 }
 
 export async function openSqliteRunStore(
-  filename = path.join(
-    process.env.PENSAR_DATA_DIR ?? path.join(os.homedir(), ".pensar"),
-    "runtime",
-    "runs.sqlite",
-  ),
+  filename = resolveRunDatabasePath(),
 ): Promise<
   RunModelStore &
     RunToolStore &

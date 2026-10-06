@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { acquireLocalRunLock } from "./localRunLock";
 import { resolveWorkerEndpoint } from "./localWorkerEndpoint";
 import {
@@ -32,7 +32,7 @@ export interface WorkerExecutable {
 /**
  * Resolve the executable that re-enters this CLI for `agent-runs worker`:
  * a compiled Bun binary embeds its entry (virtual Bun.main under /$bunfs/),
- * every other runtime re-runs the absolute argv[1] script.
+ * source TUI development uses its sibling CLI entry; packages re-run argv[1].
  */
 export function resolveWorkerExecutable(
   environment: { execPath?: string; argv1?: string; bunMain?: string } = {
@@ -50,7 +50,10 @@ export function resolveWorkerExecutable(
       `Cannot resolve the CLI entry for worker launch (argv[1]: ${argv1 ?? "missing"})`,
     );
   }
-  return { command: execPath ?? process.execPath, args: [argv1] };
+  const cliEntry = argv1.endsWith("/src/tui/index.tsx")
+    ? resolve(dirname(argv1), "../cli.ts")
+    : argv1;
+  return { command: execPath ?? process.execPath, args: [cliEntry] };
 }
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
