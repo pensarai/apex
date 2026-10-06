@@ -82,19 +82,19 @@ A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400
 pensar issues update <issueId> [options]
 ```
 
-| Option                      | Description                                                             |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `--status <status>`         | New status                                                              |
-| `--disposition <value>`     | Why the issue is closed: `resolved`, `duplicate`, `wont-fix`, `out-of-scope`, `risk-accepted` |
-| `--duplicate-of <issueId>`  | The issue this one duplicates, by UUID or label. Required with `--disposition duplicate`, rejected with any other |
-| `--closed-reason <reason>`  | Reason for closing                                                      |
-| `--closed-comments <text>`  | Additional comments when closing                                        |
-| `--false-positive`          | Flag the issue as a false positive                                      |
-| `--fp-reason <reason>`      | Reason for the false positive flag                                      |
-| `--endpoint <endpointId>`   | Link the finding to this inventory endpoint                             |
-| `--clear-endpoint`          | Clear both endpoint and application associations                        |
+| Option                     | Description                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--status <status>`        | New status                                                                                                        |
+| `--disposition <value>`    | Why the issue is closed: `resolved`, `duplicate`, `wont-fix`, `out-of-scope`, `risk-accepted`                     |
+| `--duplicate-of <issueId>` | The issue this one duplicates, by UUID or label. Required with `--disposition duplicate`, rejected with any other |
+| `--closed-reason <reason>` | Reason for closing                                                                                                |
+| `--closed-comments <text>` | Additional comments when closing                                                                                  |
+| `--false-positive`         | Flag the issue as a false positive                                                                                |
+| `--fp-reason <reason>`     | Reason for the false positive flag                                                                                |
+| `--endpoint <endpointId>`  | Link the finding to this inventory endpoint                                                                       |
+| `--clear-endpoint`         | Clear both endpoint and application associations                                                                  |
 
-`--disposition` records *why* an issue is closed as a structured value, so it can
+`--disposition` records _why_ an issue is closed as a structured value, so it can
 be filtered and counted. Without it a close reads as a plain resolution whatever
 the reason was. The five values above are the full accepted set.
 

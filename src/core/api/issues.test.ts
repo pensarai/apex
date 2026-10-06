@@ -65,11 +65,9 @@ describe("retest history and endpoint update", () => {
   ])("PATCHes the %s", async (_name, endpointId) => {
     await updateIssue("VULN-000175", { endpointId });
 
-    expect(apiRequest).toHaveBeenCalledWith(
-      "PATCH",
-      "/issues/VULN-000175",
-      { endpointId },
-    );
+    expect(apiRequest).toHaveBeenCalledWith("PATCH", "/issues/VULN-000175", {
+      endpointId,
+    });
   });
 });
 
