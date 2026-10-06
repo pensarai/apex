@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { connect, createServer } from "node:net";
@@ -417,14 +417,28 @@ describe("server shutdown", () => {
       handle: async () => fixtureSnapshot(),
     });
     const stalled = connect(socketPathName);
-    await new Promise<void>((resolve) => stalled.once("connect", resolve));
-    stalled.write("POST /rpc HTTP/1.1\r\ncontent-length: 100\r\n\r\n{");
+    const errors: NodeJS.ErrnoException[] = [];
+    stalled.on("error", (error) => errors.push(error));
+    const closed = new Promise<void>((resolve) =>
+      stalled.once("close", () => resolve()),
+    );
+    try {
+      await once(stalled, "connect");
+      stalled.write("POST /rpc HTTP/1.1\r\ncontent-length: 100\r\n\r\n{");
+      stalled.resume();
 
-    const started = Date.now();
-    await server.close();
-    expect(Date.now() - started).toBeLessThan(5_000);
-    expect(() => statSync(socketPathName)).toThrow(/ENOENT/);
-    stalled.destroy();
+      const started = Date.now();
+      await server.close();
+      await closed;
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(() => statSync(socketPathName)).toThrow(/ENOENT/);
+      // Linux may reset the peer when shutdown discards its partial request.
+      for (const error of errors) expect(error.code).toBe("ECONNRESET");
+    } finally {
+      stalled.destroy();
+      await closed;
+      await server.close();
+    }
   });
 
   it("refuses new requests after close", async () => {
