@@ -29,6 +29,7 @@ import {
 export type { BrowserToolMode } from "./browserToolFactories";
 
 import type { Logger } from "../../../logger";
+import type { BrowserProxy } from "../../../session";
 import {
   type CamoufoxLaunchOptions,
   COMPUTER_USE_VIEWPORT_SIZE,
@@ -389,6 +390,7 @@ export function setViewportSize(viewportSize: string | undefined): void {
 export type BrowserEngine = "camoufox" | "chrome";
 
 export interface PlaywrightMcpSessionOptions {
+  readonly proxy?: BrowserProxy;
   readonly headless?: boolean;
   readonly userAgent?: string | null;
   readonly viewportSize?: string | null;
@@ -425,6 +427,7 @@ export class PlaywrightMcpSession {
   private mcpProcess: import("child_process").ChildProcess | null = null;
   private connectionPromise: Promise<Client> | null = null;
   private disconnecting = false;
+  private readonly proxy: BrowserProxy | undefined;
   private readonly headless: boolean;
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
@@ -456,6 +459,7 @@ export class PlaywrightMcpSession {
       display,
       engine,
     } = options;
+    this.proxy = options.proxy ? { ...options.proxy } : undefined;
     this.engine = engine ?? "camoufox";
 
     // An explicit `display` option wins over the process-wide env (needed when
@@ -619,6 +623,7 @@ export class PlaywrightMcpSession {
           browser: {
             browserName: "chromium",
             launchOptions: {
+              ...(this.proxy ? { proxy: this.proxy } : {}),
               channel: "chrome",
               headless: this.headless,
               args: ["--disable-dev-shm-usage"],
@@ -659,6 +664,7 @@ export class PlaywrightMcpSession {
         browser: {
           browserName: "firefox",
           launchOptions: {
+            ...(this.proxy ? { proxy: this.proxy } : {}),
             executablePath: camou.executablePath,
             args: camou.args,
             firefoxUserPrefs: camou.firefoxUserPrefs,
@@ -1027,6 +1033,7 @@ export function createPlaywrightBrowserBackend(
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
   extraHttpHeaders?: Record<string, string> | null,
+  proxy?: BrowserProxy,
 ): BrowserBackend {
   let session: PlaywrightMcpSession;
 
@@ -1044,6 +1051,7 @@ export function createPlaywrightBrowserBackend(
       userAgent,
       viewportSize,
       extraHttpHeaders,
+      proxy,
     });
 
     if (abortSignal) {
@@ -1362,6 +1370,7 @@ export function createBrowserToolFactories(
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
   extraHttpHeaders?: Record<string, string> | null,
+  proxy?: BrowserProxy,
 ) {
   return createBackendBrowserToolFactories(
     createPlaywrightBrowserBackend(
@@ -1373,6 +1382,7 @@ export function createBrowserToolFactories(
       viewportSize,
       existingSession,
       extraHttpHeaders,
+      proxy,
     ),
     { targetUrl, mode },
   );
@@ -1389,6 +1399,7 @@ export function createBrowserTools(
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
   extraHttpHeaders?: Record<string, string> | null,
+  proxy?: BrowserProxy,
 ) {
   const factories = createBrowserToolFactories(
     targetUrl,
@@ -1401,6 +1412,7 @@ export function createBrowserTools(
     viewportSize,
     existingSession,
     extraHttpHeaders,
+    proxy,
   );
   return {
     browser_navigate: factories.browser_navigate(),

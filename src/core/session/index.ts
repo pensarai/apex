@@ -216,6 +216,15 @@ function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
 }
 
 const SessionConfigObject = z.object({
+  /** Browser transport configuration; inherited by agents using this session. */
+  browserProxy: z
+    .object({
+      server: z.url(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+      bypass: z.string().optional(),
+    })
+    .optional(),
   /**
    * Custom HTTP headers for outbound target requests. Snapshotted from
    * `config.defaultHeaders` at create time; read via the resolver in
@@ -292,6 +301,7 @@ const SessionConfigObject = z.object({
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
+export type BrowserProxy = NonNullable<SessionConfig["browserProxy"]>;
 
 // ============================================================================
 // ExecutionSession - Legacy-compatible session interface for agent consumption

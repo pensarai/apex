@@ -310,6 +310,8 @@ export function LocalBackends(
           undefined,
           undefined,
           ctx.browserSession,
+          undefined,
+          ctx.session.config?.browserProxy,
         );
     return localBrowser;
   }
