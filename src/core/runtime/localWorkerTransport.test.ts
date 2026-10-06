@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -466,3 +468,99 @@ function aborted(signal: AbortSignal): Promise<never> {
       });
   });
 }
+
+describe("Bun connect race", () => {
+  function failHttpConnect(count: number) {
+    const original = http.request;
+    let failures = 0;
+    return vi.spyOn(http, "request").mockImplementation(((
+      ...args: Parameters<typeof http.request>
+    ) => {
+      if (failures++ >= count) return original(...args);
+      const request = new EventEmitter() as http.ClientRequest;
+      request.destroy = vi.fn(() => request);
+      request.end = vi.fn(() => {
+        queueMicrotask(() =>
+          request.emit(
+            "error",
+            Object.assign(new Error("Bun connect failed"), {
+              code: "FailedToOpenSocket",
+            }),
+          ),
+        );
+        return request;
+      });
+      return request;
+    }) as typeof http.request);
+  }
+
+  it.each([
+    "snapshot",
+    "watch",
+  ] as const)("retries one %s if the endpoint appears before the diagnostic connects", async (method) => {
+    const socket = socketPath();
+    const handled: string[] = [];
+    const peer = await serveWorkerTransport({
+      socketPath: socket,
+      handle: async (request) => {
+        handled.push(request.method);
+        return fixtureSnapshot();
+      },
+    });
+    const spy = failHttpConnect(1);
+    try {
+      await expect(
+        workerRequest(socket, { protocolVersion: 1, method }),
+      ).resolves.toEqual(fixtureSnapshot());
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(handled).toEqual([method]);
+    } finally {
+      spy.mockRestore();
+      await peer.close();
+    }
+  });
+
+  it("never retries a mutation when the diagnostic finds a live peer", async () => {
+    const socket = socketPath();
+    let handled = 0;
+    const peer = await serveWorkerTransport({
+      socketPath: socket,
+      handle: async () => {
+        handled++;
+        return fixtureSnapshot();
+      },
+    });
+    const spy = failHttpConnect(1);
+    try {
+      const error = await expectFailure(
+        workerRequest(socket, {
+          protocolVersion: 1,
+          method: "resume",
+          expectedAttemptId: "exec_test",
+        }),
+      );
+      expect(error.uncertain).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(handled).toBe(0);
+    } finally {
+      spy.mockRestore();
+      await peer.close();
+    }
+  });
+
+  it("bounds repeated read connection races to one retry", async () => {
+    const socket = socketPath();
+    const peer = await serveWorkerTransport({
+      socketPath: socket,
+      handle: async () => fixtureSnapshot(),
+    });
+    const spy = failHttpConnect(10);
+    try {
+      await expect(workerRequest(socket, snapshotRequest)).rejects.toThrow();
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+      await peer.close();
+    }
+  });
+});

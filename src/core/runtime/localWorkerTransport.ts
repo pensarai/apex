@@ -187,8 +187,35 @@ export interface WorkerRequestOptions {
   timeoutMs?: number;
 }
 
+class WorkerConnectRaceError extends LocalWorkerTransportError {}
+
+// Only a read may retry when the endpoint appeared during Bun's errno probe.
+export async function workerRequest(
+  socketPath: string,
+  request: LocalWorkerRequest,
+  options: WorkerRequestOptions = {},
+): Promise<WorkerSnapshot> {
+  const deadline = Date.now() + (options.timeoutMs ?? TIMEOUT_MS);
+  try {
+    return await requestOnce(socketPath, request, options);
+  } catch (error) {
+    const remaining = deadline - Date.now();
+    if (
+      !(error instanceof WorkerConnectRaceError) ||
+      (request.method !== "snapshot" && request.method !== "watch") ||
+      options.signal?.aborted ||
+      remaining <= 0
+    )
+      throw error;
+    return requestOnce(socketPath, request, {
+      ...options,
+      timeoutMs: remaining,
+    });
+  }
+}
+
 // A failed acknowledgement never triggers a second mutation request.
-export function workerRequest(
+function requestOnce(
   socketPath: string,
   request: LocalWorkerRequest,
   { signal, timeoutMs = TIMEOUT_MS }: WorkerRequestOptions = {},
@@ -331,7 +358,14 @@ export function workerRequest(
               uncertain: mutation,
             }),
           );
-        diagnostic.once("connect", () => unavailable());
+        diagnostic.once("connect", () =>
+          fail(
+            new WorkerConnectRaceError(
+              "Worker endpoint appeared during the connection probe",
+              { uncertain: mutation },
+            ),
+          ),
+        );
         diagnostic.once("error", (error: NodeJS.ErrnoException) =>
           unavailable(error.code),
         );
