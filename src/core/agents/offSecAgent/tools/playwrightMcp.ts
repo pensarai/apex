@@ -621,6 +621,8 @@ export class PlaywrightMcpSession {
             launchOptions: {
               channel: "chrome",
               headless: this.headless,
+              // Sandbox images run as root, where Chrome refuses to start sandboxed.
+              chromiumSandbox: false,
               args: ["--disable-dev-shm-usage"],
             },
             contextOptions: {

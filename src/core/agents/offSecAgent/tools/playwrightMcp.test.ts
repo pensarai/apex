@@ -208,6 +208,20 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     expect(session.engine).toBe("chrome");
   });
 
+  it("launches Chrome without the Chromium sandbox so it starts as root", async () => {
+    const session = new PlaywrightMcpSession({
+      headless: true,
+      engine: "chrome",
+    }) as unknown as {
+      buildMcpLaunch(id: string): Promise<{
+        cfg: { browser: { launchOptions: Record<string, unknown> } };
+      }>;
+    };
+    const { cfg } = await session.buildMcpLaunch("test");
+    expect(cfg.browser.launchOptions.channel).toBe("chrome");
+    expect(cfg.browser.launchOptions.chromiumSandbox).toBe(false);
+  });
+
   it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {
     const session = new PlaywrightMcpSession({
       headless: true,
