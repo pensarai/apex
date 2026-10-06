@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
 import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
@@ -6,11 +7,12 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
+import { collectCommand } from "../../../tools/backends/collectCommand";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import {
   assertCommandActionAllowed,
   DestructiveActionError,
 } from "./destructiveGuard";
-import { readSandboxAgentEnv } from "./perCommandShell";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
@@ -166,6 +168,7 @@ export function redactSecretValues(text: string, secrets?: string[]): string {
 async function resolvePromptInjectionEnv(
   promptInjection: ExecuteCommandInput["promptInjection"],
   ctx: ToolContext,
+  timeoutSeconds: number,
 ): Promise<
   | {
       envVars?: Record<string, string>;
@@ -193,6 +196,48 @@ async function resolvePromptInjectionEnv(
     return {
       library,
       error: `Unknown prompt injection id: ${normalized.id}`,
+    };
+  }
+
+  const backends = resolveBackends(ctx);
+  if (backends.sandboxed) {
+    const encoded = Buffer.from(payloadContent).toString("base64");
+    const envVars: Record<string, string> = {
+      APEX_HIDDEN_PAYLOAD_COUNT: String(Math.ceil(encoded.length / 6000)),
+    };
+    for (let offset = 0; offset < encoded.length; offset += 6000)
+      envVars[`APEX_HIDDEN_PAYLOAD_${offset / 6000}`] = encoded.slice(
+        offset,
+        offset + 6000,
+      );
+    const filename = `apex_payload_${randomUUID()}.txt`;
+    let writeCommand: string;
+    if (backends.command.platform === "windows") {
+      const script = `$ErrorActionPreference='Stop';$data='';for($i=0;$i -lt [int]$env:APEX_HIDDEN_PAYLOAD_COUNT;$i++){$data += [Environment]::GetEnvironmentVariable('APEX_HIDDEN_PAYLOAD_'+$i)};$path=[IO.Path]::Combine([IO.Path]::GetTempPath(),'${filename}');[IO.File]::WriteAllBytes($path,[Convert]::FromBase64String($data));[Console]::Write($path)`;
+      writeCommand = `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, "utf16le").toString("base64")}`;
+    } else {
+      writeCommand = `umask 077; (i=0; while [ "$i" -lt "$APEX_HIDDEN_PAYLOAD_COUNT" ]; do printenv "APEX_HIDDEN_PAYLOAD_$i"; i=$((i+1)); done) | base64 -d > '/tmp/${filename}' && printf '%s' '/tmp/${filename}'`;
+    }
+    const written = await collectCommand(
+      backends.command.run(writeCommand, {
+        envVars,
+        timeoutSeconds: Math.min(timeoutSeconds, 30),
+        abortSignal: ctx.abortSignal,
+      }),
+    );
+    if (written.exitCode !== 0 || written.timedOut || written.stdoutTruncated) {
+      return {
+        library,
+        error: `Failed to materialize prompt injection payload in sandbox: ${written.stderr || "write failed"}`,
+      };
+    }
+    const path = written.stdout.trim();
+    if (!path) throw new Error("Payload materialization returned no path");
+    return {
+      library,
+      envVars: {
+        [normalized.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]: path,
+      },
     };
   }
 
@@ -401,9 +446,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;
-      let promptInjectionPayloadContent: string | undefined;
       try {
-        const resolved = await resolvePromptInjectionEnv(promptInjection, ctx);
+        const resolved = await resolvePromptInjectionEnv(
+          promptInjection,
+          ctx,
+          effectiveTimeout,
+        );
         if (resolved.error) {
           return {
             success: false,
@@ -415,7 +463,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
         promptInjectionLibrary = resolved.library;
         promptInjectionEnvVars = resolved.envVars;
-        promptInjectionPayloadContent = resolved.payloadContent;
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return {
@@ -434,79 +481,18 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         return redactSecretValues(stripped, ctx.secretValues);
       };
 
-      // Sandbox mode: route execution through the sandbox
-      if (ctx.sandbox) {
+      {
+        let captured: Awaited<ReturnType<typeof collectCommand>>;
         try {
-          // Explicit default cwd + approved configured agent env every
-          // invocation, via the existing sandbox interface. Per-agent
-          // configured env overrides the workspace blob; the injection env
-          // (payload pointer) overrides both. Process ownership/termination
-          // parity is the adapter's, not claimed here.
-          const ssmOpts: {
-            timeout: number;
-            cwd?: string;
-            envVars?: Record<string, string>;
-          } = {
-            timeout: effectiveTimeout,
-            cwd: ctx.agentCwd,
-            envVars: {
-              ...readSandboxAgentEnv(),
-              ...ctx.environmentVariables,
-            },
-          };
-
-          // If we have a prompt injection payload for sandbox mode, we need to write
-          // it to a temp file in the sandbox first, since the host file path won't
-          // be accessible from inside the sandbox.
-          if (promptInjectionPayloadContent && promptInjection) {
-            const envVarName =
-              promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
-            const sandboxTempFile = `/tmp/apex_payload_${Date.now()}.txt`;
-
-            // Write the payload to a temp file in the sandbox
-            const escapedPayload = promptInjectionPayloadContent
-              .replace(/\\/g, "\\\\")
-              .replace(/'/g, "'\\''");
-            const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
-
-            // The payload-file write keeps its own 30s ceiling: 30s when the
-            // command timeout is omitted, and an explicit timeout can only
-            // tighten it — a printf must never outlive a 600s command cap.
-            const writeResult = await ctx.sandbox.execute(writeCommand, {
-              timeout: Math.min(effectiveTimeout, 30),
-            });
-
-            if (!writeResult.success) {
-              const errorMsg = `Failed to write prompt injection payload to sandbox: ${writeResult.stderr || "unknown error"}`;
-              return {
-                success: false,
-                error: errorMsg,
-                stdout: writeResult.stdout,
-                stderr: writeResult.stderr || errorMsg,
-                command,
-              };
-            }
-
-            // Update env vars to point to the sandbox temp file
-            ssmOpts.envVars = {
-              ...ssmOpts.envVars,
-              [envVarName]: sandboxTempFile,
-            };
-          } else if (promptInjectionEnvVars) {
-            ssmOpts.envVars = { ...ssmOpts.envVars, ...promptInjectionEnvVars };
-          }
-
-          const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
-          const stdout = redact(result.stdout) || "(no output)";
-          const stderr = redact(result.stderr || "");
-          return {
-            success: result.success,
-            error: !result.success ? stderr || "Command failed" : "",
-            stdout,
-            stderr,
-            command: redact(command),
-            exitCode: result.exitCode,
-          };
+          captured = await collectCommand(
+            resolveBackends(ctx).command.run(commandWithHeaders, {
+              timeoutSeconds: effectiveTimeout,
+              envVars: promptInjectionEnvVars,
+              abortSignal: ctx.abortSignal,
+            }),
+            (chunk) =>
+              ctx.eventBus?.emit("command-output", { data: redact(chunk) }),
+          );
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
           return {
@@ -517,70 +503,40 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             command,
           };
         }
+        const {
+          stdout,
+          stderr,
+          exitCode,
+          timedOut,
+          stdoutTruncated,
+          stderrTruncated,
+        } = captured;
+        return {
+          success: exitCode === 0,
+          error:
+            timedOut || exitCode === 124
+              ? "Command timed out"
+              : exitCode === 130
+                ? "Command aborted"
+                : exitCode !== 0
+                  ? `Exit code: ${exitCode}`
+                  : "",
+          stdout:
+            (redact(stdout) || "(no output)") +
+            (stdoutTruncated
+              ? "\n\n(INCOMPLETE — stdout capture truncated at the byte limit)"
+              : ""),
+          stderr:
+            redact(stderr) +
+            (stderrTruncated
+              ? "\n\n(INCOMPLETE — stderr capture truncated at the byte limit)"
+              : ""),
+          command: redact(command),
+          exitCode,
+          stdoutTruncated,
+          stderrTruncated,
+        };
       }
-
-      // Local mode: per-command executor (fresh shell each invocation)
-      if (ctx.commandShell) {
-        try {
-          const onData = ctx.eventBus
-            ? (data: string) =>
-                ctx.eventBus?.emit("command-output", { data: redact(data) })
-            : undefined;
-          const result = await ctx.commandShell.execute(commandWithHeaders, {
-            cwd: ctx.agentCwd,
-            env: promptInjectionEnvVars,
-            timeoutSeconds: effectiveTimeout,
-            abortSignal: ctx.abortSignal,
-            onData,
-          });
-          const stdoutNote = result.stdoutTruncated
-            ? "stdout capture truncated at the byte limit"
-            : undefined;
-          const stderrNote = result.stderrTruncated
-            ? "stderr capture truncated at the byte limit"
-            : undefined;
-          const stdout =
-            (redact(result.stdout) || "(no output)") +
-            (stdoutNote ? `\n\n(INCOMPLETE — ${stdoutNote})` : "");
-          const stderr =
-            redact(result.stderr) +
-            (stderrNote ? `\n\n(INCOMPLETE — ${stderrNote})` : "");
-          return {
-            success: result.exitCode === 0,
-            error:
-              result.exitCode === 124
-                ? "Command timed out"
-                : result.exitCode === 130
-                  ? "Command aborted"
-                  : result.exitCode !== 0
-                    ? `Exit code: ${result.exitCode}`
-                    : "",
-            stdout,
-            stderr,
-            command: redact(command),
-            exitCode: result.exitCode,
-            stdoutTruncated: result.stdoutTruncated,
-            stderrTruncated: result.stderrTruncated,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
-        }
-      }
-
-      return {
-        success: false,
-        error: "No shell or sandbox available",
-        stdout: "",
-        stderr: "",
-        command,
-      };
     },
   });
 }

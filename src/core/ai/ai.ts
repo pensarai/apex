@@ -447,6 +447,26 @@ function applySequentialToolCallPolicy(
   return system;
 }
 
+// The structured-output `response` tool is injected by the caller alongside its
+// own tools, so an allowlist of those tools must not hide it from the model.
+// Composed into `resolveEffectiveTools` at the call site so the executable map
+// keeps `response` even when a caller omits it from `activeTools`.
+export function withResponseToolActive(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): string[] | undefined {
+  if (
+    !tools ||
+    !activeTools ||
+    activeTools.length === 0 ||
+    !(RESPONSE_TOOL_NAME in tools) ||
+    activeTools.includes(RESPONSE_TOOL_NAME)
+  ) {
+    return activeTools;
+  }
+  return [...activeTools, RESPONSE_TOOL_NAME];
+}
+
 /**
  * Resolve the effective toolset from `activeTools` before any context
  * fitting. The AI SDK treats `activeTools` as advertise-only — it still
@@ -454,6 +474,8 @@ function applySequentialToolCallPolicy(
  * executable map itself must be filtered here for budgeting, provider
  * exposure, execution, and repair to agree. Built with DefineOwnProperty
  * semantics so prototype-shaped names like `__proto__` survive as own keys.
+ * Feed it `withResponseToolActive(tools, activeTools)` so the injected
+ * structured-output tool survives the filter.
  */
 export function resolveEffectiveTools(
   tools: ToolSet | undefined,
@@ -468,6 +490,26 @@ export function resolveEffectiveTools(
     ),
     activeTools: undefined,
   };
+}
+
+// Kept for callers/tests that filter a tool map without consuming `activeTools`
+// (e.g. `withResponseToolActive` composition). `resolveEffectiveTools` is the
+// stream-loop entry point; this is the same filter returning just the map.
+export function restrictToolsToActive(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): ToolSet | undefined {
+  if (!tools || !activeTools || activeTools.length === 0) {
+    return tools;
+  }
+  const allow = new Set(activeTools);
+  const restricted: ToolSet = {};
+  for (const [name, tool] of Object.entries(tools)) {
+    if (allow.has(name)) {
+      restricted[name] = tool;
+    }
+  }
+  return restricted;
 }
 
 const MAX_RATE_LIMIT_RETRIES = 20;
@@ -1435,6 +1477,9 @@ function streamResponseWithinOperation(
   opts = {
     ...opts,
     _compaction: compactionState,
+    // `activeTools` is authoritative for advertisement and execution: a tool
+    // (including `response`) is exposed only when the caller lists it, so the
+    // structured-output tool is included when listed and inert when omitted.
     ...resolveEffectiveTools(opts.tools, opts.activeTools),
   };
   // Bound recovery recursion (summarize → resume → overflow → …).
@@ -1630,6 +1675,14 @@ function streamResponseWithinOperation(
 
   let rateLimitRetryCount = 0;
 
+  // Make `activeTools` authoritative: advertise, execute, and enumerate only
+  // the allowlisted tools. A no-op when `activeTools` is empty/undefined.
+  // `resolveEffectiveTools` above already filtered the map and cleared
+  // `activeTools`, so this is a no-op on the normal path; kept for callers that
+  // reach streamText with an intact `activeTools` (identity when undefined).
+  const allowedTools = withResponseToolActive(tools, activeTools);
+  const effectiveTools = restrictToolsToActive(tools, allowedTools);
+
   try {
     // Create the appropriate provider instance. The span tracker captures
     // the SDK's root generation span for error marking (see below).
@@ -1640,7 +1693,7 @@ function streamResponseWithinOperation(
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
       toolChoice,
-      tools,
+      tools: effectiveTools,
       maxRetries: 3,
       providerOptions,
       // Step history would retain a serialized request body per step, and
@@ -1700,7 +1753,7 @@ function streamResponseWithinOperation(
       },
       onStepFinish,
       abortSignal,
-      activeTools,
+      activeTools: allowedTools,
       experimental_repairToolCall: async ({
         toolCall,
         inputSchema,
@@ -1784,7 +1837,16 @@ function streamResponseWithinOperation(
             () =>
               generateText({
                 model: providerModel,
-                providerOptions: openRouterProviderOptions,
+                providerOptions: {
+                  ...openRouterProviderOptions,
+                  // Durable runtime: tool-call repair fires only when a
+                  // replayed tool call fails validation — nondeterministically
+                  // vs the first run — so it must stay off the checkpoint
+                  // journal. The agent-runtime middleware reads this namespace
+                  // and runs the call without a durable step; the underlying
+                  // provider ignores it.
+                  pensarRuntime: { ephemeral: true },
+                },
                 output: Output.object({
                   schema: tool.inputSchema, // Use the actual Zod schema from the tool
                 }),
@@ -1961,6 +2023,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Provider middleware applied only to this call's model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   /** Per-run usage recorder; when set it replaces the global usage callback. */
   usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
@@ -1985,11 +2049,12 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    languageModelMiddleware,
     usageRecorder,
     sessionId,
   } = opts;
 
-  const providerModel = withNativeRolloutEvidenceModel(
+  const baseProviderModel = withNativeRolloutEvidenceModel(
     withModelCallDiagnostics(getProviderModel(model, authConfig)),
     {
       requestedModelId: model,
@@ -1997,6 +2062,12 @@ export async function generateObjectResponse<T extends z.ZodType>(
       sessionId,
     },
   );
+  const providerModel = languageModelMiddleware
+    ? wrapLanguageModel({
+        model: baseProviderModel,
+        middleware: languageModelMiddleware,
+      })
+    : baseProviderModel;
   const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     openAIReasoningEffort,
   });

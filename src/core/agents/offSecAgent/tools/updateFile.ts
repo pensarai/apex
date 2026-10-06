@@ -1,10 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import {
-  readWorkspaceFile,
-  resolveFilePath,
-  writeWorkspaceFile,
-} from "./fileWorkspace";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const updateFileInputSchema = z.object({
@@ -56,14 +52,26 @@ An unchanged replacement succeeds with zero replacements. Maximum file size: 1 M
       newContent,
       replaceAll = false,
     }): Promise<UpdateFileResult> => {
+      const { fs } = resolveBackends(ctx);
       let resolved = path;
       try {
         if (!oldContent)
           throw new Error(
             "oldContent must be nonempty; read the file and supply an exact match",
           );
-        resolved = await resolveFilePath(ctx, path);
-        const original = await readWorkspaceFile(ctx, resolved);
+        const raw = await fs.readRaw(path);
+        if (!raw.success) {
+          return {
+            success: false,
+            error: raw.error,
+            path: raw.path,
+            replacements: 0,
+          };
+        }
+        resolved = raw.path;
+        const original = raw.content;
+        // Uniformly-CRLF files adapt LF search/replacement to CRLF; mixed
+        // endings keep the caller's bytes and must match exactly.
         const crlf = original.includes("\r\n") && !/(?<!\r)\n/.test(original);
         const normalize = (text: string) =>
           crlf ? text.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n") : text;
@@ -86,14 +94,19 @@ An unchanged replacement succeeds with zero replacements. Maximum file size: 1 M
           : original.slice(0, first) +
             replacement +
             original.slice(first + search.length);
-        await writeWorkspaceFile(ctx, resolved, updated, {
+        const written = await fs.write(resolved, updated, {
+          mode: "overwrite",
           expected: original,
         });
         return {
-          success: true,
-          error: "",
-          path: resolved,
-          replacements: replaceAll ? parts.length - 1 : 1,
+          success: written.success,
+          error: written.error,
+          path: written.path,
+          replacements: written.success
+            ? replaceAll
+              ? parts.length - 1
+              : 1
+            : 0,
         };
       } catch (error: unknown) {
         return {

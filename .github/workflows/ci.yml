@@ -44,4 +44,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Exercise Windows HTTP and coding tools
-        run: bun run test src/core/agents/offSecAgent/tools/windowsCurl.test.ts src/core/agents/offSecAgent/tools/fileWorkspace.test.ts src/core/agents/offSecAgent/tools/codingTools.windows.test.ts
+        run: bun run test src/core/agents/offSecAgent/tools/windowsCurl.test.ts src/core/agents/offSecAgent/tools/fileWorkspace.test.ts src/core/agents/offSecAgent/tools/codingTools.windows.test.ts src/core/agents/offSecAgent/tools/perCommandShell.windows.test.ts
+      - name: Exercise native and injected script transports
+        run: bun run test src/core/tools/backends/resolve.test.ts -t "script transport resolution"
+      - name: Exercise native Windows background jobs
+        run: bun run test src/core/whitebox/jobKernel.test.ts src/core/whitebox/whitebox.test.ts -t "whitebox jobs|synchronous Windows"
+      - name: Exercise injected Windows background jobs
+        run: bun run test src/core/tools/backends/whiteboxJobs.test.ts
+      - name: Exercise sandbox finding collection
+        run: bun run test src/core/agents/specialized/pentest/results.test.ts

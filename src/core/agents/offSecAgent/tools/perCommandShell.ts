@@ -1,4 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
+import {
+  captureChunk,
+  captureText,
+  makeCapture,
+} from "../../../tools/backends/capture";
 
 // Per-stream in-memory capture limit. The process is NEVER killed for output
 // volume — capture keeps draining and reports truncation flags instead.
@@ -68,6 +74,8 @@ export interface ShellExecuteResult {
   cleanupUnconfirmed: boolean;
 }
 
+type Invocation = string | { executable: string; args: readonly string[] };
+
 interface ActiveInvocation {
   requestKill: (forcedExit: number) => void;
 }
@@ -103,8 +111,23 @@ export class PerCommandShell {
     this.extraEnv = opts?.env;
   }
 
-  async execute(
+  execute(
     command: string,
+    opts?: ShellExecuteOptions,
+  ): Promise<ShellExecuteResult> {
+    return this.executeInvocation(command, opts);
+  }
+
+  executeArgv(
+    executable: string,
+    args: readonly string[],
+    opts?: ShellExecuteOptions,
+  ): Promise<ShellExecuteResult> {
+    return this.executeInvocation({ executable, args }, opts);
+  }
+
+  private async executeInvocation(
+    command: Invocation,
     opts?: ShellExecuteOptions,
   ): Promise<ShellExecuteResult> {
     if (this.disposed) return staticResult("Shell has been disposed", 1);
@@ -127,14 +150,22 @@ export class PerCommandShell {
   }
 
   private async runInvocation(
-    command: string,
+    command: Invocation,
     opts?: ShellExecuteOptions,
   ): Promise<ShellExecuteResult> {
     const isWin = process.platform === "win32";
-    const shell = isWin ? "cmd" : "bash";
-    const args = isWin
-      ? ["/d", "/s", "/c", command]
-      : ["--norc", "--noprofile", "-c", command];
+    const shell =
+      typeof command === "string"
+        ? isWin
+          ? "cmd"
+          : "bash"
+        : command.executable;
+    const args =
+      typeof command === "string"
+        ? isWin
+          ? ["/d", "/s", "/c", command]
+          : ["--norc", "--noprofile", "-c", command]
+        : [...command.args];
 
     return new Promise<ShellExecuteResult>((resolve) => {
       let child: ChildProcess;
@@ -171,6 +202,7 @@ export class PerCommandShell {
       }
 
       const stdoutCap = makeCapture(MAX_CAPTURE_BYTES);
+      const stdoutDecoder = new StringDecoder("utf8");
       const stderrCap = makeCapture(MAX_CAPTURE_BYTES);
       let settled = false;
       let terminating = false;
@@ -195,6 +227,8 @@ export class PerCommandShell {
 
       const settle = (result: ShellExecuteResult): void => {
         if (settled) return;
+        const tail = stdoutDecoder.end();
+        if (tail) opts?.onData?.(tail);
         settled = true;
         for (const t of timers) clearTimeout(t);
         timers.clear();
@@ -331,7 +365,8 @@ export class PerCommandShell {
       child.stdout?.on("data", (chunk: Buffer) => {
         if (settled) return;
         captureChunk(stdoutCap, chunk);
-        opts?.onData?.(chunk.toString("utf8"));
+        const text = stdoutDecoder.write(chunk);
+        if (text) opts?.onData?.(text);
       });
       child.stderr?.on("data", (chunk: Buffer) => {
         if (settled) return;
@@ -455,45 +490,6 @@ function groupConfirmedGone(pgid: number): boolean {
   } catch (err) {
     return (err as NodeJS.ErrnoException | null)?.code === "ESRCH";
   }
-}
-
-interface CaptureBuffer {
-  // One owned, geometrically grown buffer, hard-capped at maxBytes: no
-  // per-chunk allocations and no retained pipe-allocated backing storage.
-  buf: Buffer;
-  used: number;
-  truncated: boolean;
-  readonly max: number;
-}
-
-function makeCapture(maxBytes: number): CaptureBuffer {
-  return { buf: Buffer.alloc(0), used: 0, truncated: false, max: maxBytes };
-}
-
-function captureChunk(cap: CaptureBuffer, chunk: Buffer): void {
-  const room = cap.max - cap.used;
-  if (room <= 0) {
-    cap.truncated = true;
-    return;
-  }
-  const take = Math.min(chunk.byteLength, room);
-  if (take < chunk.byteLength) cap.truncated = true;
-  if (cap.buf.byteLength < cap.used + take) {
-    let size = cap.buf.byteLength || 64 * 1024;
-    while (size < cap.used + take && size < cap.max) size *= 2;
-    const next = Buffer.alloc(Math.min(size, cap.max));
-    cap.buf.copy(next, 0, 0, cap.used);
-    cap.buf = next;
-  }
-  chunk.copy(cap.buf, cap.used, 0, take);
-  cap.used += take;
-}
-
-function captureText(cap: CaptureBuffer): string {
-  if (cap.used === 0) return "";
-  // Full-UTF8 decode of exactly the captured bytes — no reassembly, so
-  // multibyte sequences spanning chunk boundaries survive intact.
-  return cap.buf.subarray(0, cap.used).toString("utf8");
 }
 
 function attachAbort(signal: AbortSignal, onAbort: () => void): () => void {

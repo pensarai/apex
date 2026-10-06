@@ -7,11 +7,13 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 import { setLogSink } from "../../../logger/structured";
+import { LocalBackends } from "../../../tools/backends/local";
+import type { ToolBackends } from "../../../tools/backends/types";
 import { scoreFindingWithCVSS } from "../../specialized/cvssScorer";
 import {
   type FindingJudgeResult,
@@ -22,6 +24,19 @@ import {
   documentVulnerability,
   validatePocPortability,
 } from "./documentFinding";
+import { PerCommandShell } from "./perCommandShell";
+
+vi.mock("node:path", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:path")>();
+  return {
+    ...actual,
+    join: (...parts: string[]) =>
+      parts[0]?.startsWith("/workspace/repo/.pensar") ||
+      parts[0]?.includes("/remote-")
+        ? actual.win32.join(...parts)
+        : actual.join(...parts),
+  };
+});
 
 vi.mock("../../specialized/findingJudge", async (importOriginal) => {
   const actual =
@@ -106,6 +121,11 @@ function makeDocumentInput() {
   };
 }
 
+// PoC execution now runs through `ctx.backends.command` (LocalBackends when
+// unsandboxed), which requires a real commandShell — created per context
+// and disposed in the module-level afterEach below.
+const createdShells: PerCommandShell[] = [];
+
 function makeToolContext(rootPath: string) {
   const pocsPath = join(rootPath, "pocs");
   const findingsPath = join(rootPath, "findings");
@@ -113,6 +133,9 @@ function makeToolContext(rootPath: string) {
   mkdirSync(pocsPath, { recursive: true });
   mkdirSync(findingsPath, { recursive: true });
   mkdirSync(logsPath, { recursive: true });
+
+  const commandShell = new PerCommandShell({ cwd: rootPath });
+  createdShells.push(commandShell);
 
   return {
     session: {
@@ -128,8 +151,15 @@ function makeToolContext(rootPath: string) {
     model: "test-model",
     target: "https://example.com",
     subagentSpawner: inProcessSubagentSpawner,
+    commandShell,
   } as unknown as Parameters<typeof documentVulnerability>[0];
 }
+
+afterEach(() => {
+  while (createdShells.length > 0) {
+    createdShells.pop()?.dispose();
+  }
+});
 
 describe("documentVulnerability judge handling", () => {
   let rootPath: string;
@@ -926,5 +956,223 @@ describe("documentVulnerability CVSS fallback", () => {
     expect(
       logLines.some((line) => line.includes("fell back to estimated MEDIUM")),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PoC + finding writes route through ctx.backends.fs, once, with no direct
+// host `pocsPath`/`findingsPath` write bypassing the backend.
+// ---------------------------------------------------------------------------
+
+describe("documentVulnerability writes through ctx.backends.fs", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-backend-"));
+    mockedJudgeFinding.mockReset();
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  it("preserves both summary entries when findings finish concurrently", async () => {
+    const first = makeToolContext(rootPath);
+    const second = makeToolContext(rootPath);
+    const results = await Promise.all(
+      [first, second].map((ctx, i) =>
+        documentVulnerability(ctx).execute?.(
+          {
+            ...makeDocumentInput(),
+            title: `Finding ${i}`,
+            pocName: `concurrent_${i}`,
+          },
+          { toolCallId: `finding-${i}`, messages: [] },
+        ),
+      ),
+    );
+    for (const result of results)
+      expect(result).toMatchObject({ success: true });
+    const summary = readFileSync(join(rootPath, "findings-summary.md"), "utf8");
+    expect(summary).toContain("Finding 0");
+    expect(summary).toContain("Finding 1");
+  });
+
+  it.each([
+    "accepted",
+    "rejected",
+    "duplicate",
+  ])("keeps classic sandbox PoCs owned and cleans up %s findings", async (outcome) => {
+    const ctx = makeToolContext(rootPath);
+    if (outcome === "rejected")
+      mockedJudgeFinding.mockResolvedValue({
+        ...makeAcceptedJudgeResult(),
+        valid: false,
+      });
+    if (outcome === "duplicate")
+      ctx.findingsRegistry = {
+        isDuplicate: () => ({ duplicate: false }),
+        register: async () => ({ duplicate: true }),
+      } as unknown as typeof ctx.findingsRegistry;
+    const remoteRoot = mkdtempSync(join(rootPath, "remote-"));
+    const remoteShell = new PerCommandShell({ cwd: remoteRoot });
+    ctx.agentCwd = remoteRoot;
+    const execute = vi.fn(
+      async (
+        command: string,
+        opts?: {
+          timeout?: number;
+          cwd?: string;
+          envVars?: Record<string, string>;
+        },
+      ) => {
+        const result = await remoteShell.execute(command, {
+          cwd: opts?.cwd ?? remoteRoot,
+          env: opts?.envVars,
+          timeoutSeconds: opts?.timeout,
+        });
+        return { ...result, success: result.exitCode === 0 };
+      },
+    );
+    ctx.sandbox = { type: "linux", execute };
+    const hostExecute = vi.spyOn(ctx.commandShell!, "execute");
+    const result = await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    );
+    expect(result).toMatchObject({ success: outcome === "accepted" });
+    if (outcome === "rejected")
+      expect(result).toMatchObject({ judgeRejected: true });
+    if (outcome === "duplicate")
+      expect(result).toMatchObject({ duplicate: true });
+    expect(execute).toHaveBeenCalledWith(
+      `bash '${posix.join(remoteRoot, ".pensar/pocs/poc_admin_data.sh")}'`,
+      expect.objectContaining({ timeout: 60, cwd: remoteRoot }),
+    );
+    const remotePath = posix.join(remoteRoot, ".pensar/pocs/poc_admin_data.sh");
+    expect(existsSync(remotePath)).toBe(outcome === "accepted");
+    await remoteShell.dispose();
+    expect(hostExecute).not.toHaveBeenCalled();
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      outcome === "accepted",
+    );
+    expect(
+      readdirSync(ctx.session.findingsPath).some((path) =>
+        path.endsWith(".json"),
+      ),
+    ).toBe(outcome === "accepted");
+  });
+
+  it("keeps sandbox artifacts POSIX even when host join uses Windows separators", async () => {
+    const base = makeToolContext(rootPath);
+    const local = LocalBackends(base);
+    const writes: string[] = [];
+    const ctx = {
+      ...base,
+      backends: {
+        ...local,
+        sandboxed: true,
+        fs: {
+          ...local.fs,
+          write: async (path: string) => {
+            writes.push(path);
+            return { success: true, path, error: "" };
+          },
+          readRaw: async (path: string) => ({
+            success: true,
+            content: "",
+            path,
+            error: "",
+          }),
+        },
+        command: {
+          async *run() {
+            yield {
+              type: "stdout" as const,
+              seq: 0,
+              bytes: "admin data leaked",
+            };
+            yield { type: "end" as const, exitCode: 0, timedOut: false };
+          },
+        },
+      },
+    };
+    const result = await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "remote", messages: [] },
+    );
+    expect(result).toMatchObject({ success: true });
+    expect(writes).toContain("/workspace/repo/.pensar/pocs/poc_admin_data.sh");
+    expect(
+      writes.some(
+        (path) =>
+          path.startsWith("/workspace/repo/.pensar/findings/") &&
+          path.endsWith(".json"),
+      ),
+    ).toBe(true);
+    expect(writes).toContain("/workspace/repo/.pensar/findings-summary.md");
+    expect(writes.every((path) => !path.includes("\\"))).toBe(true);
+  });
+
+  it("writes the PoC and the finding json/md via the injected backend, not a second host write", async () => {
+    const base = makeToolContext(rootPath);
+    const local = LocalBackends(base);
+    const writeSpy = vi.fn(local.fs.write.bind(local.fs));
+    const backends = { ...local, fs: { ...local.fs, write: writeSpy } };
+    const ctx = { ...base, backends: backends as ToolBackends };
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+
+    const pocPath = join(ctx.session.pocsPath, "poc_admin_data.sh");
+    const writtenPaths = writeSpy.mock.calls.map((c) => c[0]);
+    expect(writtenPaths).toContain(pocPath);
+    expect(writtenPaths.some((p) => p.endsWith(".json"))).toBe(true);
+    expect(writtenPaths.some((p) => p.endsWith(".md"))).toBe(true);
+
+    // The backend call actually produced the file — no separate host write.
+    expect(existsSync(pocPath)).toBe(true);
+    expect(readFileSync(pocPath, "utf8")).toContain("admin data leaked");
+  });
+
+  it("throws (and unregisters the finding) when the injected backend fails to write the finding json", async () => {
+    const findingsRegistry = {
+      isDuplicate: () => ({ duplicate: false }),
+      register: vi.fn(async () => ({ duplicate: false })),
+      unregister: vi.fn(async () => {}),
+    };
+    const base = {
+      ...makeToolContext(rootPath),
+      findingsRegistry: findingsRegistry as never,
+    };
+    const local = LocalBackends(base);
+    const writeSpy = vi.fn(
+      async (
+        path: string,
+        content: string,
+        o: { mode: "create" | "overwrite" },
+      ) => {
+        if (path.endsWith(".json")) {
+          return { success: false, error: "disk full", path };
+        }
+        return local.fs.write(path, content, o);
+      },
+    );
+    const backends = { ...local, fs: { ...local.fs, write: writeSpy } };
+    const ctx = { ...base, backends: backends as ToolBackends };
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("disk full");
+    expect(findingsRegistry.unregister).toHaveBeenCalled();
   });
 });

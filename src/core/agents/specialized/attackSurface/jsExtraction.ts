@@ -2,10 +2,15 @@
  * JavaScript endpoint extraction utilities
  */
 
+import { resolveBackends } from "../../../tools/backends";
+import type { ToolContext } from "../../offSecAgent/tools/types";
+
 export interface ExtractJavascriptEndpointsParams {
   url: string;
   sessionCookie?: string;
   includeExternalJS?: boolean;
+  /** Routes the page fetch through the caller's tool backend — no bare `fetch`. */
+  ctx: ToolContext;
 }
 
 export interface EndpointInfo {
@@ -39,16 +44,22 @@ export async function extractJavascriptEndpoints(
   params: ExtractJavascriptEndpointsParams,
 ): Promise<ExtractJavascriptEndpointsResult> {
   try {
-    const { url, sessionCookie, includeExternalJS = true } = params;
+    const { url, sessionCookie, includeExternalJS = true, ctx } = params;
 
     // Fetch the page
-    const fetchRequest: RequestInit = { method: "GET" };
-    if (sessionCookie) {
-      fetchRequest.headers = { Cookie: sessionCookie };
+    const pageResult = await resolveBackends(ctx).http.request({
+      url,
+      method: "GET",
+      followRedirects: true,
+      headers: sessionCookie ? { Cookie: sessionCookie } : undefined,
+    });
+    if (!pageResult.success) {
+      return {
+        success: false,
+        message: `JavaScript extraction error: ${pageResult.error ?? "request failed"}`,
+      };
     }
-
-    const pageResult = await fetch(url, fetchRequest);
-    const html = await pageResult.text();
+    const html = pageResult.body;
 
     return extractJavascriptEndpointsFromHtml(html, url, includeExternalJS);
   } catch (error) {

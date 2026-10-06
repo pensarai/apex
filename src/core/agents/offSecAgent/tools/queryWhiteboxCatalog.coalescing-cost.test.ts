@@ -18,9 +18,11 @@ vi.mock("../../../whitebox", async () => {
     );
   return {
     ...actual,
-    profileCodebase: async (rootPath: string) => {
+    profileCodebase: async (
+      ...args: Parameters<typeof actual.profileCodebase>
+    ) => {
       state.profileCalls++;
-      return actual.profileCodebase(rootPath);
+      return actual.profileCodebase(...args);
     },
   };
 });

@@ -207,6 +207,7 @@ try {
 export async function remoteFileOperation(
   ctx: ToolContext,
   request: Request,
+  timeoutSeconds = 30,
 ): Promise<Record<string, unknown>> {
   const sandbox = ctx.sandbox;
   if (!sandbox) throw new Error("No sandbox configured for file operation");
@@ -234,7 +235,7 @@ export async function remoteFileOperation(
       : `python3 -c '${PYTHON.replaceAll("'", "'\\''")}'`;
   const result = await sandbox.execute(command, {
     envVars,
-    timeout: 30,
+    timeout: Math.min(30, timeoutSeconds),
     retries: 0,
   });
   if (!result.success || result.exitCode !== 0) {

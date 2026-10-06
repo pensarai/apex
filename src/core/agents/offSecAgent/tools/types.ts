@@ -18,13 +18,16 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { ToolBackends } from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type { EmailAdapterResolver } from "./email/adapters";
 import type { PerCommandShell } from "./perCommandShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
+import type { SmsInbox } from "./smsInbox";
 
 /**
  * Shared context passed to every tool factory.
@@ -34,6 +37,8 @@ import type { UnifiedSandbox } from "./sandbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  attackSurfaceArtifactsPath?: string;
+
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
 
@@ -64,6 +69,12 @@ export type ToolContext = {
 
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;
+
+  /**
+   * Execution backends for fs / command / http / browser / inbox. Unset means
+   * local execution; hosts inject sandbox-backed implementations.
+   */
+  backends?: ToolBackends;
 
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
@@ -221,6 +232,19 @@ export type ToolContext = {
    * spawner constructs.
    */
   subagentSpawner: SubagentSpawner;
+
+  /**
+   * Transport for inbound SMS reads. Unset → the Console agent API over HTTP,
+   * which needs sandbox dispatch; a host with direct database access injects
+   * one that reads in-process.
+   */
+  smsInbox?: SmsInbox;
+
+  /**
+   * Supplies an adapter for an inbox with no transport of its own (a
+   * `pensar-managed` inbox). Unset → the config-driven factory.
+   */
+  emailAdapterFor?: EmailAdapterResolver;
 
   /** Provider middleware inherited by spawned children. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
