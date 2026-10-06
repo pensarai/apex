@@ -151,6 +151,7 @@ export {
   searchTargetLogs,
   updateIssue,
 } from "./issues";
+export { serveLocalRunWorker } from "./localWorker";
 export type {
   OffensiveSecurityAgentClientInput,
   RunAgentResult,

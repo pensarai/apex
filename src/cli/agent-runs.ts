@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type AIAuthConfig, buildAuthConfig } from "../core/ai";
 import {
@@ -9,13 +11,23 @@ import {
 } from "../core/api";
 import { config } from "../core/config";
 import { AgentEventBus } from "../core/eventBus";
+import {
+  launchLocalWorker,
+  resolveWorkerExecutable,
+} from "../core/runtime/launchLocalWorker";
+import type { LocalWorkerRequest } from "../core/runtime/localWorkerProtocol";
+import {
+  LocalWorkerTransportError,
+  workerRequest,
+} from "../core/runtime/localWorkerTransport";
+import { RecordedRunSpecSchema } from "../core/runtime/runStore";
 import { openSqliteRunStore } from "../core/runtime/sqliteRunStore";
 
 const HELP = `pensar agent-runs — Record and inspect local agent runs
 
 Usage:
-  pensar agent-runs start --spec <file> [--store <database>]
-  pensar agent-runs resume <runId> [--store <database>]
+  pensar agent-runs start --spec <file> [--detach] [--store <database>]
+  pensar agent-runs resume <runId> [--detach] [--store <database>]
   pensar agent-runs list [--store <database>]
   pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--control] [--recovery] [--store <database>]
   pensar agent-runs pause <runId> [--store <database>]
@@ -30,6 +42,8 @@ Pause and stop persist a cooperative request: the run applies it at its next
 dispatch boundary, and accepted work may still finish. Approvals survive a
 lost client until decided. Resume continues an enrolled run in the same
 environment only; every failed prerequisite is reported as a blocker.
+--detach hosts the run in a local worker that outlives this process; the
+worker prints its log path and the run starts there, not here.
 
 Recording requires Bun or Node 22.13+. See docs/recorded-runs.md.
 `;
@@ -47,6 +61,18 @@ const COMMANDS = [
 
 type AgentRunsStore = Awaited<ReturnType<typeof openSqliteRunStore>>;
 
+// Mirrors openSqliteRunStore's default so the worker opens the same database.
+function absoluteDatabasePath(explicit?: string): string {
+  return resolve(
+    explicit ??
+      join(
+        process.env.PENSAR_DATA_DIR ?? join(homedir(), ".pensar"),
+        "runtime",
+        "runs.sqlite",
+      ),
+  );
+}
+
 export async function runAgentRunsCommand(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
@@ -60,6 +86,8 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       control: { type: "boolean" },
       recovery: { type: "boolean" },
       approval: { type: "string" },
+      detach: { type: "boolean" },
+      run: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -70,6 +98,30 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     return;
   }
   const [command, runId, ...extra] = positionals;
+
+  if (command === "worker") {
+    if (
+      extra.length ||
+      runId !== undefined ||
+      !values.run ||
+      !values.store ||
+      Object.keys(values).some((key) => key !== "run" && key !== "store")
+    ) {
+      throw new Error(
+        "agent-runs worker requires --run <runId> and --store <absolute database>",
+      );
+    }
+    if (!isAbsolute(values.store)) {
+      throw new Error("agent-runs worker requires --store <absolute database>");
+    }
+    const { serveLocalRunWorker } = await import("../core/api");
+    await serveLocalRunWorker({
+      runId: values.run,
+      databasePath: resolve(values.store),
+    });
+    return;
+  }
+
   const showFlag =
     values.context ||
     values.evidence ||
@@ -94,7 +146,9 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     (command !== "approve" &&
       command !== "reject" &&
       values.approval !== undefined) ||
-    ((command === "approve" || command === "reject") && !values.approval)
+    ((command === "approve" || command === "reject") && !values.approval) ||
+    (values.detach && command !== "start" && command !== "resume") ||
+    (values.run !== undefined && command !== "worker")
   ) {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
   }
@@ -222,6 +276,16 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     }
 
     if (command === "resume") {
+      if (values.detach) {
+        const record = await store.get(runId);
+        if (!record) throw new Error(`Run not found: ${runId}`);
+        await detachExecution(values.store, runId, {
+          protocolVersion: 1,
+          method: "resume",
+          expectedAttemptId: record.attemptId,
+        });
+        return;
+      }
       await runExecution(async (execution) =>
         resumeRecordedAgent({ runId, store, ...execution }),
       );
@@ -230,12 +294,59 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
 
     if (!values.spec) throw new Error("A run spec is required");
     const spec = JSON.parse(await readFile(values.spec, "utf8"));
+    if (values.detach) {
+      // The worker performs admission; the CLI only resolves the run id.
+      const normalized = RecordedRunSpecSchema.parse(spec);
+      await detachExecution(values.store, normalized.runId, {
+        protocolVersion: 1,
+        method: "start",
+        spec: normalized,
+      });
+      return;
+    }
     await runExecution(async (execution) =>
       runRecordedAgent({ spec, store, ...execution }),
     );
   } finally {
     store.close();
   }
+}
+
+/** Launch the worker, dispatch the execution request, report the result. */
+async function detachExecution(
+  store: string | undefined,
+  runId: string,
+  request: Extract<LocalWorkerRequest, { method: "start" | "resume" }>,
+): Promise<void> {
+  const launched = await launchLocalWorker({
+    runId,
+    databasePath: absoluteDatabasePath(store),
+    executable: resolveWorkerExecutable(),
+  });
+  // A lost acknowledgement is uncertain by contract: never auto-retried.
+  const snapshot = await workerRequest(launched.socketPath, request).catch(
+    (error: unknown) => {
+      if (error instanceof LocalWorkerTransportError && error.uncertain) {
+        console.error(
+          `The ${request.method} request outcome is uncertain and was NOT retried. ` +
+            `Inspect the run before issuing it again: pensar agent-runs show ${runId}`,
+        );
+      }
+      throw error;
+    },
+  );
+  console.log(
+    JSON.stringify(
+      {
+        detached: true,
+        socketPath: launched.socketPath,
+        logPath: launched.logPath,
+        snapshot,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 type Execution = {
