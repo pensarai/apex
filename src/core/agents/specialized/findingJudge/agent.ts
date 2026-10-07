@@ -2,7 +2,6 @@ import { stepCountIs } from "ai";
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
-import { detectOSAndEnhancePrompt } from "../utils";
 import {
   buildFindingJudgePrompt,
   FINDING_JUDGE_SYSTEM_PROMPT,
@@ -39,7 +38,7 @@ export const findingJudgeDefinition = defineAgent<
 >({
   name: "finding-judge",
   role: "judge",
-  system: () => detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
+  system: () => FINDING_JUDGE_SYSTEM_PROMPT,
   activeTools: () => [...FINDING_JUDGE_ACTIVE_TOOLS],
   responseSchema: () => FindingJudgeOutputSchema,
   stopWhen: () => stepCountIs(60),

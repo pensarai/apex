@@ -1,0 +1,352 @@
+import { createHash } from "node:crypto";
+import { getBundledWordlists } from "../../assets/wordlists";
+import { resolveBackends } from "../../tools/backends/resolve";
+import type {
+  CommandEvent,
+  RunOpts,
+  ToolBackends,
+} from "../../tools/backends/types";
+import type { UnifiedSandbox } from "./tools/sandbox";
+import type { ToolContext } from "./tools/types";
+
+/**
+ * Runtime execution facts for prompt composition — probed through the
+ * agent's actual command backend (local shell, sandbox, or remote) with the
+ * configured execution env, never the host process. A failed, timed-out, or
+ * truncated probe yields {@link UNKNOWN_FACTS} ("unknown", not "absent") and
+ * is not retained, so a later agent retries.
+ */
+export interface RuntimeExecutionFacts {
+  /** False when the probe failed, timed out, was aborted, or came back truncated. */
+  probed: boolean;
+  /** `uname -sr` from the execution environment. */
+  os?: string;
+  available: string[];
+  missing: string[];
+}
+
+export const UNKNOWN_FACTS: RuntimeExecutionFacts = {
+  probed: false,
+  available: [],
+  missing: [],
+};
+
+/** Tools whose presence changes technique choice: script interpreters, ffuf, and the scanner set the old host-side inventory covered. */
+export const PROBE_TOOL_NAMES = [
+  "bash",
+  "sh",
+  "python3",
+  "python",
+  "node",
+  "ffuf",
+  "nmap",
+  "gobuster",
+  "sqlmap",
+  "nikto",
+  "hydra",
+  "john",
+  "hashcat",
+  "tcpdump",
+  "tshark",
+  "nc",
+  "socat",
+  "curl",
+  "wget",
+  "git",
+] as const;
+
+const PROBE_TIMEOUT_SECONDS = 10;
+// The probe emits one marker line per tool (~600 B). The cap is a runaway
+// guard; hitting it (or a backend truncation flag) invalidates the probe.
+const MAX_PROBE_OUTPUT_BYTES = 16 * 1024;
+
+function posixProbeCommand(): string {
+  const checks = PROBE_TOOL_NAMES.map(
+    (t) =>
+      `if command -v ${t} >/dev/null 2>&1; then echo "AVAIL ${t}"; else echo "MISSING ${t}"; fi`,
+  ).join("; ");
+  // Every branch succeeds, so a missing tool never fails the probe.
+  return `${checks}; echo "OS: $(uname -sr 2>/dev/null)"`;
+}
+
+function windowsProbeCommand(): string {
+  return PROBE_TOOL_NAMES.map(
+    (t) => `where ${t} >nul 2>&1 && echo AVAIL ${t} || echo MISSING ${t}`,
+  ).join(" & ");
+}
+
+function parseProbeOutput(output: string): RuntimeExecutionFacts {
+  const available: string[] = [];
+  const missing: string[] = [];
+  let os: string | undefined;
+
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const avail = /^AVAIL (\S+)$/.exec(line);
+    if (avail) {
+      available.push(avail[1]);
+      continue;
+    }
+    const miss = /^MISSING (\S+)$/.exec(line);
+    if (miss) {
+      missing.push(miss[1]);
+      continue;
+    }
+    const osMatch = /^OS: (.+)$/.exec(line);
+    if (osMatch?.[1]) os = osMatch[1];
+  }
+
+  // A truncated or mangled probe must not read as "everything absent".
+  const seen = new Set([...available, ...missing]);
+  if (seen.size < PROBE_TOOL_NAMES.length) return UNKNOWN_FACTS;
+
+  return {
+    probed: true,
+    ...(os ? { os } : {}),
+    available: available.sort(),
+    missing: missing.sort(),
+  };
+}
+
+async function runProbe(ctx: ToolContext): Promise<RuntimeExecutionFacts> {
+  try {
+    const backend = resolveBackends(ctx);
+    const platform = backend.command.platform ?? "posix";
+    const cmd =
+      platform === "windows" ? windowsProbeCommand() : posixProbeCommand();
+    // Injected transports only see RunOpts, so the configured execution env
+    // must ride with the probe (the cache key is not execution env). Local
+    // and sandbox paths re-merge the same values harmlessly.
+    const opts: RunOpts = {
+      timeoutSeconds: PROBE_TIMEOUT_SECONDS,
+      abortSignal: ctx.abortSignal,
+      envVars: ctx.environmentVariables,
+    };
+
+    let output = "";
+    let outputTruncated = false;
+    let exitCode: number | null = null;
+    let timedOut = false;
+    for await (const event of backend.command.run(cmd, opts)) {
+      const e = event as CommandEvent;
+      if (e.type === "stdout" || e.type === "stderr") {
+        if (output.length >= MAX_PROBE_OUTPUT_BYTES) {
+          outputTruncated = true;
+        } else {
+          const room = MAX_PROBE_OUTPUT_BYTES - output.length;
+          output += e.bytes.slice(0, room);
+          if (e.bytes.length > room) outputTruncated = true;
+        }
+      } else if (e.type === "end") {
+        exitCode = e.exitCode;
+        timedOut = e.timedOut;
+        if (e.stdoutTruncated || e.stderrTruncated) outputTruncated = true;
+      }
+    }
+    if (exitCode === null || exitCode !== 0 || timedOut || outputTruncated) {
+      return UNKNOWN_FACTS;
+    }
+    return parseProbeOutput(output);
+  } catch {
+    return UNKNOWN_FACTS;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cache / coalescing — one probe per distinct runtime configuration.
+// ---------------------------------------------------------------------------
+
+// Object identity per configured backend/sandbox object: workers spawned in
+// one run share the parent's objects and therefore one probe; a host that
+// swaps in a new backend object gets a fresh probe.
+type ExecutorObject = ToolBackends | UnifiedSandbox;
+
+const objectId = new WeakMap<ExecutorObject, number>();
+let nextObjectId = 0;
+
+function idFor(obj: ExecutorObject): number {
+  let id = objectId.get(obj);
+  if (id === undefined) {
+    id = ++nextObjectId;
+    objectId.set(obj, id);
+  }
+  return id;
+}
+
+// Env values can carry credential secrets; hash them so raw values are never
+// retained in long-lived cache keys.
+function envTag(env: Record<string, string> | undefined): string {
+  if (!env || Object.keys(env).length === 0) return "";
+  const sorted = JSON.stringify(
+    Object.keys(env)
+      .sort()
+      .map((k) => [k, env[k]]),
+  );
+  return createHash("sha256").update(sorted).digest("hex").slice(0, 16);
+}
+
+function cacheKey(ctx: ToolContext): string {
+  return [
+    ctx.session.id,
+    ctx.backends ? `b${idFor(ctx.backends)}` : "local",
+    ctx.sandbox ? `s${idFor(ctx.sandbox)}` : "nosh",
+    ctx.agentCwd,
+    envTag(ctx.environmentVariables),
+  ].join("|");
+}
+
+// Bound: distinct runtime configurations per process are few; a runaway
+// host that reconstructs backends per agent would otherwise grow this map
+// without limit.
+const MAX_CACHE_ENTRIES = 32;
+const factsByKey = new Map<string, Promise<RuntimeExecutionFacts>>();
+// Synchronous snapshot of successfully probed facts, keyed the same way —
+// read by the agent's synchronous legacy escape hatch, which cannot await
+// discovery but may reuse facts that already settled for the same runtime
+// scope.
+const settledFactsByKey = new Map<string, RuntimeExecutionFacts>();
+
+export function probeRuntimeFacts(
+  ctx: ToolContext,
+): Promise<RuntimeExecutionFacts> {
+  const key = cacheKey(ctx);
+  const cached = factsByKey.get(key);
+  if (cached) return cached;
+
+  const pending = runProbe(ctx).then((facts) => {
+    // Failed probes are not retained: absence was never established, and the
+    // next agent with the same configuration should retry.
+    if (facts.probed) {
+      settledFactsByKey.set(key, facts);
+    } else {
+      factsByKey.delete(key);
+      settledFactsByKey.delete(key);
+    }
+    return facts;
+  });
+  // runProbe never rejects, but a future edit could break that invariant;
+  // a stranded rejected promise must not poison the cache slot.
+  pending.catch(() => {
+    factsByKey.delete(key);
+    settledFactsByKey.delete(key);
+  });
+
+  if (factsByKey.size >= MAX_CACHE_ENTRIES) {
+    factsByKey.clear();
+    settledFactsByKey.clear();
+  }
+  factsByKey.set(key, pending);
+  return pending;
+}
+
+/** Facts already discovered for this runtime scope, or null before a probe settles. */
+export function peekSettledRuntimeFacts(
+  ctx: ToolContext,
+): RuntimeExecutionFacts | null {
+  return settledFactsByKey.get(cacheKey(ctx)) ?? null;
+}
+
+/** Test seam: drop cached probes so a suite can exercise fresh probe paths. */
+export function resetRuntimeFactsCache(): void {
+  factsByKey.clear();
+  settledFactsByKey.clear();
+}
+
+/** The command interpreter the agent's resolved backend will use. */
+export function resolveCommandPlatform(ctx: ToolContext): "posix" | "windows" {
+  return resolveBackends(ctx).command.platform ?? "posix";
+}
+
+// ---------------------------------------------------------------------------
+// Prompt section
+// ---------------------------------------------------------------------------
+
+export interface RuntimeContextSectionOptions {
+  agentCwd: string;
+  fileWorkspaceRoot?: string;
+  platform: "posix" | "windows";
+}
+
+function hasTool(facts: RuntimeExecutionFacts, tool: string): boolean {
+  return facts.available.includes(tool);
+}
+
+function toolFact(facts: RuntimeExecutionFacts, tool: string): string {
+  if (!facts.probed) return "unknown";
+  if (hasTool(facts, tool)) return "available";
+  return facts.missing.includes(tool) ? "missing" : "unknown";
+}
+
+function shellFact(facts: RuntimeExecutionFacts): string {
+  if (!facts.probed) return "unknown";
+  if (hasTool(facts, "bash")) return "bash";
+  if (hasTool(facts, "sh")) return "sh (no bash)";
+  return "missing";
+}
+
+function pythonFact(facts: RuntimeExecutionFacts): string {
+  if (!facts.probed) return "unknown";
+  if (hasTool(facts, "python3")) return "available (python3)";
+  if (hasTool(facts, "python")) return "available (python)";
+  return "missing";
+}
+
+function inventoryLine(facts: RuntimeExecutionFacts): string {
+  if (!facts.probed) {
+    return "Command-tool inventory: unknown (probe failed). Verify each tool before first use.";
+  }
+  const lines: string[] = [];
+  if (facts.available.length > 0) {
+    lines.push(`Command tools present: ${facts.available.join(", ")}`);
+  }
+  if (facts.missing.length > 0) {
+    lines.push(`Command tools absent: ${facts.missing.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Compact, persona-neutral execution facts appended to every system prompt
+ * the harness assembles (default, operator, Fast Strike, specialized). No
+ * environment variable names or values are emitted.
+ */
+export function buildRuntimeContextSection(
+  facts: RuntimeExecutionFacts,
+  opts: RuntimeContextSectionOptions,
+): string {
+  const verify =
+    opts.platform === "windows" ? "where <tool>" : "command -v <tool>";
+  const lines = [
+    "[RUNTIME CONTEXT]",
+    `OS: ${facts.probed ? (facts.os ?? "unknown") : "unknown"} | Shell: ${shellFact(facts)} | Python: ${pythonFact(facts)} | Node: ${toolFact(facts, "node")} | ffuf: ${toolFact(facts, "ffuf")}`,
+    inventoryLine(facts),
+    `Commands run in ${opts.agentCwd}.${opts.fileWorkspaceRoot ? ` Native file tools resolve relative paths inside ${opts.fileWorkspaceRoot}, independently of the shell's working directory.` : ""}`,
+    `Treat this inventory as facts, not as a checklist: pick techniques from evidence. When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists. For tools listed unknown, verify with \`${verify}\` before first use.`,
+    "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun. A successful file write alone does not establish that a helper works.",
+    "[/RUNTIME CONTEXT]",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+/**
+ * Authoritative inventory of CLI-bundled wordlist assets. The paths are
+ * host-local: only advertise them when commands actually execute locally —
+ * a sandbox or remote backend cannot resolve them without staging.
+ */
+export function buildBundledAssetsSection(): string | null {
+  const wordlists = getBundledWordlists();
+  if (wordlists === null) return null;
+
+  return `[BUNDLED ASSETS]
+This block is your authoritative inventory of wordlist assets shipped with the CLI. When the user asks what wordlists / assets / capabilities you have, answer directly from the entries below — do NOT probe the filesystem (\`ls /usr/share/wordlists\`, \`which gobuster\`, \`find / -name wordlists\`, etc.). Those paths are not where these live; the inventory is here.
+
+TINY_WORDLIST=${wordlists.tiny} (~200 entries — smoke checks / time-pressured runs)
+DEFAULT_WORDLIST=${wordlists.common} (~4.7k entries — normal recon, the default)
+LARGE_WORDLIST=${wordlists.large} (~30k entries — escalation only)
+
+These paths can be passed as \`-w\` arguments to gobuster/ffuf/dirb/wfuzz/dirsearch, OR iterated line-by-line in shell loops and \`http_request\` scripts. Their presence is NOT a reason to run a wordlist-based tool; choose techniques based on the task.
+
+If you do invoke a wordlist-based tool: default to DEFAULT_WORDLIST. Use TINY only under explicit time pressure or for a first-pass smoke probe. Use LARGE only after DEFAULT finishes and the target still looks under-mapped, or when the user explicitly asked for a deeper scan. Do NOT chain tiers automatically. Do NOT assume /usr/share/wordlists/* exists — it is missing on macOS, Alpine, most Docker images, and CI.
+[/BUNDLED ASSETS]`;
+}

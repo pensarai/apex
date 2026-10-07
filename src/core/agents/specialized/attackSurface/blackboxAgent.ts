@@ -6,7 +6,6 @@ import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
-import { detectOSAndEnhancePrompt } from "../utils";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
@@ -80,7 +79,7 @@ export const blackboxAttackSurfaceDefinition = defineAgent<
     }
     return { target: resolveBlackboxTarget(opts), subagentFolder };
   },
-  system: () => detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
+  system: () => ATTACK_SURFACE_SYSTEM_PROMPT,
   activeTools: () => [
     // Core recon tools
     "execute_command",

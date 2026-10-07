@@ -577,23 +577,22 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("# Tool Reference");
   });
 
-  // Regression guard: operator mode passes its own `system:` to the agent,
-  // which short-circuits the constructor's default `detectOSAndEnhancePrompt`
-  // call. Without wrapping here, the operator prompt loses [ENV CONTEXT] and
-  // [BUNDLED ASSETS] entirely — the model has no idea what wordlists or tools
-  // are available. See the discussion around the wordlist bundling work.
-  it("includes the [ENV CONTEXT] block from detectOSAndEnhancePrompt", () => {
+  // Regression guard (both directions): the agent harness appends runtime
+  // facts ([RUNTIME CONTEXT]) and the [BUNDLED ASSETS] inventory to every
+  // system prompt it assembles — custom personas included. The operator
+  // persona must NOT embed them itself, or the assembled prompt carries the
+  // blocks twice. Assembly coverage lives in
+  // src/core/agents/offSecAgent/offensiveSecurityAgent.runtimeContext.test.ts.
+  it("delegates [RUNTIME CONTEXT] and [BUNDLED ASSETS] to the agent harness", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
-    expect(prompt).toContain("[ENV CONTEXT]");
-    expect(prompt).toContain("[/ENV CONTEXT]");
-  });
-
-  it("includes the [BUNDLED ASSETS] inventory so the agent can answer capability questions", () => {
-    const prompt = buildOperatorSystemPrompt(target, state);
-    expect(prompt).toContain("[BUNDLED ASSETS]");
-    expect(prompt).toMatch(/TINY_WORDLIST=\S+tiny\.txt/);
-    expect(prompt).toMatch(/DEFAULT_WORDLIST=\S+common\.txt/);
-    expect(prompt).toMatch(/LARGE_WORDLIST=\S+large\.txt/);
+    expect(prompt).not.toContain("[RUNTIME CONTEXT]");
+    expect(prompt).not.toContain("[ENV CONTEXT]");
+    // The base prompt names the block in its wordlist rule; the inventory
+    // itself (tier variables) must come only from the harness append.
+    expect(prompt).not.toMatch(/TINY_WORDLIST=/);
+    expect(prompt).not.toMatch(/DEFAULT_WORDLIST=/);
+    expect(prompt).not.toMatch(/LARGE_WORDLIST=/);
+    expect(prompt).not.toContain("authoritative inventory");
   });
 
   it("includes plan mode prompt when agentMode is plan", () => {

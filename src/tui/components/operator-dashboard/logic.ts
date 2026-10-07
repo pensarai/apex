@@ -2,7 +2,6 @@ import {
   type AgentMode,
   buildBaseSystemPrompt,
 } from "../../../core/agents/offSecAgent";
-import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
 import type {
   OperatorMode,
   OperatorSessionState,
@@ -332,7 +331,10 @@ ${opts.approvedPlanContent}
     }
   }
 
-  let prompt = `${detectOSAndEnhancePrompt(buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode }))}
+  // Runtime execution facts and bundled assets are appended by the agent
+  // harness after this persona (OffensiveSecurityAgent assembles the final
+  // system prompt) — embedding them here would duplicate the blocks.
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
 
 # Operator Mode
 

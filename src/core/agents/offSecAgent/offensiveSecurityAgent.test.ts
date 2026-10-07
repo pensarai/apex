@@ -153,7 +153,7 @@ import {
 } from "./offensiveSecurityAgent";
 
 describe("assembled file-workspace instructions", () => {
-  it("does not treat Fast Strike helper tools as permission to edit target source", () => {
+  it("does not treat Fast Strike helper tools as permission to edit target source", async () => {
     const rootPath = mkdtempSync(join(tmpdir(), "apex-fast-strike-scope-"));
     const helperRoot = join(rootPath, "subagents", "worker", "helpers");
     streamResponseCalls.length = 0;
@@ -174,7 +174,7 @@ describe("assembled file-workspace instructions", () => {
         extraTools: { profile_codebase: {}, create_file: {} },
         sandbox: {},
       } as never);
-      void agent.streamResult;
+      await agent.streamReady();
       const request = streamResponseCalls[0];
       expect(request.activeTools).toContain("profile_codebase");
       expect(request.activeTools).toContain("create_file");
@@ -200,7 +200,7 @@ describe("assembled file-workspace instructions", () => {
     "spawned",
     "root",
     "custom-cwd",
-  ])("keeps %s worker file paths separate from shell and provided-file paths", (kind) => {
+  ])("keeps %s worker file paths separate from shell and provided-file paths", async (kind) => {
     const rootPath = mkdtempSync(join(tmpdir(), "apex-workspace-prompt-"));
     const scratchpadPath = join(rootPath, "scratchpad");
     const fileWorkspaceRoot =
@@ -229,7 +229,7 @@ describe("assembled file-workspace instructions", () => {
         ],
         sandbox: {},
       } as never);
-      void agent.streamResult;
+      await agent.streamReady();
       const system = streamResponseCalls[0].system as string;
       expect(system).toContain(`Your shell starts in ${agentCwd}`);
       expect(system).toContain(
@@ -305,7 +305,7 @@ describe("auxiliary model events", () => {
         onStepFinish,
       } as never);
 
-      void agent.streamResult;
+      await agent.streamReady();
       const call = streamResponseCalls[0] as {
         onStepFinish: (event: unknown) => Promise<void>;
       };
@@ -359,7 +359,7 @@ describe("auxiliary model events", () => {
         sandbox: {},
       } as never);
 
-      void agent.streamResult;
+      await agent.streamReady();
       const call = streamResponseCalls[0] as {
         onStepFinish: (event: unknown) => Promise<void>;
         onCacheMetrics?: unknown;
@@ -451,6 +451,11 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "eventBus", { value: bus });
   Object.defineProperty(agent, "streamResult", {
     value: { fullStream: overrides.fullStream },
+  });
+  // Stub bypasses the constructor, so pre-settle the initialization seam —
+  // consume() awaits streamReady before touching the (stubbed) streamResult.
+  Object.defineProperty(agent, "streamInit", {
+    value: Promise.resolve(),
   });
   Object.defineProperty(agent, "subagentId", {
     value: overrides.subagentId,
@@ -1292,7 +1297,9 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       try {
         await agent.consume();
-      } catch {}
+      } catch {
+        // Expected: the fixture stream fails; the aftermath below is the assertion.
+      }
 
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1329,7 +1336,9 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       try {
         await agent.consume();
-      } catch {}
+      } catch {
+        // Expected: the fixture stream fails; the aftermath below is the assertion.
+      }
 
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1437,7 +1446,9 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       try {
         await agent.consume();
-      } catch {}
+      } catch {
+        // Expected: the fixture stream fails; the aftermath below is the assertion.
+      }
 
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1493,7 +1504,9 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       try {
         await agent.consume();
-      } catch {}
+      } catch {
+        // Expected: the fixture stream fails; the aftermath below is the assertion.
+      }
 
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1584,7 +1597,9 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       try {
         await agent.consume();
-      } catch {}
+      } catch {
+        // Expected: the fixture stream fails; the aftermath below is the assertion.
+      }
       await new Promise((r) => setTimeout(r, 50));
 
       const written = JSON.parse(readFileSync(messagesPath, "utf-8"));
@@ -1627,7 +1642,9 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       try {
         await agent.consume();
-      } catch {}
+      } catch {
+        // Expected: the fixture stream fails; the aftermath below is the assertion.
+      }
       await new Promise((r) => setTimeout(r, 50));
 
       expect(
@@ -1776,7 +1793,9 @@ describe("owned-resource disposal", () => {
     // consume()'s finalization disconnects; later host teardown must not repeat it.
     try {
       await agent.consume();
-    } catch {}
+    } catch {
+      // Expected: the fixture stream fails; the aftermath below is the assertion.
+    }
     await agent.abortAndDrain();
     await agent.abortAndDrain();
 
