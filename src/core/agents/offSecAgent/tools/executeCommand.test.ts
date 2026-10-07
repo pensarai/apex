@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
@@ -20,6 +21,7 @@ import {
   MAX_COMMAND_TIMEOUT_SECONDS,
   normalizePromptInjectionPointer,
   redactSecretValues,
+  resolveExecuteCommandTimeoutInput,
   validateExecuteCommandTimeout,
 } from "./executeCommand";
 import { PerCommandShell } from "./perCommandShell";
@@ -758,3 +760,244 @@ it.skipIf(process.platform === "win32")(
     }
   },
 );
+
+describe("resolveExecuteCommandTimeoutInput", () => {
+  it("resolves canonical, legacy, and null-inactive inputs before the default", () => {
+    expect(resolveExecuteCommandTimeoutInput({ timeoutSeconds: 30 })).toEqual({
+      ok: true,
+      seconds: 30,
+    });
+    expect(resolveExecuteCommandTimeoutInput({ timeout: 45 })).toEqual({
+      ok: true,
+      seconds: 45,
+    });
+    // Null is an inactive spelling, not a value that fights the other alias.
+    expect(
+      resolveExecuteCommandTimeoutInput({ timeoutSeconds: null, timeout: 60 }),
+    ).toEqual({ ok: true, seconds: 60 });
+    expect(
+      resolveExecuteCommandTimeoutInput({ timeoutSeconds: 75, timeout: null }),
+    ).toEqual({ ok: true, seconds: 75 });
+    // Equal aliases agree on one deadline — accepted, not treated as a conflict.
+    expect(
+      resolveExecuteCommandTimeoutInput({ timeoutSeconds: 90, timeout: 90 }),
+    ).toEqual({ ok: true, seconds: 90 });
+    expect(resolveExecuteCommandTimeoutInput({})).toEqual({
+      ok: true,
+      seconds: undefined,
+    });
+    expect(
+      resolveExecuteCommandTimeoutInput({
+        timeoutSeconds: null,
+        timeout: null,
+      }),
+    ).toEqual({ ok: true, seconds: undefined });
+  });
+
+  it("rejects disagreeing aliases instead of guessing which one was meant", () => {
+    const r = resolveExecuteCommandTimeoutInput({
+      timeoutSeconds: 30,
+      timeout: 60,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("timeoutSeconds=30");
+      expect(r.error).toContain("timeout=60");
+      expect(r.error).toContain("seconds");
+    }
+  });
+});
+
+// Canonical-field contract: the wire schema the model sees, and the deadline
+// the executor enforces, must stay in lockstep across every alias spelling.
+describe("execute_command timeout fields (canonical timeoutSeconds)", () => {
+  function wireSchema() {
+    const t = executeCommand(makeCtx());
+    return asSchema(t.inputSchema);
+  }
+
+  it("serializes both spellings as nullable optional seconds in the wire schema", () => {
+    const json = wireSchema().jsonSchema as {
+      properties: Record<
+        string,
+        { anyOf?: { type: string }[]; description?: string } | undefined
+      >;
+      required?: string[];
+      additionalProperties?: boolean;
+    };
+    for (const field of ["timeoutSeconds", "timeout"]) {
+      expect(json.properties[field]?.anyOf?.map((t) => t.type)).toEqual([
+        "number",
+        "null",
+      ]);
+    }
+    expect(json.required ?? []).not.toContain("timeoutSeconds");
+    expect(json.required ?? []).not.toContain("timeout");
+    // Strict wire schema: no third spelling can sneak in.
+    expect(json.additionalProperties).toBe(false);
+    expect(json.properties.timeoutSeconds?.description).toContain("seconds");
+    expect(json.properties.timeout?.description).toContain("alias");
+  });
+
+  it("keeps null as an accepted inactive value on the SDK validation path", async () => {
+    const schema = wireSchema();
+    const nulled = await schema.validate?.({
+      toolCallDescription: "Probe null handling",
+      command: "echo ok",
+      timeoutSeconds: null,
+      timeout: null,
+    });
+    expect(nulled?.success).toBe(true);
+    if (nulled?.success) {
+      expect(nulled.value.timeoutSeconds).toBeNull();
+      expect(nulled.value.timeout).toBeNull();
+      // Unknown spellings are stripped by the strict schema — never a third alias.
+      expect(
+        (nulled.value as Record<string, unknown>).timeout_seconds,
+      ).toBeUndefined();
+    }
+    const wrongType = await schema.validate?.({
+      toolCallDescription: "Probe type handling",
+      command: "echo ok",
+      timeoutSeconds: "30",
+    });
+    expect(wrongType?.success).toBe(false);
+  });
+
+  function captureShell() {
+    const calls: {
+      opts?: { timeoutSeconds?: number } | undefined;
+    }[] = [];
+    const commandShell = {
+      execute: async (_command: string, opts?: unknown) => {
+        calls.push({ opts: opts as { timeoutSeconds?: number } | undefined });
+        return {
+          exitCode: 0,
+          stdout: "ok",
+          stderr: "",
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          cleanupUnconfirmed: false,
+        };
+      },
+    } as unknown as ToolContext["commandShell"];
+    return { calls, commandShell };
+  }
+
+  function callTool(
+    ctx: ToolContext,
+    input: Omit<ExecuteCommandInput, "toolCallDescription"> & {
+      command: string;
+    },
+  ): Promise<unknown> {
+    return executeCommand(ctx).execute?.(
+      {
+        toolCallDescription: "Timeout alias dispatch test",
+        ...input,
+      },
+      { toolCallId: "tc_alias", messages: [], abortSignal: undefined },
+    ) as Promise<unknown>;
+  }
+
+  it("dispatches the resolved seconds for every accepted alias shape", async () => {
+    const { calls, commandShell } = captureShell();
+    const ctx = makeCtx({ commandShell });
+
+    await callTool(ctx, { command: "echo a", timeoutSeconds: 30 });
+    await callTool(ctx, { command: "echo b", timeout: 45 });
+    await callTool(ctx, {
+      command: "echo c",
+      timeoutSeconds: null,
+      timeout: 60,
+    });
+    await callTool(ctx, {
+      command: "echo d",
+      timeoutSeconds: 75,
+      timeout: 75,
+    });
+    await callTool(ctx, {
+      command: "echo e",
+      timeoutSeconds: null,
+      timeout: null,
+    });
+    await callTool(ctx, { command: "echo f" });
+
+    expect(calls.map((c) => c.opts?.timeoutSeconds)).toEqual([
+      30,
+      45,
+      60,
+      75,
+      DEFAULT_COMMAND_TIMEOUT_SECONDS,
+      DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    ]);
+  });
+
+  it("rejects conflicting aliases before any command is dispatched", async () => {
+    const { calls, commandShell } = captureShell();
+    const ctx = makeCtx({ commandShell });
+
+    const result = (await callTool(ctx, {
+      command: "echo hello",
+      timeoutSeconds: 30,
+      timeout: 60,
+    })) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Conflicting timeout values");
+    expect(result.error).toContain("timeoutSeconds=30");
+    expect(result.error).toContain("timeout=60");
+    expect(result.stderr).toContain("Conflicting timeout values");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("validates the canonical field literally — over-max and non-positive values are rejected, not clamped", async () => {
+    const { calls, commandShell } = captureShell();
+    const ctx = makeCtx({ commandShell });
+
+    for (const bad of [0, -5, 700, 30_000]) {
+      const result = (await callTool(ctx, {
+        command: "echo hello",
+        timeoutSeconds: bad,
+      })) as ExecuteCommandResult;
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invalid timeout");
+      expect(result.error).toContain(String(bad));
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("terminates real process work on the canonical timeoutSeconds deadline", async () => {
+    const shell = new PerCommandShell();
+    try {
+      const result = (await callTool(
+        makeCtx({ commandShell: shell, agentCwd: process.cwd() }),
+        { command: "sleep 30", timeoutSeconds: 0.5 },
+      )) as ExecuteCommandResult;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Command timed out");
+      // The executor survived the kill and is immediately reusable.
+      const after = await shell.execute("echo ok", { timeoutSeconds: 5 });
+      expect(after.exitCode).toBe(0);
+      expect(after.stdout).toContain("ok");
+    } finally {
+      await shell.dispose();
+    }
+  }, 8_000);
+
+  it("an already-aborted caller wins over any timeout alias", async () => {
+    const { calls, commandShell } = captureShell();
+    const ac = new AbortController();
+    ac.abort();
+
+    const result = (await callTool(
+      makeCtx({ commandShell, abortSignal: ac.signal }),
+      { command: "echo hello", timeoutSeconds: 5 },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Command aborted by user");
+    expect(calls).toHaveLength(0);
+  });
+});

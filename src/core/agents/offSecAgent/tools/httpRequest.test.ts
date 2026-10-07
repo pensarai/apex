@@ -10,6 +10,7 @@ import http from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { asSchema } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   promptInjectionRef,
@@ -17,8 +18,14 @@ import {
 } from "../../../prompt-injections";
 import { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
+import { LocalBackends } from "../../../tools/backends/local";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
-import { type HttpRequestResult, httpRequest } from "./httpRequest";
+import {
+  DEFAULT_HTTP_TIMEOUT_MS,
+  type HttpRequestResult,
+  httpRequest,
+  resolveHttpRequestTimeoutInput,
+} from "./httpRequest";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
 
@@ -2113,4 +2120,248 @@ describe("httpRequest body liveness", () => {
 
     expect(calls.at(-1)?.opts?.timeout).toBe(40);
   });
+});
+
+describe("resolveHttpRequestTimeoutInput", () => {
+  it("resolves canonical, legacy, and null-inactive inputs before the default", () => {
+    expect(resolveHttpRequestTimeoutInput({ timeoutMs: 500 })).toEqual({
+      ok: true,
+      ms: 500,
+    });
+    expect(resolveHttpRequestTimeoutInput({ timeout: 600 })).toEqual({
+      ok: true,
+      ms: 600,
+    });
+    // Null is an inactive spelling, not a value that fights the other alias.
+    expect(
+      resolveHttpRequestTimeoutInput({ timeoutMs: null, timeout: 700 }),
+    ).toEqual({ ok: true, ms: 700 });
+    expect(
+      resolveHttpRequestTimeoutInput({ timeoutMs: 800, timeout: null }),
+    ).toEqual({ ok: true, ms: 800 });
+    // Equal aliases agree on one deadline — accepted, not treated as a conflict.
+    expect(
+      resolveHttpRequestTimeoutInput({ timeoutMs: 900, timeout: 900 }),
+    ).toEqual({ ok: true, ms: 900 });
+    expect(resolveHttpRequestTimeoutInput({})).toEqual({
+      ok: true,
+      ms: undefined,
+    });
+    expect(
+      resolveHttpRequestTimeoutInput({ timeoutMs: null, timeout: null }),
+    ).toEqual({ ok: true, ms: undefined });
+  });
+
+  it("rejects disagreeing aliases instead of guessing which one was meant", () => {
+    const r = resolveHttpRequestTimeoutInput({
+      timeoutMs: 500,
+      timeout: 900,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("timeoutMs=500");
+      expect(r.error).toContain("timeout=900");
+      expect(r.error).toContain("milliseconds");
+    }
+  });
+});
+
+// Canonical-field contract: the wire schema the model sees, and the deadline
+// the backend enforces, must stay in lockstep across every alias spelling.
+describe("http_request timeout fields (canonical timeoutMs)", () => {
+  function wireSchema() {
+    return asSchema(httpRequest(makeCtx()).inputSchema);
+  }
+
+  it("serializes both spellings as nullable optional milliseconds in the wire schema", () => {
+    const json = wireSchema().jsonSchema as {
+      properties: Record<
+        string,
+        { anyOf?: { type: string }[]; description?: string } | undefined
+      >;
+      required?: string[];
+      additionalProperties?: boolean;
+    };
+    for (const field of ["timeoutMs", "timeout"]) {
+      expect(json.properties[field]?.anyOf?.map((t) => t.type)).toEqual([
+        "number",
+        "null",
+      ]);
+    }
+    expect(json.required ?? []).not.toContain("timeoutMs");
+    expect(json.required ?? []).not.toContain("timeout");
+    // Strict wire schema: no third spelling can sneak in.
+    expect(json.additionalProperties).toBe(false);
+    expect(json.properties.timeoutMs?.description).toContain("milliseconds");
+    expect(json.properties.timeout?.description).toContain("alias");
+  });
+
+  it("keeps null as an accepted inactive value and schema defaults intact on the SDK validation path", async () => {
+    const schema = wireSchema();
+    const nulled = await schema.validate?.({
+      url: "https://example.com",
+      toolCallDescription: "Probe null handling",
+      timeoutMs: null,
+      timeout: null,
+    });
+    expect(nulled?.success).toBe(true);
+    if (nulled?.success) {
+      expect(nulled.value.timeoutMs).toBeNull();
+      expect(nulled.value.timeout).toBeNull();
+      // Non-alias defaults are untouched by timeout alias resolution.
+      expect(nulled.value.method).toBe("GET");
+      expect(nulled.value.followRedirects).toBe(false);
+      // Unknown spellings are stripped by the strict schema — never a third alias.
+      expect(
+        (nulled.value as Record<string, unknown>).timeoutMS,
+      ).toBeUndefined();
+    }
+    const wrongType = await schema.validate?.({
+      url: "https://example.com",
+      toolCallDescription: "Probe type handling",
+      timeoutMs: "500",
+    });
+    expect(wrongType?.success).toBe(false);
+  });
+
+  function ctxWithHttpTimeoutSpy(overrides: Partial<ToolContext> = {}) {
+    const captured: Array<number | undefined> = [];
+    const ctx = makeCtx(overrides);
+    const local = LocalBackends(ctx);
+    ctx.backends = {
+      ...local,
+      http: {
+        request: async (req, opts) => {
+          captured.push(opts?.timeoutMs);
+          return {
+            success: true,
+            status: 200,
+            statusText: "OK",
+            headers: {},
+            body: "ok",
+            url: req.url,
+            redirected: false,
+          };
+        },
+      },
+    };
+    return { ctx, captured };
+  }
+
+  type TimeoutAliasInput = {
+    url: string;
+    method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS" | "HEAD";
+    headers?: string;
+    body?: string;
+    followRedirects?: boolean;
+    timeoutMs?: number | null;
+    timeout?: number | null;
+    toolCallDescription?: string;
+  };
+
+  async function callTool(ctx: ToolContext, input: TimeoutAliasInput) {
+    return (await httpRequest(ctx).execute?.(
+      {
+        toolCallDescription: "Timeout alias dispatch test",
+        method: "GET",
+        followRedirects: false,
+        ...input,
+      },
+      { toolCallId: "tc_alias", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+  }
+
+  it("dispatches the resolved milliseconds for every accepted alias shape", async () => {
+    const { ctx, captured } = ctxWithHttpTimeoutSpy();
+
+    await callTool(ctx, { url: "https://example.com/a", timeoutMs: 500 });
+    await callTool(ctx, { url: "https://example.com/b", timeout: 600 });
+    await callTool(ctx, {
+      url: "https://example.com/c",
+      timeoutMs: null,
+      timeout: 700,
+    });
+    await callTool(ctx, {
+      url: "https://example.com/d",
+      timeoutMs: 800,
+      timeout: 800,
+    });
+    await callTool(ctx, {
+      url: "https://example.com/e",
+      timeoutMs: null,
+      timeout: null,
+    });
+    await callTool(ctx, { url: "https://example.com/f" });
+
+    expect(captured).toEqual([
+      500,
+      600,
+      700,
+      800,
+      DEFAULT_HTTP_TIMEOUT_MS,
+      DEFAULT_HTTP_TIMEOUT_MS,
+    ]);
+  });
+
+  it("rejects conflicting aliases before any request is dispatched", async () => {
+    const { ctx, captured } = ctxWithHttpTimeoutSpy();
+
+    const result = await callTool(ctx, {
+      url: "https://example.com/conflict",
+      timeoutMs: 500,
+      timeout: 900,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Conflicting timeout values");
+    expect(result.error).toContain("timeoutMs=500");
+    expect(result.error).toContain("timeout=900");
+    expect(result.capture.stopReason).toBe("error");
+    expect(captured).toEqual([]);
+  });
+
+  it("an already-aborted caller wins over any timeout alias", async () => {
+    const { ctx, captured } = ctxWithHttpTimeoutSpy();
+    const ac = new AbortController();
+    ac.abort();
+    ctx.abortSignal = ac.signal;
+
+    const result = await callTool(ctx, {
+      url: "https://example.com/aborted",
+      timeoutMs: 500,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("aborted");
+    expect(result.capture.stopReason).toBe("aborted");
+    expect(captured).toEqual([]);
+  });
+
+  it("enforces the canonical timeoutMs deadline on a stalled body (real timer)", async () => {
+    const enc = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(enc.encode("headers-arrived-body-stalls"));
+        // Never enqueues again and never closes — a stalling body.
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+    const result = (await httpRequest(makeCtx()).execute?.(
+      {
+        url: "https://example.com/stall-canonical",
+        method: "GET",
+        followRedirects: false,
+        timeoutMs: 100,
+        toolCallDescription: "Canonical-field GET with a stalling body",
+      },
+      { toolCallId: "tc_canonical", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Request timeout after 100ms");
+    expect(result.capture.stopReason).toBe("timeout");
+  }, 5_000);
 });
