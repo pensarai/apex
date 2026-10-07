@@ -462,9 +462,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       );
       if (inject.status === "unknown-tool" && !allow_unprotected) {
         const msg =
-          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
-          "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
-          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined or chained. " +
+          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host; literal `2>&1` is allowed, but pipelines, substitutions, and multiple hosts are not. " +
+          "Otherwise use the http_request tool, or pass allow_unprotected: true to acknowledge headers will NOT be sent.";
         return {
           success: false,
           error: msg,

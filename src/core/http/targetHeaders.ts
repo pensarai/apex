@@ -347,13 +347,59 @@ const shellInjectorRegistry: ReadonlyMap<string, ShellInjector> = new Map<
 const COMMAND_PREFIX_STRIP =
   /^\s*(?:sudo\s+(?:-[^\s]*\s+)*|timeout\s+\S+\s+|env\s+(?:\S+=\S+\s+)+|nohup\s+)+/;
 
+// A character that may directly follow a literal `2>&1` without extending
+// its target into a larger shell word. Quote characters and `(` are NOT
+// boundaries: `2>&1"x"` / `2>&1(…)` concatenate onto the target word, whose
+// expansion the shell executes.
+function isStderrMergeBoundary(ch: string | undefined): boolean {
+  if (ch === undefined) return true;
+  return /[\s;&|<>)]/.test(ch);
+}
+
+// `$` starts a live expansion — parameter (`$VAR`, `${…}`, `$1`, `$$`),
+// command (`$(…)`), or arithmetic (`$((…))`) — unless the next character
+// cannot continue one, in which case it is a literal dollar.
+function isDollarExpansionStart(ch: string | undefined): boolean {
+  if (ch === undefined) return false;
+  return /[A-Za-z_0-9({@$!*?#$-]/.test(ch);
+}
+
+// True when the `&` at index i is the ampersand of an unquoted, unescaped
+// literal `2>&1` (stderr duplicated onto stdout). POSIX shells expand the
+// target of `N>&word`, so `2>&$fd` or `2>&1$(…)` can execute substitutions —
+// only this exact token, with a boundary after the `1`, is treated as a
+// redirect; every other `&` keeps the chaining classification.
+function isStderrMergeAt(command: string, i: number): boolean {
+  return (
+    command[i - 2] === "2" &&
+    command[i - 1] === ">" &&
+    command[i + 1] === "1" &&
+    isStderrMergeBoundary(command[i + 2])
+  );
+}
+
+type OperatorScan = {
+  // `;`, `&`, `|` outside quotes — including a `2>&1` `&` whose redirect
+  // recognition was vetoed below
+  hasOperator: boolean;
+  // the command contains a literal `2>&1` recognized as a redirect
+  stderrMerge: boolean;
+};
+
 // Detect `;`, `&`, `|` outside quotes — a regex alone either matches
 // operators inside quoted args or misses no-whitespace pipelines like
 // `curl url|nc atk 9999`, so we walk the string with POSIX quote/escape
 // rules instead.
-function hasShellOperatorOutsideQuotes(command: string): boolean {
+function scanShellOperators(command: string): OperatorScan {
   let inSingle = false;
   let inDouble = false;
+  let mergeCandidate = false;
+  // Live substitution anywhere in the command, or an unquoted newline (a
+  // command separator), reverts the merge `&` to its chaining
+  // classification — recognizing the redirect must not widen acceptance
+  // for forms the operator check rejected before it existed.
+  let activeExpansion = false;
+  let unquotedNewline = false;
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (!inSingle && ch === "\\" && i + 1 < command.length) {
@@ -368,16 +414,41 @@ function hasShellOperatorOutsideQuotes(command: string): boolean {
       inDouble = !inDouble;
       continue;
     }
-    if (!inSingle && !inDouble) {
-      if (ch === ";" || ch === "&" || ch === "|") return true;
+    if (inSingle) continue;
+    // Backticks and `$`-expansions stay live inside double quotes; single
+    // quotes make them literal text. A `$SECOND_URL` arg could name a host
+    // no scope check has verified, so any live expansion vetoes the `2>&1`
+    // redirect recognition below.
+    if (ch === "`" || (ch === "$" && isDollarExpansionStart(command[i + 1]))) {
+      activeExpansion = true;
+      continue;
+    }
+    if (inDouble) continue;
+    if (ch === "\n") {
+      unquotedNewline = true;
+      continue;
+    }
+    // Process substitution is live only unquoted.
+    if ((ch === "<" || ch === ">") && command[i + 1] === "(") {
+      activeExpansion = true;
+      continue;
+    }
+    if (ch === "&" && isStderrMergeAt(command, i)) {
+      mergeCandidate = true;
+      i++; // skip the merge target digit
+      continue;
+    }
+    if (ch === ";" || ch === "&" || ch === "|") {
+      return { hasOperator: true, stderrMerge: false };
     }
   }
-  return false;
+  const stderrMerge = mergeCandidate && !activeExpansion && !unquotedNewline;
+  return { hasOperator: mergeCandidate && !stderrMerge, stderrMerge };
 }
 
 // Returns null for pipelined / chained commands so callers can fail closed.
 function extractLeadingTool(command: string): string | null {
-  if (hasShellOperatorOutsideQuotes(command)) return null;
+  if (scanShellOperators(command).hasOperator) return null;
   const stripped = command.replace(COMMAND_PREFIX_STRIP, "");
   const firstWord = stripped.trim().split(/\s+/)[0];
   return firstWord || null;
@@ -426,7 +497,8 @@ export type ApplyShellResult = {
 // Result statuses:
 //   - `no-headers`   nothing to inject (return command unchanged)
 //   - `injected`     command was rewritten with -H flags
-//   - `unknown-tool` headers exist but the tool/pipeline is unrecognized;
+//   - `unknown-tool` headers exist but the tool/pipeline is unrecognized,
+//                    or a `2>&1`-redirected command spans multiple hosts;
 //                    the caller MUST fail closed
 export function applyHeadersToShellCommand(
   command: string,
@@ -451,6 +523,17 @@ export function applyHeadersToShellCommand(
     if (leading && NON_HTTP_TOOLS.has(leading)) {
       return { command, status: "no-headers", tool: null };
     }
+    return { command, status: "unknown-tool", tool: null };
+  }
+
+  // Injected flags ride every URL on the line — `curl urlA urlB` sends each
+  // -H to both hosts — so the newly recognized `2>&1` must not widen
+  // acceptance for multi-host commands the operator check used to block.
+  // (Scope enforcement for all commands stays in the caller's scope guard.)
+  if (
+    new Set(commandHosts).size > 1 &&
+    scanShellOperators(command).stderrMerge
+  ) {
     return { command, status: "unknown-tool", tool: null };
   }
 
