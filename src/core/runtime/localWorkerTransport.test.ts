@@ -544,6 +544,38 @@ describe("spawn-safe connect classification", () => {
     );
     expect(error.code).toBe("ECONNREFUSED");
   });
+
+  it("marks a mutation against a missing socket as a definite absence", async () => {
+    const missing = path.join(socketPath(), "absent.sock");
+    const failure = await expectFailure(workerRequest(missing, startRequest));
+    expect(failure.code).toBe("ENOENT");
+    // The request never reached a peer, so the mutation is not uncertain.
+    expect(failure.uncertain).toBe(false);
+  });
+
+  it("marks a mutation against a stale socket as a definite absence", async () => {
+    if (typeof Bun === "undefined") return; // child runs under the Bun binary
+    const stalePath = socketPath();
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const net = require("node:net");
+` +
+          `net.createServer(() => {}).listen(${JSON.stringify(stalePath)}, () => { console.log("ready"); process.exit(0); });`,
+      ],
+      { stdio: ["ignore", "ignore", "ignore"] },
+    );
+    const exited = await new Promise<number | null>((resolve) =>
+      child.once("exit", resolve),
+    );
+    expect(exited).toBe(0);
+    expect(() => statSync(stalePath)).not.toThrow();
+
+    const failure = await expectFailure(workerRequest(stalePath, startRequest));
+    expect(failure.code).toBe("ECONNREFUSED");
+    expect(failure.uncertain).toBe(false);
+  });
 });
 
 describe("mutation uncertainty", () => {
@@ -747,6 +779,51 @@ describe("Bun connect race", () => {
     } finally {
       spy.mockRestore();
       await peer.close();
+    }
+  });
+
+  it("marks a Bun-lost mutation definite when the diagnostic recovers a missing endpoint", async () => {
+    const missing = path.join(socketPath(), "absent.sock");
+    const spy = failHttpConnect(1);
+    try {
+      const failure = await expectFailure(workerRequest(missing, startRequest));
+      expect(failure.code).toBe("ENOENT");
+      // The request never connected, so the mutation was never delivered.
+      expect(failure.uncertain).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps a connected mutation uncertain even when a later probe sees the endpoint absent", async () => {
+    const missing = path.join(socketPath(), "absent.sock");
+    const request = new EventEmitter() as http.ClientRequest;
+    request.destroy = vi.fn(() => request);
+    request.end = vi.fn(() => {
+      queueMicrotask(() => {
+        const socket = new EventEmitter();
+        request.emit("socket", socket);
+        socket.emit("connect");
+        request.emit(
+          "error",
+          Object.assign(new Error("Bun connect failed"), {
+            code: "FailedToOpenSocket",
+          }),
+        );
+      });
+      return request;
+    });
+    const spy = vi
+      .spyOn(http, "request")
+      .mockImplementation((() => request) as typeof http.request);
+    try {
+      const failure = await expectFailure(workerRequest(missing, startRequest));
+      // The request had connected; the mutation may have been applied, so
+      // a later absent diagnostic probe must not mark it safe.
+      expect(failure.uncertain).toBe(true);
+      expect(failure.code).toBeUndefined();
+    } finally {
+      spy.mockRestore();
     }
   });
 

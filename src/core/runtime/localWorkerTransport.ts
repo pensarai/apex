@@ -373,13 +373,18 @@ function requestOnce(
       // Bun collapses Unix connect failures; a native socket recovers the errno.
       if (cause.code === "FailedToOpenSocket" && !settled) {
         diagnostic = createConnection({ path: socketPath });
-        const unavailable = (code?: string) =>
+        // Absent before any connection is definite; once connected the
+        // request may have applied, so a later absent probe stays uncertain.
+        const unavailable = (code?: string) => {
+          const absent =
+            !connected && (code === "ENOENT" || code === "ECONNREFUSED");
           fail(
             new LocalWorkerTransportError(cause.message, {
-              ...(code === "ENOENT" || code === "ECONNREFUSED" ? { code } : {}),
-              uncertain: mutation,
+              ...(absent ? { code } : {}),
+              uncertain: mutation && !absent,
             }),
           );
+        };
         diagnostic.once("connect", () =>
           fail(
             new WorkerConnectionError(
