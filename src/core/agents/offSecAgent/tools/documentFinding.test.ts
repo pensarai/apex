@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -25,6 +26,7 @@ import {
   validatePocPortability,
 } from "./documentFinding";
 import { PerCommandShell } from "./perCommandShell";
+import type { ScriptSyntaxResult } from "./scriptSyntaxCheck";
 
 vi.mock("node:path", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:path")>();
@@ -1174,5 +1176,399 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("disk full");
     expect(findingsRegistry.unregister).toHaveBeenCalled();
+  });
+});
+
+describe("documentVulnerability native syntax checks", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  function sha256(content: string): string {
+    return createHash("sha256").update(content, "utf8").digest("hex");
+  }
+
+  // Classic-sandbox harness: file ops and commands all route through the
+  // sandbox transport (a real shell at remoteRoot), never the host shell.
+  function sandboxContext(
+    intercept?: (
+      command: string,
+    ) => { exitCode: number; stdout: string; stderr: string } | undefined,
+  ) {
+    const ctx = makeToolContext(rootPath);
+    const remoteRoot = mkdtempSync(join(rootPath, "remote-"));
+    const remoteShell = new PerCommandShell({ cwd: remoteRoot });
+    createdShells.push(remoteShell);
+    ctx.agentCwd = remoteRoot;
+    const commands: Array<{ command: string; cwd?: string; timeout?: number }> =
+      [];
+    const scriptBytes: Array<{ command: string; bytes: string }> = [];
+    const execute = vi.fn(
+      async (
+        command: string,
+        opts?: {
+          timeout?: number;
+          cwd?: string;
+          envVars?: Record<string, string>;
+        },
+      ) => {
+        commands.push({ command, cwd: opts?.cwd, timeout: opts?.timeout });
+        const intercepted = intercept?.(command);
+        if (intercepted)
+          return { ...intercepted, success: intercepted.exitCode === 0 };
+        const scriptPath = (command.split(" ").pop() ?? "").replace(
+          /^'|'$/g,
+          "",
+        );
+        if (scriptPath.includes(".pensar/pocs/") && existsSync(scriptPath))
+          scriptBytes.push({
+            command,
+            bytes: readFileSync(scriptPath, "utf8"),
+          });
+        const result = await remoteShell.execute(command, {
+          cwd: opts?.cwd ?? remoteRoot,
+          env: opts?.envVars,
+          timeoutSeconds: opts?.timeout,
+        });
+        return { ...result, success: result.exitCode === 0 };
+      },
+    );
+    ctx.sandbox = { type: "linux", execute };
+    return { ctx, commands, scriptBytes, remoteRoot };
+  }
+
+  it("blocks an intentionally malformed PoC before execution, with file/line feedback", async () => {
+    const { ctx, commands, remoteRoot } = sandboxContext();
+    const input = makeDocumentInput();
+    input.pocName = "broken_syntax";
+    input.pocContent = 'if [ -n x ]; then\n  echo "unclosed"\n';
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "syntax",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxFailed?: boolean;
+      syntaxCheck?: ScriptSyntaxResult;
+      message?: string;
+    };
+
+    expect(result).toMatchObject({ success: false, syntaxFailed: true });
+    expect(result.syntaxCheck?.status).toBe("invalid");
+    expect(result.syntaxCheck?.detail).toMatch(
+      /poc_broken_syntax\.sh:\d+: syntax error/,
+    );
+    expect(result.syntaxCheck?.contentHash).toBeTruthy();
+    expect(result.message).toContain("syntax check");
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    // The prepared executable was checked but never run.
+    const staged = posix.join(remoteRoot, ".pensar/pocs/poc_broken_syntax.sh");
+    expect(commands.some((c) => c.command === `bash -n '${staged}'`)).toBe(
+      true,
+    );
+    expect(commands.some((c) => c.command === `bash '${staged}'`)).toBe(false);
+    expect(existsSync(staged)).toBe(false);
+    expect(existsSync(join(ctx.session.pocsPath, "poc_broken_syntax.sh"))).toBe(
+      false,
+    );
+  });
+
+  it("checks the exact staged bytes with the execution cwd before running them", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, commands, scriptBytes, remoteRoot } = sandboxContext();
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "syntax-ok", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result).toMatchObject({ success: true });
+    const staged = posix.join(remoteRoot, ".pensar/pocs/poc_admin_data.sh");
+    const check = commands.find((c) => c.command === `bash -n '${staged}'`);
+    const run = commands.find((c) => c.command === `bash '${staged}'`);
+    expect(check).toBeTruthy();
+    expect(run).toBeTruthy();
+    expect(commands.indexOf(check as never)).toBeLessThan(
+      commands.indexOf(run as never),
+    );
+    // Same per-command cwd isolation and a bounded check deadline.
+    expect(check?.cwd).toBe(remoteRoot);
+    expect(check?.timeout).toBe(5);
+    expect(run?.cwd).toBe(remoteRoot);
+    expect(run?.timeout).toBe(60);
+    // The checked bytes are the executed bytes: the generated script with
+    // shebang and header, not the agent's raw pocContent.
+    const checked = scriptBytes.find(
+      (e) => e.command === check?.command,
+    )?.bytes;
+    const executed = scriptBytes.find((e) => e.command === run?.command)?.bytes;
+    expect(checked).toBeTruthy();
+    expect(checked).toBe(executed);
+    expect(checked?.startsWith("#!/bin/bash\n# POC:")).toBe(true);
+    expect(checked?.includes("set -e")).toBe(true);
+    expect(checked?.includes('echo "admin data leaked"')).toBe(true);
+    expect(checked).not.toBe(makeDocumentInput().pocContent);
+    // The surfaced verdict certifies exactly those bytes by hash.
+    const typedResult = result as DocumentToolResult & {
+      syntaxCheck?: ScriptSyntaxResult;
+    };
+    expect(typedResult.syntaxCheck?.status).toBe("valid");
+    expect(typedResult.syntaxCheck?.contentHash).toBe(
+      sha256(checked as string),
+    );
+  });
+
+  it("checks generated JavaScript with node before executing it", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, commands, remoteRoot } = sandboxContext();
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "javascript" as const,
+      pocName: "js_poc",
+      pocContent: 'console.log("js poc ok");',
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "js",
+      messages: [],
+    })) as DocumentToolResult;
+
+    expect(result).toMatchObject({ success: true });
+    const staged = posix.join(remoteRoot, ".pensar/pocs/poc_js_poc.js");
+    const check = commands.find(
+      (c) => c.command === `node --check '${staged}'`,
+    );
+    const run = commands.find((c) => c.command === `node '${staged}'`);
+    expect(check).toBeTruthy();
+    expect(run).toBeTruthy();
+    expect(commands.indexOf(check as never)).toBeLessThan(
+      commands.indexOf(run as never),
+    );
+  });
+
+  it("still executes and documents the PoC when the checker is missing (unchecked)", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, commands, remoteRoot } = sandboxContext((command) =>
+      command.includes("bash -n ")
+        ? { exitCode: 127, stdout: "", stderr: "bash: command not found" }
+        : undefined,
+    );
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "unchecked", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result).toMatchObject({ success: true });
+    const staged = posix.join(remoteRoot, ".pensar/pocs/poc_admin_data.sh");
+    expect(commands.some((c) => c.command === `bash -n '${staged}'`)).toBe(
+      true,
+    );
+    expect(commands.some((c) => c.command === `bash '${staged}'`)).toBe(true);
+  });
+
+  it("blocks a python PoC whose top-level return only full compilation rejects", async () => {
+    const { ctx, commands, remoteRoot } = sandboxContext();
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "py_return",
+      pocContent: "return 1",
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "py",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxFailed?: boolean;
+      syntaxCheck?: ScriptSyntaxResult;
+    };
+
+    expect(result).toMatchObject({ success: false, syntaxFailed: true });
+    expect(result.syntaxCheck?.status).toBe("invalid");
+    expect(result.syntaxCheck?.detail).toMatch(/return.*outside function/);
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    const staged = posix.join(remoteRoot, ".pensar/pocs/poc_py_return.py");
+    expect(commands.some((c) => c.command === `python3 '${staged}'`)).toBe(
+      false,
+    );
+  });
+
+  it("blocks a valid python generator whose declared emitted JavaScript is invalid", async () => {
+    const { ctx, commands, remoteRoot } = sandboxContext();
+    const emitted = "const = 1;\n";
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "gen_emit",
+      pocContent: [
+        'with open("poc_bad_emit.js", "w") as f:',
+        '    f.write("const = 1;")',
+        "    f.write(chr(10))",
+        'print("emitted")',
+      ].join("\n"),
+      generatedExecutableArtifacts: [
+        { path: "poc_bad_emit.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "gen",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxFailed?: boolean;
+      syntaxCheck?: ScriptSyntaxResult;
+      generatedArtifactChecks?: Array<
+        {
+          path: string;
+          language: string;
+        } & ScriptSyntaxResult
+      >;
+      message?: string;
+    };
+
+    expect(result).toMatchObject({ success: false, syntaxFailed: true });
+    // The wrapper itself parsed fine; only the declared emitted artifact failed.
+    expect(result.syntaxCheck?.status).toBe("valid");
+    expect(result.generatedArtifactChecks).toHaveLength(1);
+    const artifact = result.generatedArtifactChecks?.[0];
+    expect(artifact).toMatchObject({
+      path: "poc_bad_emit.js",
+      language: "javascript",
+      status: "invalid",
+    });
+    expect(artifact?.detail).toMatch(
+      /poc_bad_emit\.js:1: SyntaxError: Unexpected token/,
+    );
+    expect(artifact?.contentHash).toBe(sha256(emitted));
+    expect(result.message).toContain("Generated executable");
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    // Declared artifacts are checked, never mutated or deleted.
+    expect(existsSync(posix.join(remoteRoot, "poc_bad_emit.js"))).toBe(true);
+    // The wrapper PoC itself was still executed once, then cleaned up.
+    const stagedWrapper = posix.join(
+      remoteRoot,
+      ".pensar/pocs/poc_gen_emit.py",
+    );
+    expect(
+      commands.some((c) => c.command === `python3 '${stagedWrapper}'`),
+    ).toBe(true);
+    expect(existsSync(stagedWrapper)).toBe(false);
+    expect(existsSync(join(ctx.session.pocsPath, "poc_gen_emit.py"))).toBe(
+      false,
+    );
+  });
+
+  it("documents a generator whose declared emitted artifact parses, certifying it by hash", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, remoteRoot } = sandboxContext();
+    const emitted = 'console.log("emitted ok");\n';
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "gen_good",
+      pocContent: [
+        'with open("poc_good_emit.js", "w") as f:',
+        '    f.write("console.log(" + chr(34) + "emitted ok" + chr(34) + ");")',
+        "    f.write(chr(10))",
+        'print("emitted")',
+      ].join("\n"),
+      generatedExecutableArtifacts: [
+        { path: "poc_good_emit.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "gen-ok",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxCheck?: ScriptSyntaxResult;
+      generatedArtifactChecks?: Array<
+        {
+          path: string;
+          language: string;
+        } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    expect(result.syntaxCheck?.status).toBe("valid");
+    expect(result.generatedArtifactChecks).toHaveLength(1);
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "poc_good_emit.js",
+      language: "javascript",
+      status: "valid",
+    });
+    expect(result.generatedArtifactChecks?.[0]?.contentHash).toBe(
+      sha256(emitted),
+    );
+    expect(existsSync(posix.join(remoteRoot, "poc_good_emit.js"))).toBe(true);
+  });
+
+  it("surfaces unchecked, without blocking, when a declared artifact is absent after the run", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx } = sandboxContext();
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "gen_missing",
+      pocContent: 'print("no emission")',
+      generatedExecutableArtifacts: [
+        { path: "never_emitted.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "gen-missing",
+      messages: [],
+    })) as DocumentToolResult & {
+      generatedArtifactChecks?: Array<
+        {
+          path: string;
+          language: string;
+        } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    expect(result.generatedArtifactChecks).toHaveLength(1);
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "never_emitted.js",
+      status: "unchecked",
+    });
+    expect(result.generatedArtifactChecks?.[0]?.reason).toContain(
+      "could not read the script bytes",
+    );
+  });
+
+  it("rejects a declared artifact path that escapes the workspace before anything runs", async () => {
+    const { ctx, commands } = sandboxContext();
+    const input = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "../../outside.js", language: "bash" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "escape",
+      messages: [],
+    })) as DocumentToolResult & { message?: string };
+
+    expect(result).toMatchObject({ success: false });
+    expect(result.message).toContain(
+      "Generated executable declaration rejected",
+    );
+    expect(result.message).toContain("escapes");
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    // Nothing was staged, checked or executed.
+    expect(commands.some((c) => c.command.includes("bash -n "))).toBe(false);
+    expect(commands.some((c) => /^bash '/.test(c.command))).toBe(false);
   });
 });

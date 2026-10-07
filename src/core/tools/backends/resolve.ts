@@ -71,22 +71,48 @@ export async function appendArtifactSummary(
   return { success: true, error: "", path };
 }
 
-/** Native scripts use argv; remote scripts retain their journalled command bytes. */
-export function resolveScriptRunner(ctx: ToolContext) {
+function posixQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// Safe literal option arguments (flags) pass through unquoted so journalled
+// command bytes stay readable; anything else is single-quoted.
+function posixFlagArg(value: string): string {
+  return /^[-A-Za-z0-9_@+=:,./]+$/.test(value) ? value : posixQuote(value);
+}
+
+/**
+ * Transport for one program invocation: a runner, option arguments, and a
+ * final target path. The final argument is always single-quoted — native
+ * runs execute by argv while remote transports journal these exact command
+ * bytes — and preceding arguments pass through unquoted when they are safe
+ * literals.
+ */
+export function resolveProgramRunner(ctx: ToolContext) {
   const command =
     ctx.backends || ctx.sandbox ? resolveBackends(ctx).command : undefined;
-  return (runner: string, scriptPath: string, options?: RunOpts) => {
+  return (runner: string, args: string[], options?: RunOpts) => {
     if (command?.platform === "windows") {
-      const invocation = windowsProgramInvocation(runner, [scriptPath]);
+      const invocation = windowsProgramInvocation(runner, args);
       return command.run(invocation.command, {
         ...options,
         envVars: { ...options?.envVars, ...invocation.envVars },
       });
     }
-    const quotedPath = `'${scriptPath.replace(/'/g, `'\\''`)}'`;
-    const commandText = `${runner} ${quotedPath}`;
+    const commandText = [
+      runner,
+      ...args.slice(0, -1).map(posixFlagArg),
+      posixQuote(args[args.length - 1] ?? ""),
+    ].join(" ");
     return command
       ? command.run(commandText, options)
-      : runLocalProgram(ctx, commandText, runner, [scriptPath], options);
+      : runLocalProgram(ctx, commandText, runner, args, options);
   };
+}
+
+/** Native scripts use argv; remote scripts retain their journalled command bytes. */
+export function resolveScriptRunner(ctx: ToolContext) {
+  const runProgram = resolveProgramRunner(ctx);
+  return (runner: string, scriptPath: string, options?: RunOpts) =>
+    runProgram(runner, [scriptPath], options);
 }
