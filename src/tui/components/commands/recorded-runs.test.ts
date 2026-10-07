@@ -18,6 +18,11 @@ it.each([
   "resume-uncertain",
   "resume-rejected",
   "spec-start-uncertain",
+  "sequential-controls-before-watch-refresh",
+  "control-ack-keeps-newer-watch",
+  "control-stale-watch-keeps-ack",
+  "blockers-survive-actions-after-retirement",
+  "control-new-attempt-watch-beats-old-ack",
 ])("recorded-runs dialog lifecycle: %s", (scenario) => {
   // OpenTUI's native buffer bindings and bun:test mock.module run in Bun.
   const result = spawnSync(

@@ -9,6 +9,7 @@ import {
   openRecordedRunClient,
   type RecordedRunView,
 } from "../../../core/runtime/recordedRunClient";
+import type { RunControlRecord } from "../../../core/runtime/runControlStore";
 import type { RunRecord } from "../../../core/runtime/runStore";
 import { useDimensions } from "../../context/dimensions";
 import { type ThemeColors, useTheme } from "../../theme";
@@ -82,6 +83,30 @@ function workerErrorText(view: RecordedRunView): string | null {
     .join("\n");
 }
 
+// Control merges only within one execution attempt of one run: both views
+// must observe the same record attempt, and a retained or incoming control
+// must belong to that attempt. Otherwise the new view is taken unchanged —
+// state from different attempts is never mixed.
+function mergeViewControl(
+  current: RecordedRunView | null,
+  next: RecordedRunView,
+): RecordedRunView {
+  if (!current) return next;
+  if (current.runId !== next.runId) return next;
+  const attempt = next.observation.record?.attemptId;
+  if (!attempt || current.observation.record?.attemptId !== attempt)
+    return next;
+  const kept = current.observation.control;
+  const incoming = next.observation.control;
+  if (
+    kept?.executionAttemptId !== attempt ||
+    incoming?.executionAttemptId !== attempt
+  )
+    return next;
+  if (incoming.revision > kept.revision) return next;
+  return { ...next, observation: { ...next.observation, control: kept } };
+}
+
 function actionErrorText(action: string, cause: unknown): string {
   const message = cause instanceof Error ? cause.message : String(cause);
   if (cause instanceof LocalWorkerTransportError && cause.uncertain) {
@@ -114,8 +139,15 @@ export function RecordedRunsDialog({
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusLine, setStatusLine] = useState<string | null>(null);
-  // Worker retirement must not erase recovery blockers from the view.
+  // Action and watch failures surface here until the next action or view.
   const [stickyError, setStickyError] = useState<string | null>(null);
+  // Worker recovery blockers belong to the observed attempt: they survive
+  // retirement, actions, and idle views, and clear only on navigation or a
+  // watch confirming a different attempt.
+  const [workerBlockers, setWorkerBlockers] = useState<{
+    attemptId: string | null;
+    text: string;
+  } | null>(null);
   const [selectedApprovalIndex, setSelectedApprovalIndex] = useState(0);
 
   const startedOnce = useRef(false);
@@ -184,9 +216,23 @@ export function RecordedRunsDialog({
       try {
         for await (const next of client.watch(viewRunId, controller.signal)) {
           if (controller.signal.aborted) return;
-          setView(next);
+          setView((current) => mergeViewControl(current, next));
+          const attemptId = next.observation.record?.attemptId ?? null;
           const errorText = workerErrorText(next);
-          if (errorText) setStickyError(errorText);
+          if (errorText) {
+            setWorkerBlockers({ attemptId, text: errorText });
+          } else {
+            // A confirmed different execution attempt supersedes retained
+            // blockers; a same-attempt view without an error proves nothing.
+            setWorkerBlockers((current) =>
+              current &&
+              current.attemptId !== null &&
+              attemptId !== null &&
+              current.attemptId !== attemptId
+                ? null
+                : current,
+            );
+          }
         }
       } catch (cause) {
         if (!controller.signal.aborted) {
@@ -264,6 +310,7 @@ export function RecordedRunsDialog({
     navigationChanged.current = true;
     setView(null);
     setStickyError(null);
+    setWorkerBlockers(null);
     setStatusLine(null);
     setSelectedApprovalIndex(0);
     setPage("detail");
@@ -275,8 +322,25 @@ export function RecordedRunsDialog({
     setViewRunId(null);
     setView(null);
     setStickyError(null);
+    setWorkerBlockers(null);
     setStatusLine(null);
     setPage("list");
+  };
+
+  // Consume the authoritative acked control only when it belongs to the
+  // observed attempt of the same run — a rotated attempt means the view
+  // has moved on and the ack is ignored. Revision conflicts still throw.
+  const adoptControl = (record: RunControlRecord) => {
+    if (!mounted.current) return;
+    setView((current) => {
+      if (!current || current.runId !== record.runId) return current;
+      const attempt = current.observation.record?.attemptId;
+      if (!attempt || record.executionAttemptId !== attempt) return current;
+      return mergeViewControl(current, {
+        ...current,
+        observation: { ...current.observation, control: record },
+      });
+    });
   };
 
   const act = async (
@@ -385,7 +449,12 @@ export function RecordedRunsDialog({
     if (key.name === "p" && view?.observation.control) {
       const control = view.observation.control;
       await act("Pause", async (opened) => {
-        await opened.requestControl(view.runId, "pause", control.revision);
+        const updated = await opened.requestControl(
+          view.runId,
+          "pause",
+          control.revision,
+        );
+        adoptControl(updated);
         return "Pause requested";
       });
       return;
@@ -393,7 +462,12 @@ export function RecordedRunsDialog({
     if (key.name === "s" && view?.observation.control) {
       const control = view.observation.control;
       await act("Stop", async (opened) => {
-        await opened.requestControl(view.runId, "stop", control.revision);
+        const updated = await opened.requestControl(
+          view.runId,
+          "stop",
+          control.revision,
+        );
+        adoptControl(updated);
         return "Stop requested";
       });
       return;
@@ -554,6 +628,7 @@ export function RecordedRunsDialog({
           <text fg={colors.textMuted}>Reading committed state…</text>
         )}
         {stickyError && <text fg={colors.error}>{stickyError}</text>}
+        {workerBlockers && <text fg={colors.error}>{workerBlockers.text}</text>}
         {statusLine && <text fg={colors.success}>{statusLine}</text>}
         {view && (
           <box flexDirection="column" width="100%" overflow="hidden">

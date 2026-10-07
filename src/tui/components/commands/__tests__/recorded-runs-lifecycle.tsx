@@ -26,6 +26,7 @@ assert.ok(scenario, "a scenario argument is required");
 
 const RUN_ID = "run_c5_lifecycle";
 const EXEC_ID = "exec_00000000-0000-4000-8000-00000000c5ee";
+const EXEC_ID_2 = "exec_00000001-0000-4000-8000-00000000c5ee";
 
 const spec: RecordedRunSpec = {
   schemaVersion: 1,
@@ -121,6 +122,9 @@ let watchSignal: AbortSignal | undefined;
 let closes = 0;
 let nextView: RecordedRunView | undefined;
 let wake: (() => void) | undefined;
+// The store compare-and-swaps control revisions; the mock mirrors that.
+let controlState: RunControlRecord = { ...control };
+let controlGated = false;
 const saved =
   scenario === "scroll-transcript"
     ? {
@@ -256,7 +260,15 @@ const client: RecordedRunClient = {
   },
   requestControl: async (...args) => {
     calls.push({ method: "requestControl", args });
-    return { ...control, intent: args[1], revision: args[2] + 1 };
+    if (args[2] !== controlState.revision)
+      throw new Error("Control revision conflict");
+    controlState = { ...controlState, intent: args[1], revision: args[2] + 1 };
+    const updated = { ...controlState };
+    if (controlGated)
+      await new Promise<void>((resolve) => {
+        finishControl = resolve;
+      });
+    return updated;
   },
   resolveApproval: async (...args) => {
     calls.push({ method: "resolveApproval", args });
@@ -272,6 +284,7 @@ let finishOpen: ((client: RecordedRunClient) => void) | undefined;
 let finishStart: (() => void) | undefined;
 let listGated = false;
 let finishList: (() => void) | undefined;
+let finishControl: (() => void) | undefined;
 mock.module(
   `${import.meta.dirname}/../../../../core/runtime/recordedRunClient.ts`,
   () => ({
@@ -434,14 +447,15 @@ try {
     text = await frame();
     rendered(text, "Resume outcome uncertain:");
     assert.equal(calls.filter((call) => call.method === "resume").length, 1);
-    // Uncertainty does not block an operator's pause or stop request.
+    // Uncertainty does not block an operator's pause or stop request; the
+    // stop consumes the acked pause revision instead of the stale one.
     await press("p");
     await press("s");
     assert.deepEqual(
       calls.filter((call) => call.method === "requestControl"),
       [
         { method: "requestControl", args: [RUN_ID, "pause", 3] },
-        { method: "requestControl", args: [RUN_ID, "stop", 3] },
+        { method: "requestControl", args: [RUN_ID, "stop", 4] },
       ],
     );
     // Explicit retry uses the inspected attempt; the runtime fences execution.
@@ -618,6 +632,194 @@ try {
     rendered(text, `› ${RUN_ID}`);
     await press("RETURN");
     rendered(await frame(), `Recorded Run ${RUN_ID}`);
+  } else if (scenario === "sequential-controls-before-watch-refresh") {
+    rendered(await frame(), "Control run · revision 3");
+    await press("p");
+    let text = await frame();
+    rendered(text, "Pause requested");
+    // The acked record is consumed; no watch refresh is needed to see it.
+    rendered(text, "Control pause · revision 4");
+    await press("s");
+    text = await frame();
+    rendered(text, "Stop requested");
+    assert.ok(!text.includes("Stop failed"));
+    assert.deepEqual(calls.at(-1), {
+      method: "requestControl",
+      args: [RUN_ID, "stop", 4],
+    });
+  } else if (scenario === "control-ack-keeps-newer-watch") {
+    rendered(await frame(), "Control run · revision 3");
+    controlGated = true;
+    await press("p");
+    for (let i = 0; i < 20 && !finishControl; i++)
+      await act(async () => {
+        await Bun.sleep(10);
+      });
+    assert.ok(finishControl, "the control request never began");
+    // Another client stops the run while our pause ack is still in flight.
+    controlState = { ...controlState, intent: "stop", revision: 5 };
+    await push({
+      ...saved,
+      observation: {
+        ...observation,
+        control: { ...control, intent: "stop", revision: 5 },
+      },
+    });
+    rendered(await frame(), "Control stop · revision 5");
+    await act(async () => finishControl?.());
+    await settle();
+    // Only the pause response was delayed; later controls answer directly.
+    controlGated = false;
+    // The older ack must not downgrade the newer watched control.
+    const keptText = await frame();
+    rendered(keptText, "Control stop · revision 5");
+    rendered(keptText, "Pause requested");
+    await press("s");
+    const stopText = await frame();
+    rendered(stopText, "Stop requested");
+    assert.deepEqual(calls.at(-1), {
+      method: "requestControl",
+      args: [RUN_ID, "stop", 5],
+    });
+  } else if (scenario === "control-stale-watch-keeps-ack") {
+    rendered(await frame(), "Control run · revision 3");
+    await press("p");
+    let text = await frame();
+    rendered(text, "Pause requested");
+    rendered(text, "Control pause · revision 4");
+    // A snapshot queued before the pause arrives after the ack.
+    await push(saved);
+    text = await frame();
+    rendered(text, "Control pause · revision 4");
+    await press("s");
+    const stopText = await frame();
+    rendered(stopText, "Stop requested");
+    assert.ok(!stopText.includes("Stop failed"));
+    assert.deepEqual(calls.at(-1), {
+      method: "requestControl",
+      args: [RUN_ID, "stop", 4],
+    });
+  } else if (scenario === "blockers-survive-actions-after-retirement") {
+    await push({
+      ...saved,
+      connection: "connected",
+      worker: {
+        ...snapshot,
+        phase: "settled",
+        error: {
+          message: "Recovery blocked",
+          blockers: ["Unknown tool outcome"],
+        },
+      },
+    });
+    rendered(await frame(), "Recovery blocked");
+    // The worker retires; the offline view no longer carries the blockers.
+    await push(saved);
+    let text = await frame();
+    rendered(text, "offline");
+    rendered(text, "Recovery blocked");
+    rendered(text, "Unknown tool outcome");
+    // Unrelated actions must not erase the retained blockers.
+    await press("p");
+    text = await frame();
+    rendered(text, "Pause requested");
+    rendered(text, "Recovery blocked");
+    rendered(text, "Unknown tool outcome");
+    await press("y");
+    text = await frame();
+    rendered(text, "Approved http_request");
+    rendered(text, "Recovery blocked");
+    rendered(text, "Unknown tool outcome");
+    await press("s");
+    text = await frame();
+    rendered(text, "Stop requested");
+    rendered(text, "Recovery blocked");
+    rendered(text, "Unknown tool outcome");
+    // A connected idle host with no error proves nothing; blockers stay.
+    await push({
+      ...saved,
+      connection: "connected",
+      worker: { ...snapshot, phase: "idle" },
+    });
+    text = await frame();
+    rendered(text, "live");
+    rendered(text, "Recovery blocked");
+    rendered(text, "Unknown tool outcome");
+    // A watch confirming a different execution attempt supersedes them.
+    const recoveredRecord = RunRecordSchema.parse({
+      ...record,
+      attemptId: EXEC_ID_2,
+    });
+    await push({
+      ...saved,
+      observation: {
+        ...observation,
+        record: recoveredRecord,
+        control: {
+          ...control,
+          executionAttemptId: EXEC_ID_2,
+          intent: "run",
+          revision: 6,
+        },
+      },
+    });
+    const recoveredText = await frame();
+    rendered(recoveredText, "attempt exec_00000001-0…");
+    assert.ok(!recoveredText.includes("Recovery blocked"));
+    assert.ok(!recoveredText.includes("Unknown tool outcome"));
+  } else if (scenario === "control-new-attempt-watch-beats-old-ack") {
+    rendered(await frame(), "Control run · revision 3");
+    controlGated = true;
+    await press("p");
+    for (let i = 0; i < 20 && !finishControl; i++)
+      await act(async () => {
+        await Bun.sleep(10);
+      });
+    assert.ok(finishControl, "the control request never began");
+    // A recovery claim rotates the attempt while our pause ack is in flight.
+    const claimedRecord = RunRecordSchema.parse({
+      ...record,
+      attemptId: EXEC_ID_2,
+    });
+    controlState = {
+      ...controlState,
+      executionAttemptId: EXEC_ID_2,
+      intent: "run",
+      revision: 5,
+    };
+    await push({
+      ...saved,
+      observation: {
+        ...observation,
+        record: claimedRecord,
+        control: {
+          ...control,
+          executionAttemptId: EXEC_ID_2,
+          intent: "run",
+          revision: 5,
+        },
+      },
+    });
+    let text = await frame();
+    rendered(text, "Control run · revision 5");
+    rendered(text, "attempt exec_00000001-0…");
+    // Only the pause response was delayed; later controls answer directly.
+    controlGated = false;
+    await act(async () => finishControl?.());
+    await settle();
+    // The old-attempt ack is ignored: the new attempt stays consistent.
+    text = await frame();
+    rendered(text, "Control run · revision 5");
+    rendered(text, "attempt exec_00000001-0…");
+    rendered(text, "Pause requested");
+    assert.ok(!text.includes("Control pause · revision 4"));
+    await press("s");
+    const stopText = await frame();
+    rendered(stopText, "Stop requested");
+    assert.deepEqual(calls.at(-1), {
+      method: "requestControl",
+      args: [RUN_ID, "stop", 5],
+    });
   } else if (scenario === "scroll-transcript") {
     await press("END");
     rendered(await frame(), "committed-line-59");
