@@ -4,7 +4,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { acquireLocalRunLock } from "./localRunLock";
 import { resolveWorkerEndpoint } from "./localWorkerEndpoint";
 import type { LocalWorkerRequest, WorkerSnapshot } from "./localWorkerProtocol";
-import { serveWorkerTransport } from "./localWorkerTransport";
+import {
+  LocalWorkerRequestRejectedError,
+  serveWorkerTransport,
+} from "./localWorkerTransport";
 import { RecordedRunSpecSchema } from "./runStore";
 import { openSqliteRunStore } from "./sqliteRunStore";
 
@@ -95,15 +98,29 @@ export async function serveLocalRunWorker(
 
   const start = async (request: ExecutionRequest) => {
     const saved = await store.get(runId);
-    if (closing) throw new Error("Worker is shutting down");
+    if (closing) {
+      throw new LocalWorkerRequestRejectedError("Worker is shutting down");
+    }
     if (request.method === "start") {
-      const spec = RecordedRunSpecSchema.parse(request.spec);
-      if (spec.runId !== runId) throw new Error("Worker run ID mismatch");
+      const parsed = RecordedRunSpecSchema.safeParse(request.spec);
+      if (!parsed.success) {
+        throw new LocalWorkerRequestRejectedError(
+          `Invalid run spec: ${parsed.error.message}`,
+        );
+      }
+      const spec = parsed.data;
+      if (spec.runId !== runId) {
+        throw new LocalWorkerRequestRejectedError("Worker run ID mismatch");
+      }
       if (saved && JSON.stringify(saved.spec) !== JSON.stringify(spec)) {
-        throw new Error("Run ID already has a different specification");
+        throw new LocalWorkerRequestRejectedError(
+          "Run ID already has a different specification",
+        );
       }
       if (invocation && invocation.method !== "start") {
-        throw new Error("Worker already accepted a recovery request");
+        throw new LocalWorkerRequestRejectedError(
+          "Worker already accepted a recovery request",
+        );
       }
       if (saved || invocation) {
         if (phase === "idle") {
@@ -118,12 +135,16 @@ export async function serveLocalRunWorker(
           invocation.method !== "resume" ||
           invocation.expectedAttemptId !== request.expectedAttemptId
         ) {
-          throw new Error("Worker already accepted a different execution");
+          throw new LocalWorkerRequestRejectedError(
+            "Worker already accepted a different execution",
+          );
         }
         return;
       }
       if (!saved || saved.attemptId !== request.expectedAttemptId) {
-        throw new Error("Recovery attempt changed; inspect the run again");
+        throw new LocalWorkerRequestRejectedError(
+          "Recovery attempt changed; inspect the run again",
+        );
       }
     }
 
@@ -135,21 +156,42 @@ export async function serveLocalRunWorker(
       .then(() =>
         options.execute({ request, store, signal: controller.signal }),
       )
-      .then(
-        () => undefined,
-        (cause: unknown) => {
-          error = {
-            message: cause instanceof Error ? cause.message : String(cause),
-            ...(cause instanceof Error &&
-            "blockers" in cause &&
-            Array.isArray(cause.blockers) &&
-            cause.blockers.every((item) => typeof item === "string")
-              ? { blockers: cause.blockers as string[] }
-              : {}),
-          };
-          console.error(`Local worker execution failed: ${error.message}`);
-        },
-      )
+      .then(async (value) => {
+        // started:false with a still-admitted record means another
+        // invocation admitted this run; stopped/paused/terminal
+        // no-starts are legitimate outcomes.
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          "started" in value &&
+          value.started === false
+        ) {
+          const saved = await store.get(runId);
+          if (
+            saved &&
+            (saved.status === "admitted" || saved.status === "running")
+          ) {
+            error = {
+              message: `Run ${runId} is already admitted (last status: ${saved.status}); this worker did not start it. Inspect the run before resuming`,
+            };
+            console.error(
+              `Local worker did not own execution: ${error.message}`,
+            );
+          }
+        }
+      })
+      .catch((cause: unknown) => {
+        error = {
+          message: cause instanceof Error ? cause.message : String(cause),
+          ...(cause instanceof Error &&
+          "blockers" in cause &&
+          Array.isArray(cause.blockers) &&
+          cause.blockers.every((item) => typeof item === "string")
+            ? { blockers: cause.blockers as string[] }
+            : {}),
+        };
+        console.error(`Local worker execution failed: ${error.message}`);
+      })
       .finally(() => {
         phase = "settled";
         readAt = 0;
@@ -158,7 +200,9 @@ export async function serveLocalRunWorker(
   };
 
   const mutate = async (request: LocalWorkerRequest) => {
-    if (closing) throw new Error("Worker is shutting down");
+    if (closing) {
+      throw new LocalWorkerRequestRejectedError("Worker is shutting down");
+    }
     switch (request.method) {
       case "start":
       case "resume":
