@@ -5,7 +5,8 @@ import { collectCommand } from "../../../tools/backends/collectCommand";
 import { resolveBackends } from "../../../tools/backends/resolve";
 import { resolveWhiteboxJobs } from "../../../tools/backends/whiteboxJobs";
 import {
-  readWhiteboxArtifact,
+  readTextPrefix,
+  resolveSessionWhiteboxArtifactPath,
   resolveWhiteboxCodebaseRoot,
   type WhiteboxJobRecord,
   writeWhiteboxArtifact,
@@ -61,6 +62,33 @@ const HIT_PREFIX = "[apex-callback] hit ";
 const LISTENING_PREFIX = "[apex-callback] listening ";
 const BIND_FAILED_PREFIX = "[apex-callback] bind-failed ";
 
+/** Validate and normalize one parsed hit record; undefined for malformed. */
+function asCallbackHit(value: unknown): CallbackHit | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const rec = value as CallbackHit;
+  if (
+    typeof rec.ts !== "string" ||
+    typeof rec.method !== "string" ||
+    typeof rec.path !== "string" ||
+    (rec.source !== "callback" &&
+      rec.source !== "selftest" &&
+      rec.source !== "unrelated") ||
+    typeof rec.ip !== "string" ||
+    typeof rec.body !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    ts: rec.ts,
+    method: rec.method,
+    path: rec.path.slice(0, 512),
+    source: rec.source,
+    ip: rec.ip,
+    body: rec.body,
+    ...(rec.bodyCapped ? { bodyCapped: true } : {}),
+  };
+}
+
 /** Parse the listener's structured log lines (one JSON hit per line). */
 export function parseCallbackListenerLog(content: string): CallbackLogEvidence {
   const evidence: CallbackLogEvidence = { hits: [] };
@@ -74,27 +102,8 @@ export function parseCallbackListenerLog(content: string): CallbackLogEvidence {
       }
     } else if (line.startsWith(HIT_PREFIX)) {
       try {
-        const rec = JSON.parse(line.slice(HIT_PREFIX.length)) as CallbackHit;
-        if (
-          typeof rec.ts === "string" &&
-          typeof rec.method === "string" &&
-          typeof rec.path === "string" &&
-          (rec.source === "callback" ||
-            rec.source === "selftest" ||
-            rec.source === "unrelated") &&
-          typeof rec.ip === "string" &&
-          typeof rec.body === "string"
-        ) {
-          evidence.hits.push({
-            ts: rec.ts,
-            method: rec.method,
-            path: rec.path.slice(0, 512),
-            source: rec.source,
-            ip: rec.ip,
-            body: rec.body,
-            ...(rec.bodyCapped ? { bodyCapped: true } : {}),
-          });
-        }
+        const hit = asCallbackHit(JSON.parse(line.slice(HIT_PREFIX.length)));
+        if (hit) evidence.hits.push(hit);
       } catch {
         // Partial line at the log-tail boundary — skip.
       }
@@ -238,12 +247,32 @@ export class CallbackListenerRegistry {
   }
 }
 
+/**
+ * Compose the nonce callback URL from an advertised base, path-aware: the
+ * base's route prefix is kept, its query (tokenized routes) stays after the
+ * path, and fragments are stripped — HTTP clients never send them.
+ */
+export function composeCallbackUrl(
+  advertisedBaseUrl: string,
+  nonce: string,
+): string | undefined {
+  try {
+    const url = new URL(advertisedBaseUrl);
+    const route = url.pathname.replace(/\/+$/, "");
+    url.pathname = `${route}/${nonce}/cb`;
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function callbackUrlFor(handle: {
   nonce: string;
   advertisedBaseUrl?: string;
 }): string | undefined {
   return handle.advertisedBaseUrl
-    ? `${handle.advertisedBaseUrl.replace(/\/+$/, "")}/${handle.nonce}/cb`
+    ? composeCallbackUrl(handle.advertisedBaseUrl, handle.nonce)
     : undefined;
 }
 
@@ -383,6 +412,91 @@ async function persistEvidenceSnapshot(input: {
   }
 }
 
+// Retained snapshots are read through the bounded session-artifact prefix
+// seam, capped at one million UTF-16 code units (readTextPrefix counts
+// chars, not bytes); truncation is detected before parsing.
+const MAX_SNAPSHOT_READ_CHARS = 1_000_000;
+
+type SnapshotRead =
+  | { kind: "ok"; evidence: CallbackLogEvidence; logTruncated: boolean }
+  | { kind: "absent" }
+  | { kind: "unreadable"; reason: string };
+
+/**
+ * Read a retained evidence snapshot through the session-artifact seam —
+ * the same owner/path resolver and bounded prefix IO that wrote it. A
+ * missing file is absent; anything else that defeats the read is reported
+ * as unreadable with its reason, never as absence.
+ */
+async function readSnapshotEvidence(
+  session: { rootPath: string },
+  artifactPath: string,
+): Promise<SnapshotRead> {
+  let absolute: string;
+  try {
+    absolute = resolveSessionWhiteboxArtifactPath({
+      sessionRootPath: session.rootPath,
+      artifactRelativePath: artifactPath,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { kind: "unreadable", reason: `path rejected: ${msg}` };
+  }
+  let read: { content: string; truncated: boolean };
+  try {
+    read = await readTextPrefix(absolute, MAX_SNAPSHOT_READ_CHARS);
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return { kind: "absent" };
+    }
+    const msg = error instanceof Error ? error.message : String(error);
+    return { kind: "unreadable", reason: `read failed: ${msg}` };
+  }
+  // Truncation is checked before parsing: a cut JSON body cannot parse and
+  // must be reported as capped, not as corrupt or absent.
+  if (read.truncated) {
+    return {
+      kind: "unreadable",
+      reason: `exceeds the bounded read cap of ${MAX_SNAPSHOT_READ_CHARS} chars`,
+    };
+  }
+  try {
+    const parsed = JSON.parse(read.content) as {
+      hits?: unknown;
+      listening?: CallbackLogEvidence["listening"];
+      bindFailed?: CallbackLogEvidence["bindFailed"];
+      logTruncated?: boolean;
+    };
+    // A snapshot this helper wrote always carries an array of valid hit
+    // entries; anything else is corruption, never a zero/partial success.
+    if (!Array.isArray(parsed.hits)) {
+      return { kind: "unreadable", reason: "corrupt (hits is not an array)" };
+    }
+    const hits: CallbackHit[] = [];
+    for (const entry of parsed.hits) {
+      const hit = asCallbackHit(entry);
+      if (!hit) {
+        return {
+          kind: "unreadable",
+          reason: "corrupt (malformed hit entry)",
+        };
+      }
+      hits.push(hit);
+    }
+    return {
+      kind: "ok",
+      evidence: {
+        listening: parsed.listening,
+        bindFailed: parsed.bindFailed,
+        hits,
+      },
+      logTruncated: parsed.logTruncated === true,
+    };
+  } catch {
+    return { kind: "unreadable", reason: "corrupt (not valid JSON)" };
+  }
+}
+
 /** Read the live job log for an owned handle; `gone` = no live record. */
 async function readListenerLog(
   ctx: ToolContext,
@@ -395,7 +509,7 @@ async function readListenerLog(
       logTruncated: boolean;
       gone: boolean;
     }
-  | { ok: false; summary: string }
+  | { ok: false; summary: string; artifactPath?: string }
 > {
   const jobs = resolveWhiteboxJobs(ctx);
   let record: WhiteboxJobRecord | undefined;
@@ -417,30 +531,24 @@ async function readListenerLog(
   }
   // Record gone (pruned/expired): the persisted snapshot is retrieval-only.
   if (handle.artifactPath) {
-    try {
-      const loaded = await readWhiteboxArtifact({
-        session: ctx.session,
-        path: handle.artifactPath,
-      });
-      const parsed = JSON.parse(loaded.content) as {
-        hits?: CallbackHit[];
-        listening?: CallbackLogEvidence["listening"];
-        bindFailed?: CallbackLogEvidence["bindFailed"];
-        logTruncated?: boolean;
-        status?: string;
-      };
+    const snapshot = await readSnapshotEvidence(
+      ctx.session,
+      handle.artifactPath,
+    );
+    if (snapshot.kind === "ok") {
       return {
         ok: true,
-        evidence: {
-          listening: parsed.listening,
-          bindFailed: parsed.bindFailed,
-          hits: parsed.hits ?? [],
-        },
-        logTruncated: parsed.logTruncated === true,
+        evidence: snapshot.evidence,
+        logTruncated: snapshot.logTruncated,
         gone: true,
       };
-    } catch {
-      // fall through to explicit unknown
+    }
+    if (snapshot.kind === "unreadable") {
+      return {
+        ok: false,
+        summary: `Listener ${handle.jobId}'s retained evidence snapshot could not be read (${snapshot.reason}); the snapshot is preserved for direct inspection.`,
+        artifactPath: handle.artifactPath,
+      };
     }
   }
   return {
@@ -468,12 +576,12 @@ const bindAddressSchema = z
 function failureResult(
   summary: string,
   nextActions?: string[],
-  data?: { jobId: string },
+  data?: { jobId: string; artifactPath?: string },
 ) {
   return {
     success: false as const,
     summary,
-    artifactPaths: [] as string[],
+    artifactPaths: data?.artifactPath ? [data.artifactPath] : [],
     nextActions: nextActions ?? ["Inspect the error, adjust, and retry."],
     ...(data ? { data } : {}),
   };
@@ -514,7 +622,7 @@ Bind address and advertised URL are distinct: the listener binds where it runs (
         })
         .optional()
         .describe(
-          "Base URL the TARGET can reach (e.g. an operator-provided callback route), used only to compose the callback URL returned to you. Never guessed.",
+          "Base URL the TARGET can reach (e.g. an operator-provided callback route), used only to compose the callback URL returned to you. Never guessed. Route prefix and query parameters are preserved; fragments are stripped (HTTP clients never send them).",
         ),
       timeoutSeconds: z
         .number()
@@ -783,7 +891,12 @@ Returns job status, listener readiness (only true while the process is running A
       if (!handle) return unknownListenerResult(jobId);
 
       const read = await readListenerLog(ctx, handle);
-      if (!read.ok) return failureResult(read.summary);
+      if (!read.ok) {
+        return failureResult(read.summary, undefined, {
+          jobId,
+          ...(read.artifactPath ? { artifactPath: read.artifactPath } : {}),
+        });
+      }
 
       // A late listening line carries the effective (possibly ephemeral)
       // port — adopt it before probing so the probe targets the listener.

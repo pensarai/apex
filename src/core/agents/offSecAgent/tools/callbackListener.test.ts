@@ -9,10 +9,12 @@ import { LocalBackends } from "../../../tools/backends/local";
 import { resolveBackends } from "../../../tools/backends/resolve";
 import type { CommandEvent } from "../../../tools/backends/types";
 import { resolveWhiteboxJobs } from "../../../tools/backends/whiteboxJobs";
+import { writeWhiteboxArtifact } from "../../../whitebox";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   buildCallbackListenerScript,
   CallbackListenerRegistry,
+  composeCallbackUrl,
   parseCallbackListenerLog,
   pollCallbackListener,
   probeUrlFor,
@@ -663,6 +665,227 @@ describe("callback listener helper (remote-adapter contract, local machine)", ()
       httpGet(`http://127.0.0.1:${listener.port}/${listener.nonce}/cb`),
     ).rejects.toThrow();
   }, 45_000);
+});
+
+describe("composeCallbackUrl (path-aware composition)", () => {
+  const nonce = "n".repeat(32);
+
+  it("preserves route prefixes and composes the nonce path", () => {
+    expect(composeCallbackUrl("http://cb.example", nonce)).toBe(
+      `http://cb.example/${nonce}/cb`,
+    );
+    expect(composeCallbackUrl("http://cb.example/", nonce)).toBe(
+      `http://cb.example/${nonce}/cb`,
+    );
+    expect(composeCallbackUrl("http://cb.example/route", nonce)).toBe(
+      `http://cb.example/route/${nonce}/cb`,
+    );
+    expect(composeCallbackUrl("http://cb.example/route/", nonce)).toBe(
+      `http://cb.example/route/${nonce}/cb`,
+    );
+    expect(composeCallbackUrl("http://cb.example:8081", nonce)).toBe(
+      `http://cb.example:8081/${nonce}/cb`,
+    );
+    expect(composeCallbackUrl("http://[::1]:8081/base", nonce)).toBe(
+      `http://[::1]:8081/base/${nonce}/cb`,
+    );
+    expect(composeCallbackUrl("https://cb.example", nonce)).toBe(
+      `https://cb.example/${nonce}/cb`,
+    );
+  });
+
+  it("keeps query parameters after the nonce path and strips fragments", () => {
+    expect(composeCallbackUrl("http://cb.example/route?token=abc", nonce)).toBe(
+      `http://cb.example/route/${nonce}/cb?token=abc`,
+    );
+    expect(
+      composeCallbackUrl("http://cb.example/route/?token=abc&x=1", nonce),
+    ).toBe(`http://cb.example/route/${nonce}/cb?token=abc&x=1`);
+    expect(composeCallbackUrl("http://cb.example#frag", nonce)).toBe(
+      `http://cb.example/${nonce}/cb`,
+    );
+    expect(
+      composeCallbackUrl("http://cb.example/route?token=abc#frag", nonce),
+    ).toBe(`http://cb.example/route/${nonce}/cb?token=abc`);
+  });
+
+  it("returns undefined for an unparseable base instead of a broken URL", () => {
+    expect(composeCallbackUrl("not a url", nonce)).toBeUndefined();
+    expect(composeCallbackUrl("", nonce)).toBeUndefined();
+  });
+});
+
+describe("record-gone snapshot retrieval (bugbot regressions)", () => {
+  const GONE_NONCE = "9".repeat(32);
+
+  async function plantSnapshot(
+    ctx: ToolContext,
+    jobId: string,
+    content: string,
+  ) {
+    return writeWhiteboxArtifact({
+      session: ctx.session,
+      area: "scratchpad",
+      type: "raw-output",
+      name: `callback-evidence-${jobId}`,
+      description: "planted snapshot",
+      content,
+    });
+  }
+
+  function registerGone(ctx: ToolContext, jobId: string, artifactPath: string) {
+    ctx.callbackListeners?.register({
+      jobId,
+      nonce: GONE_NONCE,
+      scriptPath: "/tmp/gone.cjs",
+      bindAddress: "0.0.0.0",
+      port: 3,
+      selfTestConfirmed: true,
+      artifactPath,
+      stop: async () => undefined,
+    });
+  }
+
+  function snapshotHits(count: number, bodyChars: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      ts: `2026-10-07T10:00:${String(i % 60).padStart(2, "0")}Z`,
+      method: "GET",
+      path: `/${GONE_NONCE}/cb?i=${i}`,
+      source: "callback" as const,
+      ip: "10.0.0.1",
+      body: "x".repeat(bodyChars),
+    }));
+  }
+
+  it("retrieves a retained snapshot larger than the 40k inline cap", async () => {
+    const ctx = makeCtx();
+    const jobId = "wjob_66666_a001";
+    const hits = snapshotHits(130, 120);
+    // The actual compact log lines (prefix included) fit the 40k log
+    // window; the pretty-printed snapshot exceeds the 40k inline cap —
+    // the real amplification the inline-capped read used to lose.
+    const compact = hits
+      .map((h) => `[apex-callback] hit ${JSON.stringify(h)}`)
+      .join("\n");
+    expect(Buffer.byteLength(compact)).toBeLessThanOrEqual(40_000);
+    const content = JSON.stringify(
+      { jobId, nonce: GONE_NONCE, hits, logTruncated: false },
+      null,
+      2,
+    );
+    expect(content.length).toBeGreaterThan(40_000);
+    const ref = await plantSnapshot(ctx, jobId, content);
+    registerGone(ctx, jobId, ref.path);
+
+    const poll = await pollListener(ctx, jobId);
+    expect(poll.success).toBe(true);
+    expect(poll.data.status).toBe("record-gone");
+    expect(poll.data.callbackHits).toBe(130);
+    expect(poll.artifactPaths).toEqual([ref.path]);
+  });
+
+  it("reports a corrupt retained snapshot as unreadable, never as absent", async () => {
+    const ctx = makeCtx();
+    const jobId = "wjob_66666_b002";
+    const ref = await plantSnapshot(
+      ctx,
+      jobId,
+      '{"jobId": "broken", "hits": [ {truncated',
+    );
+    registerGone(ctx, jobId, ref.path);
+
+    const poll = (await pollCallbackListener(ctx).execute?.(
+      { jobId, toolCallDescription: "Corrupt snapshot poll" },
+      { toolCallId: "tc_corrupt", messages: [], abortSignal: undefined },
+    )) as { success: boolean; summary: string; artifactPaths: string[] };
+    expect(poll.success).toBe(false);
+    expect(poll.summary).toContain("could not be read");
+    expect(poll.summary).toContain("corrupt");
+    // Truthful distinction: the snapshot exists — never reported absent.
+    expect(poll.summary).not.toContain("no persisted evidence snapshot");
+    expect(poll.artifactPaths).toEqual([ref.path]);
+  });
+
+  it("rejects valid-JSON snapshots with a malformed hits shape, never zero-hit success", async () => {
+    const ctx = makeCtx();
+    const wrongType = "wjob_66666_d004";
+    const refType = await plantSnapshot(
+      ctx,
+      wrongType,
+      JSON.stringify({ jobId: wrongType, nonce: GONE_NONCE, hits: "bad" }),
+    );
+    registerGone(ctx, wrongType, refType.path);
+    const wrongEntry = "wjob_66666_e005";
+    const refEntry = await plantSnapshot(
+      ctx,
+      wrongEntry,
+      JSON.stringify({
+        jobId: wrongEntry,
+        nonce: GONE_NONCE,
+        hits: [
+          {
+            ts: "t",
+            method: "GET",
+            path: "/x",
+            source: "callback",
+            ip: "",
+            body: "",
+          },
+          { ts: 42 },
+        ],
+      }),
+    );
+    registerGone(ctx, wrongEntry, refEntry.path);
+
+    for (const [jobId, ref] of [
+      [wrongType, refType],
+      [wrongEntry, refEntry],
+    ] as const) {
+      const poll = (await pollCallbackListener(ctx).execute?.(
+        { jobId, toolCallDescription: "Malformed snapshot poll" },
+        { toolCallId: `tc_${jobId}`, messages: [], abortSignal: undefined },
+      )) as { success: boolean; summary: string; artifactPaths: string[] };
+      expect(poll.success).toBe(false);
+      expect(poll.summary).toContain("could not be read");
+      expect(poll.summary).toContain("corrupt");
+      expect(poll.summary).not.toContain("no persisted evidence snapshot");
+      expect(poll.artifactPaths).toEqual([ref.path]);
+    }
+  });
+
+  it("reports a snapshot beyond the bounded read cap as capped, preserving it", async () => {
+    const ctx = makeCtx();
+    const jobId = "wjob_66666_c003";
+    const content = JSON.stringify(
+      { jobId, nonce: GONE_NONCE, hits: snapshotHits(6000, 200) },
+      null,
+      2,
+    );
+    expect(content.length).toBeGreaterThan(1_000_000);
+    const ref = await plantSnapshot(ctx, jobId, content);
+    registerGone(ctx, jobId, ref.path);
+
+    const poll = (await pollCallbackListener(ctx).execute?.(
+      { jobId, toolCallDescription: "Capped snapshot poll" },
+      { toolCallId: "tc_capped", messages: [], abortSignal: undefined },
+    )) as { success: boolean; summary: string; artifactPaths: string[] };
+    expect(poll.success).toBe(false);
+    expect(poll.summary).toContain("bounded read cap");
+    expect(poll.summary).not.toContain("no persisted evidence snapshot");
+    expect(poll.artifactPaths).toEqual([ref.path]);
+  });
+
+  it("composes the callback URL path-aware for tokenized route bases", async () => {
+    const ctx = makeCtx();
+    const listener = await startListener(ctx, {
+      advertisedBaseUrl: "http://cb.example/route?token=abc",
+    });
+
+    const poll = await pollListener(ctx, listener.jobId);
+    expect(poll.data.callbackUrl).toBe(
+      `http://cb.example/route/${listener.nonce}/cb?token=abc`,
+    );
+  }, 30_000);
 });
 
 describe("CallbackListenerRegistry cleanup retry", () => {
