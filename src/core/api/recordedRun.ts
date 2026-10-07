@@ -178,7 +178,20 @@ export async function runRecordedAgent(
         inheritEnvironmentConfig: false,
       });
 
-      await input.store.transition(runId, attemptId, "running");
+      const runningRecord = await input.store.transition(
+        runId,
+        attemptId,
+        "running",
+      );
+      if (runningRecord.status === "cancelled") {
+        // The store settles a stop-won race as cancelled; nothing may be
+        // initialized or executed against the run afterwards. Teardown
+        // mirrors the success path so a latched failure surfaces instead
+        // of a silently clean return.
+        await control.dispose();
+        await flushRecorders();
+        return { started: false, record: runningRecord };
+      }
       await input.store.initializeToolJournal(runId, attemptId);
 
       const collectEvidence = async () => {

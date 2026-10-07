@@ -603,3 +603,104 @@ describe("pre-aborted start", () => {
     expect(record?.status).toBe("failed");
   });
 });
+
+describe("stop-won running transition", () => {
+  it("returns the cancelled record instead of failing settlement", async () => {
+    const { store: real } = await openStore();
+    store = real;
+    const runId = "run_ctrl_stop_race";
+
+    // A client persists stop while the executor is between session creation
+    // and its running transition, so the store settles that transition as
+    // cancelled behind the executor's back.
+    sessionCreate.mockImplementationOnce(async (input: { id?: string }) => {
+      const control = await real.getControl(runId);
+      await real.requestControl(runId, "stop", control?.revision ?? 0);
+      const rootPath = tempDir("control-session-root-");
+      return {
+        id: input.id,
+        rootPath,
+        findingsPath: join(rootPath, "findings.json"),
+        pocsPath: join(rootPath, "pocs"),
+        logsPath: join(rootPath, "logs"),
+        config: {},
+      };
+    });
+
+    const outcome = await runRecordedAgent({
+      spec: baseSpec(tempDir("control-cwd-"), { runId }),
+      store: real,
+    });
+
+    expect(outcome.started).toBe(false);
+    expect(outcome.record.status).toBe("cancelled");
+    expect((await real.get(runId))?.status).toBe("cancelled");
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a latched executor stop-persist failure; no silent success", async () => {
+    const { dbPath, store: real } = await openStore();
+    store = real;
+    const runId = "run_ctrl_stop_race_latched";
+    const client = await openSqliteRunStore(dbPath);
+
+    let executorStopFailed!: () => void;
+    const executorStopFailedPromise = new Promise<void>((resolve) => {
+      executorStopFailed = resolve;
+    });
+    const failing = {
+      ...real,
+      requestControl: async () => {
+        try {
+          throw new Error("injected executor stop-persist failure");
+        } finally {
+          executorStopFailed();
+        }
+      },
+    } as Store;
+
+    const deadline = new AbortController();
+    sessionCreate.mockImplementationOnce(async (input: { id?: string }) => {
+      // The deadline aborts mid-startup and the executor's own stop
+      // persist fails; a client independently persists stop, so the
+      // running transition settles as cancelled.
+      deadline.abort();
+      await executorStopFailedPromise;
+      const control = await client.getControl(runId);
+      await client.requestControl(runId, "stop", control?.revision ?? 0);
+      const rootPath = tempDir("control-session-root-");
+      return {
+        id: input.id,
+        rootPath,
+        findingsPath: join(rootPath, "findings.json"),
+        pocsPath: join(rootPath, "pocs"),
+        logsPath: join(rootPath, "logs"),
+        config: {},
+      };
+    });
+
+    try {
+      let rejection: unknown;
+      try {
+        await runRecordedAgent({
+          spec: baseSpec(tempDir("control-cwd-"), { runId }),
+          store: failing,
+          abortSignal: deadline.signal,
+        });
+      } catch (error) {
+        rejection = error;
+      }
+      // Fail-closed: the latched stop-persist failure must surface — a
+      // silently clean cancelled return would hide a critical store error.
+      expect(rejection).toBeInstanceOf(AggregateError);
+      expect((rejection as AggregateError).errors[0]).toBeInstanceOf(
+        RunPersistenceError,
+      );
+      // The client's stop-won settlement stands in the durable record.
+      expect((await real.get(runId))?.status).toBe("cancelled");
+      expect(runAgent).not.toHaveBeenCalled();
+    } finally {
+      client.close();
+    }
+  });
+});
