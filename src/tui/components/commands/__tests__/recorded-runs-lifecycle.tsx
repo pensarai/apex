@@ -162,10 +162,32 @@ const startedSnapshot =
         runId: STARTED_RUN_ID,
         observation: { ...observation, record: startedRecord },
       };
-const listedRecords = [record];
+// Rows ordered by run_id like the real store: early sorts before the
+// pre-existing run, zulu after it.
+const EARLY_RUN_ID = "run_c5_early_admit";
+const ZULU_RUN_ID = "run_c5_zulu";
+const earlyRecord = RunRecordSchema.parse({
+  ...record,
+  spec: { ...spec, runId: EARLY_RUN_ID },
+});
+const zuluRecord = RunRecordSchema.parse({
+  ...record,
+  spec: { ...spec, runId: ZULU_RUN_ID },
+});
+const listedRecords =
+  scenario === "list-refresh-preserves-pending-move" ||
+  scenario === "list-refresh-replaces-vanished-selection"
+    ? [record, zuluRecord]
+    : [record];
 const client: RecordedRunClient = {
   databasePath: "/fake/runs.sqlite",
-  list: async () => [...listedRecords],
+  list: async () => {
+    if (listGated)
+      await new Promise<void>((resolve) => {
+        finishList = resolve;
+      });
+    return [...listedRecords];
+  },
   observe: async () => {
     throw new Error("the dialog follows through watch");
   },
@@ -228,6 +250,8 @@ const client: RecordedRunClient = {
 };
 let finishOpen: ((client: RecordedRunClient) => void) | undefined;
 let finishStart: (() => void) | undefined;
+let listGated = false;
+let finishList: (() => void) | undefined;
 mock.module(
   `${import.meta.dirname}/../../../../core/runtime/recordedRunClient.ts`,
   () => ({
@@ -267,7 +291,8 @@ function OpenDialog() {
       <RecordedRunsDialog
         {...(specPath
           ? { specPath }
-          : scenario === "list-attach-detach"
+          : scenario === "list-attach-detach" ||
+              scenario.startsWith("list-refresh")
             ? {}
             : { runId: RUN_ID })}
         executable={executable}
@@ -467,6 +492,53 @@ try {
       calls.filter((call) => call.method === "watch"),
       [{ method: "watch", args: [RUN_ID] }],
     );
+  } else if (scenario === "list-refresh-keeps-selection") {
+    rendered(await frame(), RUN_ID);
+    rendered(await frame(), `› ${RUN_ID}`);
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${RUN_ID}`);
+    // A newly admitted run sorting before the selection shifts the rows.
+    listedRecords.unshift(earlyRecord);
+    await press("b");
+    const text = await frame();
+    rendered(text, EARLY_RUN_ID);
+    rendered(text, `› ${RUN_ID}`);
+    // Enter still opens the run the operator selected, not the insert.
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${RUN_ID}`);
+  } else if (scenario === "list-refresh-preserves-pending-move") {
+    rendered(await frame(), RUN_ID);
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${RUN_ID}`);
+    listedRecords.unshift(earlyRecord);
+    listGated = true;
+    await press("b");
+    for (let i = 0; i < 20 && !finishList; i++)
+      await act(async () => {
+        await Bun.sleep(10);
+      });
+    assert.ok(finishList, "the pending list request never began");
+    // The operator moves the selection while the request is still pending.
+    await press("ARROW_DOWN");
+    await act(async () => finishList?.());
+    await settle();
+    const text = await frame();
+    rendered(text, `› ${ZULU_RUN_ID}`);
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${ZULU_RUN_ID}`);
+  } else if (scenario === "list-refresh-replaces-vanished-selection") {
+    rendered(await frame(), RUN_ID);
+    await press("ARROW_DOWN");
+    rendered(await frame(), `› ${ZULU_RUN_ID}`);
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${ZULU_RUN_ID}`);
+    // The selected run disappears from the refreshed list.
+    listedRecords.splice(1, 1);
+    await press("b");
+    const text = await frame();
+    rendered(text, `› ${RUN_ID}`);
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${RUN_ID}`);
   } else if (scenario === "scroll-transcript") {
     await press("END");
     rendered(await frame(), "committed-line-59");

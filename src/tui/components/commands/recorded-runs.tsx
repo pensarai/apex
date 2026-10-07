@@ -97,7 +97,9 @@ export function RecordedRunsDialog({
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [listRevision, setListRevision] = useState(0);
   const [listError, setListError] = useState<string | null>(null);
-  const [selectedRunIndex, setSelectedRunIndex] = useState(0);
+  // Selection identity is the run id: a refreshed list inserting or removing
+  // rows cannot move the highlight off the operator's run.
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [view, setView] = useState<RecordedRunView | null>(null);
   const [viewRunId, setViewRunId] = useState<string | null>(runId ?? null);
   const [following, setFollowing] = useState(false);
@@ -120,13 +122,22 @@ export function RecordedRunsDialog({
   }, []);
   // Async spec startup must not replace the operator's navigation.
   const navigationChanged = useRef(false);
+  // Null means no run is anchored yet (first row); an id whose run vanished
+  // from the refreshed list falls back to the first row.
+  const selectedIndex =
+    selectedRunId === null
+      ? 0
+      : Math.max(
+          0,
+          runs.findIndex((record) => record.spec.runId === selectedRunId),
+        );
   useEffect(() => {
-    const selected = runs[selectedRunIndex];
+    const selected = runs[selectedIndex];
     if (selected)
       listScroll.current?.scrollChildIntoView(
         `recorded-${selected.spec.runId}`,
       );
-  }, [runs, selectedRunIndex]);
+  }, [runs, selectedIndex]);
 
   // Closing while the store opens must still release the eventual client.
   useEffect(() => {
@@ -221,9 +232,16 @@ export function RecordedRunsDialog({
       .then((records) => {
         if (cancelled) return;
         setRuns(records);
-        setSelectedRunIndex((index) =>
-          Math.min(index, Math.max(0, records.length - 1)),
-        );
+        // Anchor the default selection once and replace an id whose run
+        // vanished, so the state always names a listed run.
+        setSelectedRunId((current) => {
+          if (
+            current !== null &&
+            records.some((record) => record.spec.runId === current)
+          )
+            return current;
+          return records[0]?.spec.runId ?? null;
+        });
         setListError(null);
       })
       .catch((cause: unknown) => {
@@ -311,20 +329,27 @@ export function RecordedRunsDialog({
     }
 
     if (page === "list") {
-      if (key.name === "up" && runs.length > 0) {
-        setSelectedRunIndex((index) =>
-          index > 0 ? index - 1 : runs.length - 1,
-        );
-        return;
-      }
-      if (key.name === "down" && runs.length > 0) {
-        setSelectedRunIndex((index) =>
-          index < runs.length - 1 ? index + 1 : 0,
-        );
+      if ((key.name === "up" || key.name === "down") && runs.length > 0) {
+        const direction = key.name === "down" ? 1 : -1;
+        // Functional update: queued key events advance from the latest
+        // selection, not the one this render shows.
+        setSelectedRunId((current) => {
+          const index =
+            current === null
+              ? 0
+              : Math.max(
+                  0,
+                  runs.findIndex((record) => record.spec.runId === current),
+                );
+          return (
+            runs[(index + direction + runs.length) % runs.length]?.spec.runId ??
+            null
+          );
+        });
         return;
       }
       if (key.name === "return" && runs.length > 0) {
-        const target = runs[selectedRunIndex];
+        const target = runs[selectedIndex];
         if (target) openRun(target.spec.runId);
       }
       return;
@@ -446,7 +471,7 @@ export function RecordedRunsDialog({
           }}
         >
           {runs.map((record, index) => {
-            const selected = index === selectedRunIndex;
+            const selected = index === selectedIndex;
             return (
               <box
                 id={`recorded-${record.spec.runId}`}
