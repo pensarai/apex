@@ -2,6 +2,7 @@ import { mkdir, open, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { ExecutionLock, RecoveryEnvironment } from "./runRecoveryStore";
+import { RecordedRunSpecSchema } from "./runStore";
 
 // A separate connection holds the per-run lock; process loss releases it.
 
@@ -24,14 +25,14 @@ function openLockConnection(filename: string): LockDatabase {
   return new Ctor(filename);
 }
 
-const RUN_ID_COMPONENT = /^[A-Za-z0-9_-]{1,64}$/;
-
 export async function acquireLocalRunLock(
   runId: string,
   databasePath: string,
 ): Promise<ExecutionLock> {
-  // Validate the run id before any filesystem access.
-  if (!RUN_ID_COMPONENT.test(runId)) {
+  // Validate the run id before any filesystem access. Admission's schema is
+  // the authority — an id it accepts must be a usable lock file component,
+  // or an admitted run can never start or resume.
+  if (!RecordedRunSpecSchema.shape.runId.safeParse(runId).success) {
     throw new Error(`Run id is not a valid lock file component: ${runId}`);
   }
   // Canonicalize: a symlink-aliased database path must address the same

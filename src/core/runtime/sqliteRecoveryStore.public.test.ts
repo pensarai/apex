@@ -318,6 +318,27 @@ describe("public store gates enrolled execution writes on the lock", () => {
     }
   });
 
+  it("acquires the lock for the longest run id admission accepts", async () => {
+    const dbPath = join(tempDir("pubgate-db-"), "runs.sqlite");
+    const store = await openSqliteRunStore(dbPath);
+    try {
+      // run_ plus 62 characters (66 total) is the longest id admission
+      // accepts; the lock gate must accept it too or the admitted run can
+      // never start or resume.
+      const runId = `run_${"a".repeat(62)}`;
+      const admitted = await store.admit(spec(runId, tempDir("pubgate-cwd-")));
+      expect(admitted.created).toBe(true);
+      const lock = await store.acquireExecutionLock(runId);
+      lock.release();
+      // One character past admission's limit stays an invalid component.
+      await expect(
+        acquireLocalRunLock(`run_${"a".repeat(63)}`, dbPath),
+      ).rejects.toThrow(/not a valid lock file component/);
+    } finally {
+      store.close();
+    }
+  });
+
   it("symlink-aliased database paths address the same lock file", async () => {
     const dir = tempDir("pubgate-symlink-");
     const realDir = join(dir, "real");
