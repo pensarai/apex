@@ -50,6 +50,7 @@ import {
   truncateWithMarker,
 } from "./contextManagement";
 import {
+  type ClaudeThinkingEffort,
   getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
@@ -126,11 +127,11 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 /**
  * Anthropic adaptive-thinking effort hint. Soft guidance for how much the model
- * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `high` (the
- * model default) reasons deeply. Only meaningful for models that support
- * adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
+ * reasons (see AWS "adaptive thinking"): `low` minimizes thinking while
+ * `xhigh` and `max` allow progressively deeper work. Only meaningful for
+ * models that support adaptive thinking; ignored elsewhere.
  */
-export type ThinkingEffort = "low" | "medium" | "high";
+export type ThinkingEffort = ClaudeThinkingEffort;
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-6.1-sol",
@@ -1223,12 +1224,19 @@ export type ReasoningProviderOptions = {
     effort?: ThinkingEffort;
   };
   bedrock?: {
-    reasoningConfig: {
-      type: "adaptive";
-      display: "summarized";
-      // Bedrock's channel for the adaptive effort hint (maps to Claude's
-      // output_config.effort). Omitted when no level requested.
-      maxReasoningEffort?: ThinkingEffort;
+    reasoningConfig:
+      | {
+          type: "adaptive";
+          display: "summarized";
+          // Bedrock's channel for the adaptive effort hint (maps to Claude's
+          // output_config.effort).
+          maxReasoningEffort?: ThinkingEffort;
+        }
+      | { type: "disabled" };
+    /** Explicitly forwarded for Anthropic because the Bedrock SDK currently
+     * drops reasoningConfig.type="disabled" instead of sending it. */
+    additionalModelRequestFields?: {
+      thinking: { type: "disabled" };
     };
   };
   openai?: OpenAIResponsesProviderOptions;
@@ -1304,8 +1312,8 @@ export function buildReasoningProviderOptions(
     enableThinking?: boolean;
     /**
      * Adaptive-thinking effort hint for Anthropic models that support it
-     * (Opus/Sonnet 4.6+). Ignored on models without adaptive support. When
-     * omitted the model uses its own default (`high`).
+     * Ignored on models without adaptive support. When omitted, models in the
+     * Claude capability registry use their documented provider default.
      */
     thinkingEffort?: ThinkingEffort | null;
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
@@ -1315,11 +1323,12 @@ export function buildReasoningProviderOptions(
   if (claude) {
     const provider = getModelInfo(model).provider;
     const thinking = !!opts.enableThinking || claude.alwaysOnThinking;
+    const effort = opts.thinkingEffort ?? claude.defaultEffort;
     if (provider === "openrouter") {
       return {
         openrouter: {
           reasoning: {
-            effort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+            effort: thinking ? effort : "none",
             enabled: thinking,
           },
         },
@@ -1329,19 +1338,38 @@ export function buildReasoningProviderOptions(
       return {
         openai: {
           forceReasoning: true,
-          reasoningEffort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+          reasoningEffort: thinking ? effort : "none",
           reasoningSummary: "auto",
         },
       };
     }
     return {
       anthropic: {
-        thinking:
-          opts.enableThinking || claude.alwaysOnThinking
-            ? { type: "adaptive", display: "summarized" }
-            : { type: "disabled" },
-        ...(opts.thinkingEffort ? { effort: opts.thinkingEffort } : {}),
+        thinking: thinking
+          ? { type: "adaptive", display: "summarized" }
+          : { type: "disabled" },
+        ...(thinking ? { effort } : {}),
       },
+      ...(provider === "bedrock"
+        ? {
+            bedrock: {
+              reasoningConfig: thinking
+                ? {
+                    type: "adaptive" as const,
+                    display: "summarized" as const,
+                    maxReasoningEffort: effort,
+                  }
+                : { type: "disabled" as const },
+              ...(!thinking
+                ? {
+                    additionalModelRequestFields: {
+                      thinking: { type: "disabled" as const },
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
   const useThinking =

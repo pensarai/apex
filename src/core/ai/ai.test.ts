@@ -155,6 +155,60 @@ describe("isRepairFailClosedTool", () => {
 });
 
 describe("buildReasoningProviderOptions", () => {
+  it("sends Claude Haiku 5.5 max effort through Bedrock", () => {
+    expect(
+      buildReasoningProviderOptions("global.anthropic.claude-haiku-5-5", {
+        enableThinking: true,
+        thinkingEffort: "max",
+      }),
+    ).toEqual({
+      anthropic: {
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "max",
+      },
+      bedrock: {
+        reasoningConfig: {
+          type: "adaptive",
+          display: "summarized",
+          maxReasoningEffort: "max",
+        },
+      },
+    });
+  });
+
+  it("uses Claude Haiku 5.5 medium effort by default and can disable thinking", () => {
+    expect(
+      buildReasoningProviderOptions("global.anthropic.claude-haiku-5-5", {
+        enableThinking: true,
+      }),
+    ).toEqual({
+      anthropic: {
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "medium",
+      },
+      bedrock: {
+        reasoningConfig: {
+          type: "adaptive",
+          display: "summarized",
+          maxReasoningEffort: "medium",
+        },
+      },
+    });
+    expect(
+      buildReasoningProviderOptions("global.anthropic.claude-haiku-5-5", {
+        enableThinking: false,
+      }),
+    ).toEqual({
+      anthropic: { thinking: { type: "disabled" } },
+      bedrock: {
+        reasoningConfig: { type: "disabled" },
+        additionalModelRequestFields: {
+          thinking: { type: "disabled" },
+        },
+      },
+    });
+  });
+
   it("sets the bedrock reasoningConfig (and anthropic.thinking) for a Bedrock Claude model when thinking is enabled", () => {
     // Console sandbox agents run on Bedrock; this is the path the bug starved.
     const result = buildReasoningProviderOptions(

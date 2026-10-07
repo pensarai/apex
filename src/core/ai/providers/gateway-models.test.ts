@@ -26,6 +26,12 @@ vi.mock("undici", async (importOriginal) => {
 
 const models = [
   {
+    slug: "claude-haiku-5-5",
+    context: 1000000,
+    openrouter: "anthropic/claude-haiku-5.5",
+    concentrate: false,
+  },
+  {
     slug: "claude-sonnet-5-5",
     context: 1000000,
     openrouter: "anthropic/claude-sonnet-5.5",
@@ -376,9 +382,9 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
   });
 
   it("preserves the highest supported reasoning effort through the SDK", async () => {
-    const effort = upstream.includes("claude")
-      ? "high"
-      : getOpenAIReasoningEfforts(id).at(-1);
+    const claudeEffort = upstream.includes("claude-haiku-5.5") ? "max" : "high";
+    const openAIEffort = getOpenAIReasoningEfforts(id).at(-1);
+    const effort = upstream.includes("claude") ? claudeEffort : openAIEffort;
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         completedResponse(upstream, openrouter),
@@ -387,9 +393,9 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
     await getProviderModel(id, credentials).doGenerate({
       ...options(),
       providerOptions: buildReasoningProviderOptions(id, {
-        openAIReasoningEffort: effort,
+        openAIReasoningEffort: openAIEffort,
         enableThinking: true,
-        thinkingEffort: "high",
+        thinkingEffort: claudeEffort,
       }),
     });
     const call = fetchMock.mock.calls[0];
@@ -440,7 +446,11 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
       if (!call) throw new Error("Expected structured Claude request");
       const body = JSON.parse(String(call[1]?.body));
       expect(body.reasoning.effort).toBe(
-        modelRequiresThinking(id) ? "high" : "none",
+        modelRequiresThinking(id)
+          ? /claude-opus-5[.-]5/.test(upstream)
+            ? "medium"
+            : "high"
+          : "none",
       );
       expect(
         openrouter ? body.response_format.type : body.text.format.type,

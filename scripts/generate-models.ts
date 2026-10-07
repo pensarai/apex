@@ -47,6 +47,7 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
 
 const CONTEXT_LENGTHS: Record<string, number> = {
   "chat-latest": 400000,
+  "claude-haiku-5-5": 1000000,
   "claude-sonnet-5-5": 1000000,
   "claude-opus-5-5": 1000000,
   "claude-fable-5-1": 1000000,
@@ -122,6 +123,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "anthropic.claude-v2": 100000,
   "anthropic.claude-instant": 100000,
   "anthropic.claude-3": 200000,
+  "anthropic.claude-haiku-5-5": 1000000,
   "anthropic.claude-haiku": 200000,
   "anthropic.claude-sonnet": 200000,
   "anthropic.claude-opus": 200000,
@@ -612,6 +614,7 @@ function main() {
 
   // Models available on the Anthropic API but not yet in the AI SDK type definitions
   appendMissing(anthropicIds, [
+    "claude-haiku-5-5",
     "claude-sonnet-5-5",
     "claude-opus-5-5",
     "claude-fable-5-1",
@@ -698,6 +701,8 @@ function main() {
   // Models available on Bedrock but not yet in the AI SDK type definitions
   appendMissing(bedrockBaseIds, [
     "moonshotai.kimi-k2.5",
+    "anthropic.claude-haiku-5-5",
+    "us.anthropic.claude-haiku-5-5",
     "anthropic.claude-opus-4-7",
     "anthropic.claude-opus-4-8",
     "us.anthropic.claude-opus-4-8",

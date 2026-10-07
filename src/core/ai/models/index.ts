@@ -12,7 +12,10 @@ import { ANTHROPIC_MODELS } from "./anthropic";
 import { BEDROCK_MODELS } from "./bedrock";
 import { getClaudeCapabilities } from "./claude-capabilities";
 
-export { getClaudeCapabilities } from "./claude-capabilities";
+export {
+  type ClaudeThinkingEffort,
+  getClaudeCapabilities,
+} from "./claude-capabilities";
 
 import { CONCENTRATE_MODELS } from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
