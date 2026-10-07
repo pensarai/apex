@@ -467,13 +467,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       if (inject.status === "unknown-tool" && !allow_unprotected) {
         const redirectGuidance =
           backends.command.platform === "windows"
-            ? "on Windows command shells `2>&1` redirection is not supported for header injection — drop the redirect; "
-            : "literal `2>&1` is allowed, but pipelines, substitutions, and multiple hosts are not; ";
+            ? "on Windows command shells `2>&1` redirection is not supported for header injection — remove the redirect or use the http_request tool. "
+            : "the `2>&1` form requires fully literal arguments: expansions, escapes, concatenated words, and braces/brackets are forbidden — double quotes do not neutralize `$` or backslashes, and curl globs `{…}`/`[…]` URLs even when quoted. Remove the redirect or use the http_request tool. ";
         const msg =
           "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined or chained. " +
-          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host; " +
+          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host. " +
           redirectGuidance +
-          "otherwise use the http_request tool, or pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          "Otherwise pass allow_unprotected: true to acknowledge headers will NOT be sent.";
         return {
           success: false,
           error: msg,

