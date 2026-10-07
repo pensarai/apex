@@ -967,24 +967,28 @@ describe("execute_command timeout fields (canonical timeoutSeconds)", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("terminates real process work on the canonical timeoutSeconds deadline", async () => {
-    const shell = new PerCommandShell();
-    try {
-      const result = (await callTool(
-        makeCtx({ commandShell: shell, agentCwd: process.cwd() }),
-        { command: "sleep 30", timeoutSeconds: 0.5 },
-      )) as ExecuteCommandResult;
+  it.skipIf(process.platform === "win32")(
+    "terminates real process work on the canonical timeoutSeconds deadline",
+    async () => {
+      const shell = new PerCommandShell();
+      try {
+        const result = (await callTool(
+          makeCtx({ commandShell: shell, agentCwd: process.cwd() }),
+          { command: "sleep 30", timeoutSeconds: 0.5 },
+        )) as ExecuteCommandResult;
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("Command timed out");
-      // The executor survived the kill and is immediately reusable.
-      const after = await shell.execute("echo ok", { timeoutSeconds: 5 });
-      expect(after.exitCode).toBe(0);
-      expect(after.stdout).toContain("ok");
-    } finally {
-      await shell.dispose();
-    }
-  }, 8_000);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe("Command timed out");
+        // The executor survived the kill and is immediately reusable.
+        const after = await shell.execute("echo ok", { timeoutSeconds: 5 });
+        expect(after.exitCode).toBe(0);
+        expect(after.stdout).toContain("ok");
+      } finally {
+        await shell.dispose();
+      }
+    },
+    8_000,
+  );
 
   it("an already-aborted caller wins over any timeout alias", async () => {
     const { calls, commandShell } = captureShell();
