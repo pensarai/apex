@@ -196,6 +196,39 @@ describe("checkScriptSyntax (native transport, real runners)", () => {
     expect(existsSync(join(root, "TOKENIZE_RAN"))).toBe(false);
   });
 
+  it("skips configured startup hooks: a PYTHONPATH sitecustomize.py cannot execute during the check", async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(root);
+    const hookDir = join(root, "sitehook");
+    mkdirSync(hookDir, { recursive: true });
+    writeFileSync(
+      join(hookDir, "sitecustomize.py"),
+      'open("SITECUSTOMIZE_RAN", "w").write("pwned")\n',
+    );
+    const path = stage(root, "poc_value.py", "value = 1\n");
+    // Canary: with this configured PYTHONPATH, a plain interpreter startup
+    // runs the hook — proving the fixture reaches the checker subprocess.
+    const canary = spawnSync("python3", ["-c", "pass"], {
+      cwd: root,
+      env: { ...process.env, PYTHONPATH: hookDir },
+    });
+    expect(canary.status).toBe(0);
+    expect(existsSync(join(root, "SITECUSTOMIZE_RAN"))).toBe(true);
+    rmSync(join(root, "SITECUSTOMIZE_RAN"));
+
+    const ctx = {
+      ...context(root),
+      environmentVariables: { PYTHONPATH: hookDir },
+    };
+    const result = await checkScriptSyntax(ctx, {
+      language: "python",
+      runner: "python3",
+      scriptPath: path,
+    });
+    expect(result.status).toBe("valid");
+    expect(existsSync(join(root, "SITECUSTOMIZE_RAN"))).toBe(false);
+  });
+
   it("accepts a UTF-8 BOM script as a real run would", async () => {
     const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
     roots.push(root);

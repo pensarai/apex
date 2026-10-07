@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
@@ -1769,9 +1770,14 @@ describe("documentVulnerability injected Windows backend declarations", () => {
 
   // Injected Windows transport: declared paths follow the backend's own
   // command.platform (win32), not the host or the classic sandbox type.
-  function windowsContext() {
+  // The execution cwd mirrors the win32 workspace so relative declarations
+  // resolve coherently.
+  function windowsContext(
+    overrides: { agentCwd?: string; fileWorkspaceRoot?: string } = {},
+  ) {
     const ctx = makeToolContext(rootPath);
-    ctx.fileWorkspaceRoot = "C:\\repo";
+    ctx.agentCwd = overrides.agentCwd ?? "C:\\repo";
+    ctx.fileWorkspaceRoot = overrides.fileWorkspaceRoot ?? "C:\\repo";
     const run = vi.fn<ToolBackends["command"]["run"]>(async function* () {
       yield { type: "stdout" as const, seq: 0, bytes: "ok" };
       yield { type: "end" as const, exitCode: 0, timedOut: false };
@@ -1851,5 +1857,235 @@ describe("documentVulnerability injected Windows backend declarations", () => {
     expect(result.message).toContain("escapes");
     expect(mockedJudgeFinding).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("resolves relative declarations from the win32 execution cwd into a differing helper workspace", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, run, readRaw } = windowsContext({
+      agentCwd: "C:\\repo",
+      fileWorkspaceRoot: "C:\\repo\\helper",
+    });
+    const input = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "helper\\file.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "win-cwd",
+      messages: [],
+    })) as DocumentToolResult & {
+      generatedArtifactChecks?: Array<
+        { path: string; language: string } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "helper\\file.js",
+      status: "valid",
+    });
+    // Resolved from the execution cwd, then confined to the helper root.
+    expect(readRaw).toHaveBeenCalledWith("C:\\repo\\helper\\file.js");
+    const checkCall = run.mock.calls.find(
+      ([, options]) => options?.envVars?.APEX_PROGRAM_FILE === "node",
+    );
+    expect(checkCall?.[1]?.envVars?.APEX_PROGRAM_ARGS_0).toContain(
+      "C:\\repo\\helper\\file.js",
+    );
+  });
+
+  it("accepts win32 dot-names inside the workspace while rejecting separator-anchored escapes", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, readRaw } = windowsContext();
+    const positive = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "..hidden.js", language: "javascript" as const },
+      ],
+    };
+    const positiveResult = (await documentVulnerability(ctx).execute?.(
+      positive,
+      { toolCallId: "win-dot", messages: [] },
+    )) as DocumentToolResult;
+    expect(positiveResult).toMatchObject({ success: true });
+    expect(readRaw).toHaveBeenCalledWith("C:\\repo\\..hidden.js");
+
+    const escaping = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "..\\outside.js", language: "javascript" as const },
+      ],
+    };
+    const escapeResult = (await documentVulnerability(ctx).execute?.(escaping, {
+      toolCallId: "win-escape",
+      messages: [],
+    })) as DocumentToolResult & { message?: string };
+    expect(escapeResult).toMatchObject({ success: false });
+    expect(escapeResult.message).toContain("escapes the file workspace");
+  });
+});
+
+describe("documentVulnerability declared artifact resolution (execution cwd vs file workspace)", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  // Local harness where the PoC's execution cwd (the parent) differs from
+  // the confined helper file workspace (a subdirectory of it).
+  function cwdBoundaryContext() {
+    const ctx = makeToolContext(rootPath);
+    const parentDir = mkdtempSync(join(rootPath, "parent-"));
+    const helperRoot = join(parentDir, "helper");
+    mkdirSync(helperRoot, { recursive: true });
+    ctx.agentCwd = parentDir;
+    ctx.fileWorkspaceRoot = helperRoot;
+    return { ctx, parentDir, helperRoot };
+  }
+
+  it("checks a declared emission found via the execution cwd inside the differing helper root", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, helperRoot } = cwdBoundaryContext();
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "gen_cwd",
+      pocContent: [
+        "import os",
+        'os.makedirs("helper", exist_ok=True)',
+        'with open("helper/file.js", "w") as f:',
+        '    f.write("console.log(" + chr(34) + "emitted ok" + chr(34) + ");")',
+        "    f.write(chr(10))",
+        'print("emitted")',
+      ].join("\n"),
+      generatedExecutableArtifacts: [
+        { path: "helper/file.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "cwd-ok",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxCheck?: ScriptSyntaxResult;
+      generatedArtifactChecks?: Array<
+        { path: string; language: string } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    // The retained wrapper was read through the artifact owner; the
+    // declaration resolved from the execution cwd into the helper root.
+    expect(result.syntaxCheck?.status).toBe("valid");
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "helper/file.js",
+      language: "javascript",
+      status: "valid",
+    });
+    expect(result.generatedArtifactChecks?.[0]?.contentHash).toBe(
+      sha256('console.log("emitted ok");\n'),
+    );
+    expect(existsSync(join(helperRoot, "file.js"))).toBe(true);
+  });
+
+  it("fails clearly when a relative declaration lands outside the helper workspace, never inspecting another file", async () => {
+    const { ctx, helperRoot } = cwdBoundaryContext();
+    // Decoy at the workspace root that the old workspace-rooted resolution
+    // would have silently checked instead of the emitted file.
+    writeFileSync(join(helperRoot, "file.js"), 'console.log("decoy");\n');
+    const input = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "file.js", language: "javascript" as const },
+      ],
+    };
+    const argv = vi.spyOn(PerCommandShell.prototype, "executeArgv");
+    try {
+      const result = (await documentVulnerability(ctx).execute?.(input, {
+        toolCallId: "cwd-escape",
+        messages: [],
+      })) as DocumentToolResult & {
+        message?: string;
+        generatedArtifactChecks?: unknown[];
+      };
+
+      expect(result).toMatchObject({ success: false });
+      expect(result.message).toContain(
+        "Generated executable declaration rejected",
+      );
+      expect(result.message).toContain("escapes the file workspace");
+      expect(result.generatedArtifactChecks).toBeUndefined();
+      expect(mockedJudgeFinding).not.toHaveBeenCalled();
+      // Nothing was staged, checked or executed — the decoy was never read.
+      expect(argv).not.toHaveBeenCalled();
+    } finally {
+      argv.mockRestore();
+    }
+  });
+
+  it("accepts in-workspace dot-names while rejecting an actual parent escape", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const ctx = makeToolContext(rootPath);
+    ctx.fileWorkspaceRoot = rootPath;
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "gen_dots",
+      pocContent: [
+        'for name in ("..hidden.js", "...emit.js"):',
+        '    with open(name, "w") as f:',
+        '        f.write("console.log(1);")',
+        "        f.write(chr(10))",
+        'print("emitted")',
+      ].join("\n"),
+      generatedExecutableArtifacts: [
+        { path: "..hidden.js", language: "javascript" as const },
+        { path: "...emit.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "dots",
+      messages: [],
+    })) as DocumentToolResult & {
+      generatedArtifactChecks?: Array<
+        { path: string; language: string } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    expect(result.generatedArtifactChecks).toHaveLength(2);
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "..hidden.js",
+      status: "valid",
+    });
+    expect(result.generatedArtifactChecks?.[1]).toMatchObject({
+      path: "...emit.js",
+      status: "valid",
+    });
+    expect(result.generatedArtifactChecks?.[0]?.contentHash).toBe(
+      sha256("console.log(1);\n"),
+    );
+
+    const escaping = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "../outside.js", language: "javascript" as const },
+      ],
+    };
+    const escapeResult = (await documentVulnerability(ctx).execute?.(escaping, {
+      toolCallId: "dots-escape",
+      messages: [],
+    })) as DocumentToolResult & { message?: string };
+    expect(escapeResult).toMatchObject({ success: false });
+    expect(escapeResult.message).toContain("escapes the file workspace");
   });
 });

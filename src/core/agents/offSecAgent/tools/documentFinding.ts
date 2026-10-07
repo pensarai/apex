@@ -95,7 +95,7 @@ export const documentVulnerabilityInputSchema = z.object({
           .string()
           .min(1)
           .describe(
-            "Workspace path of an executable artifact this POC emits and runs (relative to your working directory, or absolute inside it)",
+            "Path of an executable artifact this POC emits and runs. Relative paths resolve from the POC's execution working directory (where the POC runs) and the resolved path must stay inside your file workspace; absolute paths must land inside it",
           ),
         language: z
           .enum(["bash", "python", "javascript"])
@@ -921,22 +921,32 @@ type GeneratedArtifactCheck = ScriptSyntaxResult & {
 };
 
 /**
- * Lexically resolves a declared generated-artifact path against the agent's
- * file workspace and rejects escapes; symlink escapes are additionally caught
- * by the read-back's canonical containment check.
+ * Resolves a declared generated-artifact path from the PoC's execution cwd
+ * (ctx.agentCwd, where the PoC actually runs and emits), then confines it to
+ * the agent's file workspace — escapes fail clearly so a declaration can
+ * never silently inspect a file outside it. Symlink escapes are additionally
+ * caught by the read-back's canonical containment check.
  */
 function resolveDeclaredArtifactPath(
   ctx: ToolContext,
   declared: string,
 ): string {
   const api = declaredPathApi(ctx);
-  const root = ctx.fileWorkspaceRoot ?? ctx.agentCwd;
+  // Both execution cwd and workspace boundary per the platform the selected
+  // backend commands run on; they legitimately differ for helper agents.
+  const executionCwd = ctx.agentCwd;
+  const workspaceRoot = ctx.fileWorkspaceRoot ?? ctx.agentCwd;
   const resolved = api.isAbsolute(declared)
     ? declared
-    : api.resolve(root, declared);
-  const rel = api.relative(root, resolved);
-  if (rel.startsWith("..") || api.isAbsolute(rel)) {
-    throw new Error(`Path escapes agent working directory: ${declared}`);
+    : api.resolve(executionCwd, declared);
+  const rel = api.relative(workspaceRoot, resolved);
+  // Exact parent or separator-anchored escape only: `..hidden` and
+  // `...emit.js` are in-workspace names, `..` and `../…` (platform
+  // separator) escape.
+  if (rel === ".." || rel.startsWith(`..${api.sep}`) || api.isAbsolute(rel)) {
+    throw new Error(
+      `Path escapes the file workspace: ${declared.slice(0, 200)}`,
+    );
   }
   return resolved;
 }

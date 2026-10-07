@@ -39,13 +39,15 @@ const CHECKER_OUTPUT_LIMIT = 240;
 // dialect and module mode match execution. The Python snippet imports
 // nothing filesystem-resolvable (sys is builtin) — a workspace module like
 // tokenize.py must not shadow stdlib and execute during the check — and
-// compile on raw bytes rejects top-level `return` (ast.parse would not)
-// without executing bytecode or writing a __pycache__ artifact; compile
-// handles BOM and PEP 263 decoding itself.
+// -S skips site/sitecustomize so a configured PYTHONPATH startup hook
+// cannot run either; compile on raw bytes rejects top-level `return`
+// (ast.parse would not) without executing bytecode or writing a
+// __pycache__ artifact, and handles BOM/PEP 263 decoding itself.
 const CHECKER_ARGS: Record<ScriptLanguage, (scriptPath: string) => string[]> = {
   bash: (scriptPath) => ["-n", scriptPath],
   javascript: (scriptPath) => ["--check", scriptPath],
   python: (scriptPath) => [
+    "-S",
     "-c",
     'import sys; compile(open(sys.argv[1], "rb").read(), sys.argv[1], "exec")',
     scriptPath,
