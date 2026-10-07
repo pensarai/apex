@@ -51,24 +51,40 @@ export function createRunToolRecorder(
   options: RunToolRecorderOptions,
 ): ToolExecutionRecorder {
   const { runId, executionAttemptId, store, collectEvidence } = options;
-  let latched: Error | undefined;
+  let latched: RunPersistenceError | undefined;
+  let interrupted: RunControlInterruption | undefined;
   let tail: Promise<void> = Promise.resolve();
 
-  const latch = (cause: unknown): Error => {
-    latched ??=
-      cause instanceof RunControlInterruption
-        ? cause
-        : new RunPersistenceError(cause);
+  const latch = (cause: unknown): RunPersistenceError => {
+    latched ??= new RunPersistenceError(cause);
     return latched;
   };
 
-  const enqueue = <T>(op: () => Promise<T>): Promise<T> => {
+  // Persistence failures fence every later write and dominate operator
+  // intent; a control interruption fences fresh dispatch only, so
+  // already-accepted work can still commit its outcome.
+  const classify = (cause: unknown): Error => {
+    if (latched) return latched;
+    if (cause instanceof RunControlInterruption) {
+      interrupted ??= cause;
+      return interrupted;
+    }
+    return latch(cause);
+  };
+
+  // "committed" writes settle or mark operations the dispatch gate already
+  // accepted; only a persistence failure may fence them.
+  const enqueue = <T>(
+    op: () => Promise<T>,
+    mode: "dispatch" | "committed" = "dispatch",
+  ): Promise<T> => {
     const run = tail.then(async () => {
       if (latched) throw latched;
+      if (mode === "dispatch" && interrupted) throw interrupted;
       try {
         return await op();
       } catch (cause) {
-        throw latch(cause);
+        throw classify(cause);
       }
     });
     // Observe every settlement so flush() surfaces errors the caller
@@ -97,6 +113,7 @@ export function createRunToolRecorder(
     { kind: "execute" } | { kind: "reuse"; output: ToolResultPart["output"] }
   > => {
     if (latched) throw latched;
+    if (interrupted) throw interrupted;
     const policy = policyFor(input.toolName);
     if (!policy) {
       throw latch(
@@ -122,7 +139,7 @@ export function createRunToolRecorder(
         const blocked = await options.beforeTool(recorded);
         if (blocked) return { kind: "reuse", output: structuredClone(blocked) };
       } catch (cause) {
-        throw latch(cause);
+        throw classify(cause);
       }
     }
 
@@ -167,12 +184,13 @@ export function createRunToolRecorder(
         committed,
         evidence,
       );
-    });
+    }, "committed");
   };
 
   const unknown = (toolCallId: string) =>
-    enqueue(() =>
-      store.markToolOutcomeUnknown(runId, executionAttemptId, toolCallId),
+    enqueue(
+      () => store.markToolOutcomeUnknown(runId, executionAttemptId, toolCallId),
+      "committed",
     );
 
   const flush = async (): Promise<void> => {
@@ -183,6 +201,7 @@ export function createRunToolRecorder(
       last = tail;
     }
     if (latched) throw latched;
+    if (interrupted) throw interrupted;
   };
 
   return { beforeExecute, settle, unknown, flush };
