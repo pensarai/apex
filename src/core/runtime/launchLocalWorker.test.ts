@@ -8,6 +8,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { acquireLocalRunLock } from "./localRunLock";
+import {
+  LocalWorkerTransportError,
+  WorkerConnectionError,
+} from "./localWorkerTransport";
 
 const fakeChild = () => {
   const listeners = new Map<string, (value?: unknown) => void>();
@@ -32,7 +37,10 @@ vi.mock("node:child_process", async (importOriginal) => ({
   spawn: spawnMock as unknown as typeof import("node:child_process").spawn,
 }));
 vi.mock("./localWorkerEndpoint", () => ({ resolveWorkerEndpoint }));
-vi.mock("./localWorkerTransport", () => ({ workerRequest }));
+vi.mock("./localWorkerTransport", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  workerRequest,
+}));
 
 const { launchLocalWorker, resolveWorkerExecutable } = await import(
   "./launchLocalWorker"
@@ -204,9 +212,14 @@ describe("launchLocalWorker", () => {
   });
 
   it("fails when the worker log cannot be opened", async () => {
-    resolveWorkerEndpoint.mockResolvedValue(
-      endpointPaths("/nonexistent-worker-dir", "run_w"),
-    );
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    // The host-lock release proof must succeed first; only the log open
+    // fails, on a path no directory creation can rescue.
+    resolveWorkerEndpoint.mockResolvedValue({
+      ...endpointPaths(dir, "run_w"),
+      logPath: "/nonexistent-worker-dir/run_w.log",
+    });
     workerRequest.mockRejectedValue(
       Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
     );
@@ -355,6 +368,205 @@ describe("launchLocalWorker", () => {
     expect(resolveWorkerEndpoint).not.toHaveBeenCalled();
     expect(workerRequest).not.toHaveBeenCalled();
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("retiring host teardown", () => {
+  it("waits out a closing peer's 503 instead of aborting the launch", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    resolveWorkerEndpoint.mockResolvedValue(endpointPaths(dir, "run_503"));
+    workerRequest
+      .mockResolvedValueOnce({ phase: "settled" })
+      .mockRejectedValueOnce(
+        new LocalWorkerTransportError(
+          "Worker endpoint is unavailable or saturated",
+          { code: "UNAVAILABLE" },
+        ),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error("gone"), { code: "ENOENT" }),
+      )
+      .mockResolvedValueOnce({ protocolVersion: 1, phase: "idle" });
+
+    const result = await launchLocalWorker({
+      runId: "run_503",
+      databasePath: "/tmp/canonical.sqlite",
+      executable: { command: "pensar" },
+      probeIntervalMs: 1,
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(result.socketPath).toBe(`${dir}/run_503.sock`);
+  });
+
+  it("waits out a closing peer's connection reset instead of aborting", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    resolveWorkerEndpoint.mockResolvedValue(endpointPaths(dir, "run_rst"));
+    workerRequest
+      .mockResolvedValueOnce({ phase: "settled" })
+      .mockRejectedValueOnce(
+        new WorkerConnectionError("Worker response was interrupted"),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error("gone"), { code: "ENOENT" }),
+      )
+      .mockResolvedValueOnce({ protocolVersion: 1, phase: "idle" });
+
+    const result = await launchLocalWorker({
+      runId: "run_rst",
+      databasePath: "/tmp/canonical.sqlite",
+      executable: { command: "pensar" },
+      probeIntervalMs: 1,
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(result.socketPath).toBe(`${dir}/run_rst.sock`);
+  });
+
+  it("does not spawn while the retiring host still holds the host lock", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    const paths = endpointPaths(dir, "run_gap");
+    resolveWorkerEndpoint.mockResolvedValue(paths);
+    // The retiring host unlinked its socket but has not released the host
+    // lock; a child spawned now loses the lock and is never respawned.
+    const held = await acquireLocalRunLock("run_gap", paths.lockDatabasePath);
+    try {
+      workerRequest
+        .mockResolvedValueOnce({ phase: "settled" })
+        .mockRejectedValue(
+          Object.assign(new Error("gone"), { code: "ENOENT" }),
+        );
+      await expect(
+        launchLocalWorker({
+          runId: "run_gap",
+          databasePath: "/tmp/canonical.sqlite",
+          executable: { command: "pensar" },
+          probeIntervalMs: 1,
+          startupTimeoutMs: 25,
+        }),
+      ).rejects.toThrow("did not retire");
+      expect(spawnMock).not.toHaveBeenCalled();
+    } finally {
+      held.release();
+    }
+  });
+
+  it("spawns promptly once the retiring host releases the host lock", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    const paths = endpointPaths(dir, "run_rel");
+    resolveWorkerEndpoint.mockResolvedValue(paths);
+    const held = await acquireLocalRunLock("run_rel", paths.lockDatabasePath);
+    let probes = 0;
+    workerRequest.mockImplementation(async () => {
+      probes += 1;
+      if (spawnMock.mock.calls.length > 0) {
+        return { protocolVersion: 1, phase: "idle" };
+      }
+      if (probes === 1) return { phase: "settled" };
+      throw Object.assign(new Error("gone"), { code: "ENOENT" });
+    });
+    setTimeout(() => held.release(), 5);
+
+    const result = await launchLocalWorker({
+      runId: "run_rel",
+      databasePath: "/tmp/canonical.sqlite",
+      executable: { command: "pensar" },
+      probeIntervalMs: 1,
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(result.socketPath).toBe(`${dir}/run_rel.sock`);
+  });
+
+  it("times out on a persistently unavailable peer without spawning", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    resolveWorkerEndpoint.mockResolvedValue(endpointPaths(dir, "run_sat"));
+    workerRequest
+      .mockResolvedValueOnce({ phase: "settled" })
+      .mockRejectedValue(
+        new LocalWorkerTransportError(
+          "Worker endpoint is unavailable or saturated",
+          { code: "UNAVAILABLE" },
+        ),
+      );
+    await expect(
+      launchLocalWorker({
+        runId: "run_sat",
+        databasePath: "/tmp/canonical.sqlite",
+        executable: { command: "pensar" },
+        probeIntervalMs: 1,
+        startupTimeoutMs: 25,
+      }),
+    ).rejects.toThrow("did not retire");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("times out on a persistently resetting peer without spawning", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    resolveWorkerEndpoint.mockResolvedValue(endpointPaths(dir, "run_prst"));
+    workerRequest.mockRejectedValue(
+      new WorkerConnectionError("Worker response was interrupted"),
+    );
+    await expect(
+      launchLocalWorker({
+        runId: "run_prst",
+        databasePath: "/tmp/canonical.sqlite",
+        executable: { command: "pensar" },
+        probeIntervalMs: 1,
+        startupTimeoutMs: 25,
+      }),
+    ).rejects.toThrow("did not retire");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a malformed-response peer fatal without spawning", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    resolveWorkerEndpoint.mockResolvedValue(endpointPaths(dir, "run_bad"));
+    const malformed = new LocalWorkerTransportError(
+      "Malformed worker response",
+    );
+    workerRequest.mockRejectedValue(malformed);
+    await expect(
+      launchLocalWorker({
+        runId: "run_bad",
+        databasePath: "/tmp/canonical.sqlite",
+        executable: { command: "pensar" },
+      }),
+    ).rejects.toBe(malformed);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("waits out post-spawn teardown under the readiness deadline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "launch-worker-"));
+    tempDirs.push(dir);
+    resolveWorkerEndpoint.mockResolvedValue(endpointPaths(dir, "run_post"));
+    workerRequest
+      .mockRejectedValueOnce(
+        Object.assign(new Error("gone"), { code: "ENOENT" }),
+      )
+      .mockRejectedValue(
+        new LocalWorkerTransportError(
+          "Worker endpoint is unavailable or saturated",
+          { code: "UNAVAILABLE" },
+        ),
+      );
+    await expect(
+      launchLocalWorker({
+        runId: "run_post",
+        databasePath: "/tmp/canonical.sqlite",
+        executable: { command: "pensar" },
+        probeIntervalMs: 1,
+        startupTimeoutMs: 25,
+      }),
+    ).rejects.toThrow(/did not become ready.*unavailable or saturated/s);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 });
 

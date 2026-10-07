@@ -240,9 +240,13 @@ describe("concurrency cap", () => {
       }
       // Give the 32 watches time to reach the handler before the 33rd.
       await new Promise((resolve) => setTimeout(resolve, 250));
-      await expect(
+      const saturated = await expectFailure(
         workerRequest(socketPathName, snapshotRequest),
-      ).rejects.toThrow(/unavailable or saturated/i);
+      );
+      expect(saturated.message).toMatch(/unavailable or saturated/i);
+      // A 503 peer is closing or saturated — typed so callers can wait it
+      // out instead of treating it as a fatal peer error.
+      expect(saturated.code).toBe("UNAVAILABLE");
       release();
       expect((await Promise.all(pending)).length).toBe(32);
     } finally {

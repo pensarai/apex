@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { RecordedRunSpecSchema } from "./runStore";
 
 export interface WorkerEndpoint {
   /** Private Unix-domain socket the worker serves; mode 0600. */
@@ -15,9 +16,6 @@ export interface WorkerEndpoint {
   lockDatabasePath: string;
 }
 
-// Mirrors localRunLock's component rule; validated before any path use.
-const RUN_ID_COMPONENT = /^[A-Za-z0-9_-]{1,64}$/;
-
 /** Resolve the private per-run endpoint from a canonical database identity. */
 export async function resolveWorkerEndpoint(
   databasePath: string,
@@ -29,7 +27,9 @@ export async function resolveWorkerEndpoint(
       `Local worker hosting is not supported on ${process.platform}`,
     );
   }
-  if (!RUN_ID_COMPONENT.test(runId)) {
+  // Admission's runId rule is the single source of truth: a second, tighter
+  // cap here would strand runs admitted with longer ids.
+  if (!RecordedRunSpecSchema.shape.runId.safeParse(runId).success) {
     throw new Error(`Run id is not a valid endpoint component: ${runId}`);
   }
   if (!path.isAbsolute(databasePath)) {

@@ -74,6 +74,24 @@ describe("resolveWorkerEndpoint identity", () => {
     expect(other.lockDatabasePath).not.toBe(first.lockDatabasePath);
   });
 
+  it("resolves every run id length admission permits, including 65 and 66 bytes", async () => {
+    const database = await makeDatabase();
+    // Admission (RecordedRunSpecSchema) accepts run_ plus 1-62 chars, up
+    // to 66 bytes; the endpoint must accept exactly that set or an
+    // admitted run can never host a worker.
+    for (const runId of [
+      "run_alpha",
+      `run_${"a".repeat(61)}`,
+      `run_${"b".repeat(62)}`,
+    ]) {
+      const endpoint = await resolveWorkerEndpoint(database, runId);
+      expect(endpoint.socketPath.length).toBeLessThanOrEqual(104);
+    }
+    await expect(
+      resolveWorkerEndpoint(database, `run_${"c".repeat(63)}`),
+    ).rejects.toThrow(/endpoint component/i);
+  });
+
   it("canonicalizes a symlinked database path to the same endpoint", async () => {
     const database = await makeDatabase();
     const alias = path.join(tempRoot, "alias.sqlite");

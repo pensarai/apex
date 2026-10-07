@@ -2,8 +2,13 @@ import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
+import { acquireLocalRunLock } from "./localRunLock";
 import { resolveWorkerEndpoint } from "./localWorkerEndpoint";
-import { workerRequest } from "./localWorkerTransport";
+import {
+  LocalWorkerTransportError,
+  WorkerConnectionError,
+  workerRequest,
+} from "./localWorkerTransport";
 export interface LaunchLocalWorkerInput {
   runId: string;
   /** Absolute path to the canonical run database. */
@@ -57,6 +62,15 @@ const PROBE_TIMEOUT_MS = 2_000;
 function isEndpointAbsent(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   return code === "ENOENT" || code === "ECONNREFUSED";
+}
+
+// A peer tearing itself down answers 503 or rips the connection mid-read;
+// the transport retries reads once, but teardown can outlast that retry.
+function isPeerRetiring(error: unknown): boolean {
+  return (
+    error instanceof WorkerConnectionError ||
+    (error instanceof LocalWorkerTransportError && error.code === "UNAVAILABLE")
+  );
 }
 
 function sleepUntilDeadline(
@@ -155,8 +169,28 @@ export async function launchLocalWorker(
         return { socketPath: endpoint.socketPath, logPath: endpoint.logPath };
       }
     } catch (error) {
-      if (!isEndpointAbsent(error)) throw error;
-      break;
+      if (isEndpointAbsent(error)) {
+        // Absence alone is not spawn-safe: the retiring host unlinks its
+        // socket before releasing the host lock, so prove release first.
+        const lock = await acquireLocalRunLock(
+          runId,
+          endpoint.lockDatabasePath,
+        ).catch((cause: unknown) => {
+          if (
+            cause instanceof Error &&
+            cause.message.includes("held by another executor")
+          ) {
+            return undefined;
+          }
+          throw cause;
+        });
+        if (lock) {
+          lock.release();
+          break;
+        }
+      } else if (!isPeerRetiring(error)) {
+        throw error;
+      }
     }
     // A settled host is retiring and cannot accept another execution.
     if (!(await sleepUntilDeadline(probeIntervalMs, deadline))) {
@@ -208,7 +242,9 @@ export async function launchLocalWorker(
       }
       lastProbe = new Error("Worker has already settled");
     } catch (error) {
-      if (!isEndpointAbsent(error)) throw error;
+      // Post-spawn teardown (our child or a racing peer closing) waits
+      // out like retirement; unknown peers stay fatal.
+      if (!isEndpointAbsent(error) && !isPeerRetiring(error)) throw error;
       lastProbe = error;
     }
     if (spawnError) {

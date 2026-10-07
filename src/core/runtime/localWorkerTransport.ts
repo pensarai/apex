@@ -187,7 +187,7 @@ export interface WorkerRequestOptions {
   timeoutMs?: number;
 }
 
-class WorkerConnectionError extends LocalWorkerTransportError {}
+export class WorkerConnectionError extends LocalWorkerTransportError {}
 
 // Reads may retry once across endpoint arrival or retirement; mutations never do.
 export async function workerRequest(
@@ -307,6 +307,7 @@ function requestOnce(
                     mutation &&
                     res.statusCode !== 400 &&
                     res.statusCode !== 503,
+                  ...(res.statusCode === 503 ? { code: "UNAVAILABLE" } : {}),
                 }),
               );
               return;
