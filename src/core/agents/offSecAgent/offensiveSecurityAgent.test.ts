@@ -17,6 +17,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+// Direct file import: the barrel "./tools" is mocked below, and this test
+// needs the real registry to exercise its retained-handle retry semantics.
+import { CallbackListenerRegistry } from "./tools/callbackListener";
 
 const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 const streamResponseCalls = vi.hoisted(
@@ -88,6 +91,18 @@ vi.mock("./tools", () => ({
   ],
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
+  // Minimal registry stub: the agent constructs one per instance and
+  // finalization drains it; these tests never start listeners.
+  CallbackListenerRegistry: class {
+    register() {}
+    get() {
+      return undefined;
+    }
+    remove() {}
+    async stopAll() {
+      return [];
+    }
+  },
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
@@ -431,6 +446,8 @@ function buildStubAgent(overrides: {
   resolveResult?: (sr: unknown) => unknown;
   browserSession?: { disconnect: () => Promise<void> };
   ownsBrowserSession?: boolean;
+  /** Overrides the default listener-registry stub (real registry in the finalization test). */
+  callbackListeners?: unknown;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
@@ -495,6 +512,22 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "ownsBrowserSession", {
     value: overrides.ownsBrowserSession ?? false,
+  });
+  // The constructor is bypassed, so provide the listener registry that
+  // finalizeRun drains; these tests never start listeners.
+  Object.defineProperty(agent, "callbackListeners", {
+    value:
+      overrides.callbackListeners ??
+      ({
+        register() {},
+        get() {
+          return undefined;
+        },
+        remove() {},
+        async stopAll() {
+          return [];
+        },
+      } as object),
   });
   Object.defineProperty(agent, "messagesPath", {
     value: overrides.messagesPath ?? null,
@@ -1267,6 +1300,54 @@ describe("OffensiveSecurityAgent.consume()", () => {
       });
 
       await expect(agent.consume()).resolves.toBe("captured");
+    });
+  });
+
+  describe("callback listener finalization (owned-resource drain)", () => {
+    it("consume() drains listeners; one failed stop never blocks another, and abortAndDrain retries", async () => {
+      const registry = new CallbackListenerRegistry();
+      const stopped: string[] = [];
+      registry.register({
+        jobId: "wjob_77777_fail01",
+        nonce: "a".repeat(32),
+        scriptPath: "/a.cjs",
+        bindAddress: "0.0.0.0",
+        port: 1,
+        selfTestConfirmed: false,
+        stop: async () => {
+          throw new Error("stop a failed");
+        },
+      });
+      registry.register({
+        jobId: "wjob_77777_pass01",
+        nonce: "b".repeat(32),
+        scriptPath: "/b.cjs",
+        bindAddress: "0.0.0.0",
+        port: 2,
+        selfTestConfirmed: false,
+        stop: async () => {
+          stopped.push("b");
+          return undefined;
+        },
+      });
+
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], new Error("stream boom")),
+        messagesPath: null,
+        callbackListeners: registry,
+      });
+
+      // The stream error stays primary; listener cleanup still ran.
+      await expect(agent.consume()).rejects.toThrow("stream boom");
+      expect(stopped).toEqual(["b"]);
+      expect(registry.get("wjob_77777_fail01")).toBeDefined();
+      expect(registry.get("wjob_77777_pass01")).toBeUndefined();
+
+      // Host teardown path: best-effort retry, never throws, keeps the
+      // failed owner registered for a later cleanup path.
+      await expect(agent.abortAndDrain()).resolves.toBeUndefined();
+      expect(stopped).toEqual(["b"]);
+      expect(registry.get("wjob_77777_fail01")).toBeDefined();
     });
   });
 

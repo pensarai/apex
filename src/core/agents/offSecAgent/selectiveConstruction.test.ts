@@ -96,6 +96,18 @@ vi.mock("./tools", () => {
     FAST_STRIKE_EXCLUDED_TOOL_NAMES: ["spawn_pentest_agent", "write_plan"],
     PerCommandShell: class {},
     PlaywrightMcpSession: class {},
+    // Minimal registry stub: the agent constructs one per instance and
+    // finalization drains it; these tests never start listeners.
+    CallbackListenerRegistry: class {
+      register() {}
+      get() {
+        return undefined;
+      }
+      remove() {}
+      async stopAll() {
+        return [];
+      }
+    },
   };
 });
 
