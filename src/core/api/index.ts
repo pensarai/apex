@@ -125,8 +125,14 @@ export {
   searchTargetLogs,
   updateIssue,
 } from "./issues";
-export type { RunAgentResult } from "./offesecAgent";
-export { runOffensiveSecurityAgent } from "./offesecAgent";
+export type {
+  OffensiveSecurityAgentClientInput,
+  RunAgentResult,
+} from "./offesecAgent";
+export {
+  createOffensiveSecurityAgentClient,
+  runOffensiveSecurityAgent,
+} from "./offesecAgent";
 export type { PatchingAgentInput, PatchResult } from "./patching";
 export { runPatchingAgent } from "./patching";
 export { runTargetedPentestAgent } from "./targetedPentest";
