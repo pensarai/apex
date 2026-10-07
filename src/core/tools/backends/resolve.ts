@@ -21,9 +21,29 @@ export function resolveBackends(ctx: ToolContext): ToolBackends {
 
 const artifactsByContext = new WeakMap<ToolContext, ToolBackends["fs"]>();
 
-/** Classic findings persist host session artifacts even when execution is remote. */
-export function resolveArtifactFs(ctx: ToolContext): ToolBackends["fs"] {
+/**
+ * Classic findings persist host session artifacts even when execution is
+ * remote. The default instance allows unlimited retained text for artifact
+ * writers; pass `maxTextFileBytes` for a fresh, session-scoped instance whose
+ * reads are byte-capped (not memoised alongside the unlimited default).
+ */
+export function resolveArtifactFs(
+  ctx: ToolContext,
+  options: { maxTextFileBytes?: number } = {},
+): ToolBackends["fs"] {
   if (ctx.backends) return ctx.backends.fs;
+  if (options.maxTextFileBytes !== undefined) {
+    return LocalBackends(
+      {
+        ...ctx,
+        sandbox: undefined,
+        agentCwd: ctx.session.rootPath,
+        fileWorkspaceRoot: ctx.session.rootPath,
+      },
+      undefined,
+      { maxTextFileBytes: options.maxTextFileBytes },
+    ).fs;
+  }
   let fs = artifactsByContext.get(ctx);
   if (!fs) {
     fs = LocalBackends(

@@ -4,6 +4,7 @@ import {
   resolveBackends,
   resolveProgramRunner,
 } from "../../../tools/backends/resolve";
+import type { FsBackend } from "../../../tools/backends/types";
 import type { ToolContext } from "./types";
 
 export type ScriptLanguage = "bash" | "python" | "javascript";
@@ -27,6 +28,10 @@ export interface ScriptSyntaxResult {
 // Measured worst case (python startup on a max-size 1 MiB script) is ~0.6s;
 // 5s keeps ~9x headroom for loaded sandboxes while still bounding the path.
 export const SCRIPT_SYNTAX_CHECK_TIMEOUT_SECONDS = 5;
+
+// Byte cap for reads the check owns. Matches the workspace text-tool cap;
+// a larger script surfaces as `unchecked` instead of an unbounded read.
+export const SCRIPT_SYNTAX_CHECK_MAX_BYTES = 1024 * 1024;
 
 const CHECKER_OUTPUT_LIMIT = 240;
 
@@ -152,10 +157,10 @@ function verdictFromCheckerOutcome(
  * rolls back any write; a `valid` verdict says the bytes compile in the
  * selected dialect and nothing about the finding's effect. Read or transport
  * failures, missing checkers and timeouts all yield `unchecked`, which must
- * not block execution. Every step is bounded: two capped single-file reads
- * bracket one short-deadline checker command, and only a verdict whose
- * pre/post reads hash identically is certified against the bytes that will
- * execute.
+ * not block execution. Bounds: the reads this check owns are byte-capped
+ * (injected backends apply their own caps), the checker command carries a
+ * wall-clock deadline, and only a verdict whose pre/post reads hash
+ * identically is certified against the bytes that will execute.
  */
 export async function checkScriptSyntax(
   ctx: ToolContext,
@@ -167,11 +172,18 @@ export async function checkScriptSyntax(
     scriptPath: string;
     timeoutSeconds?: number;
     abortSignal?: AbortSignal;
+    /**
+     * File backend that owns the script bytes. Defaults to the agent's
+     * normal workspace backend, which keeps declared artifacts confined to
+     * the helper workspace; pass the artifact owner for a retained local
+     * PoC that lives outside it.
+     */
+    fs?: FsBackend;
   },
 ): Promise<ScriptSyntaxResult> {
   const timeoutSeconds =
     params.timeoutSeconds ?? SCRIPT_SYNTAX_CHECK_TIMEOUT_SECONDS;
-  const fs = resolveBackends(ctx).fs;
+  const fs = params.fs ?? resolveBackends(ctx).fs;
   let contentHash: string | undefined;
 
   try {

@@ -36,6 +36,7 @@ import {
 } from "./scopeGuard";
 import {
   checkScriptSyntax,
+  SCRIPT_SYNTAX_CHECK_MAX_BYTES,
   type ScriptSyntaxResult,
 } from "./scriptSyntaxCheck";
 import type { ToolContext } from "./types";
@@ -992,11 +993,23 @@ async function executePoc(
   // is the remotely staged copy, not the host-retained artifact — so the
   // verdict always describes what will run. Invalid skips the run: the same
   // runner, dialect and module mode would only fail identically at execution.
+  // The retained local PoC is owned by the (byte-capped) artifact backend
+  // since it may live outside a confined helper workspace; the remotely
+  // staged copy is read through the same workspace backend that staged it.
+  // Declared artifacts always use the default, staying confined to the
+  // helper workspace.
   const syntaxCheck = await checkScriptSyntax(ctx, {
     language: input.pocType,
     runner: POC_RUNNERS[input.pocType],
     scriptPath: executionPath,
     abortSignal: ctx.abortSignal,
+    ...(executionPath === pocPath
+      ? {
+          fs: resolveArtifactFs(ctx, {
+            maxTextFileBytes: SCRIPT_SYNTAX_CHECK_MAX_BYTES,
+          }),
+        }
+      : {}),
   });
   if (syntaxCheck.status === "invalid") {
     await deleteArtifact(ctx, pocPath);

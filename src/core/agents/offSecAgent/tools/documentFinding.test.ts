@@ -1179,6 +1179,10 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
   });
 });
 
+function sha256(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
 describe("documentVulnerability native syntax checks", () => {
   let rootPath: string;
 
@@ -1190,10 +1194,6 @@ describe("documentVulnerability native syntax checks", () => {
   afterEach(() => {
     rmSync(rootPath, { recursive: true, force: true });
   });
-
-  function sha256(content: string): string {
-    return createHash("sha256").update(content, "utf8").digest("hex");
-  }
 
   // Classic-sandbox harness: file ops and commands all route through the
   // sandbox transport (a real shell at remoteRoot), never the host shell.
@@ -1570,5 +1570,153 @@ describe("documentVulnerability native syntax checks", () => {
     // Nothing was staged, checked or executed.
     expect(commands.some((c) => c.command.includes("bash -n "))).toBe(false);
     expect(commands.some((c) => /^bash '/.test(c.command))).toBe(false);
+  });
+});
+
+describe("documentVulnerability local retained PoC checks (confined helper workspace)", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  // Local harness mirroring helper agents: a confined file workspace for
+  // file tools and commands, with session PoC artifacts retained under a
+  // separate session root that the workspace backend must reject.
+  function localContext() {
+    const ctx = makeToolContext(rootPath);
+    const helperRoot = mkdtempSync(join(rootPath, "helper-"));
+    ctx.agentCwd = helperRoot;
+    ctx.fileWorkspaceRoot = helperRoot;
+    return { ctx, helperRoot };
+  }
+
+  it("checks the retained local PoC through the artifact owner despite the confined workspace", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx } = localContext();
+    const argv = vi.spyOn(PerCommandShell.prototype, "executeArgv");
+    try {
+      const result = (await documentVulnerability(ctx).execute?.(
+        makeDocumentInput(),
+        { toolCallId: "local-ok", messages: [] },
+      )) as DocumentToolResult & { syntaxCheck?: ScriptSyntaxResult };
+
+      expect(result).toMatchObject({ success: true });
+      // The check actually ran and decided, instead of silently reading
+      // through the confined workspace backend and yielding unchecked.
+      expect(result.syntaxCheck?.status).toBe("valid");
+      const retained = join(ctx.session.pocsPath, "poc_admin_data.sh");
+      expect(result.syntaxCheck?.contentHash).toBe(
+        sha256(readFileSync(retained, "utf8")),
+      );
+      expect(
+        argv.mock.calls.some(
+          ([runner, args]) => runner === "bash" && args[0] === "-n",
+        ),
+      ).toBe(true);
+    } finally {
+      argv.mockRestore();
+    }
+  });
+
+  it("blocks an invalid retained local PoC before execution", async () => {
+    const { ctx } = localContext();
+    const input = makeDocumentInput();
+    input.pocName = "local_broken";
+    input.pocContent = 'if [ -n x ]; then\n  echo "unclosed"\n';
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "local-bad",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxFailed?: boolean;
+      syntaxCheck?: ScriptSyntaxResult;
+    };
+
+    expect(result).toMatchObject({ success: false, syntaxFailed: true });
+    expect(result.syntaxCheck?.status).toBe("invalid");
+    expect(result.syntaxCheck?.detail).toMatch(
+      /poc_local_broken\.sh:\d+: syntax error/,
+    );
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    expect(existsSync(join(ctx.session.pocsPath, "poc_local_broken.sh"))).toBe(
+      false,
+    );
+  });
+
+  it("bounds the retained-artifact read: oversized scripts surface as unchecked and still run", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx } = localContext();
+    const input = makeDocumentInput();
+    input.pocName = "oversized";
+    input.pocContent = "x=1\n".repeat(270_000);
+    const argv = vi.spyOn(PerCommandShell.prototype, "executeArgv");
+    try {
+      const result = (await documentVulnerability(ctx).execute?.(input, {
+        toolCallId: "local-big",
+        messages: [],
+      })) as DocumentToolResult & { syntaxCheck?: ScriptSyntaxResult };
+
+      expect(result).toMatchObject({ success: true });
+      expect(result.syntaxCheck?.status).toBe("unchecked");
+      expect(result.syntaxCheck?.reason).toContain("limit");
+      // No checker ran at all: the read was refused by the byte cap first.
+      expect(
+        argv.mock.calls.some(
+          ([runner, args]) => runner === "bash" && args[0] === "-n",
+        ),
+      ).toBe(false);
+    } finally {
+      argv.mockRestore();
+    }
+  });
+
+  it("checks a declared emitted artifact inside the confined helper workspace", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, helperRoot } = localContext();
+    const input = {
+      ...makeDocumentInput(),
+      pocType: "python" as const,
+      pocName: "local_gen",
+      pocContent: [
+        'with open("poc_local_emit.js", "w") as f:',
+        '    f.write("console.log(" + chr(34) + "emitted ok" + chr(34) + ");")',
+        "    f.write(chr(10))",
+        'print("emitted")',
+      ].join("\n"),
+      generatedExecutableArtifacts: [
+        { path: "poc_local_emit.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "local-gen",
+      messages: [],
+    })) as DocumentToolResult & {
+      syntaxCheck?: ScriptSyntaxResult;
+      generatedArtifactChecks?: Array<
+        { path: string; language: string } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    // The retained wrapper was checked through the artifact owner; the
+    // declared emission was checked through the confined workspace backend.
+    expect(result.syntaxCheck?.status).toBe("valid");
+    expect(result.generatedArtifactChecks).toHaveLength(1);
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "poc_local_emit.js",
+      language: "javascript",
+      status: "valid",
+    });
+    expect(result.generatedArtifactChecks?.[0]?.contentHash).toBe(
+      sha256('console.log("emitted ok");\n'),
+    );
+    expect(existsSync(join(helperRoot, "poc_local_emit.js"))).toBe(true);
   });
 });

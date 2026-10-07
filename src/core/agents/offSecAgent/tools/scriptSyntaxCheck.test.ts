@@ -372,6 +372,38 @@ describe("checkScriptSyntax (injected backend routing)", () => {
     );
   });
 
+  it("reads through the supplied owner seam when the workspace backend would reject the path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(root);
+    const elsewhere = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(elsewhere);
+    const path = stage(root, "poc_retained.sh", "echo proof\n");
+    const readRaw = vi.fn(async (p: string) => ({
+      success: true,
+      error: "",
+      content: "echo proof\n",
+      path: p,
+    }));
+    const ctx = {
+      ...context(root),
+      // A confined helper workspace that does not contain the retained PoC:
+      // the default workspace backend would refuse to read it.
+      fileWorkspaceRoot: elsewhere,
+    };
+
+    const result = await checkScriptSyntax(ctx, {
+      language: "bash",
+      runner: "bash",
+      scriptPath: path,
+      fs: { readRaw } as unknown as ToolBackends["fs"],
+    });
+
+    expect(result.status).toBe("valid");
+    expect(result.contentHash).toBe(sha256("echo proof\n"));
+    expect(readRaw).toHaveBeenCalledTimes(2);
+    expect(readRaw).toHaveBeenCalledWith(path);
+  });
+
   it("discards a verdict when the certification re-read fails", async () => {
     const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
     roots.push(root);
