@@ -28,6 +28,17 @@ export class LocalWorkerTransportError extends Error {
   }
 }
 
+// Handlers throw this only from pure validation against durable state,
+// before any durable write or external effect begins; the message surfaces
+// verbatim to the operator. Throwing it after an effect started would
+// misreport an uncertain outcome as a definite refusal.
+export class LocalWorkerRequestRejectedError extends LocalWorkerTransportError {
+  constructor(message: string) {
+    super(message, { uncertain: false });
+    this.name = "LocalWorkerRequestRejectedError";
+  }
+}
+
 function writeError(res: http.ServerResponse, status: number, message: string) {
   if (res.destroyed || res.writableEnded) return;
   if (res.headersSent) {
@@ -126,11 +137,15 @@ export async function serveWorkerTransport({
         });
         res.end(body);
       } catch (cause) {
-        writeError(
-          res,
-          500,
-          cause instanceof Error ? cause.message : "Worker request failed",
-        );
+        if (cause instanceof LocalWorkerRequestRejectedError) {
+          writeError(res, 409, cause.message);
+        } else {
+          writeError(
+            res,
+            500,
+            cause instanceof Error ? cause.message : "Worker request failed",
+          );
+        }
       } finally {
         clearTimeout(timer);
         requests.delete(controller);
@@ -301,6 +316,12 @@ function requestOnce(
                 typeof parsed.error.message === "string"
                   ? parsed.error.message
                   : `Worker returned HTTP ${res.statusCode}`;
+              if (res.statusCode === 409) {
+                // Only the typed rejection produces 409, so the status alone
+                // rehydrates the definite refusal with its message.
+                fail(new LocalWorkerRequestRejectedError(message));
+                return;
+              }
               fail(
                 new LocalWorkerTransportError(message, {
                   uncertain:

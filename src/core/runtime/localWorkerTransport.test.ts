@@ -8,7 +8,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkerSnapshot } from "./localWorkerProtocol";
-import { serveWorkerTransport, workerRequest } from "./localWorkerTransport";
+import {
+  LocalWorkerRequestRejectedError,
+  LocalWorkerTransportError,
+  serveWorkerTransport,
+  workerRequest,
+} from "./localWorkerTransport";
 
 // Real sockets, real workerRequest — only raw-wire cases bypass the client.
 
@@ -58,6 +63,11 @@ function socketPath(): string {
 }
 
 const snapshotRequest = { protocolVersion: 1, method: "snapshot" } as const;
+const startRequest = {
+  protocolVersion: 1,
+  method: "start",
+  spec: {},
+} as const;
 
 beforeEach(() => {
   tempDirs = [];
@@ -557,6 +567,78 @@ describe("mutation uncertainty", () => {
         workerRequest(socketPathName, snapshotRequest, { timeoutMs: 80 }),
       );
       expect(read.uncertain).toBe(false);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe("handler rejection boundary", () => {
+  it("surfaces a typed request rejection as definite without retrying", async () => {
+    const socketPathName = socketPath();
+    let handled = 0;
+    const server = await serveWorkerTransport({
+      socketPath: socketPathName,
+      handle: async () => {
+        handled += 1;
+        throw new LocalWorkerRequestRejectedError(
+          "spec conflicts with the admitted run",
+        );
+      },
+    });
+    try {
+      const error = await workerRequest(socketPathName, startRequest).then(
+        () => {
+          throw new Error("expected the worker request to fail");
+        },
+        (cause: unknown) => cause,
+      );
+      expect(error).toBeInstanceOf(LocalWorkerRequestRejectedError);
+      expect(error).toBeInstanceOf(LocalWorkerTransportError);
+      expect((error as Error).message).toBe(
+        "spec conflicts with the admitted run",
+      );
+      expect((error as LocalWorkerTransportError).uncertain).toBe(false);
+      // A definite refusal never triggers a second mutation request.
+      expect(handled).toBe(1);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps a generic handler failure uncertain for mutations", async () => {
+    const socketPathName = socketPath();
+    const server = await serveWorkerTransport({
+      socketPath: socketPathName,
+      handle: async () => {
+        throw new Error("worker failed after an effect");
+      },
+    });
+    try {
+      const failure = await expectFailure(
+        workerRequest(socketPathName, startRequest),
+      );
+      expect(failure.message).toBe("worker failed after an effect");
+      expect(failure.uncertain).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("classifies a rejected read as a definite refusal too", async () => {
+    const socketPathName = socketPath();
+    const server = await serveWorkerTransport({
+      socketPath: socketPathName,
+      handle: async () => {
+        throw new LocalWorkerRequestRejectedError("run is not enrolled");
+      },
+    });
+    try {
+      const failure = await expectFailure(
+        workerRequest(socketPathName, snapshotRequest),
+      );
+      expect(failure.message).toBe("run is not enrolled");
+      expect(failure.uncertain).toBe(false);
     } finally {
       await server.close();
     }
