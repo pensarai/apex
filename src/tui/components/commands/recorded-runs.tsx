@@ -95,6 +95,7 @@ export function RecordedRunsDialog({
     runId || specPath ? "detail" : "list",
   );
   const [runs, setRuns] = useState<RunRecord[]>([]);
+  const [listRevision, setListRevision] = useState(0);
   const [listError, setListError] = useState<string | null>(null);
   const [selectedRunIndex, setSelectedRunIndex] = useState(0);
   const [view, setView] = useState<RecordedRunView | null>(null);
@@ -117,6 +118,8 @@ export function RecordedRunsDialog({
       mounted.current = false;
     };
   }, []);
+  // Async spec startup must not replace the operator's navigation.
+  const navigationChanged = useRef(false);
   useEffect(() => {
     const selected = runs[selectedRunIndex];
     if (selected)
@@ -191,18 +194,25 @@ export function RecordedRunsDialog({
         if (!mounted.current) return;
         const started = await client.start(spec, executable);
         if (!mounted.current) return;
-        setViewRunId(started.snapshot.runId);
-        setStatusLine(`Started detached run (log: ${started.logPath})`);
+        setStatusLine(
+          `Started detached run ${started.snapshot.runId} (log: ${started.logPath})`,
+        );
+        if (!navigationChanged.current) {
+          setViewRunId(started.snapshot.runId);
+        }
       } catch (cause) {
         if (!mounted.current) return;
         setStickyError(
           `Start failed: ${cause instanceof Error ? cause.message : String(cause)}`,
         );
-        setPage("list");
+        if (!navigationChanged.current) setPage("list");
+      } finally {
+        if (mounted.current) setListRevision((revision) => revision + 1);
       }
     })();
   }, [client, specPath, executable]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: listRevision refreshes an open list when spec startup settles.
   useEffect(() => {
     if (!client || page !== "list") return;
     let cancelled = false;
@@ -223,9 +233,10 @@ export function RecordedRunsDialog({
     return () => {
       cancelled = true;
     };
-  }, [client, page]);
+  }, [client, page, listRevision]);
 
   const openRun = (targetRun: string) => {
+    navigationChanged.current = true;
     setView(null);
     setStickyError(null);
     setStatusLine(null);
@@ -235,6 +246,7 @@ export function RecordedRunsDialog({
   };
 
   const backToList = () => {
+    navigationChanged.current = true;
     setViewRunId(null);
     setView(null);
     setStickyError(null);
@@ -410,6 +422,7 @@ export function RecordedRunsDialog({
       >
         {stickyError && <text fg={colors.error}>{stickyError}</text>}
         {listError && <text fg={colors.error}>List failed: {listError}</text>}
+        {statusLine && <text fg={colors.textMuted}>{statusLine}</text>}
         {!client && <text fg={colors.textMuted}>Opening run store…</text>}
         {client && runs.length === 0 && !listError && (
           <text fg={colors.textMuted}>No recorded runs found.</text>

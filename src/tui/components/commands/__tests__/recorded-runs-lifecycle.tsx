@@ -146,9 +146,26 @@ const snapshot = {
   sequence: 1,
   observation,
 };
+// The spec-started run is distinct from the pre-existing listed run so a
+// hijack (following the wrong run) cannot pass by coincidence.
+const STARTED_RUN_ID = "run_c5_spec_started";
+const startedSpec: RecordedRunSpec = { ...spec, runId: STARTED_RUN_ID };
+const startedRecord =
+  scenario === "spec-start-once"
+    ? record
+    : RunRecordSchema.parse({ ...record, spec: startedSpec });
+const startedSnapshot =
+  scenario === "spec-start-once"
+    ? snapshot
+    : {
+        ...snapshot,
+        runId: STARTED_RUN_ID,
+        observation: { ...observation, record: startedRecord },
+      };
+const listedRecords = [record];
 const client: RecordedRunClient = {
   databasePath: "/fake/runs.sqlite",
-  list: async () => [record],
+  list: async () => [...listedRecords],
   observe: async () => {
     throw new Error("the dialog follows through watch");
   },
@@ -172,13 +189,24 @@ const client: RecordedRunClient = {
     }
   },
   start: async (...args) => {
-    assert.equal(
-      scenario,
-      "spec-start-once",
+    assert.ok(
+      scenario.startsWith("spec-start"),
       "observation must never start execution",
     );
     calls.push({ method: "start", args });
-    return { socketPath: "/fake/socket", logPath: "/fake/log", snapshot };
+    if (scenario !== "spec-start-once") {
+      // Pending starts complete only when the scenario resolves them, so
+      // the dialog state at completion time is under test control.
+      await new Promise<void>((resolve) => {
+        finishStart = resolve;
+      });
+      listedRecords.push(startedRecord);
+    }
+    return {
+      socketPath: "/fake/socket",
+      logPath: "/fake/log",
+      snapshot: startedSnapshot,
+    };
   },
   resume: async (...args) => {
     calls.push({ method: "resume", args });
@@ -199,6 +227,7 @@ const client: RecordedRunClient = {
   },
 };
 let finishOpen: ((client: RecordedRunClient) => void) | undefined;
+let finishStart: (() => void) | undefined;
 mock.module(
   `${import.meta.dirname}/../../../../core/runtime/recordedRunClient.ts`,
   () => ({
@@ -219,12 +248,15 @@ const errors: unknown[][] = [];
 const originalError = console.error;
 console.error = (...args: unknown[]) => errors.push(args);
 const executable = { command: "bun", args: ["/fixture/src/cli.ts"] };
-const specDirectory =
-  scenario === "spec-start-once"
-    ? await mkdtemp(join(tmpdir(), "apex-tui-spec-"))
-    : undefined;
+const specDirectory = scenario.startsWith("spec-start")
+  ? await mkdtemp(join(tmpdir(), "apex-tui-spec-"))
+  : undefined;
 const specPath = specDirectory ? join(specDirectory, "run.json") : undefined;
-if (specPath) await writeFile(specPath, JSON.stringify(spec));
+if (specPath)
+  await writeFile(
+    specPath,
+    JSON.stringify(scenario === "spec-start-once" ? spec : startedSpec),
+  );
 function OpenDialog() {
   const dialog = useDialog();
   const opened = useRef(false);
@@ -386,6 +418,55 @@ try {
       [{ method: "start", args: [spec, executable] }],
     );
     assert.equal(calls.filter((call) => call.method === "watch").length, 1);
+  } else if (scenario === "spec-start-back-to-list") {
+    for (let i = 0; i < 20 && !finishStart; i++)
+      await act(async () => {
+        await Bun.sleep(10);
+      });
+    assert.ok(finishStart, "the pending start never began");
+    // Back to the list while the start is still pending.
+    await press("b");
+    rendered(await frame(), RUN_ID);
+    await act(async () => finishStart?.());
+    await settle();
+    const text = await frame();
+    rendered(text, "Recorded Runs");
+    assert.ok(!text.includes(`Recorded Run ${STARTED_RUN_ID}`));
+    rendered(text, STARTED_RUN_ID);
+    rendered(text, "Started detached run");
+    assert.equal(calls.filter((call) => call.method === "watch").length, 0);
+    await press("ARROW_DOWN");
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${STARTED_RUN_ID}`);
+    assert.deepEqual(
+      calls.filter((call) => call.method === "watch"),
+      [{ method: "watch", args: [STARTED_RUN_ID] }],
+    );
+    // The refreshed list keeps the launched run visible after backing out.
+    await press("b");
+    const listText = await frame();
+    rendered(listText, STARTED_RUN_ID);
+    rendered(listText, RUN_ID);
+  } else if (scenario === "spec-start-viewing-other-run") {
+    for (let i = 0; i < 20 && !finishStart; i++)
+      await act(async () => {
+        await Bun.sleep(10);
+      });
+    assert.ok(finishStart, "the pending start never began");
+    await press("b");
+    rendered(await frame(), RUN_ID);
+    // Open the pre-existing run; the launched run must not hijack it.
+    await press("RETURN");
+    rendered(await frame(), `Recorded Run ${RUN_ID}`);
+    await act(async () => finishStart?.());
+    await settle();
+    const text = await frame();
+    rendered(text, `Recorded Run ${RUN_ID}`);
+    rendered(text, "Started detached run");
+    assert.deepEqual(
+      calls.filter((call) => call.method === "watch"),
+      [{ method: "watch", args: [RUN_ID] }],
+    );
   } else if (scenario === "scroll-transcript") {
     await press("END");
     rendered(await frame(), "committed-line-59");

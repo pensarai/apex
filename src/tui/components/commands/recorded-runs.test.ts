@@ -10,6 +10,8 @@ it.each([
   "late-open-detach",
   "scroll-transcript",
   "spec-start-once",
+  "spec-start-back-to-list",
+  "spec-start-viewing-other-run",
 ])("recorded-runs dialog lifecycle: %s", (scenario) => {
   // OpenTUI's native buffer bindings and bun:test mock.module run in Bun.
   const result = spawnSync(
