@@ -69,19 +69,36 @@ function posixProbeCommand(): string {
 }
 
 function windowsProbeCommand(): string {
-  return PROBE_TOOL_NAMES.map(
+  const checks = PROBE_TOOL_NAMES.map(
     (t) => `where ${t} >nul 2>&1 && echo AVAIL ${t} || echo MISSING ${t}`,
   ).join(" & ");
+  // `ver` is a cmd built-in — no new interpreter, always succeeds — so a
+  // missing tool still cannot fail the probe. A bare `OS:` marker line lets
+  // the parser take ver's next line verbatim instead of pattern-matching
+  // its (locale-dependent) text.
+  return `${checks} & echo OS: & ver`;
 }
 
 function parseProbeOutput(output: string): RuntimeExecutionFacts {
   const available: string[] = [];
   const missing: string[] = [];
   let os: string | undefined;
+  let osPending = false;
 
   for (const rawLine of output.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
+    // Windows probe: a bare `OS:` marker — the next non-empty line is ver's
+    // output, captured verbatim.
+    if (osPending) {
+      os = line;
+      osPending = false;
+      continue;
+    }
+    if (line === "OS:") {
+      osPending = true;
+      continue;
+    }
     const avail = /^AVAIL (\S+)$/.exec(line);
     if (avail) {
       available.push(avail[1]);

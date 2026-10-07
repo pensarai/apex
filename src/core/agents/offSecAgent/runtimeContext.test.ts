@@ -339,6 +339,46 @@ describe("probeRuntimeFacts", () => {
       "windows",
     );
   });
+
+  it("windows probe reports the OS from ver output through the backend", async () => {
+    // cmd-shaped output: CRLF line endings, bare OS: marker, ver's line.
+    const output = [
+      ...["bash", "node"].map((t) => `AVAIL ${t}`),
+      ...PROBE_TOOL_NAMES.filter((t) => !["bash", "node"].includes(t)).map(
+        (t) => `MISSING ${t}`,
+      ),
+      "OS:",
+      "Microsoft Windows [Version 10.0.22621.3152]",
+    ].join("\r\n");
+    const { backend, calls } = fakeBackends(
+      () => successEvents(output),
+      "windows",
+    );
+    const facts = await probeRuntimeFacts(makeCtx({ backends: backend }));
+    expect(calls[0].cmd).toContain("echo OS: & ver");
+    // Native cmd built-in only — no powershell, no new interpreter, no host
+    // uname fallback.
+    expect(calls[0].cmd).not.toContain("powershell");
+    expect(calls[0].cmd).not.toContain("uname");
+    expect(facts.probed).toBe(true);
+    expect(facts.os).toBe("Microsoft Windows [Version 10.0.22621.3152]");
+  });
+
+  it("a missing ver line degrades the OS to unknown without failing the windows probe", async () => {
+    // Every tool absent AND ver produced nothing after the bare marker:
+    // exit stays 0 and the inventory is still trustworthy — only the OS
+    // reads as unknown.
+    const output = [...PROBE_TOOL_NAMES.map((t) => `MISSING ${t}`), "OS:"].join(
+      "\r\n",
+    );
+    const { backend } = fakeBackends(() => successEvents(output), "windows");
+    const facts = await probeRuntimeFacts(makeCtx({ backends: backend }));
+    expect(facts.probed).toBe(true);
+    expect(facts.os).toBeUndefined();
+    const section = buildRuntimeContextSection(facts, { platform: "windows" });
+    expect(section).toContain("OS: unknown");
+    expect(section).toContain("Command tools absent:");
+  });
 });
 
 // ---------------------------------------------------------------------------
