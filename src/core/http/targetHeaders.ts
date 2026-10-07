@@ -395,7 +395,10 @@ type OperatorScan = {
 // operators inside quoted args or misses no-whitespace pipelines like
 // `curl url|nc atk 9999`, so we walk the string with POSIX quote/escape
 // rules instead.
-function scanShellOperators(command: string): OperatorScan {
+function scanShellOperators(
+  command: string,
+  allowDescriptorRedirect: boolean,
+): OperatorScan {
   let inSingle = false;
   let inDouble = false;
   let mergeCandidate = false;
@@ -445,7 +448,9 @@ function scanShellOperators(command: string): OperatorScan {
       activeExpansion = true;
       continue;
     }
-    if (ch === "&" && isStderrMergeAt(command, i)) {
+    // `2>&1` recognition is proven for POSIX shells only — the same bytes
+    // in Windows cmd keep the legacy chaining classification.
+    if (allowDescriptorRedirect && ch === "&" && isStderrMergeAt(command, i)) {
       mergeCandidate = true;
       i++; // skip the merge target digit
       continue;
@@ -459,8 +464,12 @@ function scanShellOperators(command: string): OperatorScan {
 }
 
 // Returns null for pipelined / chained commands so callers can fail closed.
-function extractLeadingTool(command: string): string | null {
-  if (scanShellOperators(command).hasOperator) return null;
+function extractLeadingTool(
+  command: string,
+  allowDescriptorRedirect: boolean,
+): string | null {
+  if (scanShellOperators(command, allowDescriptorRedirect).hasOperator)
+    return null;
   const stripped = command.replace(COMMAND_PREFIX_STRIP, "");
   const firstWord = stripped.trim().split(/\s+/)[0];
   return firstWord || null;
@@ -489,8 +498,11 @@ const NON_HTTP_TOOLS: ReadonlySet<string> = new Set([
   "amass",
 ]);
 
-function detectHttpToolOnCommand(command: string): string | null {
-  const tool = extractLeadingTool(command);
+function detectHttpToolOnCommand(
+  command: string,
+  allowDescriptorRedirect: boolean,
+): string | null {
+  const tool = extractLeadingTool(command, allowDescriptorRedirect);
   if (tool && shellInjectorRegistry.has(tool)) return tool;
   return null;
 }
@@ -505,6 +517,8 @@ export type ApplyShellResult = {
 
 // Inject session/credential headers into a shell command line.
 // `commandHosts` comes from scopeGuard so the two callers share one scope view.
+// `platform` is the selected command backend's platform; the literal `2>&1`
+// descriptor recognition applies only to POSIX-contract shells.
 //
 // Result statuses:
 //   - `no-headers`   nothing to inject (return command unchanged)
@@ -516,7 +530,14 @@ export function applyHeadersToShellCommand(
   command: string,
   session: ResolverSession,
   commandHosts: ReadonlyArray<string>,
+  platform?: "posix" | "windows",
 ): ApplyShellResult {
+  // The `2>&1` redirect recognition is proven for POSIX shells only; a
+  // Windows cmd/powershell backend keeps the legacy fail-closed
+  // classification for those bytes. An absent platform follows the
+  // CommandBackend contract — custom transports default to POSIX
+  // regardless of host OS.
+  const allowDescriptorRedirect = platform !== "windows";
   const allowed = getAllowedHosts(session);
   const inScopeHost = commandHosts.find((h) => isHostInScope(h, allowed));
   if (!inScopeHost) {
@@ -529,9 +550,9 @@ export function applyHeadersToShellCommand(
     return { command, status: "no-headers", tool: null };
   }
 
-  const tool = detectHttpToolOnCommand(command);
+  const tool = detectHttpToolOnCommand(command, allowDescriptorRedirect);
   if (!tool) {
-    const leading = extractLeadingTool(command);
+    const leading = extractLeadingTool(command, allowDescriptorRedirect);
     if (leading && NON_HTTP_TOOLS.has(leading)) {
       return { command, status: "no-headers", tool: null };
     }
@@ -544,7 +565,7 @@ export function applyHeadersToShellCommand(
   // (Scope enforcement for all commands stays in the caller's scope guard.)
   if (
     new Set(commandHosts).size > 1 &&
-    scanShellOperators(command).stderrMerge
+    scanShellOperators(command, allowDescriptorRedirect).stderrMerge
   ) {
     return { command, status: "unknown-tool", tool: null };
   }

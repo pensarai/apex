@@ -565,6 +565,45 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.status).toBe("injected");
   });
 
+  it("recognizes 2>&1 only for POSIX-contract command backends", () => {
+    // Windows cmd expands `%VAR%` and treats metacharacters differently,
+    // so the POSIX scanner's proof does not transfer — those bytes keep
+    // the legacy fail-closed classification on Windows backends.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const withRedirect = "curl -s https://example.com/api 2>&1";
+    expect(
+      applyHeadersToShellCommand(
+        withRedirect,
+        session,
+        ["example.com"],
+        "windows",
+      ).status,
+    ).toBe("unknown-tool");
+    expect(
+      applyHeadersToShellCommand(
+        withRedirect,
+        session,
+        ["example.com"],
+        "posix",
+      ).status,
+    ).toBe("injected");
+    // Absent platform follows the CommandBackend contract default (POSIX).
+    expect(
+      applyHeadersToShellCommand(withRedirect, session, ["example.com"]).status,
+    ).toBe("injected");
+    // Without the redirect, a Windows backend keeps its prior behavior.
+    expect(
+      applyHeadersToShellCommand(
+        "curl -s https://example.com/api",
+        session,
+        ["example.com"],
+        "windows",
+      ).status,
+    ).toBe("injected");
+  });
+
   it("fails closed when 2>&1 shares the command with live substitution", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },

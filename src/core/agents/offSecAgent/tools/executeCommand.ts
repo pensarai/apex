@@ -453,18 +453,27 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       // Inject session headers into the shell command. Fail closed for
       // unknown tools / pipelines so configured headers aren't silently
-      // dropped — agent can opt out with `allow_unprotected`.
+      // dropped — agent can opt out with `allow_unprotected`. The literal
+      // `2>&1` recognition is POSIX-shell-only, so the selected backend's
+      // declared platform decides whether it applies.
+      const backends = resolveBackends(ctx);
       const cmdHosts = extractHostsFromCommand(command);
       const inject = applyHeadersToShellCommand(
         command,
         resolverSessionFromCtx(ctx),
         cmdHosts,
+        backends.command.platform,
       );
       if (inject.status === "unknown-tool" && !allow_unprotected) {
+        const redirectGuidance =
+          backends.command.platform === "windows"
+            ? "on Windows command shells `2>&1` redirection is not supported for header injection — drop the redirect; "
+            : "literal `2>&1` is allowed, but pipelines, substitutions, and multiple hosts are not; ";
         const msg =
           "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined or chained. " +
-          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host; literal `2>&1` is allowed, but pipelines, substitutions, and multiple hosts are not. " +
-          "Otherwise use the http_request tool, or pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host; " +
+          redirectGuidance +
+          "otherwise use the http_request tool, or pass allow_unprotected: true to acknowledge headers will NOT be sent.";
         return {
           success: false,
           error: msg,
@@ -538,7 +547,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         let captured: Awaited<ReturnType<typeof collectCommand>>;
         try {
           captured = await collectCommand(
-            resolveBackends(ctx).command.run(commandWithHeaders, {
+            backends.command.run(commandWithHeaders, {
               timeoutSeconds: effectiveTimeout,
               envVars: promptInjectionEnvVars,
               abortSignal: ctx.abortSignal,
