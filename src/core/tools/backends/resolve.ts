@@ -102,21 +102,35 @@ function posixFlagArg(value: string): string {
 }
 
 /**
- * Transport for one program invocation: a runner, option arguments, and a
- * final target path. The final argument is always single-quoted — native
- * runs execute by argv while remote transports journal these exact command
- * bytes — and preceding arguments pass through unquoted when they are safe
- * literals.
+ * Transport for one program invocation: runner, option args, and a final
+ * target path. The final argument is always single-quoted (remote transports
+ * journal these exact command bytes); earlier args pass through unquoted
+ * when they are safe literals.
  */
 export function resolveProgramRunner(ctx: ToolContext) {
   const command =
     ctx.backends || ctx.sandbox ? resolveBackends(ctx).command : undefined;
+  // Injected command backends see only RunOpts, so the agent's configured
+  // environment is merged here with per-call envVars winning. The local and
+  // classic sandbox transports already merge it themselves. Options pass
+  // through untouched when there is nothing to merge.
+  const withConfiguredEnv = (options: RunOpts | undefined) =>
+    ctx.environmentVariables || options?.envVars
+      ? {
+          ...options,
+          envVars: { ...ctx.environmentVariables, ...options?.envVars },
+        }
+      : options;
   return (runner: string, args: string[], options?: RunOpts) => {
     if (command?.platform === "windows") {
       const invocation = windowsProgramInvocation(runner, args);
       return command.run(invocation.command, {
         ...options,
-        envVars: { ...options?.envVars, ...invocation.envVars },
+        envVars: {
+          ...ctx.environmentVariables,
+          ...options?.envVars,
+          ...invocation.envVars,
+        },
       });
     }
     const commandText = [
@@ -125,7 +139,7 @@ export function resolveProgramRunner(ctx: ToolContext) {
       posixQuote(args[args.length - 1] ?? ""),
     ].join(" ");
     return command
-      ? command.run(commandText, options)
+      ? command.run(commandText, withConfiguredEnv(options))
       : runLocalProgram(ctx, commandText, runner, args, options);
   };
 }

@@ -1373,6 +1373,40 @@ describe("documentVulnerability native syntax checks", () => {
     expect(commands.some((c) => c.command === `bash '${staged}'`)).toBe(true);
   });
 
+  it("passes the configured environment to both checker and execution through injected backends", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const ctx = makeToolContext(rootPath);
+    ctx.environmentVariables = {
+      PATH: "/custom/bin",
+      APEX_ENV_MARKER: "configured",
+    };
+    const local = LocalBackends(ctx);
+    const run = vi.fn<ToolBackends["command"]["run"]>(async function* () {
+      yield { type: "stdout" as const, seq: 0, bytes: "admin data leaked" };
+      yield { type: "end" as const, exitCode: 0, timedOut: false };
+    });
+    ctx.backends = {
+      ...local,
+      command: { run },
+    } as unknown as ToolBackends;
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "env", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result).toMatchObject({ success: true });
+    const staged = join(ctx.session.pocsPath, "poc_admin_data.sh");
+    const check = run.mock.calls.find((c) => c[0] === `bash -n '${staged}'`);
+    const executed = run.mock.calls.find((c) => c[0] === `bash '${staged}'`);
+    expect(check?.[1]).toMatchObject({
+      envVars: { PATH: "/custom/bin", APEX_ENV_MARKER: "configured" },
+    });
+    expect(executed?.[1]).toMatchObject({
+      envVars: { PATH: "/custom/bin", APEX_ENV_MARKER: "configured" },
+    });
+  });
+
   it("blocks a python PoC whose top-level return only full compilation rejects", async () => {
     const { ctx, commands, remoteRoot } = sandboxContext();
     const input = {
@@ -1718,5 +1752,104 @@ describe("documentVulnerability local retained PoC checks (confined helper works
       sha256('console.log("emitted ok");\n'),
     );
     expect(existsSync(join(helperRoot, "poc_local_emit.js"))).toBe(true);
+  });
+});
+
+describe("documentVulnerability injected Windows backend declarations", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  // Injected Windows transport: declared paths follow the backend's own
+  // command.platform (win32), not the host or the classic sandbox type.
+  function windowsContext() {
+    const ctx = makeToolContext(rootPath);
+    ctx.fileWorkspaceRoot = "C:\\repo";
+    const run = vi.fn<ToolBackends["command"]["run"]>(async function* () {
+      yield { type: "stdout" as const, seq: 0, bytes: "ok" };
+      yield { type: "end" as const, exitCode: 0, timedOut: false };
+    });
+    const readRaw = vi.fn(async (path: string) => ({
+      success: true,
+      error: "",
+      content: 'console.log("emitted ok");\n',
+      path,
+    }));
+    ctx.backends = {
+      command: { platform: "windows", run },
+      fs: {
+        write: async (path: string) => ({ success: true, error: "", path }),
+        readRaw,
+      },
+    } as unknown as ToolBackends;
+    return { ctx, run, readRaw };
+  }
+
+  it("confines and checks declared artifacts with win32 paths through the injected backend", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const { ctx, run, readRaw } = windowsContext();
+    const input = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "poc_win_emit.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "win",
+      messages: [],
+    })) as DocumentToolResult & {
+      generatedArtifactChecks?: Array<
+        { path: string; language: string } & ScriptSyntaxResult
+      >;
+    };
+
+    expect(result).toMatchObject({ success: true });
+    expect(result.generatedArtifactChecks?.[0]).toMatchObject({
+      path: "poc_win_emit.js",
+      language: "javascript",
+      status: "valid",
+    });
+    // The declared path resolved win32 against the workspace root.
+    expect(readRaw).toHaveBeenCalledWith("C:\\repo\\poc_win_emit.js");
+    // The checker ran through the selected Windows program transport.
+    const checkCall = run.mock.calls.find(
+      ([, options]) => options?.envVars?.APEX_PROGRAM_FILE === "node",
+    );
+    expect(checkCall?.[0]).toMatch(/^powershell\.exe /);
+    expect(checkCall?.[1]?.envVars?.APEX_PROGRAM_ARGS_0).toContain("--check");
+    expect(checkCall?.[1]?.envVars?.APEX_PROGRAM_ARGS_0).toContain(
+      "C:\\repo\\poc_win_emit.js",
+    );
+  });
+
+  it("rejects a declared path that escapes the win32 workspace root before anything runs", async () => {
+    const { ctx, run } = windowsContext();
+    const input = {
+      ...makeDocumentInput(),
+      generatedExecutableArtifacts: [
+        { path: "..\\outside.js", language: "javascript" as const },
+      ],
+    };
+
+    const result = (await documentVulnerability(ctx).execute?.(input, {
+      toolCallId: "win-escape",
+      messages: [],
+    })) as DocumentToolResult & { message?: string };
+
+    expect(result).toMatchObject({ success: false });
+    expect(result.message).toContain(
+      "Generated executable declaration rejected",
+    );
+    expect(result.message).toContain("escapes");
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -165,6 +171,70 @@ describe("checkScriptSyntax (native transport, real runners)", () => {
     });
     expect(result.status).toBe("invalid");
     expect(result.detail).toMatch(/return.*outside function/);
+  });
+
+  it("never imports workspace modules: a shadowing tokenize.py cannot execute during the check", async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(root);
+    // The checker subprocess runs with this directory as cwd, so this file
+    // would shadow the stdlib module if the snippet imported it.
+    writeFileSync(
+      join(root, "tokenize.py"),
+      'open("TOKENIZE_RAN", "w").write("pwned")\nraise SystemExit(7)\n',
+    );
+    const path = stage(
+      root,
+      "poc_plain.py",
+      '#!/usr/bin/env python3\n\nprint("proof")\n',
+    );
+    const result = await checkScriptSyntax(context(root), {
+      language: "python",
+      runner: "python3",
+      scriptPath: path,
+    });
+    expect(result.status).toBe("valid");
+    expect(existsSync(join(root, "TOKENIZE_RAN"))).toBe(false);
+  });
+
+  it("accepts a UTF-8 BOM script as a real run would", async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(root);
+    const path = stage(root, "poc_bom.py", '\uFEFFprint("proof")\n');
+    const result = await checkScriptSyntax(context(root), {
+      language: "python",
+      runner: "python3",
+      scriptPath: path,
+    });
+    expect(result.status).toBe("valid");
+  });
+
+  it("compiles PEP 263-declared bytes without a false invalid", async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(root);
+    const pocs = join(root, ".pensar", "pocs");
+    mkdirSync(pocs, { recursive: true });
+    const path = join(pocs, "poc_latin1.py");
+    // Raw latin-1 bytes: invalid as UTF-8 text, so the owning seam supplies
+    // the identity text while the checker compiles the file's real bytes.
+    writeFileSync(
+      path,
+      Buffer.from('# -*- coding: latin-1 -*-\ns = "caf\xe9"\n', "latin1"),
+    );
+    const fs = {
+      readRaw: vi.fn(async (p: string) => ({
+        success: true,
+        error: "",
+        content: 's = "cafe"\n',
+        path: p,
+      })),
+    } as unknown as ToolBackends["fs"];
+    const result = await checkScriptSyntax(context(root), {
+      language: "python",
+      runner: "python3",
+      scriptPath: path,
+      fs,
+    });
+    expect(result.status).toBe("valid");
   });
 
   it("yields unchecked for a missing checker and still reports the checked-byte identity", async () => {

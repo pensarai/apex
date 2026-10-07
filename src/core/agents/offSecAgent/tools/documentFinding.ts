@@ -351,9 +351,8 @@ CRITICAL RULES — READ BEFORE CALLING:
         throw error;
       }
 
-      // Resolve declared generated-executable paths upfront so a bad
-      // declaration fails before the POC runs. The checks themselves happen
-      // after the run, against the bytes the POC actually emitted.
+      // Resolve declared paths upfront so a bad declaration fails before
+      // the POC runs; the checks themselves run post-execution on emitted bytes.
       let declaredArtifacts:
         | Array<{ path: string; language: PocType; scriptPath: string }>
         | undefined;
@@ -435,10 +434,8 @@ CRITICAL RULES — READ BEFORE CALLING:
         const { filename, stdout, stderr, exitCode } = pocResult;
         const pocPath = `pocs/${filename}`;
 
-        // Declared generated executables are checked after the run, against
-        // the bytes the POC actually emitted, and before the judge spends an
-        // LLM call. The wrapper's own verdict never validates emitted code —
-        // only these explicit declarations do.
+        // Declared executables are checked against the emitted bytes before
+        // the judge spends an LLM call; the wrapper's verdict never covers them.
         const generatedArtifactChecks: GeneratedArtifactCheck[] = [];
         if (declaredArtifacts) {
           for (const declared of declaredArtifacts) {
@@ -914,7 +911,7 @@ interface PocExecResult {
   stdout?: string;
   stderr?: string;
   exitCode?: number;
-  /** Parse-only verdict for the exact staged bytes; separate from write receipts. */
+  /** Parse-only verdict for the staged executable; separate from write receipts. */
   syntaxCheck?: ScriptSyntaxResult;
 }
 
@@ -925,19 +922,14 @@ type GeneratedArtifactCheck = ScriptSyntaxResult & {
 
 /**
  * Lexically resolves a declared generated-artifact path against the agent's
- * file workspace and rejects escapes. Symlink escapes are additionally
- * caught by the read-back's canonical containment check.
+ * file workspace and rejects escapes; symlink escapes are additionally caught
+ * by the read-back's canonical containment check.
  */
 function resolveDeclaredArtifactPath(
   ctx: ToolContext,
   declared: string,
 ): string {
-  const api =
-    ctx.sandbox?.type === "windows"
-      ? win32
-      : ctx.sandbox || ctx.backends?.sandboxed
-        ? posix
-        : path;
+  const api = declaredPathApi(ctx);
   const root = ctx.fileWorkspaceRoot ?? ctx.agentCwd;
   const resolved = api.isAbsolute(declared)
     ? declared
@@ -947,6 +939,16 @@ function resolveDeclaredArtifactPath(
     throw new Error(`Path escapes agent working directory: ${declared}`);
   }
   return resolved;
+}
+
+// Injected backends own their path dialect (command.platform, defaulting to
+// POSIX per the transport contract); the classic sandbox follows its type;
+// local execution follows the host.
+function declaredPathApi(ctx: ToolContext) {
+  if (ctx.backends)
+    return resolveBackends(ctx).command.platform === "windows" ? win32 : posix;
+  if (ctx.sandbox) return ctx.sandbox.type === "windows" ? win32 : posix;
+  return path;
 }
 
 function stagedPocPath(ctx: ToolContext, filename: string): string {
@@ -989,27 +991,23 @@ async function executePoc(
       throw new Error(staged.error || `Failed to stage PoC ${executionPath}`);
   }
 
-  // Check the executable's own staged bytes — when execution is remote this
-  // is the remotely staged copy, not the host-retained artifact — so the
-  // verdict always describes what will run. Invalid skips the run: the same
-  // runner, dialect and module mode would only fail identically at execution.
-  // The retained local PoC is owned by the (byte-capped) artifact backend
-  // since it may live outside a confined helper workspace; the remotely
-  // staged copy is read through the same workspace backend that staged it.
-  // Declared artifacts always use the default, staying confined to the
-  // helper workspace.
+  // Check the executable's own staged bytes (the remote staged copy, not the
+  // retained artifact, when execution is remote); invalid skips the run since
+  // the same runner and dialect would fail identically. The retained local
+  // PoC is read through the byte-capped artifact owner because it may live
+  // outside a confined helper workspace; staged copies and declared artifacts
+  // use the workspace backend that owns them.
   const syntaxCheck = await checkScriptSyntax(ctx, {
     language: input.pocType,
     runner: POC_RUNNERS[input.pocType],
     scriptPath: executionPath,
     abortSignal: ctx.abortSignal,
-    ...(executionPath === pocPath
-      ? {
-          fs: resolveArtifactFs(ctx, {
+    fs:
+      executionPath === pocPath
+        ? resolveArtifactFs(ctx, {
             maxTextFileBytes: SCRIPT_SYNTAX_CHECK_MAX_BYTES,
-          }),
-        }
-      : {}),
+          })
+        : undefined,
   });
   if (syntaxCheck.status === "invalid") {
     await deleteArtifact(ctx, pocPath);

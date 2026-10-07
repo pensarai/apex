@@ -14,9 +14,9 @@ export type ScriptSyntaxStatus = "valid" | "invalid" | "unchecked";
 export interface ScriptSyntaxResult {
   status: ScriptSyntaxStatus;
   /**
-   * sha256 of the script bytes the check examined, certifying that the
-   * verdict applied to the exact bytes present after the check. Present
-   * whenever the bytes could be read; absent when even that failed.
+   * sha256 over the UTF-8 text read back around the check (readRaw returns
+   * text, not raw bytes); equal pre/post hashes mean the checked text is
+   * unchanged. Absent when even the read failed.
    */
   contentHash?: string;
   /** Single-line `path:line: message` diagnostic; only for `invalid`. */
@@ -29,25 +29,25 @@ export interface ScriptSyntaxResult {
 // 5s keeps ~9x headroom for loaded sandboxes while still bounding the path.
 export const SCRIPT_SYNTAX_CHECK_TIMEOUT_SECONDS = 5;
 
-// Byte cap for reads the check owns. Matches the workspace text-tool cap;
-// a larger script surfaces as `unchecked` instead of an unbounded read.
+// Byte cap for the text reads this check owns; matches the workspace
+// text-tool cap, and a larger script surfaces as `unchecked`.
 export const SCRIPT_SYNTAX_CHECK_MAX_BYTES = 1024 * 1024;
 
 const CHECKER_OUTPUT_LIMIT = 240;
 
-// The runner itself is the checker, via its parse-only flag, so the runtime,
-// dialect and module mode that check are the ones that will execute. The
-// Python variant uses compile(..., "exec") — full module compilation without
-// executing the produced bytecode, so top-level `return` is rejected exactly
-// as a real run would reject it — and tokenize.open so BOM and PEP 263 coding
-// declarations decode as real compilation would, without py_compile's
-// __pycache__ artifact next to the staged script.
+// The runner itself is the checker via its parse-only flag, so runtime,
+// dialect and module mode match execution. The Python snippet imports
+// nothing filesystem-resolvable (sys is builtin) — a workspace module like
+// tokenize.py must not shadow stdlib and execute during the check — and
+// compile on raw bytes rejects top-level `return` (ast.parse would not)
+// without executing bytecode or writing a __pycache__ artifact; compile
+// handles BOM and PEP 263 decoding itself.
 const CHECKER_ARGS: Record<ScriptLanguage, (scriptPath: string) => string[]> = {
   bash: (scriptPath) => ["-n", scriptPath],
   javascript: (scriptPath) => ["--check", scriptPath],
   python: (scriptPath) => [
     "-c",
-    'import sys, tokenize; compile(tokenize.open(sys.argv[1]).read(), sys.argv[1], "exec")',
+    'import sys; compile(open(sys.argv[1], "rb").read(), sys.argv[1], "exec")',
     scriptPath,
   ],
 };
@@ -66,9 +66,9 @@ function digest(content: string): string {
 }
 
 /**
- * Extracts a concise `line: message` pair from checker stderr, anchored to
- * the staged path so interpreter frames that are not the target script
- * (e.g. Python's `-c` frame) can never be reported as its diagnostic.
+ * Extracts a `line: message` pair from checker stderr, anchored to the
+ * script path so frames that are not the target (e.g. Python's `-c` frame)
+ * can never be misreported as its diagnostic.
  */
 function extractLineDiagnostic(
   language: ScriptLanguage,
@@ -126,9 +126,8 @@ function verdictFromCheckerOutcome(
       reason: `syntax checker unavailable (exit ${result.exitCode})`,
     };
   }
-  // The native argv transport surfaces a missing runner as exit 1 with a
-  // spawn-ENOENT stderr instead of the shell's 127; remote shells say
-  // "command not found". Both mean no checker, not a script verdict.
+  // The native argv transport reports a missing runner as exit 1 with a
+  // spawn-ENOENT stderr (not the shell's 127); remote shells say "command not found".
   if (/\bspawn\s+\S+\s+ENOENT\b|command not found/i.test(result.stderr)) {
     return {
       status: "unchecked",
@@ -151,16 +150,15 @@ function verdictFromCheckerOutcome(
 }
 
 /**
- * Parse-only native syntax check for a script file, through the same
- * transport, runner, env and cwd that will execute it. The checker never
- * imports or runs the target program, never mutates the payload, and never
- * rolls back any write; a `valid` verdict says the bytes compile in the
- * selected dialect and nothing about the finding's effect. Read or transport
- * failures, missing checkers and timeouts all yield `unchecked`, which must
- * not block execution. Bounds: the reads this check owns are byte-capped
- * (injected backends apply their own caps), the checker command carries a
- * wall-clock deadline, and only a verdict whose pre/post reads hash
- * identically is certified against the bytes that will execute.
+ * Parse-only native syntax check through the same transport, runner, env and
+ * cwd that will execute the script. Never imports or runs the target,
+ * mutates the payload, or rolls back writes. `valid` only says the text
+ * parsed in the selected dialect at check time — not that the finding's
+ * effect is proven, and not anything about bytes that change afterwards.
+ * Read/transport failures, missing checkers and timeouts yield `unchecked`,
+ * which must not block execution. Reads the check owns are byte-capped
+ * (injected backends apply their own caps); the checker command carries the
+ * wall-clock deadline.
  */
 export async function checkScriptSyntax(
   ctx: ToolContext,
@@ -173,10 +171,9 @@ export async function checkScriptSyntax(
     timeoutSeconds?: number;
     abortSignal?: AbortSignal;
     /**
-     * File backend that owns the script bytes. Defaults to the agent's
-     * normal workspace backend, which keeps declared artifacts confined to
-     * the helper workspace; pass the artifact owner for a retained local
-     * PoC that lives outside it.
+     * Owning fs seam. Defaults to the workspace backend (declared artifacts
+     * stay confined to it); pass the artifact owner for a retained local PoC
+     * that may live outside a confined helper workspace.
      */
     fs?: FsBackend;
   },
@@ -211,9 +208,8 @@ export async function checkScriptSyntax(
     );
     if (verdict.status === "unchecked") return { ...verdict, contentHash };
 
-    // Certify the verdict against the bytes that will execute: a mismatch (or
-    // a failed re-read) means the check ran against bytes that no longer
-    // exist, so the verdict is stale and must be discarded, not certified.
+    // A post-check mismatch (or failed re-read) means the verdict describes
+    // text that no longer exists — discard it rather than certify.
     const verified = await fs.readRaw(params.scriptPath);
     if (!verified.success) {
       return {
