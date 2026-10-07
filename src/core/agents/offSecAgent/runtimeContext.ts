@@ -10,11 +10,10 @@ import type { UnifiedSandbox } from "./tools/sandbox";
 import type { ToolContext } from "./tools/types";
 
 /**
- * Runtime execution facts for prompt composition — probed through the
- * agent's actual command backend (local shell, sandbox, or remote) with the
- * configured execution env, never the host process. A failed, timed-out, or
- * truncated probe yields {@link UNKNOWN_FACTS} ("unknown", not "absent") and
- * is not retained, so a later agent retries.
+ * Runtime execution facts, probed through the agent's actual command backend
+ * with the configured execution env — never the host process. A failed,
+ * timed-out, or truncated probe yields {@link UNKNOWN_FACTS}: unknown, not
+ * absent, and not retained.
  */
 export interface RuntimeExecutionFacts {
   /** False when the probe failed, timed out, was aborted, or came back truncated. */
@@ -31,7 +30,7 @@ export const UNKNOWN_FACTS: RuntimeExecutionFacts = {
   missing: [],
 };
 
-/** Tools whose presence changes technique choice: script interpreters, ffuf, and the scanner set the old host-side inventory covered. */
+/** Tools whose presence changes technique choice. */
 export const PROBE_TOOL_NAMES = [
   "bash",
   "sh",
@@ -56,8 +55,8 @@ export const PROBE_TOOL_NAMES = [
 ] as const;
 
 const PROBE_TIMEOUT_SECONDS = 10;
-// The probe emits one marker line per tool (~600 B). The cap is a runaway
-// guard; hitting it (or a backend truncation flag) invalidates the probe.
+// Runaway guard only — the probe emits ~600 B; hitting the cap (or a backend
+// truncation flag) invalidates the probe.
 const MAX_PROBE_OUTPUT_BYTES = 16 * 1024;
 
 function posixProbeCommand(): string {
@@ -196,15 +195,10 @@ function cacheKey(ctx: ToolContext): string {
   ].join("|");
 }
 
-// Bound: distinct runtime configurations per process are few; a runaway
-// host that reconstructs backends per agent would otherwise grow this map
-// without limit.
-const MAX_CACHE_ENTRIES = 32;
+// Runaway guard only: distinct runtime configurations per process are few.
+export const MAX_CACHE_ENTRIES = 32;
 const factsByKey = new Map<string, Promise<RuntimeExecutionFacts>>();
-// Synchronous snapshot of successfully probed facts, keyed the same way —
-// read by the agent's synchronous legacy escape hatch, which cannot await
-// discovery but may reuse facts that already settled for the same runtime
-// scope.
+// Settled snapshot for the synchronous escape hatch; bounded with factsByKey.
 const settledFactsByKey = new Map<string, RuntimeExecutionFacts>();
 
 export function probeRuntimeFacts(
@@ -215,19 +209,21 @@ export function probeRuntimeFacts(
   if (cached) return cached;
 
   const pending = runProbe(ctx).then((facts) => {
-    // Failed probes are not retained: absence was never established, and the
-    // next agent with the same configuration should retry.
+    // A probe in flight when the cache was evicted must not touch whatever
+    // a newer probe for the same key owns — guard on exact promise identity.
+    if (factsByKey.get(key) !== pending) return facts;
     if (facts.probed) {
       settledFactsByKey.set(key, facts);
     } else {
+      // Failure established nothing; drop the slot so the next agent retries.
       factsByKey.delete(key);
       settledFactsByKey.delete(key);
     }
     return facts;
   });
-  // runProbe never rejects, but a future edit could break that invariant;
-  // a stranded rejected promise must not poison the cache slot.
+  // A rejected promise left cached would poison the slot for later agents.
   pending.catch(() => {
+    if (factsByKey.get(key) !== pending) return;
     factsByKey.delete(key);
     settledFactsByKey.delete(key);
   });
@@ -263,8 +259,6 @@ export function resolveCommandPlatform(ctx: ToolContext): "posix" | "windows" {
 // ---------------------------------------------------------------------------
 
 export interface RuntimeContextSectionOptions {
-  agentCwd: string;
-  fileWorkspaceRoot?: string;
   platform: "posix" | "windows";
 }
 
@@ -294,7 +288,7 @@ function pythonFact(facts: RuntimeExecutionFacts): string {
 
 function inventoryLine(facts: RuntimeExecutionFacts): string {
   if (!facts.probed) {
-    return "Command-tool inventory: unknown (probe failed). Verify each tool before first use.";
+    return "Command-tool inventory: unknown (not established — no probe has settled for this runtime). Verify each tool before first use.";
   }
   const lines: string[] = [];
   if (facts.available.length > 0) {
@@ -308,8 +302,10 @@ function inventoryLine(facts: RuntimeExecutionFacts): string {
 
 /**
  * Compact, persona-neutral execution facts appended to every system prompt
- * the harness assembles (default, operator, Fast Strike, specialized). No
- * environment variable names or values are emitted.
+ * the harness assembles. Emits no environment variable names or values and
+ * no session paths — this text is embedded in the trace init record's base
+ * prompt, whose hash must stay stable across workspaces; cwd and
+ * file-workspace context live in the workspace section.
  */
 export function buildRuntimeContextSection(
   facts: RuntimeExecutionFacts,
@@ -321,7 +317,6 @@ export function buildRuntimeContextSection(
     "[RUNTIME CONTEXT]",
     `OS: ${facts.probed ? (facts.os ?? "unknown") : "unknown"} | Shell: ${shellFact(facts)} | Python: ${pythonFact(facts)} | Node: ${toolFact(facts, "node")} | ffuf: ${toolFact(facts, "ffuf")}`,
     inventoryLine(facts),
-    `Commands run in ${opts.agentCwd}.${opts.fileWorkspaceRoot ? ` Native file tools resolve relative paths inside ${opts.fileWorkspaceRoot}, independently of the shell's working directory.` : ""}`,
     `Treat this inventory as facts, not as a checklist: pick techniques from evidence. When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists. For tools listed unknown, verify with \`${verify}\` before first use.`,
     "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun. A successful file write alone does not establish that a helper works.",
     "[/RUNTIME CONTEXT]",
@@ -331,8 +326,8 @@ export function buildRuntimeContextSection(
 
 /**
  * Authoritative inventory of CLI-bundled wordlist assets. The paths are
- * host-local: only advertise them when commands actually execute locally —
- * a sandbox or remote backend cannot resolve them without staging.
+ * host-local: a sandbox or remote backend cannot resolve them without
+ * staging, so callers advertise this only for local execution.
  */
 export function buildBundledAssetsSection(): string | null {
   const wordlists = getBundledWordlists();

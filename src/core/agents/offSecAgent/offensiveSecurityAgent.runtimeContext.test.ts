@@ -242,9 +242,54 @@ describe("assembled runtime context in streamResponse prompts", () => {
       await agent.streamReady();
       const system = observed.streams[0].system as string;
       expect(system).toContain("[RUNTIME CONTEXT]");
-      expect(system).toContain(`Commands run in ${root}`);
+      // Workspace paths reach the model via the workspace section, not the
+      // runtime facts — and must stay out of the trace init record.
+      expect(system).toContain(`The session directory (${root})`);
+      expect(observed.inits[0].systemPrompt).not.toContain(root);
       expect(system).toContain("[BUNDLED ASSETS]");
-      expect(system).not.toContain("probe failed");
+      expect(system).not.toContain("not established");
+    });
+  });
+
+  it("trace init stays path-free across different workspaces with the same persona and inventory", async () => {
+    await withRoot(async (rootA) => {
+      const rootB = mkdtempSync(join(tmpdir(), "apex-rtctx-b-"));
+      try {
+        const { backend } = fakeRemoteBackends(remoteInventoryEvents);
+        const common = {
+          prompt: "operate",
+          model: "fixture-model",
+          system: "Shared persona.",
+          activeTools: ["execute_command"],
+          backends: backend,
+        };
+        const agentA = new OffensiveSecurityAgent({
+          ...common,
+          session: makeSession(rootA),
+        } as never);
+        const agentB = new OffensiveSecurityAgent({
+          ...common,
+          session: makeSession(rootB),
+        } as never);
+        await agentA.streamReady();
+        await agentB.streamReady();
+        // Same persona + same settled inventory → identical init record
+        // (stable hash), free of either session's workspace paths.
+        expect(observed.inits[1].systemPrompt).toBe(
+          observed.inits[0].systemPrompt,
+        );
+        expect(observed.inits[0].systemPrompt).toContain("[RUNTIME CONTEXT]");
+        expect(observed.inits[0].systemPrompt).not.toContain(rootA);
+        expect(observed.inits[0].systemPrompt).not.toContain(rootB);
+        // The final model prompts still differ by workspace.
+        const systemA = observed.streams[0].system as string;
+        const systemB = observed.streams[1].system as string;
+        expect(systemA).not.toBe(systemB);
+        expect(systemA).toContain(rootA);
+        expect(systemB).toContain(rootB);
+      } finally {
+        rmSync(rootB, { recursive: true, force: true });
+      }
     });
   });
 
@@ -304,7 +349,7 @@ describe("assembled runtime context in streamResponse prompts", () => {
       } as never);
       await agent.streamReady();
       const system = observed.streams[0].system as string;
-      expect(system).toContain("unknown (probe failed)");
+      expect(system).toContain("unknown (not established");
       expect(system).not.toContain("Command tools absent");
     });
   });
@@ -352,7 +397,7 @@ describe("initialization seam", () => {
       expect(calls).toHaveLength(0);
       const system = observed.streams[0].system as string;
       expect(system).toContain("[RUNTIME CONTEXT]");
-      expect(system).toContain("unknown (probe failed)");
+      expect(system).toContain("unknown (not established");
       expect(system).not.toContain("Command tools present:");
       expect(observed.order).toEqual(["init", "stream"]);
     });
@@ -419,7 +464,7 @@ describe("initialization seam", () => {
       // Synchronous legacy access while discovery is pending.
       const escaped = agent.streamResult;
       expect(escaped).toBe(observed.results[0]);
-      expect(observed.streams[0].system).toContain("unknown (probe failed)");
+      expect(observed.streams[0].system).toContain("unknown (not established");
       release?.();
       await ready;
       // The in-flight discovery must not create a second model stream or a

@@ -8,7 +8,9 @@ import type {
 import {
   buildBundledAssetsSection,
   buildRuntimeContextSection,
+  MAX_CACHE_ENTRIES,
   PROBE_TOOL_NAMES,
+  peekSettledRuntimeFacts,
   probeRuntimeFacts,
   type RuntimeExecutionFacts,
   resetRuntimeFactsCache,
@@ -250,6 +252,73 @@ describe("probeRuntimeFacts", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("late settlement after eviction cannot repopulate or delete newer entries", async () => {
+    // Per-probe gates: each run() stays pending until its own release.
+    const gates: Array<{
+      release: () => void;
+      respond: () => CommandEvent[];
+    }> = [];
+    const calls: RecordedCall[] = [];
+    const backend = {
+      command: {
+        platform: "posix" as const,
+        run: (cmd: string, opts?: RunOpts) => {
+          calls.push({ cmd, opts });
+          let release!: () => void;
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const entry = {
+            release,
+            respond: () => successEvents(markerOutput(PROBE_TOOL_NAMES)),
+          };
+          gates.push(entry);
+          return (async function* () {
+            await gate;
+            for (const event of entry.respond()) yield event;
+          })();
+        },
+      },
+    } as unknown as ToolBackends;
+    const ctx = (session: string) =>
+      makeCtx({ backends: backend, session }) as ToolContext;
+
+    // An old probe on key K that will settle as a failure…
+    const oldFail = probeRuntimeFacts(ctx("ses-race"));
+    gates[0].respond = () => [{ type: "end", exitCode: 1, timedOut: false }];
+    // …and a success probe on another key, both still pending.
+    const orphan = probeRuntimeFacts(ctx("ses-orphan"));
+
+    // Fill past the eviction threshold: both pending scopes are evicted.
+    for (let i = 0; i < MAX_CACHE_ENTRIES; i++) {
+      void probeRuntimeFacts(ctx(`ses-fill-${i}`));
+    }
+
+    // A newer probe takes over key K after the eviction.
+    const newer = probeRuntimeFacts(ctx("ses-race"));
+    expect(newer).not.toBe(oldFail);
+
+    // The old failure settling must not delete the newer cached promise.
+    gates[0].release();
+    expect((await oldFail).probed).toBe(false);
+    const callsAfterOldFail = calls.length;
+    const again = probeRuntimeFacts(ctx("ses-race"));
+    expect(again).toBe(newer);
+    expect(calls).toHaveLength(callsAfterOldFail);
+    expect(peekSettledRuntimeFacts(ctx("ses-race"))).toBeNull();
+
+    // The orphaned success returns to its caller but must not repopulate
+    // the evicted scope's settled snapshot.
+    gates[1].release();
+    expect((await orphan).probed).toBe(true);
+    expect(peekSettledRuntimeFacts(ctx("ses-orphan"))).toBeNull();
+
+    // The current promise settles normally into the snapshot.
+    gates.at(-1)?.release();
+    await newer;
+    expect(peekSettledRuntimeFacts(ctx("ses-race"))?.probed).toBe(true);
+  });
+
   it("windows backends get a where-based probe and platform", async () => {
     const { backend, calls } = fakeBackends(
       () =>
@@ -288,10 +357,7 @@ describe("buildRuntimeContextSection", () => {
   };
 
   it("states interpreter and ffuf facts compactly", () => {
-    const section = buildRuntimeContextSection(facts, {
-      agentCwd: "/repo",
-      platform: "posix",
-    });
+    const section = buildRuntimeContextSection(facts, { platform: "posix" });
     expect(section).toContain(
       "OS: Linux 6.6.0 | Shell: bash | Python: available (python3) | Node: available | ffuf: available",
     );
@@ -299,23 +365,17 @@ describe("buildRuntimeContextSection", () => {
     expect(section).toContain("Command tools absent:");
   });
 
-  it("separates the command cwd from the file workspace", () => {
-    const section = buildRuntimeContextSection(facts, {
-      agentCwd: "/repo",
-      fileWorkspaceRoot: "/repo/.pensar/helpers",
-      platform: "posix",
-    });
-    expect(section).toContain("Commands run in /repo.");
-    expect(section).toContain(
-      "Native file tools resolve relative paths inside /repo/.pensar/helpers",
-    );
+  it("carries no session paths — the workspace section owns cwd and file-root context", () => {
+    // The section text feeds the trace init record's base prompt, whose
+    // hash must stay stable across workspaces.
+    const section = buildRuntimeContextSection(facts, { platform: "posix" });
+    expect(section).not.toContain("Commands run in");
+    expect(section).not.toContain("Native file tools");
+    expect(section).not.toMatch(/\/(repo|workspace|helpers)/);
   });
 
   it("keeps the helper check/run/repair guidance without an operator persona", () => {
-    const section = buildRuntimeContextSection(facts, {
-      agentCwd: "/repo",
-      platform: "posix",
-    });
+    const section = buildRuntimeContextSection(facts, { platform: "posix" });
     expect(section).toContain(
       "Syntax-check or compile new or changed helper scripts",
     );
@@ -325,19 +385,15 @@ describe("buildRuntimeContextSection", () => {
 
   it("unknown facts never read as absent", () => {
     const section = buildRuntimeContextSection(UNKNOWN_FACTS, {
-      agentCwd: "/repo",
       platform: "posix",
     });
-    expect(section).toContain("unknown (probe failed)");
+    expect(section).toContain("unknown (not established");
     expect(section).not.toContain("Command tools absent");
     expect(section).toContain("Verify each tool");
   });
 
   it("emits no environment variable names or values", () => {
-    const section = buildRuntimeContextSection(facts, {
-      agentCwd: "/repo",
-      platform: "posix",
-    });
+    const section = buildRuntimeContextSection(facts, { platform: "posix" });
     expect(section).not.toContain("SECRET");
     expect(section).not.toContain("PATH");
     expect(section).not.toMatch(/=[A-Za-z0-9]/);
@@ -345,7 +401,6 @@ describe("buildRuntimeContextSection", () => {
 
   it("windows guidance verifies with where", () => {
     const section = buildRuntimeContextSection(UNKNOWN_FACTS, {
-      agentCwd: "/w",
       platform: "windows",
     });
     expect(section).toContain("where <tool>");

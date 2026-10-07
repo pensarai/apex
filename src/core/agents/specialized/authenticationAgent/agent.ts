@@ -129,7 +129,7 @@ export const authenticationAgentDefinition = defineAgent<
  *   name: "Auth test",
  *   targets: ["https://example.com"],
  *   config: {
- *     authCredentials: { username: "<username>", password: "<password>",
+ *     authCredentials: { username: "admin", password: "admin",
  *                        loginUrl: "https://example.com/login" },
  *   },
  * });

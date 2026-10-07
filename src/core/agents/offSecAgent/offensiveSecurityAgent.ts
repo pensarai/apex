@@ -255,27 +255,15 @@ export function filterWorkspaceToolsForRun(
  * ```
  */
 export class OffensiveSecurityAgent<TResult = void> {
-  /**
-   * The real SDK stream result — created exactly once, either by async
-   * initialization with backend-probed facts ({@link streamReady}) or, for
-   * the synchronous legacy escape hatch, with settled-or-unknown facts.
-   */
+  /** The real SDK stream result — created exactly once, with backend-probed facts via {@link streamReady} or settled-or-unknown facts via the sync escape hatch. */
   private _streamResult: StreamTextResult<ToolSet, never> | null = null;
 
-  /**
-   * Synchronous stream factory over runtime facts: composes the final
-   * system prompt, writes the trace init record, and calls `streamResponse`.
-   * Invoked at most once — both creation paths guard on `_streamResult`.
-   */
+  /** Composes the final system prompt, writes the trace init record, and calls `streamResponse`. Invoked at most once; both creation paths guard on `_streamResult`. */
   private readonly createStream: (
     facts: RuntimeExecutionFacts | null,
   ) => StreamTextResult<ToolSet, never>;
 
-  /**
-   * Async initialization: lazy runtime probe (when this agent's tools can
-   * use execution facts), then `createStream`. Built once in the constructor
-   * over its locals; memoized by {@link streamInit}.
-   */
+  /** Lazy runtime probe, then `createStream`; memoized by {@link streamInit}. */
   private readonly initializeStreamOnce: () => Promise<void>;
 
   /** Memoized {@link streamReady} promise; initialization runs at most once. */
@@ -769,11 +757,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     const schedulePersist = () => this.writer.schedulePersist();
 
     // -- System prompt ---------------------------------------------------------
-    // Persona first (caller-supplied or the harness default); execution facts
-    // and the workspace section are appended by the harness for every persona,
-    // so custom prompts no longer bypass them. Facts are probed through the
-    // agent's actual command backend (see ./runtimeContext) — asynchronous,
-    // so the stream is created once they settle.
+    // Persona first; execution facts and the workspace section are appended by
+    // the harness for every persona, so custom prompts no longer bypass them.
+    // Facts are probed through the agent's actual command backend (see
+    // ./runtimeContext) — asynchronous, so the stream is created once they settle.
     const baseSystemPrompt =
       input.system ??
       buildBaseSystemPrompt({
@@ -796,13 +783,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const sections: string[] = [baseSystemPrompt];
       if (facts) {
         sections.push(
-          buildRuntimeContextSection(facts, {
-            agentCwd,
-            ...(input.fileWorkspaceRoot
-              ? { fileWorkspaceRoot: input.fileWorkspaceRoot }
-              : {}),
-            platform: commandPlatform,
-          }),
+          buildRuntimeContextSection(facts, { platform: commandPlatform }),
         );
       }
       if (bundledAssets) sections.push(bundledAssets);
@@ -817,18 +798,17 @@ export class OffensiveSecurityAgent<TResult = void> {
     );
 
     // -- Init record + stream --------------------------------------------------
-    // Created by async initialization (streamReady) on the normal paths, so
-    // the AI SDK telemetry binds to the span active at first consumption
-    // (this agent's invoke_agent span in consume()) and the system prompt
-    // can embed backend-probed runtime facts. The synchronous legacy
-    // escape hatch (`streamResult` getter) calls the same factory with
-    // settled-or-unknown facts — never host facts — guarded so exactly one
-    // model stream exists either way.
+    // Created by async initialization (streamReady) so the AI SDK telemetry
+    // binds to the span active at first consumption (this agent's
+    // invoke_agent span in consume()) and the system prompt can embed
+    // backend-probed facts. The synchronous escape hatch calls the same
+    // factory with settled-or-unknown facts — never host facts — guarded so
+    // exactly one model stream exists either way.
     this.createStream = (facts) => {
       // Hash only the base system prompt (excluding session workspace paths)
-      // so the hash is stable across runs with identical prompt versions.
-      // No step record can precede this init line: steps only originate from
-      // the stream created below.
+      // so the hash is stable across runs with identical prompt versions. No
+      // step record can precede this init line: steps only originate from the
+      // stream created below.
       const baseWithFacts = assembleBaseSystemPrompt(facts);
       traceWriter.writeInit({
         model: input.model,
@@ -915,14 +895,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       });
     };
     this.initializeStreamOnce = async () => {
-      // The synchronous escape hatch may have created the stream (with
-      // settled-or-unknown facts) while discovery was pending — never a
-      // second model stream.
+      // The sync escape hatch may have created the stream while discovery was
+      // pending — never a second model stream.
       if (this._streamResult !== null) return;
-      // Abort-before-start skips the probe entirely; the stream is still
-      // created so the SDK surfaces the abort through the normal path. A
-      // probe failure must never block or fail the stream — the prompt
-      // degrades to "unknown" facts instead.
+      // Abort-before-start skips the probe but still creates the stream so the
+      // SDK surfaces the abort normally; a probe failure degrades the prompt
+      // to unknown facts rather than failing the stream.
       const facts =
         this.probesRuntime && !this.abortSignal?.aborted
           ? await probeRuntimeFacts(toolCtx).catch(
@@ -940,14 +918,11 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   /**
-   * Asynchronous initialization seam: probes runtime facts through this
-   * agent's command backend (only when its selected tools can use them),
-   * assembles the final system prompt, writes the trace init record, and
-   * creates the underlying stream — a real SDK result. Idempotent; every
-   * consumption entry point awaits it, so the prompt budgeting and recovery
-   * layers inside the AI stream see the actual final system text. A probe
-   * failure degrades the prompt to "unknown" facts; an abort before start
-   * skips the probe but still creates the stream.
+   * Asynchronous initialization seam: probe runtime facts through this
+   * agent's command backend (only when its selected tools can use them), then
+   * create the stream. Idempotent; every consumption entry point awaits it,
+   * so the AI layer's prompt budgeting and recovery see the actual final
+   * system text.
    */
   streamReady(): Promise<void> {
     this.streamInit ??= this.initializeStreamOnce();
@@ -955,15 +930,13 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 
   /**
-   * The underlying Vercel AI SDK stream result — synchronous escape hatch
-   * for advanced use. Always a real SDK result: after initialization it is
-   * the discovery-composed stream; accessed cold, it is created immediately
-   * with whatever runtime facts discovery has already settled for this
-   * runtime scope — else explicit unknown facts, never host facts. The
-   * narrow limitation of cold access is that the prompt cannot carry
-   * freshly probed facts; callers who need those await {@link streamReady},
-   * `consume()`, or `fullStream` iteration instead. Guarded so a cold access
-   * racing an in-flight probe never creates a second model stream.
+   * The underlying Vercel AI SDK stream result — synchronous escape hatch.
+   * Always a real SDK result. Cold access creates it immediately with facts
+   * already settled for this runtime scope, else explicit unknown facts —
+   * never host facts; callers needing freshly probed facts await
+   * {@link streamReady}, `consume()`, or `fullStream` iteration instead.
+   * Guarded so a cold access racing an in-flight probe never creates a
+   * second model stream.
    */
   get streamResult(): StreamTextResult<ToolSet, never> {
     if (this._streamResult === null) {
