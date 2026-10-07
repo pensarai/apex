@@ -111,7 +111,9 @@ export function wrapRecordedTools(
         if (gate.kind === "reuse") {
           const settled = structuredClone(gate.output);
           conversions.set(options.toolCallId, settled);
-          return reuseRaw(settled);
+          // Detached like the served conversions: the SDK owns the returned
+          // raw result and may mutate it in place.
+          return reuseRaw(structuredClone(settled));
         }
         try {
           // The intent row is committed; an abort from here on leaves an

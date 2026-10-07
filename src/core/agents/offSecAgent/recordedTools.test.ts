@@ -237,6 +237,49 @@ describe("wrapRecordedTools reuse", () => {
     expect(settles).toEqual([]);
     expect(unknowns).toEqual([]);
   });
+
+  it("a reused json result cannot poison the conversion cache by in-place mutation", async () => {
+    const { recorder } = fakeRecorder({
+      beforeExecute: async () => ({
+        kind: "reuse",
+        output: { type: "json", value: { cached: true } },
+      }),
+    });
+    const probe = makeTool();
+    const wrapped = wrapRecordedTools({ probe: probe as never }, recorder);
+    const tool = wrapped.probe as unknown as WiredTool;
+
+    const raw = (await tool.execute({}, OPTIONS())) as { cached: boolean };
+    raw.cached = false; // the SDK owns the execute result and may mutate it
+
+    expect(await tool.toModelOutput(modelOutputCall("tc_1", raw))).toEqual({
+      type: "json",
+      value: { cached: true },
+    });
+  });
+
+  it("a reused non-text/json result cannot poison the conversion cache by in-place mutation", async () => {
+    const { recorder } = fakeRecorder({
+      beforeExecute: async () => ({
+        kind: "reuse",
+        output: { type: "error-json", value: { code: "E1" } },
+      }),
+    });
+    const probe = makeTool();
+    const wrapped = wrapRecordedTools({ probe: probe as never }, recorder);
+    const tool = wrapped.probe as unknown as WiredTool;
+
+    const raw = (await tool.execute({}, OPTIONS())) as {
+      type: string;
+      value: { code: string };
+    };
+    raw.value.code = "MUTATED";
+
+    expect(await tool.toModelOutput(modelOutputCall("tc_1", raw))).toEqual({
+      type: "error-json",
+      value: { code: "E1" },
+    });
+  });
 });
 
 describe("wrapRecordedTools failure semantics", () => {
