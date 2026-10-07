@@ -5,6 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useEffect, useRef } from "react";
+import {
+  LocalWorkerRequestRejectedError,
+  LocalWorkerTransportError,
+} from "../../../../core/runtime/localWorkerTransport";
 import type {
   RecordedRunClient,
   RecordedRunView,
@@ -216,6 +220,12 @@ const client: RecordedRunClient = {
       "observation must never start execution",
     );
     calls.push({ method: "start", args });
+    if (scenario === "spec-start-uncertain") {
+      listedRecords.push(startedRecord);
+      throw new LocalWorkerTransportError("Worker response was interrupted", {
+        uncertain: true,
+      });
+    }
     if (scenario !== "spec-start-once") {
       // Pending starts complete only when the scenario resolves them, so
       // the dialog state at completion time is under test control.
@@ -232,6 +242,16 @@ const client: RecordedRunClient = {
   },
   resume: async (...args) => {
     calls.push({ method: "resume", args });
+    if (scenario === "resume-uncertain") {
+      throw new LocalWorkerTransportError("Worker response was interrupted", {
+        uncertain: true,
+      });
+    }
+    if (scenario === "resume-rejected") {
+      throw new LocalWorkerRequestRejectedError(
+        "Recovery attempt changed; inspect the run again",
+      );
+    }
     return { socketPath: "/fake/socket", logPath: "/fake/log", snapshot };
   },
   requestControl: async (...args) => {
@@ -403,6 +423,65 @@ try {
     });
     rendered(await frame(), "Resume requested");
     assert.equal(calls.filter((call) => call.method === "watch").length, 1);
+  } else if (scenario === "resume-uncertain") {
+    await press("r");
+    let text = await frame();
+    rendered(text, "Resume outcome uncertain:");
+    rendered(text, "may have applied and was not retried");
+    rendered(text, "Inspect the run before retrying");
+    assert.ok(!text.includes("Resume failed"));
+    await push({ ...saved, connection: "connected", worker: snapshot });
+    text = await frame();
+    rendered(text, "Resume outcome uncertain:");
+    assert.equal(calls.filter((call) => call.method === "resume").length, 1);
+    // Uncertainty does not block an operator's pause or stop request.
+    await press("p");
+    await press("s");
+    assert.deepEqual(
+      calls.filter((call) => call.method === "requestControl"),
+      [
+        { method: "requestControl", args: [RUN_ID, "pause", 3] },
+        { method: "requestControl", args: [RUN_ID, "stop", 3] },
+      ],
+    );
+    // Explicit retry uses the inspected attempt; the runtime fences execution.
+    await press("r");
+    assert.deepEqual(
+      calls.filter((call) => call.method === "resume"),
+      Array.from({ length: 2 }, () => ({
+        method: "resume",
+        args: [RUN_ID, EXEC_ID, executable],
+      })),
+    );
+  } else if (scenario === "resume-rejected") {
+    await press("r");
+    const text = await frame();
+    rendered(text, "Resume failed: Recovery attempt changed");
+    assert.ok(!text.includes("outcome uncertain"));
+    assert.equal(calls.filter((call) => call.method === "resume").length, 1);
+  } else if (scenario === "spec-start-uncertain") {
+    for (
+      let i = 0;
+      i < 20 && !calls.some((call) => call.method === "start");
+      i++
+    )
+      await act(async () => {
+        await Bun.sleep(10);
+      });
+    const text = await frame();
+    rendered(text, "Start outcome uncertain:");
+    rendered(text, "may have applied and was not retried");
+    rendered(text, "Inspect the run before retrying");
+    rendered(text, STARTED_RUN_ID);
+    assert.ok(!text.includes("Start failed"));
+    await press("ARROW_DOWN");
+    await press("RETURN");
+    assert.deepEqual(calls.at(-1), {
+      method: "watch",
+      args: [STARTED_RUN_ID],
+    });
+    await press("b");
+    assert.equal(calls.filter((call) => call.method === "start").length, 1);
   } else if (scenario === "sticky-worker-error") {
     await push({
       ...saved,

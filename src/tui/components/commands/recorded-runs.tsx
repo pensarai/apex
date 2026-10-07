@@ -4,6 +4,7 @@ import { useKeyboard } from "@opentui/react";
 import type { ModelMessage } from "ai";
 import { useEffect, useRef, useState } from "react";
 import type { WorkerExecutable } from "../../../core/runtime/launchLocalWorker";
+import { LocalWorkerTransportError } from "../../../core/runtime/localWorkerTransport";
 import {
   openRecordedRunClient,
   type RecordedRunView,
@@ -79,6 +80,14 @@ function workerErrorText(view: RecordedRunView): string | null {
   return [view.worker.error.message, ...(view.worker.error.blockers ?? [])]
     .filter(Boolean)
     .join("\n");
+}
+
+function actionErrorText(action: string, cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  if (cause instanceof LocalWorkerTransportError && cause.uncertain) {
+    return `${action} outcome uncertain: ${message}\nThe request may have applied and was not retried. Inspect the run before retrying.`;
+  }
+  return `${action} failed: ${message}`;
 }
 
 export function RecordedRunsDialog({
@@ -213,9 +222,7 @@ export function RecordedRunsDialog({
         }
       } catch (cause) {
         if (!mounted.current) return;
-        setStickyError(
-          `Start failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
+        setStickyError(actionErrorText("Start", cause));
         if (!navigationChanged.current) setPage("list");
       } finally {
         if (mounted.current) setListRevision((revision) => revision + 1);
@@ -286,9 +293,7 @@ export function RecordedRunsDialog({
       if (mounted.current) setStatusLine(result);
     } catch (cause) {
       if (!mounted.current) return;
-      setStickyError(
-        `${action} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-      );
+      setStickyError(actionErrorText(action, cause));
     } finally {
       actionPending.current = false;
       if (mounted.current) setBusy(false);

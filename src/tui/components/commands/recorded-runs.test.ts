@@ -15,6 +15,9 @@ it.each([
   "list-refresh-keeps-selection",
   "list-refresh-preserves-pending-move",
   "list-refresh-replaces-vanished-selection",
+  "resume-uncertain",
+  "resume-rejected",
+  "spec-start-uncertain",
 ])("recorded-runs dialog lifecycle: %s", (scenario) => {
   // OpenTUI's native buffer bindings and bun:test mock.module run in Bun.
   const result = spawnSync(
