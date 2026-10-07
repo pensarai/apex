@@ -122,7 +122,19 @@ export async function runRecordedAgent(
       try {
         await control.flush();
       } catch (error) {
-        if (!onlyControlInterruptions(error)) throw error;
+        if (!onlyControlInterruptions(error)) {
+          // The enrolled run can never execute; settle failed so a
+          // stop-persist failure never leaves it silently admitted.
+          try {
+            await input.store.transition(runId, attemptId, "failed");
+          } catch (settlementError) {
+            throw new AggregateError(
+              [error, settlementError],
+              "Recorded run failed and its status write also failed",
+            );
+          }
+          throw error;
+        }
       }
       const record = await input.store.transition(
         runId,

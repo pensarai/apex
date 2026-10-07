@@ -37,7 +37,10 @@ export interface RunControl {
    * gate-observed interruption. A merely-polled pause intent never throws.
    */
   flush(): Promise<void>;
-  /** Clears timers/listeners and awaits ongoing work; never throws. */
+  /**
+   * Clears timers/listeners, settles pending approval waits with the
+   * blocked result, and awaits ongoing work; never throws or latches.
+   */
   dispose(): Promise<void>;
 }
 
@@ -49,6 +52,13 @@ const MAX_STOP_PERSIST_ATTEMPTS = 8;
 const DENIED_BY_OPERATOR: ToolResultPart["output"] = {
   type: "json",
   value: { blocked: true, reason: "Denied by operator" },
+};
+
+// Disposal ends a pending decision without an operator answer: the
+// dangling gate settles blocked — no dispatch, nothing latched for flush.
+const ENDED_BY_DISPOSAL: ToolResultPart["output"] = {
+  type: "json",
+  value: { blocked: true, reason: "Run ended before the approval decision" },
 };
 
 /**
@@ -104,8 +114,15 @@ export function createRunControl(options: RunControlOptions): RunControl {
 
   const persistenceLatched = () => persistenceFailure;
 
+  // Post-dispose dispatch attempts are refused raw — unlatched — so
+  // teardown never converts a settled run's flush into an interruption.
+  const assertLive = (): void => {
+    if (disposed) throw new RunControlInterruption("Run control is disposed");
+  };
+
   let tail: Promise<void> = Promise.resolve();
   let disposed = false;
+  const disposeWaiters = new Set<() => void>();
   let stopWrite: Promise<void> | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   let pollInFlight: Promise<void> | undefined;
@@ -214,21 +231,24 @@ export function createRunControl(options: RunControlOptions): RunControl {
 
   const sleepOrAbort = (ms: number): Promise<void> =>
     new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, ms);
-      const onAbort = () => {
+      const wake = () => {
         cleanup();
         resolve();
       };
+      const timer = setTimeout(wake, ms);
       const cleanup = () => {
         clearTimeout(timer);
-        controller.signal.removeEventListener("abort", onAbort);
-        abortSignal?.removeEventListener("abort", onAbort);
+        controller.signal.removeEventListener("abort", wake);
+        abortSignal?.removeEventListener("abort", wake);
+        disposeWaiters.delete(wake);
       };
-      controller.signal.addEventListener("abort", onAbort, { once: true });
-      abortSignal?.addEventListener("abort", onAbort, { once: true });
+      controller.signal.addEventListener("abort", wake, { once: true });
+      abortSignal?.addEventListener("abort", wake, { once: true });
+      disposeWaiters.add(wake);
+      // An abort or disposal may have begun while this sleep was wiring up.
+      if (disposed || controller.signal.aborted || abortSignal?.aborted) {
+        wake();
+      }
     });
 
   const waitForDecision = async (
@@ -236,6 +256,9 @@ export function createRunControl(options: RunControlOptions): RunControl {
   ): Promise<ToolResultPart["output"] | undefined> => {
     let current = approval;
     for (;;) {
+      // Disposal ends the wait without a decision; the dangling gate
+      // settles blocked — never a dispatch, never a latched interruption.
+      if (disposed) return ENDED_BY_DISPOSAL;
       if (current.state === "approved") return undefined;
       if (current.state === "denied") return DENIED_BY_OPERATOR;
       const blocked = persistenceLatched();
@@ -258,6 +281,9 @@ export function createRunControl(options: RunControlOptions): RunControl {
         }),
         readControl(),
       ]);
+      // A read landing after disposal must not latch a late pause or stop
+      // into a settled run's flush surface.
+      if (disposed) return ENDED_BY_DISPOSAL;
       // Pause interrupts the wait too; the pending decision stays durable
       // in the store for whoever resumes.
       assertDispatchable(control);
@@ -293,13 +319,17 @@ export function createRunControl(options: RunControlOptions): RunControl {
   };
 
   const beforeDispatch = async (): Promise<void> => {
+    assertLive();
     const blocked = persistenceLatched();
     if (blocked) throw blocked;
     // A stop write triggered by an (upstream) abort must be visible to the
     // control read below — the gate observes the persisted stop, not a
     // racier in-memory state.
     if (stopWrite) await stopWrite;
+    assertLive();
     const control = await readControl();
+    // A read landing after disposal must not accept dispatch.
+    assertLive();
     assertDispatchable(control);
   };
 
@@ -308,14 +338,21 @@ export function createRunControl(options: RunControlOptions): RunControl {
     toolName: string;
     input: unknown;
   }): Promise<ToolResultPart["output"] | undefined> => {
+    // Same blocked result as waitForDecision: a settled run must not
+    // dispatch, and a throw here would latch into the tool recorder's flush.
+    if (disposed) return ENDED_BY_DISPOSAL;
     const blocked = persistenceLatched();
     if (blocked) throw blocked;
     if (stopWrite) await stopWrite;
+    if (disposed) return ENDED_BY_DISPOSAL;
     // Snapshot the validated input only: the approval binds exact bytes, so
     // caller mutation during the write cannot change what a decision
     // authorizes.
     const committedInput = structuredClone(input.input);
     const control = await readControl();
+    // A read landing after disposal must neither dispatch nor create an
+    // approval for a run that already ended.
+    if (disposed) return ENDED_BY_DISPOSAL;
     assertDispatchable(control);
     if (!required.has(input.toolName)) return undefined;
     const approval = await enqueue(() =>
@@ -348,6 +385,8 @@ export function createRunControl(options: RunControlOptions): RunControl {
       pollTimer = undefined;
     }
     abortSignal?.removeEventListener("abort", onUpstreamAbort);
+    // Wake pending decision sleeps so gates settle without another tick.
+    for (const wake of disposeWaiters) wake();
     if (pollInFlight) await pollInFlight;
     let last = tail;
     for (;;) {

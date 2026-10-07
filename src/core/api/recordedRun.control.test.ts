@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InferenceAttempt } from "../ai";
 import { getInferenceRecorder } from "../ai";
+import { RunPersistenceError } from "../runtime/persistenceError";
 import { openSqliteRunStore } from "../runtime/sqliteRunStore";
 
 const sessionCreate = vi.hoisted(() => vi.fn());
@@ -570,5 +571,35 @@ describe("teardown race: a delayed control poll rejection cannot become a succes
     await expect(outcomePromise).rejects.toThrow();
     expect((await real.get(runId))?.status).toBe("failed");
     spy.mockRestore();
+  });
+});
+
+describe("pre-aborted start", () => {
+  it("a stop-persist failure on a pre-aborted run settles failed, never silently admitted", async () => {
+    const { store: real } = await openStore();
+    store = real;
+    const runId = "run_ctrl_preabort_stopfail";
+    const failing = {
+      ...real,
+      requestControl: async () => {
+        throw new Error("injected stop-persist failure");
+      },
+    } as Store;
+
+    const abort = new AbortController();
+    abort.abort();
+
+    await expect(
+      runRecordedAgent({
+        spec: baseSpec(tempDir("control-cwd-"), { runId }),
+        store: failing,
+        abortSignal: abort.signal,
+      }),
+    ).rejects.toThrow(RunPersistenceError);
+
+    // The enrollment succeeded and the run cannot execute: the status write
+    // must land failed rather than silently leaving the run admitted.
+    const record = await real.get(runId);
+    expect(record?.status).toBe("failed");
   });
 });

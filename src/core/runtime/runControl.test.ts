@@ -357,7 +357,7 @@ describe("beforeTool", () => {
     const original = store.requestApproval.bind(store);
     store.requestApproval = async (runId, attemptId, request) => {
       setIntent("pause");
-      const result = await original(runId, attemptId, request);
+      await original(runId, attemptId, request);
       throw new RunControlInterruption("Run paused before dispatch");
     };
 
@@ -609,6 +609,238 @@ describe("dispose", () => {
     await store.resolveApproval(RUN, first.approvalId, "approved");
     await expect(pending).resolves.toBeUndefined();
     await control.dispose();
+  });
+
+  it("ends a still-pending approval wait blocked: no dispatch, no reads after disposal, no latched interruption", async () => {
+    const { store: base, enroll } = fakeStore();
+    enroll();
+    let storeReads = 0;
+    const store: RunControlStore = {
+      ...base,
+      getApproval: async (runId, approvalId) => {
+        storeReads++;
+        return base.getApproval(runId, approvalId);
+      },
+      getControl: async (runId) => {
+        storeReads++;
+        return base.getControl(runId);
+      },
+    };
+    const control = track(makeControl(store));
+    const pending = control.beforeTool({
+      toolCallId: "tc_dispose_pending",
+      toolName: "execute_command",
+      input: { command: "ls" },
+    });
+    await vi.waitFor(async () =>
+      expect((await base.listApprovals(RUN)).length).toBe(1),
+    );
+
+    await control.dispose();
+    const readsAtDisposal = storeReads;
+
+    const settled = await Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve("unresolved"), 250)),
+    ]);
+    expect(settled).toEqual({
+      type: "json",
+      value: {
+        blocked: true,
+        reason: "Run ended before the approval decision",
+      },
+    });
+    // The dangling wait must not keep touching the store after disposal.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(storeReads).toBe(readsAtDisposal);
+    // Disposal itself never latches an interruption for a later flush.
+    await expect(control.flush()).resolves.toBeUndefined();
+  });
+
+  it("an approval decided after disposal never dispatches the dangling tool", async () => {
+    const { store, enroll } = fakeStore();
+    enroll();
+    const control = track(makeControl(store));
+    const pending = control.beforeTool({
+      toolCallId: "tc_dispose_late_approval",
+      toolName: "execute_command",
+      input: { command: "ls" },
+    });
+    const approval = await vi.waitFor(async () => {
+      const listed = await store.listApprovals(RUN);
+      if (listed.length === 1 && listed[0]) return listed[0];
+      throw new Error("approval not requested yet");
+    });
+
+    await control.dispose();
+    await store.resolveApproval(RUN, approval.approvalId, "approved");
+
+    const settled = await Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve("unresolved"), 250)),
+    ]);
+    expect(settled).toEqual({
+      type: "json",
+      value: {
+        blocked: true,
+        reason: "Run ended before the approval decision",
+      },
+    });
+  });
+
+  it("gates refuse work after disposal without store access or latching", async () => {
+    const { store: base, enroll, requests } = fakeStore();
+    enroll();
+    let controlReads = 0;
+    const store: RunControlStore = {
+      ...base,
+      getControl: async (runId) => {
+        controlReads++;
+        return base.getControl(runId);
+      },
+    };
+    const control = track(makeControl(store));
+    await control.dispose();
+    const readsAtDisposal = controlReads;
+
+    let dispatchError: unknown;
+    const dispatch = await Promise.race([
+      control.beforeDispatch().then(
+        () => "resolved",
+        (error: unknown) => {
+          dispatchError = error;
+          return "rejected";
+        },
+      ),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 250)),
+    ]);
+    expect(dispatch).toBe("rejected");
+    expect(dispatchError).toBeInstanceOf(RunControlInterruption);
+
+    const tool = await Promise.race([
+      control.beforeTool({
+        toolCallId: "tc_dispose_gate",
+        toolName: "execute_command",
+        input: {},
+      }),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 250)),
+    ]);
+    expect(tool).toEqual({
+      type: "json",
+      value: {
+        blocked: true,
+        reason: "Run ended before the approval decision",
+      },
+    });
+    // No approval request or control read happened after disposal.
+    expect(requests).toEqual([]);
+    expect(controlReads).toBe(readsAtDisposal);
+    await expect(control.flush()).resolves.toBeUndefined();
+  });
+});
+
+describe("disposal during in-flight gate reads", () => {
+  // Holds the second getControl call — call #1 is the constructor poll, so
+  // the held read is deterministically the gate's own readControl.
+  function holdingSecondGetControl(base: RunControlStore) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    let secondPending = false;
+    const store: RunControlStore = {
+      ...base,
+      getControl: async (runId: string) => {
+        calls++;
+        if (calls === 2) {
+          secondPending = true;
+          await gate;
+        }
+        return base.getControl(runId);
+      },
+    };
+    return {
+      store,
+      releaseSecond: () => release(),
+      secondInFlight: () => secondPending,
+    };
+  }
+
+  it("beforeDispatch refuses dispatch when disposal lands while the control read is pending", async () => {
+    const { store: base, enroll } = fakeStore();
+    enroll();
+    const { store, releaseSecond, secondInFlight } =
+      holdingSecondGetControl(base);
+    // A long poll interval keeps the constructor poll as call #1.
+    const control = track(makeControl(store, { pollIntervalMs: 10_000 }));
+    const pending = control.beforeDispatch();
+    await vi.waitFor(() => expect(secondInFlight()).toBe(true));
+
+    const disposing = control.dispose();
+    releaseSecond();
+    await disposing;
+
+    await expect(pending).rejects.toThrow(RunControlInterruption);
+    await expect(control.flush()).resolves.toBeUndefined();
+  });
+
+  it("beforeTool blocks a non-required tool when disposal lands while the control read is pending", async () => {
+    const { store: base, enroll } = fakeStore();
+    enroll();
+    const { store, releaseSecond, secondInFlight } =
+      holdingSecondGetControl(base);
+    const control = track(makeControl(store, { pollIntervalMs: 10_000 }));
+    const pending = control.beforeTool({
+      toolCallId: "tc_race_nonrequired",
+      toolName: "read_file",
+      input: { path: "notes.txt" },
+    });
+    await vi.waitFor(() => expect(secondInFlight()).toBe(true));
+
+    const disposing = control.dispose();
+    releaseSecond();
+    await disposing;
+
+    await expect(pending).resolves.toEqual({
+      type: "json",
+      value: {
+        blocked: true,
+        reason: "Run ended before the approval decision",
+      },
+    });
+  });
+
+  it("beforeTool creates no approval when disposal lands while the control read is pending", async () => {
+    const { store: base, enroll, requests } = fakeStore();
+    enroll();
+    const { store, releaseSecond, secondInFlight } =
+      holdingSecondGetControl(base);
+    const control = track(makeControl(store, { pollIntervalMs: 10_000 }));
+    const pending = control.beforeTool({
+      toolCallId: "tc_race_required",
+      toolName: "execute_command",
+      input: { command: "ls" },
+    });
+    await vi.waitFor(() => expect(secondInFlight()).toBe(true));
+
+    const disposing = control.dispose();
+    releaseSecond();
+    await disposing;
+
+    const settled = await Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve("unresolved"), 250)),
+    ]);
+    expect(settled).toEqual({
+      type: "json",
+      value: {
+        blocked: true,
+        reason: "Run ended before the approval decision",
+      },
+    });
+    // The approval must not be created for a run that already ended.
+    expect(requests).toEqual([]);
   });
 });
 
