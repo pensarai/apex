@@ -424,6 +424,19 @@ function scanShellOperators(
   let unquotedNewline = false;
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
+    if (
+      allowDescriptorRedirect &&
+      !inSingle &&
+      !inDouble &&
+      ch === "#" &&
+      (i === 0 || /[ \t\n;&|<>()]/.test(command[i - 1]))
+    ) {
+      // Quotes in a POSIX comment cannot hide its terminating newline.
+      const newline = command.indexOf("\n", i);
+      if (newline === -1) break;
+      i = newline - 1;
+      continue;
+    }
     if (!inSingle && ch === "\\" && i + 1 < command.length) {
       // Any backslash outside single quotes can rewrite an argv word:
       // escape removal (`attac\ker.net` → `attacker.net`), quote
