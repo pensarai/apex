@@ -17,6 +17,7 @@ import {
   resolveCommandPlatform,
   UNKNOWN_FACTS,
 } from "./runtimeContext";
+import { PerCommandShell } from "./tools/perCommandShell";
 import type { ToolContext } from "./tools/types";
 
 afterEach(() => {
@@ -183,6 +184,76 @@ describe("probeRuntimeFacts", () => {
     expect(a).toEqual(b);
     expect(await probeRuntimeFacts(ctx)).toEqual(a);
     expect(calls).toHaveLength(1);
+  });
+
+  it("cancels only the caller's wait while a sibling completes the shared probe", async () => {
+    const owner = new AbortController();
+    const sibling = new AbortController();
+    let release!: () => void;
+    let calls = 0;
+    const backend = {
+      command: {
+        run: (_cmd: string, opts?: RunOpts) => {
+          calls++;
+          const gate = new Promise<boolean>((resolve) => {
+            release = () => resolve(true);
+            opts?.abortSignal?.addEventListener("abort", () => resolve(false), {
+              once: true,
+            });
+          });
+          return (async function* () {
+            if (await gate) {
+              yield* successEvents(markerOutput(PROBE_TOOL_NAMES));
+            } else {
+              yield { type: "end" as const, exitCode: 130, timedOut: false };
+            }
+          })();
+        },
+      },
+    } as unknown as ToolBackends;
+    const ctx = makeCtx({ backends: backend });
+    const ownerWait = probeRuntimeFacts({ ...ctx, abortSignal: owner.signal });
+    const siblingWait = probeRuntimeFacts({
+      ...ctx,
+      abortSignal: sibling.signal,
+    });
+
+    owner.abort();
+    expect(await ownerWait).toEqual(UNKNOWN_FACTS);
+    expect(peekSettledRuntimeFacts(ctx)).toBeNull();
+    release();
+
+    const facts = await siblingWait;
+    expect(facts.probed).toBe(true);
+    expect(facts.available).toEqual([...PROBE_TOOL_NAMES].sort());
+    expect(peekSettledRuntimeFacts(ctx)).toEqual(facts);
+    expect(await probeRuntimeFacts(ctx)).toEqual(facts);
+    expect(calls).toBe(1);
+  });
+
+  it("does not start discovery for an already cancelled caller", async () => {
+    const { backend, calls } = fullInventoryBackend(["bash", "sh"]);
+    const ctx = makeCtx({ backends: backend });
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      await probeRuntimeFacts({ ...ctx, abortSignal: controller.signal }),
+    ).toEqual(UNKNOWN_FACTS);
+    expect(calls).toHaveLength(0);
+    expect(peekSettledRuntimeFacts(ctx)).toBeNull();
+    expect((await probeRuntimeFacts(ctx)).probed).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("uses its own local command lifetime instead of an agent's disposed shell", async () => {
+    const shell = new PerCommandShell({ cwd: process.cwd() });
+    await shell.dispose();
+    const ctx = makeCtx({ agentCwd: process.cwd() });
+    const facts = await probeRuntimeFacts({ ...ctx, commandShell: shell });
+    expect(facts.probed).toBe(true);
+    expect(facts.available.length + facts.missing.length).toBe(
+      PROBE_TOOL_NAMES.length,
+    );
   });
 
   it("separates sessions, executor objects, and cwds", async () => {
