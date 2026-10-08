@@ -365,7 +365,7 @@ export function RecordedRunsDialog({
   };
 
   useKeyboard(async (key) => {
-    if (key.name === "escape" || busy) return;
+    if (key.name === "escape") return;
     const { ctrl, meta } = key;
     if (ctrl || meta) return;
     if (
@@ -386,6 +386,7 @@ export function RecordedRunsDialog({
       ].includes(key.name)
     )
       key.preventDefault();
+    if (busy) return;
     if (
       page === "detail" &&
       ["pageup", "pagedown", "home", "end"].includes(key.name)

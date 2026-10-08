@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { KeyEvent } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useEffect, useRef } from "react";
 import {
@@ -632,6 +633,49 @@ try {
     rendered(text, `› ${RUN_ID}`);
     await press("RETURN");
     rendered(await frame(), `Recorded Run ${RUN_ID}`);
+  } else if (scenario === "busy-controls-consume-shortcuts") {
+    controlGated = true;
+    await press("p");
+    assert.ok(finishControl, "the pause request must remain pending");
+    rendered(await frame(), "acting…");
+    const keys: KeyEvent[] = [];
+    const onKey = (key: KeyEvent) => keys.push(key);
+    setup.renderer.keyInput.on("keypress", onKey);
+    try {
+      for (const name of [
+        "RETURN",
+        "p",
+        "s",
+        "r",
+        "y",
+        "n",
+        "b",
+        "ARROW_UP",
+        "ARROW_DOWN",
+        "\u001b[5~",
+        "\u001b[6~",
+        "HOME",
+        "END",
+      ]) {
+        const before = keys.length;
+        await press(name);
+        assert.equal(keys.length, before + 1);
+        assert.ok(
+          keys.at(-1)?.defaultPrevented,
+          `${name} escaped the busy dialog`,
+        );
+      }
+      assert.deepEqual(calls, [
+        { method: "watch", args: [RUN_ID] },
+        { method: "requestControl", args: [RUN_ID, "pause", 3] },
+      ]);
+      rendered(await frame(), "Saved status: running");
+      await press("ESCAPE");
+      assert.ok(watchSignal?.aborted, "escape must still detach while busy");
+    } finally {
+      setup.renderer.keyInput.off("keypress", onKey);
+      await act(async () => finishControl?.());
+    }
   } else if (scenario === "sequential-controls-before-watch-refresh") {
     rendered(await frame(), "Control run · revision 3");
     await press("p");

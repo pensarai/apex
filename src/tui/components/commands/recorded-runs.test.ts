@@ -6,6 +6,7 @@ it.each([
   "direct-run-offline",
   "list-attach-detach",
   "approval-and-control-binding",
+  "busy-controls-consume-shortcuts",
   "sticky-worker-error",
   "late-open-detach",
   "scroll-transcript",
