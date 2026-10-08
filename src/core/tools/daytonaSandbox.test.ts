@@ -187,6 +187,57 @@ describe("Daytona execution transport", () => {
     expect(process.deleteSession).toHaveBeenCalledOnce();
   });
 
+  it("preserves the command timeout after slow session creation", async () => {
+    vi.useFakeTimers();
+    const process = fakeProcess();
+    process.createSession.mockImplementation(
+      () => new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
+    );
+    process.executeSessionCommand.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                cmdId: "command",
+                stdout: "finished",
+                stderr: "",
+                exitCode: 0,
+              }),
+            9_000,
+          ),
+        ),
+    );
+    const sandbox = createDaytonaExecutionSandbox(process);
+    const outcome = sandbox.execute("slow-command", { timeout: 10 }).then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(await outcome).toEqual({
+      result: { stdout: "finished", stderr: "", exitCode: 0, success: true },
+    });
+    expect(process.deleteSession).not.toHaveBeenCalled();
+    await sandbox[Symbol.asyncDispose]();
+  });
+
+  it("bounds session creation before a command starts", async () => {
+    vi.useFakeTimers();
+    const process = fakeProcess();
+    process.createSession.mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const sandbox = createDaytonaExecutionSandbox(process);
+    const assertion = expect(
+      sandbox.execute("never-started", { timeout: 1 }),
+    ).rejects.toThrow("exceeded 1 seconds");
+    await vi.advanceTimersByTimeAsync(6_001);
+    await assertion;
+    expect(process.executeSessionCommand).not.toHaveBeenCalled();
+    expect(process.deleteSession).toHaveBeenCalledOnce();
+    await sandbox[Symbol.asyncDispose]();
+  });
+
   it("tries cleanup after an ambiguous create, preserving the create error on 404", async () => {
     const process = fakeProcess();
     process.createSession.mockRejectedValue(new Error("connection lost"));

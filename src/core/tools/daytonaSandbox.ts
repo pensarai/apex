@@ -97,6 +97,7 @@ export function createDaytonaExecutionSandbox(
       };
       void creating.then(settleCreate, settleCreate);
       await Promise.race([creating, interrupted]);
+      timer?.refresh();
       const result = await Promise.race([
         process.executeSessionCommand(
           sessionId,

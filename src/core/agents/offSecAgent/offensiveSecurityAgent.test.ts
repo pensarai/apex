@@ -89,8 +89,6 @@ vi.mock("./tools", () => ({
     "create_workspace_endpoint",
     "update_workspace_endpoint",
   ],
-  PerCommandShell: class {},
-  PlaywrightMcpSession: class {},
   // Minimal registry stub: the agent constructs one per instance and
   // finalization drains it; these tests never start listeners.
   CallbackListenerRegistry: class {
@@ -103,6 +101,8 @@ vi.mock("./tools", () => ({
       return [];
     }
   },
+  PerCommandShell: class {},
+  PlaywrightMcpSession: class {},
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
