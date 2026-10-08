@@ -1,5 +1,6 @@
 import type { LanguageModelMiddleware, ToolSet } from "ai";
 import type { UsageRecorder } from "../ai";
+import type { RunContextRecorder } from "../runtime/runContext";
 import type { ToolBackends } from "../tools/backends/types";
 import type { AgentDefinition } from "./defineAgent";
 import {
@@ -27,6 +28,7 @@ export interface RequiredAgentHooks {
     | LanguageModelMiddleware
     | LanguageModelMiddleware[]
     | undefined;
+  contextRecorder: RunContextRecorder | undefined;
   usageRecorder: UsageRecorder | undefined;
   streamIdFactory: StreamIdFactory | undefined;
   smsInbox: SmsInbox | undefined;
@@ -49,6 +51,7 @@ export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
     backends: opts.backends,
     subagentSpawner: opts.subagentSpawner,
     languageModelMiddleware: opts.languageModelMiddleware,
+    contextRecorder: opts.contextRecorder,
     usageRecorder: opts.usageRecorder,
     streamIdFactory: opts.streamIdFactory,
     smsInbox: opts.smsInbox,

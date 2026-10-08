@@ -145,6 +145,9 @@ export interface AgentHooks {
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
 
+  /** Recorded-run durable context authority. Unset → no canonical persistence. */
+  contextRecorder?: RunContextRecorder;
+
   /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
   usageRecorder?: UsageRecorder;
 
@@ -167,7 +170,7 @@ export interface AgentHooks {
   sandbox?: UnifiedSandbox;
 }
 
-export type OffensiveSecurityAgentInput<TResult = void> = {
+export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
   attackSurfaceArtifactsPath?: string;
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
@@ -265,9 +268,6 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
   streamIdFactory?: StreamIdFactory;
-
-  /** Recorded-run durable context authority. Unset → no canonical persistence. */
-  contextRecorder?: RunContextRecorder;
 
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
