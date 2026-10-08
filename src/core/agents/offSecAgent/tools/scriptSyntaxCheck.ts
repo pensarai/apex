@@ -128,19 +128,18 @@ function verdictFromCheckerOutcome(
       reason: `syntax checker unavailable (exit ${result.exitCode})`,
     };
   }
-  // The native argv transport reports a missing runner as exit 1 with a
-  // spawn-ENOENT stderr (not the shell's 127); remote shells say "command not found".
-  if (/\bspawn\s+\S+\s+ENOENT\b|command not found/i.test(result.stderr)) {
-    return {
-      status: "unchecked",
-      reason: `syntax checker unavailable: ${bound(result.stderr)}`,
-    };
-  }
   const diagnostic = extractLineDiagnostic(language, scriptPath, result.stderr);
   if (diagnostic) {
     return {
       status: "invalid",
       detail: `${scriptPath}:${diagnostic.line}: ${bound(diagnostic.message)}`,
+    };
+  }
+  // Check launch-failure text only after diagnostics, which can echo arbitrary source.
+  if (/\bspawn\s+\S+\s+ENOENT\b|command not found/i.test(result.stderr)) {
+    return {
+      status: "unchecked",
+      reason: `syntax checker unavailable: ${bound(result.stderr)}`,
     };
   }
   return {

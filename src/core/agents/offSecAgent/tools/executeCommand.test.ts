@@ -1020,7 +1020,10 @@ describe("required-header policy on redirected shell commands", () => {
     return ctx;
   }
 
-  it("rejects a second command hidden behind quotes in a POSIX comment", async () => {
+  it.each([
+    "curl https://example.com/api 2>&1 # '\nprintf second",
+    "curl https://example.com/api \\ #note; printf second",
+  ])("rejects a hidden second command before dispatch: %s", async (command) => {
     const run = vi.fn(async function* () {
       yield { type: "end" as const, exitCode: 0, timedOut: false };
     });
@@ -1029,7 +1032,7 @@ describe("required-header policy on redirected shell commands", () => {
     } as unknown as ToolContext["backends"];
     const result = (await executeCommand(makeHeaderCtx(backends)).execute?.(
       {
-        command: "curl https://example.com/api 2>&1 # '\nprintf second",
+        command,
         toolCallDescription: "Check the required-header boundary",
       },
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },

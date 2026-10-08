@@ -880,6 +880,24 @@ describe("applyHeadersToShellCommand", () => {
     }
   });
 
+  it("keeps operators after hashes attached to escaped or redirected words", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const word of ["\\ #note", "\\\t#note", '""#note', ">#out", "<#in"]) {
+      for (const operator of [";", "|", "&"]) {
+        for (const redirect of ["", " 2>&1"]) {
+          const cmd = `curl https://example.com/api${redirect} ${word} ${operator} printf second`;
+          const result = applyHeadersToShellCommand(cmd, session, [
+            "example.com",
+          ]);
+          expect(result.status).toBe("unknown-tool");
+          expect(result.command).toBe(cmd);
+        }
+      }
+    }
+  });
+
   it("fails closed on quote concatenation onto the 2>&1 target", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },

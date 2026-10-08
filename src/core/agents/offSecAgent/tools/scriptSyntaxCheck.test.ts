@@ -156,6 +156,43 @@ describe("checkScriptSyntax (native transport, real runners)", () => {
     );
   });
 
+  it.each([
+    { language: "bash", runner: "bash", filename: "poc.sh", suffix: " )" },
+    { language: "python", runner: "python3", filename: "poc.py", suffix: "" },
+    {
+      language: "javascript",
+      runner: "node",
+      filename: "poc.js",
+      suffix: "+;",
+    },
+  ] as const)("keeps $language syntax errors when echoed source resembles a missing checker", async ({
+    language,
+    runner,
+    filename,
+    suffix,
+  }) => {
+    const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
+    roots.push(root);
+    for (const phrase of ["command not found", "spawn node ENOENT"]) {
+      const prefix =
+        language === "bash"
+          ? "echo "
+          : language === "python"
+            ? "print("
+            : "const message = ";
+      const content = `${prefix}"${phrase}"${suffix}\n`;
+      const path = stage(root, filename, content);
+      const result = await checkScriptSyntax(context(root), {
+        language,
+        runner,
+        scriptPath: path,
+      });
+      expect(result.status).toBe("invalid");
+      expect(result.detail).toContain(`${path}:1:`);
+      expect(result.contentHash).toBe(sha256(content));
+    }
+  });
+
   it("rejects a top-level python return that a real run would reject (full compile, not ast.parse)", async () => {
     const root = mkdtempSync(join(tmpdir(), "apex-script-check-"));
     roots.push(root);

@@ -422,6 +422,7 @@ function scanShellOperators(
   // its lexical scan can fully establish as argv.
   let activeExpansion = false;
   let unquotedNewline = false;
+  let wordStarted = false;
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (
@@ -429,13 +430,16 @@ function scanShellOperators(
       !inSingle &&
       !inDouble &&
       ch === "#" &&
-      (i === 0 || /[ \t\n;&|<>()]/.test(command[i - 1]))
+      !wordStarted
     ) {
       // Quotes in a POSIX comment cannot hide its terminating newline.
       const newline = command.indexOf("\n", i);
       if (newline === -1) break;
       i = newline - 1;
       continue;
+    }
+    if (!inSingle && !inDouble) {
+      wordStarted = ch !== " " && ch !== "\t" && ch !== "\n";
     }
     if (!inSingle && ch === "\\" && i + 1 < command.length) {
       // Any backslash outside single quotes can rewrite an argv word:
