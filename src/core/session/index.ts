@@ -267,6 +267,14 @@ const SessionConfigObject = z.object({
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
+  /**
+   * Execution-sandbox root for agent helper files when command execution is
+   * remote. Helper file tools and worker prompts root here (per-subagent
+   * subdirectories mirror the host layout); durable session artifacts
+   * (findings, PoCs, evidence, logs) stay in host session paths. Absent —
+   * host session directories, unchanged.
+   */
+  remoteFileWorkspaceRoot: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */
   prompt: z.string().optional(),
   /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */

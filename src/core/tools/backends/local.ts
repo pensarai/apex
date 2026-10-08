@@ -400,6 +400,7 @@ async function* runCommand(
     yield { type: "start" };
     const result = await ctx.sandbox.execute(cmd, {
       timeout: normalizeExecuteCommandTimeout(o?.timeoutSeconds),
+      abortSignal,
       cwd: ctx.agentCwd,
       envVars: {
         ...readSandboxAgentEnv(),
