@@ -127,7 +127,12 @@ function parseProbeOutput(output: string): RuntimeExecutionFacts {
 
 async function runProbe(ctx: ToolContext): Promise<RuntimeExecutionFacts> {
   try {
-    const backend = resolveBackends(ctx);
+    // Shared discovery must outlive an individual agent's signal and shell.
+    const backend = resolveBackends({
+      ...ctx,
+      abortSignal: undefined,
+      commandShell: undefined,
+    });
     const platform = backend.command.platform ?? "posix";
     const cmd =
       platform === "windows" ? windowsProbeCommand() : posixProbeCommand();
@@ -136,7 +141,7 @@ async function runProbe(ctx: ToolContext): Promise<RuntimeExecutionFacts> {
     // and sandbox paths re-merge the same values harmlessly.
     const opts: RunOpts = {
       timeoutSeconds: PROBE_TIMEOUT_SECONDS,
-      abortSignal: ctx.abortSignal,
+      abortSignal: AbortSignal.timeout(PROBE_TIMEOUT_SECONDS * 1000),
       envVars: ctx.environmentVariables,
     };
 
@@ -218,12 +223,30 @@ const factsByKey = new Map<string, Promise<RuntimeExecutionFacts>>();
 // Settled snapshot for the synchronous escape hatch; bounded with factsByKey.
 const settledFactsByKey = new Map<string, RuntimeExecutionFacts>();
 
+function waitForProbe(
+  pending: Promise<RuntimeExecutionFacts>,
+  signal?: AbortSignal,
+): Promise<RuntimeExecutionFacts> {
+  if (!signal) return pending;
+  if (signal.aborted) return Promise.resolve(UNKNOWN_FACTS);
+  return new Promise((resolve) => {
+    const finish = (facts: RuntimeExecutionFacts) => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(facts);
+    };
+    const onAbort = () => finish(UNKNOWN_FACTS);
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(finish, () => finish(UNKNOWN_FACTS));
+  });
+}
+
 export function probeRuntimeFacts(
   ctx: ToolContext,
 ): Promise<RuntimeExecutionFacts> {
+  if (ctx.abortSignal?.aborted) return Promise.resolve(UNKNOWN_FACTS);
   const key = cacheKey(ctx);
   const cached = factsByKey.get(key);
-  if (cached) return cached;
+  if (cached) return waitForProbe(cached, ctx.abortSignal);
 
   const pending = runProbe(ctx).then((facts) => {
     // A probe in flight when the cache was evicted must not touch whatever
@@ -250,7 +273,7 @@ export function probeRuntimeFacts(
     settledFactsByKey.clear();
   }
   factsByKey.set(key, pending);
-  return pending;
+  return waitForProbe(pending, ctx.abortSignal);
 }
 
 /** Facts already discovered for this runtime scope, or null before a probe settles. */
