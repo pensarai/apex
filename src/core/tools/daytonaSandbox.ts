@@ -73,8 +73,6 @@ export function createDaytonaExecutionSandbox(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let rejectAbort: (() => void) | undefined;
     try {
-      await process.createSession(sessionId);
-      abort?.throwIfAborted();
       const interrupted = new Promise<never>((_, reject) => {
         rejectAbort = () =>
           reject(abort?.reason ?? new DOMException("Aborted", "AbortError"));
@@ -88,6 +86,7 @@ export function createDaytonaExecutionSandbox(
           (timeoutSeconds + 5) * 1_000,
         );
       });
+      await Promise.race([process.createSession(sessionId), interrupted]);
       const result = await Promise.race([
         process.executeSessionCommand(
           sessionId,

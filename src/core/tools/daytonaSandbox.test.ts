@@ -117,6 +117,27 @@ describe("Daytona execution transport", () => {
     expect(process.deleteSession).toHaveBeenCalledOnce();
   });
 
+  it("cancels a stuck session creation and reaps the owned session", async () => {
+    const process = fakeProcess();
+    let creating!: () => void;
+    const started = new Promise<void>((resolve) => {
+      creating = resolve;
+    });
+    process.createSession.mockImplementation(async () => {
+      creating();
+      return new Promise<never>(() => {});
+    });
+    const controller = new AbortController();
+    const running = createDaytonaExecutionSandbox(process).execute("true", {
+      abortSignal: controller.signal,
+    });
+    await started;
+    controller.abort(new Error("cancelled by test"));
+    await expect(running).rejects.toThrow("cancelled by test");
+    expect(process.executeSessionCommand).not.toHaveBeenCalled();
+    expect(process.deleteSession).toHaveBeenCalledOnce();
+  });
+
   it("bounds an unresponsive execution and reaps the owned session", async () => {
     vi.useFakeTimers();
     const process = fakeProcess();
