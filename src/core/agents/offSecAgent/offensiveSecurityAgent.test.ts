@@ -452,6 +452,11 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "streamResult", {
     value: { fullStream: overrides.fullStream },
   });
+  // Stub bypasses the constructor, so pre-settle the initialization seam —
+  // consume() awaits streamReady before touching the (stubbed) streamResult.
+  Object.defineProperty(agent, "streamInit", {
+    value: Promise.resolve(),
+  });
   Object.defineProperty(agent, "subagentId", {
     value: overrides.subagentId,
   });

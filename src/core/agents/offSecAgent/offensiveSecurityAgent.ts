@@ -28,13 +28,21 @@ import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
-import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
   createInterruptedStepFinalizer,
   type FinalizeInterruptedStepInput,
 } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import {
+  buildBundledAssetsSection,
+  buildRuntimeContextSection,
+  peekSettledRuntimeFacts,
+  probeRuntimeFacts,
+  type RuntimeExecutionFacts,
+  resolveCommandPlatform,
+  UNKNOWN_FACTS,
+} from "./runtimeContext";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";
@@ -55,6 +63,7 @@ import {
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
+import type { ToolContext } from "./tools/types";
 import { StepTraceWriter } from "./trace";
 import type {
   AgentMode,
@@ -74,6 +83,22 @@ const WORKSPACE_TOOL_NAME_SET = new Set<string>(WORKSPACE_TOOL_NAMES);
 const WORKSPACE_WRITE_TOOL_NAME_SET = new Set<string>(
   WORKSPACE_WRITE_TOOL_NAMES,
 );
+
+// Tools whose presence means backend-probed execution facts can change what
+// the agent should attempt: command execution, native file tools, and PoC
+// runs. Agents holding none of these skip the runtime probe entirely.
+const RUNTIME_CAPABLE_TOOL_NAMES = new Set<string>([
+  "execute_command",
+  "read_file",
+  "list_files",
+  "glob",
+  "grep",
+  "create_file",
+  "update_file",
+  "delete_file",
+  "apply_patch",
+  "document_vulnerability",
+]);
 
 const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
 const WORKSPACE_NOUN_RE =
@@ -200,7 +225,8 @@ export function filterWorkspaceToolsForRun(
  * the session context, and specific agents select which ones to activate
  * via the `activeTools` array (passed through to the AI SDK).
  *
- * The stream is created lazily on first consumption (see {@link streamResult}),
+ * The stream is created lazily on first consumption (see {@link streamReady}
+ * and {@link streamResult}) — after backend-probed runtime facts settle —
  * so the AI SDK telemetry nests under this agent's span — no separate `.run()`.
  *
  * @typeParam TResult - The type returned by {@link consume}. When the input
@@ -229,11 +255,25 @@ export function filterWorkspaceToolsForRun(
  * ```
  */
 export class OffensiveSecurityAgent<TResult = void> {
-  /** Cached stream result, populated on first {@link streamResult} access. */
+  /** The real SDK stream result — created exactly once, with backend-probed facts via {@link streamReady} or settled-or-unknown facts via the sync escape hatch. */
   private _streamResult: StreamTextResult<ToolSet, never> | null = null;
 
-  /** Builds the underlying stream; invoked lazily by {@link streamResult}. */
-  private readonly createStream: () => StreamTextResult<ToolSet, never>;
+  /** Composes the final system prompt, writes the trace init record, and calls `streamResponse`. Invoked at most once; both creation paths guard on `_streamResult`. */
+  private readonly createStream: (
+    facts: RuntimeExecutionFacts | null,
+  ) => StreamTextResult<ToolSet, never>;
+
+  /** Lazy runtime probe, then `createStream`; memoized by {@link streamInit}. */
+  private readonly initializeStreamOnce: () => Promise<void>;
+
+  /** Memoized {@link streamReady} promise; initialization runs at most once. */
+  private streamInit: Promise<void> | null = null;
+
+  /** True when this agent's tool selection can use backend-probed execution facts. */
+  private readonly probesRuntime: boolean;
+
+  /** The tool context whose runtime scope keys fact discovery and the sync fallback. */
+  private readonly toolCtx: ToolContext;
 
   /** The event bus for this agent's streaming output. */
   public readonly eventBus: AgentEventBus;
@@ -716,40 +756,70 @@ export class OffensiveSecurityAgent<TResult = void> {
     });
     const schedulePersist = () => this.writer.schedulePersist();
 
-    // -- Init record (trace.jsonl first line) ---------------------------------
-    // Hash only the base system prompt (excluding session workspace paths)
-    // so the hash is stable across runs with identical prompt versions.
+    // -- System prompt ---------------------------------------------------------
+    // Persona first; execution facts and the workspace section are appended by
+    // the harness for every persona, so custom prompts no longer bypass them.
+    // Facts are probed through the agent's actual command backend (see
+    // ./runtimeContext) — asynchronous, so the stream is created once they settle.
     const baseSystemPrompt =
       input.system ??
-      detectOSAndEnhancePrompt(
-        buildBaseSystemPrompt({
-          sandboxMode: agentCwd === input.session.rootPath,
-        }),
-      );
-    const systemPrompt =
-      baseSystemPrompt +
-      buildSessionWorkspaceSection(
-        input.session,
-        agentCwd,
-        activeTools,
-        input.fileWorkspaceRoot,
-      );
-
-    traceWriter.writeInit({
-      model: input.model,
-      systemPrompt: baseSystemPrompt,
+      buildBaseSystemPrompt({
+        sandboxMode: agentCwd === input.session.rootPath,
+      });
+    const commandPlatform = resolveCommandPlatform(toolCtx);
+    const workspaceSection = buildSessionWorkspaceSection(
+      input.session,
+      agentCwd,
       activeTools,
-      sessionId: input.session.id,
-      target: input.target,
-    });
+      input.fileWorkspaceRoot,
+    );
+    // Bundled wordlist paths are host-local: advertise them only when
+    // commands execute locally.
+    const bundledAssets =
+      input.backends || input.sandbox ? null : buildBundledAssetsSection();
+    const assembleBaseSystemPrompt = (
+      facts: RuntimeExecutionFacts | null,
+    ): string => {
+      const sections: string[] = [baseSystemPrompt];
+      if (facts) {
+        sections.push(
+          buildRuntimeContextSection(facts, { platform: commandPlatform }),
+        );
+      }
+      if (bundledAssets) sections.push(bundledAssets);
+      return sections.join("\n\n");
+    };
+    this.toolCtx = toolCtx;
+    // Only agents whose tools can execute commands, touch files, or run
+    // PoCs get a runtime probe — for anyone else the facts are noise and the
+    // probe is a wasted subprocess.
+    this.probesRuntime = activeTools.some((name) =>
+      RUNTIME_CAPABLE_TOOL_NAMES.has(name),
+    );
 
-    // -- Stream ---------------------------------------------------------------
-    // Deferred so the AI SDK telemetry binds to this agent's span (entered in
-    // consume()) rather than the construction-time context. See `streamResult`.
-    this.createStream = () =>
-      streamResponse({
+    // -- Init record + stream --------------------------------------------------
+    // Created by async initialization (streamReady) so the AI SDK telemetry
+    // binds to the span active at first consumption (this agent's
+    // invoke_agent span in consume()) and the system prompt can embed
+    // backend-probed facts. The synchronous escape hatch calls the same
+    // factory with settled-or-unknown facts — never host facts — guarded so
+    // exactly one model stream exists either way.
+    this.createStream = (facts) => {
+      // Hash only the base system prompt (excluding session workspace paths)
+      // so the hash is stable across runs with identical prompt versions. No
+      // step record can precede this init line: steps only originate from the
+      // stream created below.
+      const baseWithFacts = assembleBaseSystemPrompt(facts);
+      traceWriter.writeInit({
+        model: input.model,
+        systemPrompt: baseWithFacts,
+        activeTools,
+        sessionId: input.session.id,
+        target: input.target,
+      });
+      return streamResponse({
         prompt: input.prompt,
-        system: systemPrompt,
+        system: baseWithFacts + workspaceSection,
         model: input.model,
         messages: input.messages,
         tools,
@@ -823,6 +893,24 @@ export class OffensiveSecurityAgent<TResult = void> {
         openAIReasoningEffort: input.openAIReasoningEffort,
         silent: true,
       });
+    };
+    this.initializeStreamOnce = async () => {
+      // The sync escape hatch may have created the stream while discovery was
+      // pending — never a second model stream.
+      if (this._streamResult !== null) return;
+      // Abort-before-start skips the probe but still creates the stream so the
+      // SDK surfaces the abort normally; a probe failure degrades the prompt
+      // to unknown facts rather than failing the stream.
+      const facts =
+        this.probesRuntime && !this.abortSignal?.aborted
+          ? await probeRuntimeFacts(toolCtx).catch(
+              (): RuntimeExecutionFacts => UNKNOWN_FACTS,
+            )
+          : null;
+      // Re-check after the await: the escape hatch may have raced the probe.
+      if (this._streamResult !== null) return;
+      this._streamResult = this.createStream(facts);
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -830,23 +918,55 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   /**
-   * The underlying Vercel AI SDK stream result — escape hatch for advanced use.
-   * Created lazily so its telemetry binds to the span active at first
-   * consumption (this agent's `invoke_agent` span), not the construction context.
+   * Asynchronous initialization seam: probe runtime facts through this
+   * agent's command backend (only when its selected tools can use them), then
+   * create the stream. Idempotent; every consumption entry point awaits it,
+   * so the AI layer's prompt budgeting and recovery see the actual final
+   * system text.
+   */
+  streamReady(): Promise<void> {
+    this.streamInit ??= this.initializeStreamOnce();
+    return this.streamInit;
+  }
+
+  /**
+   * The underlying Vercel AI SDK stream result — synchronous escape hatch.
+   * Always a real SDK result. Cold access creates it immediately with facts
+   * already settled for this runtime scope, else explicit unknown facts —
+   * never host facts; callers needing freshly probed facts await
+   * {@link streamReady}, `consume()`, or `fullStream` iteration instead.
+   * Guarded so a cold access racing an in-flight probe never creates a
+   * second model stream.
    */
   get streamResult(): StreamTextResult<ToolSet, never> {
     if (this._streamResult === null) {
-      this._streamResult = this.createStream();
+      const facts = this.probesRuntime
+        ? (peekSettledRuntimeFacts(this.toolCtx) ?? UNKNOWN_FACTS)
+        : null;
+      this._streamResult = this.createStream(facts);
     }
     return this._streamResult;
   }
 
   /**
    * The raw async-iterable stream of chunks.
-   * Equivalent to `streamResult.fullStream`.
+   * Equivalent to `streamResult.fullStream`; before initialization it
+   * settles {@link streamReady} on first iteration, then delegates to the
+   * real stream.
    */
   get fullStream(): AsyncIterable<TextStreamPart<ToolSet>> {
-    return this.streamResult.fullStream;
+    if (this._streamResult !== null) {
+      return this._streamResult.fullStream;
+    }
+    const self = this;
+    return (async function* () {
+      await self.streamReady();
+      const stream = self._streamResult;
+      if (stream === null) {
+        throw new Error("Stream initialization did not produce a stream");
+      }
+      yield* stream.fullStream;
+    })();
   }
 
   /**
@@ -858,6 +978,7 @@ export class OffensiveSecurityAgent<TResult = void> {
    * **Note:** The underlying stream can only be consumed once.
    */
   async *[Symbol.asyncIterator](): AsyncIterator<TextStreamPart<ToolSet>> {
+    await this.streamReady();
     for await (const chunk of this.streamResult.fullStream) {
       yield chunk;
     }
@@ -923,6 +1044,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       diagnostics.start();
 
       try {
+        // Initialize (runtime probe + stream creation) inside the span so
+        // telemetry binds to this agent's invoke_agent span.
+        await this.streamReady();
         // 1–3. Iterate the stream: observe diagnostics, apply the part (id
         // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
@@ -1332,7 +1456,7 @@ export class OffensiveSecurityAgent<TResult = void> {
    * has been fully consumed. Await this *after* iterating the stream.
    */
   get response() {
-    return this.streamResult.response;
+    return this.streamReady().then(() => this.streamResult.response);
   }
 }
 

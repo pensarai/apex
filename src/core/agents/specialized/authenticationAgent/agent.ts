@@ -8,7 +8,6 @@ import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
 import { browserEngineForGoogleSignIn } from "../googleSignInPrompt";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
-import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
 
@@ -92,7 +91,7 @@ export const authenticationAgentDefinition = defineAgent<
 >({
   name: "authentication-agent",
   role: "worker",
-  system: () => detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
+  system: () => AUTH_SUBAGENT_SYSTEM_PROMPT,
   activeTools: () => [...AUTH_ACTIVE_TOOLS],
   stopWhen: () => hasToolCall("complete_authentication"),
   target: (opts) => opts.target,
