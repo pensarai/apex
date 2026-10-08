@@ -1,6 +1,0 @@
-**
-!package.json
-!bun.lock
-!src/**
-!assets/**
-!scripts/run-daytona-agent.ts
