@@ -24,6 +24,39 @@ import type { ToolContext } from "./types";
 
 const MAX_INLINE_BODY = 5_000;
 
+/** Deadline applied when the model omits every timeout spelling. */
+export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
+
+export type HttpRequestTimeoutInputResolution =
+  | { ok: true; ms: number | undefined }
+  | { ok: false; error: string };
+
+/**
+ * `timeoutMs` (canonical) and `timeout` (legacy) are one milliseconds field.
+ * Null is inactive — strict-mode models emit it for unset fields — and the
+ * default applies only after alias resolution. Equal aliases pass; a
+ * disagreement is rejected, never guessed or clamped.
+ */
+export function resolveHttpRequestTimeoutInput(input: {
+  timeoutMs?: number | null;
+  timeout?: number | null;
+}): HttpRequestTimeoutInputResolution {
+  const canonical =
+    typeof input.timeoutMs === "number" ? input.timeoutMs : undefined;
+  const legacy = typeof input.timeout === "number" ? input.timeout : undefined;
+  if (
+    canonical !== undefined &&
+    legacy !== undefined &&
+    !Object.is(canonical, legacy)
+  ) {
+    return {
+      ok: false,
+      error: `Conflicting timeout values: timeoutMs=${canonical} and timeout=${legacy} — both are milliseconds; pass matching values or a single field`,
+    };
+  }
+  return { ok: true, ms: canonical ?? legacy };
+}
+
 /** Why the body capture ended. `end` is the only complete outcome. */
 export type BodyCaptureStopReason =
   | "end"
@@ -98,15 +131,26 @@ const httpRequestInputSchema = z.object({
     .describe(
       "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers.",
     ),
-  timeout: z.number().default(10000),
+  timeoutMs: z
+    .number()
+    .nullable()
+    .optional()
+    .describe(
+      `Request timeout in milliseconds. Defaults to ${DEFAULT_HTTP_TIMEOUT_MS}ms when unset or null.`,
+    ),
+  timeout: z
+    .number()
+    .nullable()
+    .optional()
+    .describe(
+      "Legacy alias for timeoutMs — same milliseconds value. Prefer timeoutMs; if both are set they must match.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')",
     ),
 });
-
-type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
 
 type HttpRequestBody = string | PromptInjectionRef | undefined;
 
@@ -245,6 +289,7 @@ COMMON TESTING PATTERNS:
       headers: rawHeaders,
       body,
       followRedirects,
+      timeoutMs,
       timeout,
     }): Promise<HttpResponse> => {
       let headers = parseHeaders(rawHeaders);
@@ -270,6 +315,17 @@ COMMON TESTING PATTERNS:
           capturedBytesBasis: "raw",
         },
       });
+
+      // Pre-dispatch alias resolution: conflicts fail before anything is
+      // requested, and the default applies only after the aliases resolve.
+      const resolvedTimeout = resolveHttpRequestTimeoutInput({
+        timeoutMs,
+        timeout,
+      });
+      if (!resolvedTimeout.ok) {
+        return notSent(resolvedTimeout.error);
+      }
+      const effectiveTimeoutMs = resolvedTimeout.ms ?? DEFAULT_HTTP_TIMEOUT_MS;
 
       try {
         assertUrlInScope(url, ctx);
@@ -333,7 +389,7 @@ COMMON TESTING PATTERNS:
       {
         const response = await resolveBackends(ctx).http.request(
           { url, method, headers, body: resolvedBody, followRedirects },
-          { timeoutMs: timeout, abortSignal: ctx.abortSignal },
+          { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
         );
         return formatHttpResponse(response, ctx, library);
       }
