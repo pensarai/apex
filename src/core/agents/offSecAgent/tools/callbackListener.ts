@@ -512,14 +512,13 @@ async function readListenerLog(
   | { ok: false; summary: string; artifactPath?: string }
 > {
   const jobs = resolveWhiteboxJobs(ctx);
-  let record: WhiteboxJobRecord | undefined;
   try {
-    record = await jobs.poll(handle.jobId);
-    if (record) {
-      const log = await jobs.read(handle.jobId);
+    // Use the read's record: a separate poll can race job pruning.
+    const log = await jobs.read(handle.jobId);
+    if (log.record) {
       return {
         ok: true,
-        record,
+        record: log.record,
         evidence: parseCallbackListenerLog(log.content),
         logTruncated: log.truncated,
         gone: false,

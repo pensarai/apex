@@ -2,14 +2,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { collectCommand } from "../../../tools/backends/collectCommand";
 import { LocalBackends } from "../../../tools/backends/local";
 import { resolveBackends } from "../../../tools/backends/resolve";
 import type { CommandEvent } from "../../../tools/backends/types";
 import { resolveWhiteboxJobs } from "../../../tools/backends/whiteboxJobs";
-import { writeWhiteboxArtifact } from "../../../whitebox";
+import {
+  type WhiteboxJobRecord,
+  writeWhiteboxArtifact,
+} from "../../../whitebox";
+import * as nativeJobs from "../../../whitebox/jobs";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   buildCallbackListenerScript,
@@ -150,6 +154,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   // Stop every listener the fixtures started, ignoring stop races.
   for (const registry of registries.splice(0)) {
     await registry.stopAll().catch(() => {});
@@ -756,6 +761,85 @@ describe("record-gone snapshot retrieval (bugbot regressions)", () => {
       body: "x".repeat(bodyChars),
     }));
   }
+
+  function staleRecord(jobId: string): WhiteboxJobRecord {
+    return {
+      id: jobId,
+      command: "node listener.cjs",
+      cwd: root,
+      logPath: join(root, "listener.log"),
+      startedAt: "2026-10-07T10:00:00Z",
+      updatedAt: "2026-10-07T10:00:01Z",
+      timeoutSeconds: 60,
+      status: "completed",
+      exitCode: 0,
+    };
+  }
+
+  it.each([
+    "poll",
+    "stop",
+  ] as const)("preserves retained hits when the job is pruned before a %s log read", async (operation) => {
+    const ctx = makeCtx();
+    const jobId = "wjob_66666_f006";
+    const ref = await plantSnapshot(
+      ctx,
+      jobId,
+      JSON.stringify({ jobId, nonce: GONE_NONCE, hits: snapshotHits(1, 0) }),
+    );
+    registerGone(ctx, jobId, ref.path);
+    vi.spyOn(nativeJobs, "pollWhiteboxJob").mockReturnValue(staleRecord(jobId));
+    vi.spyOn(nativeJobs, "readWhiteboxJobLog").mockReturnValue({
+      content: "",
+      truncated: false,
+    });
+
+    const result = (await (operation === "poll"
+      ? pollCallbackListener(ctx)
+      : stopCallbackListener(ctx)
+    ).execute?.(
+      { jobId, toolCallDescription: "Pruned during evidence retrieval" },
+      { toolCallId: "tc_pruned", messages: [], abortSignal: undefined },
+    )) as {
+      success: boolean;
+      data: { callbackHits: number; status: string };
+      artifactPaths: string[];
+    };
+    expect(result.success).toBe(true);
+    expect(result.data.status).toBe("record-gone");
+    expect(result.data.callbackHits).toBe(1);
+    if (operation === "poll") expect(result.artifactPaths).toEqual([ref.path]);
+
+    const later = await pollListener(ctx, jobId);
+    expect(later.data.callbackHits).toBe(1);
+    expect(later.data.listenerReady).toBe(false);
+  });
+
+  it("uses the record returned with an empty live log instead of retained hits", async () => {
+    const ctx = makeCtx();
+    const jobId = "wjob_66666_f007";
+    const ref = await plantSnapshot(
+      ctx,
+      jobId,
+      JSON.stringify({ jobId, nonce: GONE_NONCE, hits: snapshotHits(1, 0) }),
+    );
+    registerGone(ctx, jobId, ref.path);
+    vi.spyOn(nativeJobs, "pollWhiteboxJob").mockReturnValue({
+      ...staleRecord(jobId),
+      status: "running",
+    });
+    vi.spyOn(nativeJobs, "readWhiteboxJobLog").mockReturnValue({
+      content: "",
+      truncated: false,
+      record: staleRecord(jobId),
+    });
+
+    const poll = await pollListener(ctx, jobId);
+    expect(poll.success).toBe(true);
+    expect(poll.data.status).toBe("completed");
+    expect(poll.data.callbackHits).toBe(0);
+    expect(poll.data.listenerReady).toBe(false);
+  });
 
   it("retrieves a retained snapshot larger than the 40k inline cap", async () => {
     const ctx = makeCtx();
