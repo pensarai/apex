@@ -4,12 +4,13 @@
  * persistence. Real SQLite store + real controller; session and agent are
  * mocked per the existing recordedRun test patterns — the mocked agent
  * drives the real recorder/control seams (toolExecutionRecorder,
- * contextRecorder, ALS inference recorder) exactly as the wired agent does.
+ * contextRecorder, inferenceRecorder) exactly as the wired agent does.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentHooks } from "../agents/offSecAgent";
 import type { InferenceAttempt } from "../ai";
 import { getInferenceRecorder } from "../ai";
 import { RunPersistenceError } from "../runtime/persistenceError";
@@ -97,6 +98,7 @@ function makeAttempt(): InferenceAttempt {
 }
 
 type AgentInput = {
+  inferenceRecorder: NonNullable<AgentHooks["inferenceRecorder"]>;
   toolExecutionRecorder: {
     beforeExecute: (input: {
       toolCallId: string;
@@ -342,9 +344,8 @@ describe("pause and stop intent", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       // The next model turn observes the pause and interrupts — without
       // touching the already-settled work above.
-      const recorder = getInferenceRecorder();
-      if (!recorder) throw new Error("no inference recorder in ALS context");
-      await recorder.beforeDispatch(makeAttempt());
+      expect(input.inferenceRecorder).toBe(getInferenceRecorder());
+      await input.inferenceRecorder.beforeDispatch(makeAttempt());
       throw new Error("expected the dispatch gate to interrupt");
     });
 
