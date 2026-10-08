@@ -1020,6 +1020,26 @@ describe("required-header policy on redirected shell commands", () => {
     return ctx;
   }
 
+  it("rejects a second command hidden behind quotes in a POSIX comment", async () => {
+    const run = vi.fn(async function* () {
+      yield { type: "end" as const, exitCode: 0, timedOut: false };
+    });
+    const backends = {
+      command: { platform: "posix", run },
+    } as unknown as ToolContext["backends"];
+    const result = (await executeCommand(makeHeaderCtx(backends)).execute?.(
+      {
+        command: "curl https://example.com/api 2>&1 # '\nprintf second",
+        toolCallDescription: "Check the required-header boundary",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("2>&1");
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("executes single-host curl with literal 2>&1 and injected headers", async () => {
     // Regression: the `&` in a literal `2>&1` was classified as command
     // chaining, so the capture pattern the tool guidance recommends was

@@ -834,6 +834,52 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.status).toBe("unknown-tool");
   });
 
+  it("does not let comment quotes hide a command after a newline", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/api 2>&1 # '\nprintf second",
+      'curl https://example.com/api 2>&1 # "\nprintf second',
+      "curl https://example.com/api # '\nprintf second 2>&1",
+      "curl https://example.com/api 2>&1\t# '\r\nprintf second",
+    ]) {
+      const result = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(result.status).toBe("unknown-tool");
+      expect(result.command).toBe(cmd);
+    }
+  });
+
+  it("preserves hash literals and ignores quotes inside trailing POSIX comments", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const cmd of [
+      "curl https://example.com/api#section 2>&1",
+      "curl -d '# literal' https://example.com/api 2>&1",
+      'curl -d "# literal" https://example.com/api 2>&1',
+      "curl https://example.com/api 2>&1 # unmatched ' comment",
+      'curl https://example.com/api 2>&1 # unmatched " comment',
+    ]) {
+      const result = applyHeadersToShellCommand(cmd, session, ["example.com"]);
+      expect(result.status).toBe("injected");
+      expect(result.command).toContain('-H "X-API-Key: abc"');
+      expect(result.command).toContain(cmd.slice("curl".length));
+    }
+  });
+
+  it("does not treat non-shell whitespace before a hash as a comment boundary", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    for (const prefix of ["\u00a0", "\r", "\v", "\f"]) {
+      const cmd = `curl https://example.com/api 2>&1 ${prefix}# ; printf second`;
+      expect(
+        applyHeadersToShellCommand(cmd, session, ["example.com"]).status,
+      ).toBe("unknown-tool");
+    }
+  });
+
   it("fails closed on quote concatenation onto the 2>&1 target", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
