@@ -633,6 +633,33 @@ try {
     rendered(text, `› ${RUN_ID}`);
     await press("RETURN");
     rendered(await frame(), `Recorded Run ${RUN_ID}`);
+  } else if (scenario === "approval-acks-before-watch-refresh") {
+    await press("y");
+    rendered(await frame(), "Pending decisions (1, decided 1)");
+    await press("n");
+    rendered(await frame(), "Pending decisions (0, decided 2)");
+    assert.deepEqual(
+      calls.filter((call) => call.method === "resolveApproval"),
+      [
+        {
+          method: "resolveApproval",
+          args: [RUN_ID, approvals[0]!.approvalId, "approved"],
+        },
+        {
+          method: "resolveApproval",
+          args: [RUN_ID, approvals[1]!.approvalId, "denied"],
+        },
+      ],
+    );
+    // A snapshot captured before either ack must not resurrect pending items.
+    await push(saved);
+    rendered(await frame(), "Pending decisions (0, decided 2)");
+    await press("y");
+    await press("n");
+    assert.equal(
+      calls.filter((call) => call.method === "resolveApproval").length,
+      2,
+    );
   } else if (scenario === "busy-controls-consume-shortcuts") {
     controlGated = true;
     await press("p");

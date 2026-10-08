@@ -9,7 +9,10 @@ import {
   openRecordedRunClient,
   type RecordedRunView,
 } from "../../../core/runtime/recordedRunClient";
-import type { RunControlRecord } from "../../../core/runtime/runControlStore";
+import type {
+  RecordedApproval,
+  RunControlRecord,
+} from "../../../core/runtime/runControlStore";
 import type { RunRecord } from "../../../core/runtime/runStore";
 import { useDimensions } from "../../context/dimensions";
 import { type ThemeColors, useTheme } from "../../theme";
@@ -83,28 +86,42 @@ function workerErrorText(view: RecordedRunView): string | null {
     .join("\n");
 }
 
-// Control merges only within one execution attempt of one run: both views
-// must observe the same record attempt, and a retained or incoming control
-// must belong to that attempt. Otherwise the new view is taken unchanged —
-// state from different attempts is never mixed.
-function mergeViewControl(
+// Keep acknowledged control revisions and terminal approvals when an older
+// watch snapshot arrives, but never carry state into a different run/attempt.
+function mergeViewState(
   current: RecordedRunView | null,
   next: RecordedRunView,
 ): RecordedRunView {
-  if (!current) return next;
-  if (current.runId !== next.runId) return next;
+  if (!current || current.runId !== next.runId) return next;
   const attempt = next.observation.record?.attemptId;
   if (!attempt || current.observation.record?.attemptId !== attempt)
     return next;
   const kept = current.observation.control;
   const incoming = next.observation.control;
-  if (
-    kept?.executionAttemptId !== attempt ||
-    incoming?.executionAttemptId !== attempt
-  )
-    return next;
-  if (incoming.revision > kept.revision) return next;
-  return { ...next, observation: { ...next.observation, control: kept } };
+  const control =
+    kept?.executionAttemptId === attempt &&
+    incoming?.executionAttemptId === attempt &&
+    kept.revision >= incoming.revision
+      ? kept
+      : incoming;
+  const settled = new Map(
+    (current.observation.approvals ?? [])
+      .filter(
+        (approval) =>
+          approval.runId === next.runId &&
+          approval.executionAttemptId === attempt &&
+          approval.state !== "pending",
+      )
+      .map((approval) => [approval.approvalId, approval]),
+  );
+  const approvals = next.observation.approvals?.map((approval) =>
+    approval.runId === next.runId &&
+    approval.executionAttemptId === attempt &&
+    approval.state === "pending"
+      ? (settled.get(approval.approvalId) ?? approval)
+      : approval,
+  );
+  return { ...next, observation: { ...next.observation, control, approvals } };
 }
 
 function actionErrorText(action: string, cause: unknown): string {
@@ -216,7 +233,7 @@ export function RecordedRunsDialog({
       try {
         for await (const next of client.watch(viewRunId, controller.signal)) {
           if (controller.signal.aborted) return;
-          setView((current) => mergeViewControl(current, next));
+          setView((current) => mergeViewState(current, next));
           const attemptId = next.observation.record?.attemptId ?? null;
           const errorText = workerErrorText(next);
           if (errorText) {
@@ -336,10 +353,34 @@ export function RecordedRunsDialog({
       if (!current || current.runId !== record.runId) return current;
       const attempt = current.observation.record?.attemptId;
       if (!attempt || record.executionAttemptId !== attempt) return current;
-      return mergeViewControl(current, {
+      return mergeViewState(current, {
         ...current,
         observation: { ...current.observation, control: record },
       });
+    });
+  };
+
+  const adoptApproval = (record: RecordedApproval) => {
+    if (!mounted.current) return;
+    setView((current) => {
+      if (
+        !current ||
+        current.runId !== record.runId ||
+        current.observation.record?.attemptId !== record.executionAttemptId
+      )
+        return current;
+      return {
+        ...current,
+        observation: {
+          ...current.observation,
+          approvals: current.observation.approvals?.map((approval) =>
+            approval.approvalId === record.approvalId &&
+            approval.state === "pending"
+              ? record
+              : approval,
+          ),
+        },
+      };
     });
   };
 
@@ -492,18 +533,24 @@ export function RecordedRunsDialog({
     if (!selected || !view) return;
     if (key.name === "y") {
       await act("Approve", async (opened) => {
-        await opened.resolveApproval(
+        const updated = await opened.resolveApproval(
           view.runId,
           selected.approvalId,
           "approved",
         );
+        adoptApproval(updated);
         return `Approved ${selected.toolName}`;
       });
       return;
     }
     if (key.name === "n") {
       await act("Reject", async (opened) => {
-        await opened.resolveApproval(view.runId, selected.approvalId, "denied");
+        const updated = await opened.resolveApproval(
+          view.runId,
+          selected.approvalId,
+          "denied",
+        );
+        adoptApproval(updated);
         return `Rejected ${selected.toolName}`;
       });
     }
