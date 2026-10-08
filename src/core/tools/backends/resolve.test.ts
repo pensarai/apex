@@ -12,6 +12,7 @@ import {
   appendArtifactSummary,
   resolveArtifactFs,
   resolveBackends,
+  resolveProgramRunner,
   resolveScriptRunner,
 } from "./resolve";
 import type { CommandBackend } from "./types";
@@ -273,5 +274,36 @@ describe("script transport resolution", () => {
       expect.objectContaining({ timeout: 37, cwd: ctx.agentCwd }),
     );
     expect(result.stdout).toBe("remote");
+  });
+
+  it("merges the configured environment into injected runs, with per-call envVars winning", async () => {
+    const ctx = await context();
+    ctx.environmentVariables = {
+      PATH: "/custom/bin",
+      APEX_ENV_MARKER: "configured",
+    };
+    const run = vi.fn<CommandBackend["run"]>(async function* () {
+      yield { type: "end" as const, exitCode: 0, timedOut: false };
+    });
+    ctx.backends = { ...LocalBackends(ctx), command: { run } };
+    const path = join(ctx.agentCwd, "proof.sh");
+
+    await collectCommand(resolveProgramRunner(ctx)("bash", ["-n", path]));
+    expect(run.mock.calls[0]).toEqual([
+      `bash -n '${path}'`,
+      { envVars: { PATH: "/custom/bin", APEX_ENV_MARKER: "configured" } },
+    ]);
+
+    await collectCommand(
+      resolveScriptRunner(ctx)("bash", path, {
+        envVars: { APEX_ENV_MARKER: "per-call" },
+      }),
+    );
+    expect(run.mock.calls[1]).toEqual([
+      `bash '${path}'`,
+      {
+        envVars: { PATH: "/custom/bin", APEX_ENV_MARKER: "per-call" },
+      },
+    ]);
   });
 });

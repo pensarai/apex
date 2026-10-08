@@ -1,4 +1,4 @@
-import { join, posix, win32 } from "node:path";
+import path, { join, posix, win32 } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { AttackPathSchema } from "../../../../lib/attack-path/types";
@@ -34,6 +34,11 @@ import {
   assertFindingEndpointInScope,
   ScopeViolationError,
 } from "./scopeGuard";
+import {
+  checkScriptSyntax,
+  SCRIPT_SYNTAX_CHECK_MAX_BYTES,
+  type ScriptSyntaxResult,
+} from "./scriptSyntaxCheck";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("document-finding"));
@@ -83,6 +88,25 @@ export const documentVulnerabilityInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
+  generatedExecutableArtifacts: z
+    .array(
+      z.object({
+        path: z
+          .string()
+          .min(1)
+          .describe(
+            "Path of an executable artifact this POC emits and runs. Relative paths resolve from the POC's execution working directory (where the POC runs) and the resolved path must stay inside your file workspace; absolute paths must land inside it",
+          ),
+        language: z
+          .enum(["bash", "python", "javascript"])
+          .describe("Native language of the emitted executable"),
+      }),
+    )
+    .max(8)
+    .optional()
+    .describe(
+      "Opt-in declaration of executable files this POC generates and executes (max 8). Each is syntax-checked with its own runtime against the bytes the POC actually emitted, after the run and before judging. Declare only executables the POC runs — never data files.",
+    ),
   attackPath: AttackPathSchema.optional().describe(
     "Required ordered member-to-member hop chain when the finding spans multiple System members; do not leave this chain only in narrative fields",
   ),
@@ -261,7 +285,7 @@ export function documentVulnerability(ctx: ToolContext) {
 
 This tool handles the full vulnerability documentation lifecycle:
 1. Creates and executes your POC script (bash, python, or javascript)
-2. If the POC fails (exit != 0), returns the failure output so you can revise pocContent and retry
+2. If the POC is syntactically invalid or fails (exit != 0), returns the failure output so you can revise pocContent and retry
 3. Validates the finding with an automated judge to ensure the POC genuinely demonstrates the claimed vulnerability
 4. If the judge rejects, returns rejection reasoning so you can address concerns and retry
 5. Scores the finding with CVSS 4.0 (severity is determined automatically)
@@ -276,6 +300,7 @@ CRITICAL RULES — READ BEFORE CALLING:
 - When a finding spans multiple System members, populate attackPath with every hop in order; do not leave the chain only in the description or evidence
 - credentialIds must list the exact session credential IDs used by the successful POC. Use an empty array when the proof was unauthenticated. Do not guess IDs.
 - If the tool returns a POC failure or judge rejection, revise your approach and call again
+- The pre-run syntax check covers only the submitted POC script itself. If your POC generates and runs other executables, declare them via generatedExecutableArtifacts so their emitted bytes are checked too; data files are never checked
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
     inputSchema: documentVulnerabilityInputSchema,
@@ -326,6 +351,31 @@ CRITICAL RULES — READ BEFORE CALLING:
         throw error;
       }
 
+      // Resolve declared paths upfront so a bad declaration fails before
+      // the POC runs; the checks themselves run post-execution on emitted bytes.
+      let declaredArtifacts:
+        | Array<{ path: string; language: PocType; scriptPath: string }>
+        | undefined;
+      if (input.generatedExecutableArtifacts) {
+        try {
+          declaredArtifacts = input.generatedExecutableArtifacts.map(
+            (declared) => ({
+              path: declared.path,
+              language: declared.language,
+              scriptPath: resolveDeclaredArtifactPath(ctx, declared.path),
+            }),
+          );
+        } catch (error: unknown) {
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
+          return {
+            success: false,
+            error: errorMsg,
+            message: `Generated executable declaration rejected: ${errorMsg}`,
+          };
+        }
+      }
+
       try {
         // Early dedup check — avoid POC execution + LLM calls for known vulns
         const materializedEvidence = formatMateriality(input);
@@ -362,18 +412,58 @@ CRITICAL RULES — READ BEFORE CALLING:
         const pocResult = await executePoc(ctx, input);
 
         if (!pocResult.success) {
+          if (pocResult.syntaxCheck?.status === "invalid") {
+            return {
+              success: false,
+              syntaxFailed: true,
+              syntaxCheck: pocResult.syntaxCheck,
+              message: `POC failed the native ${input.pocType} syntax check before execution (${pocResult.syntaxCheck.detail}). Revise pocContent.`,
+            };
+          }
           return {
             success: false,
             pocFailed: true,
             stdout: pocResult.stdout,
             stderr: pocResult.stderr,
             exitCode: pocResult.exitCode,
+            syntaxCheck: pocResult.syntaxCheck,
             message: `POC exited with code ${pocResult.exitCode ?? "unknown"}. Review the output and revise pocContent.`,
           };
         }
 
         const { filename, stdout, stderr, exitCode } = pocResult;
         const pocPath = `pocs/${filename}`;
+
+        // Declared executables are checked against the emitted bytes before
+        // the judge spends an LLM call; the wrapper's verdict never covers them.
+        const generatedArtifactChecks: GeneratedArtifactCheck[] = [];
+        if (declaredArtifacts) {
+          for (const declared of declaredArtifacts) {
+            generatedArtifactChecks.push({
+              path: declared.path,
+              language: declared.language,
+              ...(await checkScriptSyntax(ctx, {
+                language: declared.language,
+                runner: POC_RUNNERS[declared.language],
+                scriptPath: declared.scriptPath,
+                abortSignal: ctx.abortSignal,
+              })),
+            });
+          }
+          const invalid = generatedArtifactChecks.find(
+            (check) => check.status === "invalid",
+          );
+          if (invalid) {
+            await cleanupPocFiles(ctx, filename);
+            return {
+              success: false,
+              syntaxFailed: true,
+              syntaxCheck: pocResult.syntaxCheck,
+              generatedArtifactChecks,
+              message: `Generated executable ${invalid.path} failed its native ${invalid.language} syntax check (${invalid.detail}). Revise the POC to emit valid ${invalid.language} or fix the declaration.`,
+            };
+          }
+        }
 
         // Phase 2: LLM Finding Judge
         const judgeInput: FindingJudgeInput = {
@@ -794,6 +884,10 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           finding: findingWithMeta,
           filepath: mdPath,
           message: resultMessage,
+          syntaxCheck: pocResult.syntaxCheck,
+          ...(generatedArtifactChecks.length > 0
+            ? { generatedArtifactChecks }
+            : {}),
         };
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -817,6 +911,54 @@ interface PocExecResult {
   stdout?: string;
   stderr?: string;
   exitCode?: number;
+  /** Parse-only verdict for the staged executable; separate from write receipts. */
+  syntaxCheck?: ScriptSyntaxResult;
+}
+
+type GeneratedArtifactCheck = ScriptSyntaxResult & {
+  path: string;
+  language: PocType;
+};
+
+/**
+ * Resolves a declared generated-artifact path from the PoC's execution cwd
+ * (ctx.agentCwd, where the PoC actually runs and emits), then confines it to
+ * the agent's file workspace — escapes fail clearly so a declaration can
+ * never silently inspect a file outside it. Symlink escapes are additionally
+ * caught by the read-back's canonical containment check.
+ */
+function resolveDeclaredArtifactPath(
+  ctx: ToolContext,
+  declared: string,
+): string {
+  const api = declaredPathApi(ctx);
+  // Both execution cwd and workspace boundary per the platform the selected
+  // backend commands run on; they legitimately differ for helper agents.
+  const executionCwd = ctx.agentCwd;
+  const workspaceRoot = ctx.fileWorkspaceRoot ?? ctx.agentCwd;
+  const resolved = api.isAbsolute(declared)
+    ? declared
+    : api.resolve(executionCwd, declared);
+  const rel = api.relative(workspaceRoot, resolved);
+  // Exact parent or separator-anchored escape only: `..hidden` and
+  // `...emit.js` are in-workspace names, `..` and `../…` (platform
+  // separator) escape.
+  if (rel === ".." || rel.startsWith(`..${api.sep}`) || api.isAbsolute(rel)) {
+    throw new Error(
+      `Path escapes the file workspace: ${declared.slice(0, 200)}`,
+    );
+  }
+  return resolved;
+}
+
+// Injected backends own their path dialect (command.platform, defaulting to
+// POSIX per the transport contract); the classic sandbox follows its type;
+// local execution follows the host.
+function declaredPathApi(ctx: ToolContext) {
+  if (ctx.backends)
+    return resolveBackends(ctx).command.platform === "windows" ? win32 : posix;
+  if (ctx.sandbox) return ctx.sandbox.type === "windows" ? win32 : posix;
+  return path;
 }
 
 function stagedPocPath(ctx: ToolContext, filename: string): string {
@@ -859,6 +1001,31 @@ async function executePoc(
       throw new Error(staged.error || `Failed to stage PoC ${executionPath}`);
   }
 
+  // Check the executable's own staged bytes (the remote staged copy, not the
+  // retained artifact, when execution is remote); invalid skips the run since
+  // the same runner and dialect would fail identically. The retained local
+  // PoC is read through the byte-capped artifact owner because it may live
+  // outside a confined helper workspace; staged copies and declared artifacts
+  // use the workspace backend that owns them.
+  const syntaxCheck = await checkScriptSyntax(ctx, {
+    language: input.pocType,
+    runner: POC_RUNNERS[input.pocType],
+    scriptPath: executionPath,
+    abortSignal: ctx.abortSignal,
+    fs:
+      executionPath === pocPath
+        ? resolveArtifactFs(ctx, {
+            maxTextFileBytes: SCRIPT_SYNTAX_CHECK_MAX_BYTES,
+          })
+        : undefined,
+  });
+  if (syntaxCheck.status === "invalid") {
+    await deleteArtifact(ctx, pocPath);
+    if (executionPath !== pocPath)
+      await resolveBackends(ctx).fs.delete(executionPath);
+    return { success: false, filename, syntaxCheck };
+  }
+
   const { stdout, stderr, exitCode } = await runPocScript(
     ctx,
     POC_RUNNERS[input.pocType],
@@ -870,10 +1037,10 @@ async function executePoc(
     await deleteArtifact(ctx, pocPath);
     if (executionPath !== pocPath)
       await resolveBackends(ctx).fs.delete(executionPath);
-    return { success: false, filename, stdout, stderr, exitCode };
+    return { success: false, filename, stdout, stderr, exitCode, syntaxCheck };
   }
 
-  return { success: true, filename, stdout, stderr, exitCode };
+  return { success: true, filename, stdout, stderr, exitCode, syntaxCheck };
 }
 
 // ---------------------------------------------------------------------------
