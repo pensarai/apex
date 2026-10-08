@@ -138,6 +138,39 @@ describe("Daytona execution transport", () => {
     expect(process.deleteSession).toHaveBeenCalledOnce();
   });
 
+  it("reaps a session whose create lands after cancellation", async () => {
+    const process = fakeProcess();
+    let finishCreate!: () => void;
+    let creating!: () => void;
+    const started = new Promise<void>((resolve) => {
+      creating = resolve;
+    });
+    process.createSession.mockImplementation(() => {
+      creating();
+      return new Promise<void>((resolve) => {
+        finishCreate = resolve;
+      });
+    });
+    process.deleteSession.mockRejectedValueOnce(
+      Object.assign(new Error("missing"), { statusCode: 404 }),
+    );
+    const controller = new AbortController();
+    const sandbox = createDaytonaExecutionSandbox(process);
+    const running = sandbox.execute("true", {
+      abortSignal: controller.signal,
+    });
+    await started;
+    controller.abort(new Error("cancelled by test"));
+    await expect(running).rejects.toThrow("cancelled by test");
+    expect(process.deleteSession).toHaveBeenCalledOnce();
+    finishCreate();
+    await vi.waitFor(() =>
+      expect(process.deleteSession).toHaveBeenCalledTimes(2),
+    );
+    await sandbox[Symbol.asyncDispose]();
+    expect(process.deleteSession).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds an unresponsive execution and reaps the owned session", async () => {
     vi.useFakeTimers();
     const process = fakeProcess();

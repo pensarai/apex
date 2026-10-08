@@ -49,10 +49,13 @@ export function createDaytonaExecutionSandbox(
   const sessions = new Set<string>();
   const pending = new Set<Promise<unknown>>();
   let disposed = false;
-  async function release(id: string) {
+  async function deleteRemoteSession(id: string) {
     await process.deleteSession(id).catch((error: unknown) => {
       if ((error as { statusCode?: number }).statusCode !== 404) throw error;
     });
+  }
+  async function release(id: string) {
+    await deleteRemoteSession(id);
     sessions.delete(id);
   }
   async function run(command: string, options: SandboxExecuteOptions = {}) {
@@ -72,6 +75,8 @@ export function createDaytonaExecutionSandbox(
     let completed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let rejectAbort: (() => void) | undefined;
+    let creating: Promise<unknown> | undefined;
+    let createSettled = false;
     try {
       const interrupted = new Promise<never>((_, reject) => {
         rejectAbort = () =>
@@ -86,7 +91,12 @@ export function createDaytonaExecutionSandbox(
           (timeoutSeconds + 5) * 1_000,
         );
       });
-      await Promise.race([process.createSession(sessionId), interrupted]);
+      creating = process.createSession(sessionId);
+      const settleCreate = () => {
+        createSettled = true;
+      };
+      void creating.then(settleCreate, settleCreate);
+      await Promise.race([creating, interrupted]);
       const result = await Promise.race([
         process.executeSessionCommand(
           sessionId,
@@ -113,7 +123,18 @@ export function createDaytonaExecutionSandbox(
       if (rejectAbort) abort?.removeEventListener("abort", rejectAbort);
       // Successful commands may leave listeners or browser processes alive for later tools.
       // Failed or cancelled calls are reaped immediately, including ambiguous creates.
-      if (!completed) await release(sessionId);
+      if (!completed) {
+        if (!creating || createSettled) {
+          await release(sessionId);
+        } else {
+          // A 404 is inconclusive while the create is still in flight: the
+          // session may land after this delete. Keep the id tracked for
+          // disposal and reap again once the create settles.
+          await deleteRemoteSession(sessionId);
+          const reap = () => release(sessionId).catch(() => {});
+          void creating.then(reap, reap);
+        }
+      }
     }
   }
   return {
