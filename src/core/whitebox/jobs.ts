@@ -11,6 +11,7 @@ export function startWhiteboxJob(input: {
   cwd: string;
   timeoutSeconds: number;
   name?: string;
+  env?: Record<string, string>;
 }): WhiteboxJobRecord {
   return kernel.startWhiteboxJob(input);
 }

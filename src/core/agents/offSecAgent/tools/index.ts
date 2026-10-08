@@ -15,6 +15,14 @@ export {
   createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
+// Callback helper tools — narrow nonce-correlated listener surface over the
+// whitebox job infra (Fast Strike blind/out-of-band testing).
+export {
+  CallbackListenerRegistry,
+  pollCallbackListener,
+  startCallbackListener,
+  stopCallbackListener,
+} from "./callbackListener";
 // Observability tools
 export { checkpointState } from "./checkpointState";
 // Authentication tools
@@ -197,6 +205,11 @@ import {
   type createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
+import {
+  pollCallbackListener,
+  startCallbackListener,
+  stopCallbackListener,
+} from "./callbackListener";
 import { checkpointState } from "./checkpointState";
 import { completeAuthentication } from "./completeAuthentication";
 import { crawlAuthenticated } from "./crawlAuthenticated";
@@ -375,6 +388,12 @@ const TOOL_REGISTRY = [
   { name: "stop_whitebox_job", factory: stopWhiteboxJob },
   { name: "read_whitebox_artifact", factory: readWhiteboxArtifact },
 
+  // Callback helper tools (Fast Strike blind/out-of-band testing) — a
+  // constrained generated listener over the job infra, not arbitrary jobs.
+  { name: "start_callback_listener", factory: startCallbackListener },
+  { name: "poll_callback_listener", factory: pollCallbackListener },
+  { name: "stop_callback_listener", factory: stopCallbackListener },
+
   // Reporting / benchmark tools
   { name: "provide_comparison_results", factory: provideComparisonResults },
 
@@ -537,13 +556,15 @@ function memberTool(
   group: (ctx: ToolContext) => Record<string, () => unknown>,
   ctx: ToolContext,
   member: string,
-): unknown {
+): ToolSet[string] | undefined {
   let members = groupCache.get(group);
   if (!members) {
     members = group(ctx);
     groupCache.set(group, members);
   }
-  return members[member]?.();
+  // Same boundary leap as createToolsForNames' closing `tools as ToolSet`:
+  // registered group members construct provider tools, loosely typed above.
+  return members[member]?.() as ToolSet[string] | undefined;
 }
 
 /** Union of all registered tool names (finite literal union). */
@@ -621,6 +642,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "poll_whitebox_job",
   "stop_whitebox_job",
   "read_whitebox_artifact",
+  "start_callback_listener",
+  "poll_callback_listener",
+  "stop_callback_listener",
   // "generate_report",
   "provide_comparison_results",
   // Memory

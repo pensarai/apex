@@ -24,7 +24,14 @@ export function resolveWhiteboxJobs(ctx: ToolContext) {
           name?: string;
         },
         _requestId?: string,
-      ) => native.startWhiteboxJob({ ...input, session: ctx.session }),
+      ) =>
+        native.startWhiteboxJob({
+          ...input,
+          session: ctx.session,
+          // The remote path inherits these through the bootstrap command's
+          // env; the native child needs them passed explicitly.
+          env: ctx.environmentVariables,
+        }),
       poll: async (id: string) => native.pollWhiteboxJob(id, ctx.session.id),
       stop: async (id: string) => native.stopWhiteboxJob(id, ctx.session.id),
       read: async (id: string) => native.readWhiteboxJobLog(id, ctx.session.id),
@@ -102,7 +109,13 @@ export function resolveWhiteboxJobs(ctx: ToolContext) {
     }
     if (!ended)
       throw new Error("Whitebox job command ended without completion");
-    return JSON.parse(stdout);
+    try {
+      return JSON.parse(stdout);
+    } catch {
+      throw new Error(
+        `Whitebox job control response was not valid JSON: ${stdout.slice(0, 200)}`,
+      );
+    }
   };
   const record = (
     value: WhiteboxJobRecord | null,

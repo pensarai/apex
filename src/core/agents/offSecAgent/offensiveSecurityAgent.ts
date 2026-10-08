@@ -48,6 +48,7 @@ import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  CallbackListenerRegistry,
   createResponseTool,
   createToolsForNames,
   EMAIL_TOOL_NAMES_ACTIVE,
@@ -360,6 +361,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Guards against double force-kill across the drain-finally and result-capture paths. */
   private browserDisconnected = false;
   private shellDisposed = false;
+
+  /** Listeners started by this agent's callback helper tools; drained on finalization. */
+  private readonly callbackListeners = new CallbackListenerRegistry();
   // Cached dispose barrier — repeat disposeOwnedShell() calls return the
   // same settlement wait instead of a fire-and-forget.
   private shellDisposeBarrier: Promise<void> | null = null;
@@ -577,6 +581,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Spawn seam + durable hooks inherited by any sub-agent this agent spawns.
       // Resolve the default once here so every tool sees a guaranteed spawner.
       subagentSpawner: input.subagentSpawner ?? inProcessSubagentSpawner,
+      // Owned-listener cleanup seam: drained by finalizeRun/abortAndDrain.
+      callbackListeners: this.callbackListeners,
       smsInbox: input.smsInbox,
       emailAdapterFor: input.emailAdapterFor,
       languageModelMiddleware: input.languageModelMiddleware,
@@ -1356,6 +1362,21 @@ export class OffensiveSecurityAgent<TResult = void> {
       } catch (error) {
         recordFinalizationError(error);
       }
+      // Stop this agent's callback listeners (each outcome independent;
+      // the seam clears the abort signal so cleanup still runs post-abort).
+      try {
+        const outcomes = await this.callbackListeners.stopAll();
+        const failed = outcomes.find((o) => o.error);
+        if (failed) {
+          recordFinalizationError(
+            new Error(
+              `callback listener cleanup failed for ${failed.jobId}: ${failed.error}`,
+            ),
+          );
+        }
+      } catch (error) {
+        recordFinalizationError(error);
+      }
       // Flush tool-errors that never reached a finish-step into the snapshot.
       for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {
         const result = {
@@ -1448,6 +1469,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   async abortAndDrain(): Promise<void> {
     await this.disconnectOwnedBrowser();
     await this.disposeOwnedShell().catch(() => {});
+    await this.callbackListeners.stopAll().catch(() => {});
     await this.drained.catch(() => {});
   }
 

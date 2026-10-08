@@ -23,6 +23,7 @@ import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSch
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type { CallbackListenerRegistry } from "./callbackListener";
 import type { EmailAdapterResolver } from "./email/adapters";
 import type { PerCommandShell } from "./perCommandShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
@@ -232,6 +233,15 @@ export type ToolContext = {
    * spawner constructs.
    */
   subagentSpawner: SubagentSpawner;
+
+  /**
+   * Callback listeners started by this agent's callback helper tools.
+   * The owning agent drains it on run finalization (and after abort), so
+   * listener cleanup stays possible once the run abort signal has fired.
+   * Unset → the callback helper tools refuse to start (ownership-tracked
+   * cleanup is required).
+   */
+  callbackListeners?: CallbackListenerRegistry;
 
   /**
    * Transport for inbound SMS reads. Unset → the Console agent API over HTTP,
