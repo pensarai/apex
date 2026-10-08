@@ -840,6 +840,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         languageModelMiddleware: input.languageModelMiddleware,
         usageRecorder: input.usageRecorder,
         contextRecorder: input.contextRecorder,
+        inferenceRecorder: input.inferenceRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up

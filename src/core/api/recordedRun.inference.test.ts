@@ -186,8 +186,9 @@ describe("inference recorder availability", () => {
     let immediate: ReturnType<typeof getInferenceRecorder>;
     let afterAwait: ReturnType<typeof getInferenceRecorder>;
     let nested: ReturnType<typeof getInferenceRecorder>;
-    runAgent.mockImplementationOnce(async () => {
+    runAgent.mockImplementationOnce(async (input) => {
       immediate = getInferenceRecorder();
+      expect(input.inferenceRecorder).toBe(immediate);
       await Promise.resolve();
       afterAwait = getInferenceRecorder();
       // Nested async auxiliary (summarization-style) must inherit the context.

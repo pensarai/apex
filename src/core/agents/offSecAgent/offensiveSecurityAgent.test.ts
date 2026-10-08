@@ -159,6 +159,7 @@ vi.mock("../../operator", () => ({
 }));
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
+import type { InferenceRecorder } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import type { RunContextRecorder } from "../../runtime/runContext";
 import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
@@ -2569,6 +2570,14 @@ describe("contextRecorder integration", () => {
       flush: vi.fn(async () => {}),
       latest: vi.fn(() => structuredClone(CANONICAL)),
     };
+    const inferenceRecorder: InferenceRecorder = {
+      runId: "run_recorder_projection",
+      beforeDispatch: vi.fn(async () => {}),
+      beforeToolCall: vi.fn(async () => {}),
+      settle: vi.fn(),
+      retry: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+    };
     const agent = new OffensiveSecurityAgent({
       prompt: "recorded prompt",
       model: "test-model",
@@ -2579,6 +2588,7 @@ describe("contextRecorder integration", () => {
       },
       activeTools: [],
       contextRecorder: recorder,
+      inferenceRecorder,
     } as never);
     void agent.streamResult; // createStream is lazy — force construction
 
@@ -2589,6 +2599,7 @@ describe("contextRecorder integration", () => {
     expect(
       (streamResponseCalls[0] as { contextRecorder: unknown }).contextRecorder,
     ).toBe(recorder);
+    expect(streamResponseCalls[0]?.inferenceRecorder).toBe(inferenceRecorder);
 
     const stepEvent = {
       response: { id: "resp_1", messages: CANONICAL.slice(1) },

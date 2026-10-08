@@ -27,15 +27,20 @@ export interface InferenceRecorder {
   flush(): Promise<void>;
 }
 
-const recorderContext = new AsyncLocalStorage<InferenceRecorder>();
+const recorderContext = new AsyncLocalStorage<InferenceRecorder | undefined>();
 
 export function runWithInferenceRecorder<T>(
-  recorder: InferenceRecorder,
+  recorder: InferenceRecorder | undefined,
   operation: () => T,
 ): T {
   return recorderContext.run(recorder, operation);
 }
 
-export function getInferenceRecorder(): InferenceRecorder | undefined {
-  return recorderContext.getStore();
+export function getInferenceRecorder(binding?: {
+  inferenceRecorder?: InferenceRecorder;
+}): InferenceRecorder | undefined {
+  // Explicit undefined isolates a child; omission preserves low-level ALS callers.
+  return binding && "inferenceRecorder" in binding
+    ? binding.inferenceRecorder
+    : recorderContext.getStore();
 }

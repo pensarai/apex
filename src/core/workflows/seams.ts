@@ -269,6 +269,7 @@ export function resolveItemHooks<TItem>(
   return {
     ...hooks,
     contextRecorder: undefined,
+    inferenceRecorder: undefined,
     ...seams.hooksForItem?.(item, index),
   };
 }

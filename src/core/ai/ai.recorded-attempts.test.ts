@@ -8,6 +8,7 @@ import { type ModelMessage, RetryError, simulateReadableStream } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { AgentHooks } from "../agents/offSecAgent/types";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import { createRunInferenceRecorder } from "../runtime/runInference";
 import type { RunModelStore } from "../runtime/runModelStore";
@@ -171,6 +172,97 @@ beforeEach(() => {
 });
 
 describe("recorded attempts at the model boundary", () => {
+  it("binds an explicit child recorder without charging the ambient parent", async () => {
+    const parent = makeStore();
+    const child = makeStore();
+    const doStream = vi.fn(async () => textStream());
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    const hooks: AgentHooks = { inferenceRecorder: child.recorder };
+    const response = runWithInferenceRecorder(parent.recorder, () =>
+      streamResponse({ ...hooks, prompt: "child", model: MODEL, silent: true }),
+    );
+    await runWithInferenceRecorder(parent.recorder, () => drain(response));
+    await child.recorder.flush();
+    expect(child.calls.filter((call) => call.kind === "start")).toHaveLength(1);
+    expect(child.calls.filter((call) => call.kind === "settle")).toHaveLength(
+      1,
+    );
+    expect(parent.calls).toEqual([]);
+  });
+
+  it("explicit undefined isolates an unrecorded child from the ambient recorder", async () => {
+    const parent = makeStore();
+    const doStream = vi.fn(async () => textStream());
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    const response = runWithInferenceRecorder(parent.recorder, () =>
+      streamResponse({
+        prompt: "unrecorded child",
+        model: MODEL,
+        silent: true,
+        inferenceRecorder: undefined,
+      }),
+    );
+    await runWithInferenceRecorder(parent.recorder, () => drain(response));
+    expect(doStream).toHaveBeenCalledTimes(1);
+    expect(parent.calls).toEqual([]);
+  });
+
+  it("a middleware-replayed stream reserves no physical attempt", async () => {
+    const { recorder, calls } = makeStore({
+      start: new Error("must not reserve"),
+    });
+    const doStream = vi.fn(async () => textStream("provider"));
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    const replay = vi.fn(async () => textStream("replayed"));
+    const hooks: AgentHooks = {
+      inferenceRecorder: recorder,
+      languageModelMiddleware: {
+        specificationVersion: "v3",
+        wrapStream: replay,
+      },
+    };
+    await drain(
+      streamResponse({
+        ...hooks,
+        prompt: "replay",
+        model: MODEL,
+        silent: true,
+      }),
+    );
+    await recorder.flush();
+    expect(replay).toHaveBeenCalledTimes(1);
+    expect(doStream).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it("a middleware-replayed structured result reserves no physical attempt", async () => {
+    const { recorder, calls } = makeStore({
+      start: new Error("must not reserve"),
+    });
+    const doGenerate = vi.fn(async () => generated('{"value":"provider"}'));
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doGenerate });
+    const replay = vi.fn(async () => generated('{"value":"replayed"}'));
+    const hooks: AgentHooks = {
+      inferenceRecorder: recorder,
+      languageModelMiddleware: {
+        specificationVersion: "v3",
+        wrapGenerate: replay,
+      },
+    };
+    await expect(
+      generateObjectResponse({
+        ...hooks,
+        prompt: "replay",
+        model: MODEL,
+        schema: z.object({ value: z.string() }),
+      }),
+    ).resolves.toEqual({ value: "replayed" });
+    await recorder.flush();
+    expect(replay).toHaveBeenCalledTimes(1);
+    expect(doGenerate).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
   it("records every physical SDK retry with shared retry lineage", async () => {
     const { recorder, calls } = makeStore();
     const doStream = vi
@@ -187,15 +279,15 @@ describe("recorded attempts at the model boundary", () => {
       .mockImplementationOnce(async () => textStream());
     state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
 
-    await runWithInferenceRecorder(recorder, async () => {
-      const response = streamResponse({
+    await drain(
+      streamResponse({
         prompt: "do work",
         model: MODEL,
         silent: true,
         sessionId: "ses_recorded",
-      });
-      await drain(response);
-    });
+        inferenceRecorder: recorder,
+      }),
+    );
 
     expect(doStream).toHaveBeenCalledTimes(2);
     const starts = calls
@@ -310,15 +402,14 @@ describe("recorded attempts at the model boundary", () => {
       .mockImplementationOnce(async () => textStream());
     state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
 
-    await runWithInferenceRecorder(recorder, async () => {
-      const response = streamResponse({
-        prompt: "rate-limited work",
-        model: MODEL,
-        silent: true,
-        sessionId: "ses_recorded",
-      });
-      await drain(response);
+    const response = streamResponse({
+      prompt: "rate-limited work",
+      model: MODEL,
+      silent: true,
+      sessionId: "ses_recorded",
+      inferenceRecorder: recorder,
     });
+    await drain(response);
 
     expect(doStream).toHaveBeenCalledTimes(2);
     const starts = calls
@@ -391,7 +482,7 @@ describe("recorded attempts at the model boundary", () => {
     );
   });
 
-  it("records the compaction summarization as an auxiliary attempt via ALS", async () => {
+  it("retains the explicit recorder through compaction and context restart", async () => {
     const { recorder, calls } = makeStore();
     state.model = new MockLanguageModelV3({
       modelId: MODEL,
@@ -402,16 +493,15 @@ describe("recorded attempts at the model boundary", () => {
       { role: "user", content: "irreducible ".repeat(100_000) },
     ];
 
-    await runWithInferenceRecorder(recorder, async () => {
-      const response = streamResponse({
-        prompt: "original task",
-        model: MODEL,
-        silent: true,
-        sessionId: "ses_recorded",
-        messages,
-      });
-      await drain(response);
+    const response = streamResponse({
+      prompt: "original task",
+      model: MODEL,
+      silent: true,
+      sessionId: "ses_recorded",
+      inferenceRecorder: recorder,
+      messages,
     });
+    await drain(response);
 
     const starts = calls
       .filter((call) => call.kind === "start")

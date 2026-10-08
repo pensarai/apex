@@ -53,7 +53,11 @@ import {
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
-import { getInferenceRecorder } from "./inference-attempt";
+import {
+  getInferenceRecorder,
+  type InferenceRecorder,
+  runWithInferenceRecorder,
+} from "./inference-attempt";
 import {
   getClaudeCapabilities,
   getMaxOutputTokens,
@@ -522,9 +526,12 @@ const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 // Observe the existing depth allowance only for accepted restarts.
-export async function recordContextRestart(depth: number): Promise<void> {
+export async function recordContextRestart(
+  depth: number,
+  opts?: Pick<StreamResponseOpts, "inferenceRecorder">,
+): Promise<void> {
   if (depth > MAX_RESTART_DEPTH) return;
-  await getInferenceRecorder()?.retry({
+  await getInferenceRecorder(opts)?.retry({
     authority: "context-restart",
     count: depth,
     maxRetries: MAX_RESTART_DEPTH,
@@ -774,7 +781,7 @@ function wrapStreamWithErrorHandler(
                 error instanceof Error ? error.message : String(error);
 
               // SDK RetryError can wrap a critical failure after a prior provider retry.
-              await getInferenceRecorder()?.flush();
+              await getInferenceRecorder(opts)?.flush();
 
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
@@ -797,7 +804,7 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
-                await getInferenceRecorder()?.retry({
+                await getInferenceRecorder(opts)?.retry({
                   authority: "stream-idle",
                   count: nextIdleCount,
                   maxRetries: MAX_IDLE_RESUME_RETRIES,
@@ -839,7 +846,7 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
-                const recorder = getInferenceRecorder();
+                const recorder = getInferenceRecorder(opts);
                 await recorder?.retry({
                   authority: "stream-rate-limit",
                   count: nextRetryCount,
@@ -950,7 +957,7 @@ function wrapStreamWithErrorHandler(
                     // forever. Without this, only Layer-3 escalation
                     // increments depth and a drift-driven loop can burn
                     // arbitrarily many failed provider calls.
-                    await recordContextRestart(postReactiveDepth + 1);
+                    await recordContextRestart(postReactiveDepth + 1, opts);
                     const retried = streamResponse({
                       ...opts,
                       messages: fitted.messages,
@@ -1084,7 +1091,7 @@ function wrapStreamWithErrorHandler(
                   reset?.finish("completed");
                   if (reset && opts._compaction)
                     opts._compaction.last = reset.link;
-                  await recordContextRestart(postReactiveDepth + 1);
+                  await recordContextRestart(postReactiveDepth + 1, opts);
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
@@ -1449,6 +1456,8 @@ export interface StreamResponseOpts {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   /** Provider middleware applied only to this stream's model calls. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Explicit undefined clears an inherited recorder for an unrecorded child. */
+  inferenceRecorder?: InferenceRecorder;
   /** Per-run usage recorder; when set it replaces the global usage callback for this stream. */
   usageRecorder?: UsageRecorder;
   abortSignal?: AbortSignal;
@@ -1511,11 +1520,16 @@ type InternalStreamResponseOpts = StreamResponseOpts & {
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
-  const recovery = (opts as InternalStreamResponseOpts)[NATIVE_STREAM_RECOVERY];
-  if (recovery) {
-    return recovery.run(() => streamResponseWithinOperation(opts, recovery));
-  }
-  return streamResponseWithinOperation(opts);
+  opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
+  return runWithInferenceRecorder(opts.inferenceRecorder, () => {
+    const recovery = (opts as InternalStreamResponseOpts)[
+      NATIVE_STREAM_RECOVERY
+    ];
+    if (recovery) {
+      return recovery.run(() => streamResponseWithinOperation(opts, recovery));
+    }
+    return streamResponseWithinOperation(opts);
+  });
 }
 
 function streamResponseWithinOperation(
@@ -1839,7 +1853,7 @@ function streamResponseWithinOperation(
           errorMessage.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
-          if (getInferenceRecorder()) {
+          if (getInferenceRecorder(opts)) {
             // This SDK callback must not throw, including when cancellation ends its wait.
             await delay(1000 * rateLimitRetryCount, undefined, {
               signal: abortSignal,
@@ -2125,6 +2139,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   /** Provider middleware applied only to this call's model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Explicit undefined clears an inherited recorder for an unrecorded child. */
+  inferenceRecorder?: InferenceRecorder;
   /** Per-run usage recorder; when set it replaces the global usage callback. */
   usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
@@ -2136,6 +2152,15 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
 
 export async function generateObjectResponse<T extends z.ZodType>(
+  opts: GenerateObjectOpts<T>,
+): Promise<z.infer<T>> {
+  opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
+  return runWithInferenceRecorder(opts.inferenceRecorder, () =>
+    generateObjectResponseWithinRecorder(opts),
+  );
+}
+
+async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>,
 ): Promise<z.infer<T>> {
   const {
@@ -2238,7 +2263,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         } catch (error) {
           // Surface latched persistence/limit failures before any retry
           // classification — they are terminal, never delayed or retried.
-          await getInferenceRecorder()?.flush();
+          await getInferenceRecorder(opts)?.flush();
           if (
             error instanceof RunPersistenceError ||
             error instanceof RunLimitError
@@ -2259,7 +2284,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
             attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
           ) {
             const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
-            const recorder = getInferenceRecorder();
+            const recorder = getInferenceRecorder(opts);
             await recorder?.retry({
               authority: "object-rate-limit",
               count: attempt + 1,

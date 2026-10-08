@@ -147,6 +147,7 @@ export async function runRecordedAgent(
           target: spec.target,
           agentCwd: spec.environment.cwd,
           contextRecorder,
+          inferenceRecorder,
           ...(input.authConfig ? { authConfig: input.authConfig } : {}),
           ...(input.credentialManager
             ? { credentialManager: input.credentialManager }
