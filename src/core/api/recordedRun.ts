@@ -226,8 +226,17 @@ export async function runRecordedAgent(
         store: {
           getContext: (id) => input.store.getContext(id),
           commitContext: async (id, attempt, revision, change) => {
-            await toolRecorder?.flush();
-            await control.flush();
+            // Pause/stop fence new dispatch, not checkpoints of accepted work.
+            for (const flush of [
+              () => toolRecorder?.flush(),
+              () => control.flush(),
+            ]) {
+              try {
+                await flush();
+              } catch (error) {
+                if (!onlyControlInterruptions(error)) throw error;
+              }
+            }
             return input.store.commitContext(
               id,
               attempt,

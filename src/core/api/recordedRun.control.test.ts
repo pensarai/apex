@@ -14,6 +14,7 @@ import type { AgentHooks } from "../agents/offSecAgent";
 import type { InferenceAttempt } from "../ai";
 import { getInferenceRecorder } from "../ai";
 import { RunPersistenceError } from "../runtime/persistenceError";
+import { RunControlInterruption } from "../runtime/runControlStore";
 import { openSqliteRunStore } from "../runtime/sqliteRunStore";
 
 const sessionCreate = vi.hoisted(() => vi.fn());
@@ -320,6 +321,128 @@ describe("control enrollment and approval gating", () => {
 });
 
 describe("pause and stop intent", () => {
+  it.each([
+    "pause",
+    "stop",
+  ] as const)("commits accepted work after a sibling gate observes %s", async (intent) => {
+    const { store: shared } = await openStore();
+    store = shared;
+    const runId = `run_ctrl_checkpoint_${intent}`;
+    const messages = [
+      { role: "user", content: "run" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "tc_accepted",
+            toolName: "read_file",
+            input: { path: "notes.txt" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "tc_accepted",
+            toolName: "read_file",
+            output: { type: "text", value: "contents" },
+          },
+        ],
+      },
+    ];
+    runAgent.mockImplementationOnce(async (input: AgentInput) => {
+      await primeContext(input);
+      await input.toolExecutionRecorder.beforeExecute({
+        toolCallId: "tc_accepted",
+        toolName: "read_file",
+        input: { path: "notes.txt" },
+      });
+      const control = await shared.getControl(runId);
+      await shared.requestControl(runId, intent, control?.revision ?? 0);
+      await expect(
+        input.toolExecutionRecorder.beforeExecute({
+          toolCallId: "tc_blocked",
+          toolName: "read_file",
+          input: { path: "later.txt" },
+        }),
+      ).rejects.toThrow(RunControlInterruption);
+      await input.toolExecutionRecorder.settle("tc_accepted", {
+        type: "text",
+        value: "contents",
+      });
+      await input.contextRecorder.checkpoint({
+        messages,
+        system: "system prompt",
+      });
+      return RUN_RESULT;
+    });
+    const outcome = await runRecordedAgent({
+      spec: baseSpec(tempDir("control-cwd-"), { runId }),
+      store: shared,
+    });
+    expect(outcome.record.status).toBe(
+      intent === "pause" ? "paused" : "cancelled",
+    );
+    expect(await shared.listToolOperations(runId)).toMatchObject([
+      { toolCallId: "tc_accepted", state: "settled" },
+    ]);
+    expect(await shared.getContext(runId)).toMatchObject({
+      revision: 2,
+      messages,
+    });
+    expect(await shared.listModelAttempts(runId)).toEqual([]);
+  });
+
+  it("does not checkpoint past a settlement failure after pause", async () => {
+    const { store: shared } = await openStore();
+    store = shared;
+    const runId = "run_ctrl_checkpoint_failure";
+    runAgent.mockImplementationOnce(async (input: AgentInput) => {
+      await primeContext(input);
+      await input.toolExecutionRecorder.beforeExecute({
+        toolCallId: "tc_accepted",
+        toolName: "read_file",
+        input: { path: "notes.txt" },
+      });
+      const control = await shared.getControl(runId);
+      await shared.requestControl(runId, "pause", control?.revision ?? 0);
+      await expect(
+        input.toolExecutionRecorder.beforeExecute({
+          toolCallId: "tc_blocked",
+          toolName: "read_file",
+          input: {},
+        }),
+      ).rejects.toThrow(RunControlInterruption);
+      vi.spyOn(shared, "settleToolOperation").mockRejectedValue(
+        new Error("receipt write failed"),
+      );
+      await expect(
+        input.toolExecutionRecorder.settle("tc_accepted", {
+          type: "text",
+          value: "contents",
+        }),
+      ).rejects.toThrow(RunPersistenceError);
+      await input.contextRecorder.checkpoint({
+        messages: [{ role: "user", content: "must not commit" }],
+      });
+      return RUN_RESULT;
+    });
+    await expect(
+      runRecordedAgent({
+        spec: baseSpec(tempDir("control-cwd-"), { runId }),
+        store: shared,
+      }),
+    ).rejects.toThrow();
+    expect((await shared.get(runId))?.status).toBe("failed");
+    expect(await shared.getContext(runId)).toMatchObject({
+      revision: 1,
+      messages: [{ role: "user", content: "run" }],
+    });
+  });
+
   it("pause saves paused at the dispatch boundary without aborting accepted work", async () => {
     const { store: shared } = await openStore();
     store = shared;
