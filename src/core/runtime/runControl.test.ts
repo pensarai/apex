@@ -294,6 +294,63 @@ describe("beforeTool", () => {
     await expect(pending).resolves.toBeUndefined();
   });
 
+  it.each([
+    "request",
+    "poll",
+  ] as const)("refuses an approval observed through %s when cancellation is awaiting persistence", async (source) => {
+    const { store, enroll } = fakeStore();
+    enroll();
+    const upstream = new AbortController();
+    let releaseStop!: () => void;
+    const stopPending = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const requestControl = store.requestControl;
+    store.requestControl = async (...args) => {
+      await stopPending;
+      return requestControl(...args);
+    };
+    const requestApproval = store.requestApproval;
+    store.requestApproval = async (...args) => {
+      const requested = await requestApproval(...args);
+      const approved = await store.resolveApproval(
+        RUN,
+        requested.approvalId,
+        "approved",
+      );
+      if (source === "request") upstream.abort();
+      return source === "request" ? approved : requested;
+    };
+    const getApproval = store.getApproval;
+    store.getApproval = async (...args) => {
+      const approval = await getApproval(...args);
+      if (source === "poll") upstream.abort();
+      return approval;
+    };
+    const control = track(
+      makeControl(store, {
+        abortSignal: upstream.signal,
+        pollIntervalMs: 10_000,
+      }),
+    );
+    try {
+      await expect(
+        control.beforeTool({
+          toolCallId: "tc_approved_abort",
+          toolName: "execute_command",
+          input: { command: "ls" },
+        }),
+      ).rejects.toThrow("Run stopped before the approval decision");
+      // The host signal must block dispatch even before the stop commits.
+      expect((await store.getControl(RUN))?.intent).toBe("run");
+      expect(control.signal.aborted).toBe(false);
+    } finally {
+      releaseStop();
+    }
+    await expect(control.flush()).rejects.toThrow(RunControlInterruption);
+    expect((await store.getControl(RUN))?.intent).toBe("stop");
+  });
+
   it("resolves the stable blocked result on denial — no tool intent or effect", async () => {
     const { store, enroll, approvals } = fakeStore();
     enroll();

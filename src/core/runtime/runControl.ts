@@ -259,8 +259,6 @@ export function createRunControl(options: RunControlOptions): RunControl {
       // Disposal ends the wait without a decision; the dangling gate
       // settles blocked — never a dispatch, never a latched interruption.
       if (disposed) return ENDED_BY_DISPOSAL;
-      if (current.state === "approved") return undefined;
-      if (current.state === "denied") return DENIED_BY_OPERATOR;
       const blocked = persistenceLatched();
       if (blocked) throw blocked;
       if (controller.signal.aborted || abortSignal?.aborted) {
@@ -273,6 +271,9 @@ export function createRunControl(options: RunControlOptions): RunControl {
           "stop",
         );
       }
+      // Approval cannot bypass cancellation while its stop write is pending.
+      if (current.state === "approved") return undefined;
+      if (current.state === "denied") return DENIED_BY_OPERATOR;
       const [next, control] = await Promise.all([
         enqueue(async () => {
           const record = await store.getApproval(runId, current.approvalId);
