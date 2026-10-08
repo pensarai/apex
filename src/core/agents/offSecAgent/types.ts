@@ -153,6 +153,9 @@ export interface AgentHooks {
   /** Recorded-run durable context authority. Unset → no canonical persistence. */
   contextRecorder?: RunContextRecorder;
 
+  /** Recorded-run tool journal. Unset → tool executes are never wrapped. */
+  toolExecutionRecorder?: ToolExecutionRecorder;
+
   /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
   usageRecorder?: UsageRecorder;
 
@@ -273,9 +276,6 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
 
   /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
   streamIdFactory?: StreamIdFactory;
-
-  /** Recorded-run tool journal. Unset → tool executes are never wrapped. */
-  toolExecutionRecorder?: ToolExecutionRecorder;
 
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;

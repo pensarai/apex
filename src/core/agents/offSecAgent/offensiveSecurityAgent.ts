@@ -35,6 +35,7 @@ import {
 } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { wrapRecordedTools } from "./recordedTools";
 import {
   buildBundledAssetsSection,
   buildRuntimeContextSection,
@@ -44,7 +45,6 @@ import {
   resolveCommandPlatform,
   UNKNOWN_FACTS,
 } from "./runtimeContext";
-import { wrapRecordedTools } from "./recordedTools";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";

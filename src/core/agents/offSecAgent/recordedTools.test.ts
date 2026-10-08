@@ -492,6 +492,11 @@ vi.mock("./tools", () => ({
   sessionHasSmsPasswordless: () => false,
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
+  CallbackListenerRegistry: class {
+    async stopAll() {
+      return [];
+    }
+  },
   createToolsForNamesUnused: () => ({}),
 }));
 

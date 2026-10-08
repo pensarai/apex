@@ -3,6 +3,7 @@ import type { InferenceRecorder } from "../ai";
 import { AttackSurfaceRegistry } from "../findings/attackSurfaceRegistry";
 import { FindingsRegistry } from "../findings/registry";
 import type { RunContextRecorder } from "../runtime/runContext";
+import type { ToolExecutionRecorder } from "../runtime/runToolStore";
 import * as concurrency from "../utils/concurrency";
 import {
   assertDepth,
@@ -336,4 +337,50 @@ it("requires a child inference binding instead of inheriting the parent's journa
     0,
   );
   expect(hooks.inferenceRecorder).toBe(child);
+});
+
+it("requires a child tool binding instead of inheriting the parent's receipts", async () => {
+  const recorder = (): ToolExecutionRecorder => ({
+    beforeExecute: vi.fn(async () => ({ kind: "execute" as const })),
+    settle: vi.fn(async () => {}),
+    unknown: vi.fn(async () => {}),
+    flush: vi.fn(async () => {}),
+  });
+  const parent = recorder();
+  expect(
+    resolveItemHooks(
+      { toolExecutionRecorder: parent },
+      inProcessSeams(),
+      "child",
+      0,
+    ).toolExecutionRecorder,
+  ).toBeUndefined();
+  const children = [recorder(), recorder()];
+  const seams = inProcessSeams({
+    hooksForItem: (_item, index) => ({
+      toolExecutionRecorder: children[index],
+    }),
+  });
+  const first = resolveItemHooks(
+    { toolExecutionRecorder: parent },
+    seams,
+    "first",
+    0,
+  );
+  const second = resolveItemHooks(
+    { toolExecutionRecorder: parent },
+    seams,
+    "second",
+    1,
+  );
+  expect(first.toolExecutionRecorder).toBe(children[0]);
+  expect(second.toolExecutionRecorder).toBe(children[1]);
+  await first.toolExecutionRecorder?.beforeExecute({
+    toolCallId: "tc_child",
+    toolName: "read_file",
+    input: {},
+  });
+  expect(children[0].beforeExecute).toHaveBeenCalledOnce();
+  expect(children[1].beforeExecute).not.toHaveBeenCalled();
+  expect(parent.beforeExecute).not.toHaveBeenCalled();
 });
