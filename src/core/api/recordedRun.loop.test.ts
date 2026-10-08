@@ -147,7 +147,10 @@ afterEach(async () => {
 });
 
 describe("recorded runs through the real agent and SDK loop", () => {
-  it("settles an accepted request before pausing and resumes without repeating it", async () => {
+  it.each([
+    false,
+    true,
+  ])("settles before pausing and resumes without repeating work (runtime facts: %s)", async (withRuntimeFacts) => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -165,6 +168,7 @@ describe("recorded runs through the real agent and SDK loop", () => {
       .mockImplementation(async () => finalStep());
     state.model = new MockLanguageModelV3({ doStream });
     const input = spec("run_pause_between_turns");
+    if (withRuntimeFacts) input.activeTools.push("read_file");
     const running = runRecordedAgent({ spec: input, store });
     void running.catch(() => {});
 
@@ -199,6 +203,13 @@ describe("recorded runs through the real agent and SDK loop", () => {
     expect(resumed.record.attemptId).not.toBe(paused.record.attemptId);
     expect(hits).toEqual(["/first", "/second"]);
     expect(doStream).toHaveBeenCalledTimes(3);
+    const resumedSystem = state.model.doStreamCalls[1]?.prompt.find(
+      (message) => message.role === "system",
+    );
+    expect(resumedSystem?.content.split("[BUNDLED ASSETS]")).toHaveLength(2);
+    expect(resumedSystem?.content.split("[RUNTIME CONTEXT]")).toHaveLength(
+      withRuntimeFacts ? 2 : 1,
+    );
     expect(state.model.doStreamCalls[1]?.prompt).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

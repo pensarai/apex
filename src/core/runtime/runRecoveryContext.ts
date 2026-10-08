@@ -18,10 +18,7 @@ export interface RestoreRunContextInput {
 export interface RestoredRunContext {
   /** Conversation head without any leading system message. */
   messages: ModelMessage[];
-  /**
-   * Base system prompt with the workspace section removed; the agent
-   * re-appends the (verified) current section itself.
-   */
+  /** Saved base prompt; the agent re-appends current runtime facts, assets, and workspace. */
   baseSystem: string;
 }
 
@@ -124,14 +121,7 @@ function requireSessionConsistency(
   }
 }
 
-/**
- * Rebuild the agent inputs for resuming a recorded run from its committed
- * context. The saved effective system is either the context system string or
- * (cached models) a single leading system message; the current workspace
- * section is removed from it exactly once to recover the base the agent will
- * re-append. Every inconsistency is a hard blocker — the resume path never
- * regenerates prompts or guesses defaults.
- */
+/** Restores the committed conversation and base prompt without retaining transient harness sections. */
 export function restoreRunContext(
   input: RestoreRunContextInput,
 ): RestoredRunContext {
@@ -185,7 +175,15 @@ export function restoreRunContext(
       "the session workspace section occurs more than once in the saved effective system",
     );
   }
-  const baseSystem = effectiveSystem.slice(0, firstOccurrence);
+  let baseSystem = effectiveSystem.slice(0, firstOccurrence);
+  // Peel only trailing harness blocks, in reverse assembly order. Never strip an admitted custom base.
+  for (const section of ["BUNDLED ASSETS", "RUNTIME CONTEXT"]) {
+    if (baseSystem === record.spec.system) break;
+    const start = baseSystem.lastIndexOf(`\n\n[${section}]\n`);
+    if (start !== -1 && baseSystem.endsWith(`\n[/${section}]`)) {
+      baseSystem = baseSystem.slice(0, start);
+    }
+  }
 
   if (record.spec.system !== undefined && baseSystem !== record.spec.system) {
     throw blocker(

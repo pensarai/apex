@@ -1,6 +1,11 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { buildSessionWorkspaceSection } from "../agents/offSecAgent";
+import {
+  buildBundledAssetsSection,
+  buildRuntimeContextSection,
+  UNKNOWN_FACTS,
+} from "../agents/offSecAgent/runtimeContext";
 import type { SessionInfo } from "../session";
 import { restoreRunContext } from "./runRecoveryContext";
 import type { RunRecord } from "./runStore";
@@ -163,6 +168,69 @@ describe("restoreRunContext", () => {
     });
 
     expect(restored.baseSystem).toBe(evolvedBase);
+  });
+
+  it.each([
+    { cached: false, custom: false },
+    { cached: false, custom: true },
+    { cached: true, custom: false },
+    { cached: true, custom: true },
+  ])("peels generated sections while retaining the saved base (%j)", ({
+    cached,
+    custom,
+  }) => {
+    const rec = record(custom ? {} : { system: undefined });
+    const ses = session();
+    const runtime = buildRuntimeContextSection(UNKNOWN_FACTS, {
+      platform: "posix",
+    });
+    const assets = buildBundledAssetsSection();
+    expect(assets).not.toBeNull();
+    const effective =
+      [BASE_SYSTEM, runtime, assets].join("\n\n") + workspaceOf(ses, rec.spec);
+    const conversation: ModelMessage[] = [user("hi")];
+    const restored = restoreRunContext({
+      record: rec,
+      session: ses,
+      context: cached
+        ? contextFixture(null, [
+            { role: "system", content: effective },
+            ...conversation,
+          ])
+        : contextFixture(effective, conversation),
+    });
+    expect(restored.baseSystem).toBe(BASE_SYSTEM);
+    expect(restored.messages).toEqual(conversation);
+  });
+
+  it("does not strip a block that belongs to the admitted custom base", () => {
+    const base = `${BASE_SYSTEM}\n\n[RUNTIME CONTEXT]\nCustom instructions.\n[/RUNTIME CONTEXT]`;
+    const rec = record({ system: base });
+    const ses = session();
+    const restored = restoreRunContext({
+      record: rec,
+      session: ses,
+      context: contextFixture(base + workspaceOf(ses, rec.spec), []),
+    });
+    expect(restored.baseSystem).toBe(base);
+  });
+
+  it("still rejects base drift before generated runtime sections", () => {
+    const rec = record();
+    const ses = session();
+    const runtime = buildRuntimeContextSection(UNKNOWN_FACTS, {
+      platform: "posix",
+    });
+    expect(() =>
+      restoreRunContext({
+        record: rec,
+        session: ses,
+        context: contextFixture(
+          `Changed base.\n\n${runtime}${workspaceOf(ses, rec.spec)}`,
+          [],
+        ),
+      }),
+    ).toThrow(/recovered base system does not match/);
   });
 
   it("keeps message metadata untouched", () => {
