@@ -117,6 +117,7 @@ export async function resumeRecordedAgent(
   let lock: Awaited<ReturnType<RunRecoveryStore["acquireExecutionLock"]>>;
   try {
     if (!(await store.getRecoveryEnrollment(runId))) {
+      if (!(await store.get(runId))) throw new Error("Run does not exist");
       throw new Error("Run predates recovery enrollment; inspection only");
     }
     lock = await store.acquireExecutionLock(runId);

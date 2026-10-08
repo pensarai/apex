@@ -506,6 +506,21 @@ describe("resume blockers (legacy, stop, expired deadline, budget, evidence, con
     expect(targetHits).toBe(hits);
   });
 
+  it("an unknown run reports that it does not exist without attempting recovery", async () => {
+    const dirs = fixtureDirs();
+    store = await openSqliteRunStore(dirs.dbPath);
+    const acquireLock = vi.spyOn(store, "acquireExecutionLock");
+    await expect(
+      resumeRecordedAgent({ runId: "run_missing", store }),
+    ).rejects.toMatchObject({
+      name: "RunRecoveryBlockedError",
+      blockers: ["Run does not exist"],
+    });
+    expect(acquireLock).not.toHaveBeenCalled();
+    expect(await store.get("run_missing")).toBeUndefined();
+    expect(await store.listRecoveries("run_missing")).toEqual([]);
+  });
+
   it("a legacy unenrolled run cannot resume", async () => {
     const dirs = fixtureDirs();
     store = await openSqliteRunStore(dirs.dbPath);
@@ -531,6 +546,9 @@ describe("resume blockers (legacy, stop, expired deadline, budget, evidence, con
       store,
     }).catch((e: unknown) => e);
     expect(blocked).toBeInstanceOf(RunRecoveryBlockedError);
+    expect(blocked).toMatchObject({
+      blockers: ["Run predates recovery enrollment; inspection only"],
+    });
     expect(
       (await store.getRecoveryEnrollment("run_legacy_unenrolled")) ?? undefined,
     ).toBeUndefined();
