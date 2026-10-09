@@ -30,6 +30,7 @@ import { SandboxBrowserBackend } from "../../agents/offSecAgent/tools/sandboxPla
 import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuard";
 import { HttpSmsInbox } from "../../agents/offSecAgent/tools/smsInbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
+import { postPensarWebSearch } from "../../agents/offSecAgent/tools/webSearch";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
@@ -786,25 +787,13 @@ async function fetchBrokeredResearch(
   fetchToken: string,
   signal: AbortSignal,
 ): Promise<{ response: Response; url: string; redirected: boolean }> {
-  const apiUrl = process.env.PENSAR_API_URL ?? process.env.AGENT_API_URL;
-  const apiKey = process.env.PENSAR_API_KEY;
-  if (!apiUrl || !apiKey) {
+  const result = await postPensarWebSearch({ url, fetchToken }, signal);
+  if (!result.ok) {
     throw new Error(
       "External documents require the Console research broker configuration",
     );
   }
-  const broker = await fetch(`${apiUrl}/agents/web_search`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      ...(process.env.PENSAR_WORKSPACE_ID
-        ? { "x-workspace-id": process.env.PENSAR_WORKSPACE_ID }
-        : {}),
-    },
-    body: JSON.stringify({ url, fetchToken }),
-    signal,
-  });
+  const broker = result.response;
   if (!broker.ok) {
     throw new Error(
       `Research broker rejected the document: HTTP ${broker.status}`,

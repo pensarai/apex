@@ -43,7 +43,8 @@ export function getSessionAllowedHosts(session: ResolverSession): string[] {
       const normalized = normalizeAllowedHost(host);
       if (normalized) hosts.add(normalized);
     }
-    return [...hosts];
+    // An empty list is the serialized default, not an exclusive grant.
+    if (hosts.size > 0) return [...hosts];
   }
 
   if (session.targets) {

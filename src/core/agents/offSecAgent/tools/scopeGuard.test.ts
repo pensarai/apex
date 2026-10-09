@@ -116,6 +116,14 @@ describe("getAllowedHosts", () => {
     const hosts = getAllowedHosts(ctx);
     expect(hosts).toEqual(["api.example.com"]);
   });
+
+  it("falls back to target hosts when allowedHosts is an empty list", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session.config = {
+      scopeConstraints: { allowedHosts: [] },
+    };
+    expect(getAllowedHosts(ctx)).toEqual(["example.com"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -354,6 +362,19 @@ describe("assertUrlInScope", () => {
       scopeConstraints: { strictScope: true, allowedHosts: [] },
     };
     expect(() => assertUrlInScope("https://example.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
+  });
+
+  it("still scopes to the target when allowedHosts is an empty default list", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session.config = {
+      scopeConstraints: { allowedHosts: [] },
+    };
+    expect(() =>
+      assertUrlInScope("https://example.com/login", ctx),
+    ).not.toThrow();
+    expect(() => assertUrlInScope("https://evil.com", ctx)).toThrow(
       ScopeViolationError,
     );
   });

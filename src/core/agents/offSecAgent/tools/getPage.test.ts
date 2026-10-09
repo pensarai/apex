@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { config } from "../../../config";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { type GetPageResponse, getPage } from "./getPage";
@@ -485,17 +486,24 @@ describe("getPage research broker", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     if (originalApiUrl === undefined) delete process.env.PENSAR_API_URL;
     else process.env.PENSAR_API_URL = originalApiUrl;
     if (originalApiKey === undefined) delete process.env.PENSAR_API_KEY;
     else process.env.PENSAR_API_KEY = originalApiKey;
+    delete process.env.PENSAR_WORKSPACE_ID;
   });
 
   it("fetches an external search result only through its broker token", async () => {
     process.env.PENSAR_API_URL = "https://api.pensar.test";
     process.env.PENSAR_API_KEY = "service-key";
+    vi.spyOn(config, "get").mockResolvedValue({
+      responsibleUseAccepted: true,
+      strikeMode: false,
+      pensarAPIKey: "service-key",
+    });
     const fetchMock = vi.fn(
-      async (_input: string | URL | Request) =>
+      async (_input: string | URL | Request, _init?: RequestInit) =>
         new Response(
           JSON.stringify({
             url: "https://security.example/advisory",
@@ -522,6 +530,55 @@ describe("getPage research broker", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.pensar.test/agents/web_search",
     );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: {
+        "x-api-key": "service-key",
+        "x-workspace-id": "system",
+      },
+    });
+  });
+
+  it("redeems a fetchToken with config-file auth when env keys are unset", async () => {
+    delete process.env.PENSAR_API_KEY;
+    delete process.env.PENSAR_WORKSPACE_ID;
+    process.env.PENSAR_API_URL = "https://api.pensar.test";
+    vi.spyOn(config, "get").mockResolvedValue({
+      responsibleUseAccepted: true,
+      strikeMode: false,
+      pensarAPIKey: "cfg-key",
+    });
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            url: "https://security.example/advisory",
+            contentType: "text/html",
+            body: "<html><title>Advisory</title><body>Patch now</body></html>",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://security.example/advisory",
+        fetchToken: "signed-search-result",
+        toolCallDescription: "Read an advisory",
+      },
+      { toolCallId: "tc_broker_cfg", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.pensar.test/agents/web_search",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: {
+        "x-api-key": "cfg-key",
+        "x-workspace-id": "system",
+      },
+    });
   });
 
   it("does not fetch an external URL without a search-result token", async () => {
