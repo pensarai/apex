@@ -68,14 +68,41 @@ describe("defaultPolicy", () => {
     if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
   });
 
-  it("allows an out-of-scope readability (get_page) fetch — research URLs are unscoped", async () => {
+  it("denies an out-of-scope readability fetch", async () => {
     const decision = await defaultPolicy.beforeCall({
       backend: "http",
       op: "request",
       args: { method: "GET", url: "http://evil.com/", extract: "readability" },
       ctx: scopedCtx(),
     });
+    expect(decision.allow).toBe(false);
+    if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
+  });
+
+  it("allows brokered readability with a signed search-result token", async () => {
+    const decision = await defaultPolicy.beforeCall({
+      backend: "http",
+      op: "request",
+      args: {
+        method: "GET",
+        url: "http://research.example/",
+        extract: "readability",
+        fetchToken: "signed-result",
+      },
+      ctx: scopedCtx(),
+    });
     expect(decision).toEqual({ allow: true });
+  });
+
+  it("denies an out-of-scope browser navigation", async () => {
+    const decision = await defaultPolicy.beforeCall({
+      backend: "browser",
+      op: "navigate",
+      args: { url: "http://evil.com/" },
+      ctx: scopedCtx(),
+    });
+    expect(decision.allow).toBe(false);
+    if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
   });
 
   it("allows fs ops by default", async () => {

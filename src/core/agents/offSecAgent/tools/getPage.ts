@@ -10,14 +10,18 @@ const getPageInputSchema = z.object({
     .string()
     .url()
     .describe("The URL of the page to fetch and extract content from."),
+  fetchToken: z
+    .string()
+    .optional()
+    .describe(
+      "Broker token returned with this exact URL by web_search. Required for external research URLs; omit for in-scope target pages.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Fetching CVE details from NVD')",
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Reading the target login page')",
     ),
 });
-
-type GetPageInput = z.infer<typeof getPageInputSchema>;
 
 export interface GetPageResponse {
   success: boolean;
@@ -25,32 +29,23 @@ export interface GetPageResponse {
   title?: string;
   content?: string;
   error?: string;
-  /** True when the returned content is not the complete page text. */
   contentTruncated?: boolean;
-  /** Why the content stopped: preview limit, capture cap, or a failed read. */
   stopReason?: "content-limit" | "byte-cap" | "timeout" | "aborted" | "error";
 }
 
 export function getPage(ctx: ToolContext) {
   return tool({
-    description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
+    description: `Fetch and extract readable content from an in-scope target page or a web_search result carrying a broker token. Returns the page title and main text content.
 
 USAGE GUIDANCE:
-- Use this tool to read full content from URLs found via web_search
-- Fetch CVE details, security advisories, and vulnerability write-ups
-- Read documentation, API references, and technical guides
-- Extract exploit code, payloads, and proof-of-concept details from security blogs
-
-BEST PRACTICES:
-- First use web_search to find relevant URLs, then use get_page to read the full content
-- Prefer authoritative sources (NVD, vendor advisories, security researcher blogs)
-- For large pages, focus on the most relevant sections
-- If content is truncated, the important information is usually near the beginning`,
+- Use this tool directly for pages already present in the immutable run scope
+- For external security research, first use web_search and pass the result's fetchToken
+- A discovered URL without a broker token does not widen this run's scope`,
     inputSchema: getPageInputSchema,
-    execute: async ({ url }): Promise<GetPageResponse> => {
-      {
+    execute: async ({ url, fetchToken }): Promise<GetPageResponse> => {
+      try {
         const response = await resolveBackends(ctx).http.request(
-          { url, extract: "readability" },
+          { url, extract: "readability", fetchToken },
           { abortSignal: ctx.abortSignal, timeoutMs: REQUEST_TIMEOUT },
         );
         return {
@@ -61,6 +56,16 @@ BEST PRACTICES:
           error: response.error,
           contentTruncated: response.contentTruncated,
           stopReason: response.stopReason,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          url,
+          error:
+            !fetchToken && message.includes("Scope violation")
+              ? "External documents require the fetchToken returned by web_search and the Console research broker."
+              : message,
         };
       }
     },

@@ -7,6 +7,7 @@ import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AuthenticationResult } from "../../specialized/authenticationAgent/agent";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
+import { assertUrlInScope } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("delegate_auth"));
@@ -230,6 +231,9 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
             tokens = { ...stored.tokens };
           }
         }
+
+        assertUrlInScope(target, ctx);
+        if (loginUrl) assertUrlInScope(loginUrl, ctx);
 
         log.info("Delegating to authentication subagent", {
           target,

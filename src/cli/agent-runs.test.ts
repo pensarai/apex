@@ -111,10 +111,7 @@ function snapshotSignals() {
   };
 }
 
-function addedSince(
-  current: ReturnType<typeof process.listeners>,
-  before: ReturnType<typeof process.listeners>,
-) {
+function addedSince<T>(current: T[], before: T[]): T[] {
   return current.filter((fn) => !before.includes(fn));
 }
 

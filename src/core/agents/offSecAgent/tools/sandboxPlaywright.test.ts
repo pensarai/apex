@@ -12,6 +12,7 @@ import type { ToolContext } from "./types";
 
 const RESULT_START = "__PW_RESULT__";
 const RESULT_END = "__PW_END__";
+const SANDBOX_ACTION_PATH = "/opt/sandbox-playwright/pw_action.js";
 
 function ok(stdout = "OK"): SandboxExecutionResult {
   return { stdout, stderr: "", exitCode: 0, success: true };
@@ -48,6 +49,15 @@ function makeCtx(sandbox: UnifiedSandbox, rootPath: string): ToolContext {
     target: "https://target.example",
     sandbox,
   } as unknown as ToolContext;
+}
+
+function generatedPlaywrightScript(commands: string[]): string {
+  const action = commands.find((command) =>
+    command.includes(`${SANDBOX_ACTION_PATH}`),
+  );
+  const encoded = action?.match(/echo "([^"]+)" \| base64 -d/)?.[1];
+  if (!encoded) throw new Error("missing generated Playwright script");
+  return Buffer.from(encoded, "base64").toString("utf8");
 }
 
 describe("SandboxBrowserBackend", () => {
@@ -109,6 +119,36 @@ describe("SandboxBrowserBackend", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("intercepts browser traffic with the immutable exact/wildcard host policy", async () => {
+    const { sandbox, commands } = makeFakeSandbox({
+      success: true,
+      url: "https://target.example/dashboard",
+      title: "Dashboard",
+    });
+    const ctx = makeCtx(sandbox, rootPath);
+    ctx.session.config = {
+      scopeConstraints: {
+        strictScope: true,
+        allowedHosts: ["target.example", "*.assets.example"],
+      },
+    };
+
+    await SandboxBrowserBackend(ctx).navigate(
+      "https://target.example/dashboard",
+    );
+
+    const script = generatedPlaywrightScript(commands);
+    expect(script).toContain(
+      'const __allowedHosts = ["target.example","*.assets.example"];',
+    );
+    expect(script).toContain("const __enforceScope = true;");
+    expect(script).toContain("serviceWorkers: 'block'");
+    expect(script).toContain("await context.route('**/*'");
+    expect(script).toContain(
+      "lower === base || (wildcard && lower.endsWith('.' + base))",
+    );
+  });
+
   it("surfaces a failed sandbox script as a result, not a throw", async () => {
     const { sandbox } = makeFakeSandbox({
       success: false,
@@ -116,7 +156,7 @@ describe("SandboxBrowserBackend", () => {
     });
     const backend = SandboxBrowserBackend(makeCtx(sandbox, rootPath));
 
-    const result = await backend.navigate("https://down.example");
+    const result = await backend.navigate("https://target.example/down");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("net::ERR_CONNECTION_REFUSED");

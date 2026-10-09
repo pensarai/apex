@@ -27,6 +27,7 @@ interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;
+  fetchToken?: string;
 }
 
 export interface WebSearchResponse {
@@ -102,6 +103,83 @@ async function braveSearch(
   return { success: true, results };
 }
 
+export async function postPensarWebSearch(
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<{ ok: true; response: Response } | { ok: false; error: string }> {
+  const cfg = await config.get();
+  const apiUrl = getPensarApiUrl();
+  const payload = JSON.stringify(body);
+
+  if (cfg.pensarAPIKey && !cfg.accessToken) {
+    // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
+    const response = await fetch(`${apiUrl}/agents/web_search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": cfg.pensarAPIKey,
+        "x-workspace-id":
+          cfg.workspaceId ?? process.env.PENSAR_WORKSPACE_ID ?? "system",
+      },
+      body: payload,
+      signal,
+    });
+    return { ok: true, response };
+  }
+
+  const tokenResult = await ensureValidToken({
+    accessToken: cfg.accessToken,
+    refreshToken: cfg.refreshToken,
+    pensarAPIKey: cfg.pensarAPIKey,
+  });
+
+  if (!tokenResult) {
+    return {
+      ok: false,
+      error:
+        "Web search requires a Pensar account or a Brave API key. Please sign in to your Pensar account or configure a Brave API key (set BRAVE_API_KEY or brave_api_key in config).",
+    };
+  }
+
+  if (!cfg.workspaceId) {
+    return {
+      ok: false,
+      error:
+        "Web search requires a workspace. Please sign in to your Pensar account.",
+    };
+  }
+
+  if (!cfg.gatewaySigningKey) {
+    return {
+      ok: false,
+      error:
+        "Web search requires authentication. Please sign in again to your Pensar account.",
+    };
+  }
+
+  const { signature, timestamp, nonce } = signGatewayRequest(
+    cfg.gatewaySigningKey,
+    "web_search",
+    payload,
+  );
+
+  // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
+  const response = await fetch(`${apiUrl}/agents/web_search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${tokenResult.token}`,
+      "X-Workspace-Id": cfg.workspaceId,
+      "X-Pensar-Timestamp": timestamp,
+      "X-Pensar-Nonce": nonce,
+      "X-Pensar-Signature": signature,
+    },
+    body: payload,
+    signal,
+  });
+  return { ok: true, response };
+}
+
 export function webSearch(_ctx: ToolContext) {
   return tool({
     description: `Search the web for real-time information about any topic. Returns summarized information from search results.
@@ -131,78 +209,11 @@ COMMON SEARCH PATTERNS:
           return braveSearch(query, cfg.braveAPIKey);
         }
 
-        const apiUrl = getPensarApiUrl();
-        const body = JSON.stringify({ query });
-
-        // API key mode: authenticate directly without token exchange or signing
-        if (cfg.pensarAPIKey && !cfg.accessToken) {
-          // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
-          const response = await fetch(`${apiUrl}/agents/web_search`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": cfg.pensarAPIKey,
-            },
-            body,
-          });
-
-          return handleSearchResponse(response);
+        const result = await postPensarWebSearch({ query });
+        if (!result.ok) {
+          return { success: false, results: [], error: result.error };
         }
-
-        const tokenResult = await ensureValidToken({
-          accessToken: cfg.accessToken,
-          refreshToken: cfg.refreshToken,
-          pensarAPIKey: cfg.pensarAPIKey,
-        });
-
-        if (!tokenResult) {
-          return {
-            success: false,
-            results: [],
-            error:
-              "Web search requires a Pensar account or a Brave API key. Please sign in to your Pensar account or configure a Brave API key (set BRAVE_API_KEY or brave_api_key in config).",
-          };
-        }
-
-        if (!cfg.workspaceId) {
-          return {
-            success: false,
-            results: [],
-            error:
-              "Web search requires a workspace. Please sign in to your Pensar account.",
-          };
-        }
-
-        if (!cfg.gatewaySigningKey) {
-          return {
-            success: false,
-            results: [],
-            error:
-              "Web search requires authentication. Please sign in again to your Pensar account.",
-          };
-        }
-
-        const { signature, timestamp, nonce } = signGatewayRequest(
-          cfg.gatewaySigningKey,
-          "web_search",
-          body,
-        );
-
-        // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
-        const response = await fetch(`${apiUrl}/agents/web_search`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${tokenResult.token}`,
-            "X-Workspace-Id": cfg.workspaceId,
-            "X-Pensar-Timestamp": timestamp,
-            "X-Pensar-Nonce": nonce,
-            "X-Pensar-Signature": signature,
-          },
-          body,
-        });
-
-        return handleSearchResponse(response);
+        return handleSearchResponse(result.response);
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         return {
