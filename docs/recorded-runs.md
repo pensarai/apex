@@ -1,6 +1,6 @@
 # Recorded local runs
 
-Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They support durable pause/stop requests and optional tool approvals. Resume, detached execution, and managed workers are not enabled yet.
+Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They support durable pause/stop requests, optional tool approvals, and explicit recovery in the same local environment. Detached execution and managed worker recovery are not enabled.
 
 This path requires Bun or Node 22.13+. It uses the runtime's built-in SQLite implementation and adds no native package dependency. Existing commands retain their current runtime requirements. Run the commands through `bun src/cli.ts` during development or `pensar` after building/installing.
 
@@ -59,7 +59,7 @@ Context commits also retain SHA-256 references to the session's findings, inform
 
 The local schema upgrades version 1 stores transactionally. Older binaries reject the newer schema; there is no downgrade fallback. Runs admitted before context recording was available can have no saved context. Neither that absence nor a corrupt checkpoint permits a fresh execution under the same run ID.
 
-The supported path is a fresh local solo agent using the explicitly supported tool set. Existing sessions, TUI workflows, child agents, custom tool backends, browser sessions, and Daytona workers are not migrated by this feature. Session files remain the authority for assessment artifacts; recorded runs do not reconstruct those artifacts after environment loss.
+The supported path is a recorded local solo agent using the explicitly supported tool set. Existing sessions, TUI workflows, child agents, custom tool backends, browser sessions, and Daytona workers are not migrated by this feature. Session files remain the authority for assessment artifacts; recorded runs do not reconstruct those artifacts after environment loss.
 
 ## Model attempts, retries, and limits
 
@@ -77,7 +77,7 @@ The optional spec field `limits` accepts:
 
 The request allowance counts all physical dispatch reservations, including SDK retries, compaction, and tool repair. Reservation and the limit check share one transaction. A crash between reservation and dispatch conservatively consumes one slot. The absolute deadline rejects late dispatch and cooperatively cancels active execution; it cannot undo external effects. If the deadline expires after the agent returns but before status settlement, the record is conservatively `cancelled` even when a result is available. Omit either field for no corresponding limit. The remaining allowance shown by the CLI is derived from committed reservations, never from transient process counters.
 
-Retry records retain the count, maximum, delay, and due time computed by Apex's existing retry loop. Counts belong to that loop or context-restart depth, not a new global retry controller. SDK-internal retries retain their attempt lineage; their internal backoff due time is not exposed and is not fabricated. Restarting this command still returns the saved run without re-executing it or resetting any allowance. A future recovery implementation must honor these records before it can resume.
+Retry records retain the count, maximum, delay, and due time computed by Apex's existing retry loop. Counts belong to that loop or context-restart depth, not a new global retry controller. SDK-internal retries retain their attempt lineage; their internal backoff due time is not exposed and is not fabricated. Restarting this command still returns the saved run without re-executing it or resetting any allowance. Recovery refuses runs with retry history whose counters cannot yet be reconstructed; it never silently resets them.
 
 Schema version 3 introduced model history; upgrades remain transactional. Missing model history on older runs means unavailable history, not zero historical usage. Completed status requires the critical inference recorder to drain successfully; persistence errors fail the invocation even when a model callback would otherwise swallow them.
 
@@ -91,7 +91,7 @@ Schema version 3 introduced model history; upgrades remain transactional. Missin
 
 Conflicting inputs for the same call ID fail explicitly. Read-only, external-effect, local-mutation, and shell-dependent classifications are diagnostic; none enables automatic retries in this version. A journal write failure blocks dependent model dispatch and canonical context writes even when the SDK converts the exception into a tool error.
 
-Schema version 4 adds journal enrollment and operation records transactionally. Existing runs remain readable with `journaled: false`; migration does not manufacture missing tool history. These records support inspection and later recovery work. They do not enable resume or restore a lost environment.
+Schema version 4 adds journal enrollment and operation records transactionally. Existing runs remain readable with `journaled: false`; migration does not manufacture missing tool history. Recovery uses these receipts to reconstruct eligible interrupted exchanges without executing those calls again. They cannot restore a lost environment.
 
 ## Pause, stop, and approvals
 
@@ -122,7 +122,33 @@ bun src/cli.ts agent-runs reject run_local_smoke_01 --approval <approvalId>
 
 A decision only authorizes that call's input under the admitted scope. Conflicting decisions fail. Denial returns a blocked result without dispatching the tool. Pending decisions survive process loss; they never auto-approve or silently expire. A deadline or explicit stop cancels the wait. The current TUI approval flow is unchanged.
 
-Schema version 5 introduces these records transactionally. Paused and interrupted runs still require the subsequent explicit recovery implementation; repeating `start` only returns their saved status.
+Schema version 5 introduces these records transactionally. Repeating `start` only returns saved status. Eligible paused and interrupted runs use the explicit `resume` command below.
+
+## Explicit local recovery
+
+```sh
+bun src/cli.ts agent-runs show run_local_smoke_01 --recovery --context --tools --control
+bun src/cli.ts agent-runs resume run_local_smoke_01
+```
+
+Only runs started with recovery protocol enrollment can resume. Schema version 6 adds enrollment and recovery history; migration leaves older runs inspection-only. Recovery requires saved canonical context, matching evidence files, and the original session, working directory, database, host, and Apex version. Moving or copying a database does not create a portable run. Symlink aliases resolve to the original location. The environment checks identify directories, not snapshots of every file or external target state.
+
+Each executor holds a separate per-run SQLite lock for its lifetime. A live or hung executor makes resume refuse; process loss releases the lock. Clients can still inspect, pause, stop, and resolve approvals while the executor owns the lock. Keep the lock files beside the database and never delete them to force recovery. Local network filesystems are unsupported.
+
+Resume validates the saved state before claiming a new execution attempt. It preserves the run/session IDs, admitted specification, absolute deadline, consumed request allowance, model history, receipts, and evidence. It clears a pause only as part of that claim; stop and completed/cancelled statuses cannot resume. `show --recovery` exposes enrollment and each ownership change, including which outputs were reconstructed or discarded.
+
+If tool results committed before the process died but the conversation checkpoint did not, eligible results are added to the recovered conversation without running those calls again. Any uncommitted assistant prose/reasoning is discarded and disclosed in the recovery record and context. A zero-effect interrupted model request may start another inference request; the prior reservation still counts. Recovery is continuation from durable information, not a replay of the original provider stream, and it cannot stop a model from proposing a new call with a new identity.
+
+Recovery reports concrete blockers before dispatch for:
+
+- A `started` or `outcome_unknown` tool operation, or a model tool call without a matching receipt or recorded denial.
+- Pending approvals or approved calls that never committed an operation. Rejecting a pending approval can permit reconstruction of the denial; approval alone does not resolve uncertainty.
+- Any prior `execute_command` use: a command receipt cannot prove background processes are gone.
+- Retry rows, failed model attempts, or SDK retry lineages whose transient counters cannot be restored yet.
+- Missing/corrupt context, changed/missing evidence, environment or session configuration drift, unavailable credential references, expired deadlines, or exhausted request allowance.
+- An interrupted exchange requiring provider metadata that was not saved. Receipt reconstruction initially supports direct OpenAI and direct Anthropic without always-on/bound thinking. An intact canonical checkpoint can support other providers if its effective prompt can be restored exactly. Models that append extra system policy text, including the Bedrock DeepSeek sequential-tool policy, currently block prompt restoration even with a complete checkpoint.
+
+These restrictions are deliberate. There is no force-resume option or automatic retry of uncertain effects. TUI `/resume` remains its existing workflow; this command uses the recorded-run journal and ownership protocol. Daytona replacement, environment provisioning, persistent shells, and remote storage remain later work.
 
 ## Smoke checks
 
@@ -132,4 +158,4 @@ Schema version 5 introduces these records transactionally. Paused and interrupte
 4. Change the prompt while keeping the run ID. Confirm an input conflict and no execution.
 5. Start another run with a new ID and kill its process. Inspect the original admitted/running record, then repeat the same command. It must not restart the assessment.
 
-Crash inspection is the guarantee at this stage. Safe recovery still requires ownership and reconstruction checks in the next part of this stack.
+To exercise recovery, use the commands and eligibility checks above. SIGINT/SIGTERM means stop and prevents resume; a process crash is different. Automated subprocess tests cover forced loss before and after receipt settlement without making live model calls.

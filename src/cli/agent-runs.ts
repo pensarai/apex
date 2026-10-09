@@ -1,18 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { buildAuthConfig } from "../core/ai";
-import { inspectSessionEvidence, runRecordedAgent } from "../core/api";
+import { type AIAuthConfig, buildAuthConfig } from "../core/ai";
+import {
+  inspectSessionEvidence,
+  RunRecoveryBlockedError,
+  resumeRecordedAgent,
+  runRecordedAgent,
+} from "../core/api";
 import { config } from "../core/config";
 import { AgentEventBus } from "../core/eventBus";
-import type { RunControlStore } from "../core/runtime/runControlStore";
 import { openSqliteRunStore } from "../core/runtime/sqliteRunStore";
 
 const HELP = `pensar agent-runs — Record and inspect local agent runs
 
 Usage:
   pensar agent-runs start --spec <file> [--store <database>]
+  pensar agent-runs resume <runId> [--store <database>]
   pensar agent-runs list [--store <database>]
-  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--control] [--store <database>]
+  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--control] [--recovery] [--store <database>]
   pensar agent-runs pause <runId> [--store <database>]
   pensar agent-runs stop <runId> [--store <database>]
   pensar agent-runs approve <runId> --approval <approvalId> [--store <database>]
@@ -23,13 +28,15 @@ Repeating a runId never starts another execution. Changed inputs are rejected.
 Statuses describe the last saved state, not whether a worker is still alive.
 Pause and stop persist a cooperative request: the run applies it at its next
 dispatch boundary, and accepted work may still finish. Approvals survive a
-lost client until decided. Interrupted runs cannot resume yet.
+lost client until decided. Resume continues an enrolled run in the same
+environment only; every failed prerequisite is reported as a blocker.
 
 Recording requires Bun or Node 22.13+. See docs/recorded-runs.md.
 `;
 
 const COMMANDS = [
   "start",
+  "resume",
   "list",
   "show",
   "pause",
@@ -38,10 +45,7 @@ const COMMANDS = [
   "reject",
 ] as const;
 
-// Control methods are added to the shared handle by the control-store
-// wiring; the CLI programs against the finalized contract shape.
-type AgentRunsStore = Awaited<ReturnType<typeof openSqliteRunStore>> &
-  RunControlStore;
+type AgentRunsStore = Awaited<ReturnType<typeof openSqliteRunStore>>;
 
 export async function runAgentRunsCommand(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -54,6 +58,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       models: { type: "boolean" },
       tools: { type: "boolean" },
       control: { type: "boolean" },
+      recovery: { type: "boolean" },
       approval: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
@@ -70,13 +75,15 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     values.evidence ||
     values.models ||
     values.tools ||
-    values.control;
+    values.control ||
+    values.recovery;
   const takesRunId =
     command === "show" ||
     command === "pause" ||
     command === "stop" ||
     command === "approve" ||
-    command === "reject";
+    command === "reject" ||
+    command === "resume";
   if (
     extra.length ||
     !COMMANDS.includes(command as (typeof COMMANDS)[number]) ||
@@ -92,7 +99,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
   }
 
-  const store = (await openSqliteRunStore(values.store)) as AgentRunsStore;
+  const store: AgentRunsStore = await openSqliteRunStore(values.store);
   try {
     if (command === "list") {
       console.log(JSON.stringify(await store.list(), null, 2));
@@ -165,6 +172,15 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
                   },
                 }
               : {}),
+            ...(values.recovery
+              ? {
+                  recovery: {
+                    enrollment:
+                      (await store.getRecoveryEnrollment(runId)) ?? null,
+                    history: await store.listRecoveries(runId),
+                  },
+                }
+              : {}),
           },
           null,
           2,
@@ -205,36 +221,66 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       return;
     }
 
+    if (command === "resume") {
+      await runExecution(async (execution) =>
+        resumeRecordedAgent({ runId, store, ...execution }),
+      );
+      return;
+    }
+
     if (!values.spec) throw new Error("A run spec is required");
     const spec = JSON.parse(await readFile(values.spec, "utf8"));
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    const eventBus = new AgentEventBus();
-    const onText = ({ text }: { text: string }) => process.stderr.write(text);
-    eventBus.on("text-delta", onText);
-    process.on("SIGINT", abort);
-    process.on("SIGTERM", abort);
-    try {
-      const outcome = await runRecordedAgent({
-        spec,
-        store,
-        authConfig: buildAuthConfig(await config.get()),
-        eventBus,
-        abortSignal: controller.signal,
-      });
-      console.log(
-        JSON.stringify(
-          { started: outcome.started, record: outcome.record },
-          null,
-          2,
-        ),
-      );
-    } finally {
-      process.off("SIGINT", abort);
-      process.off("SIGTERM", abort);
-      eventBus.off("text-delta", onText);
-    }
+    await runExecution(async (execution) =>
+      runRecordedAgent({ spec, store, ...execution }),
+    );
   } finally {
     store.close();
+  }
+}
+
+type Execution = {
+  authConfig: AIAuthConfig;
+  eventBus: AgentEventBus;
+  abortSignal: AbortSignal;
+};
+
+/** Shared start/resume wiring: auth, streamed text, and process signals. */
+async function runExecution(
+  invoke: (
+    execution: Execution,
+  ) => Promise<{ started: boolean; record: unknown }>,
+): Promise<void> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const eventBus = new AgentEventBus();
+  const onText = ({ text }: { text: string }) => process.stderr.write(text);
+  eventBus.on("text-delta", onText);
+  process.on("SIGINT", abort);
+  process.on("SIGTERM", abort);
+  try {
+    const outcome = await invoke({
+      authConfig: buildAuthConfig(await config.get()),
+      eventBus,
+      abortSignal: controller.signal,
+    }).catch((error: unknown) => {
+      if (error instanceof RunRecoveryBlockedError) {
+        // Blockers are the actionable answer; rethrow keeps the exit code.
+        console.log(
+          JSON.stringify({ blocked: true, blockers: error.blockers }, null, 2),
+        );
+      }
+      throw error;
+    });
+    console.log(
+      JSON.stringify(
+        { started: outcome.started, record: outcome.record },
+        null,
+        2,
+      ),
+    );
+  } finally {
+    process.off("SIGINT", abort);
+    process.off("SIGTERM", abort);
+    eventBus.off("text-delta", onText);
   }
 }
