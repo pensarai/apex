@@ -11,7 +11,7 @@ const HELP = `pensar agent-runs — Record and inspect local agent runs
 Usage:
   pensar agent-runs start --spec <file> [--store <database>]
   pensar agent-runs list [--store <database>]
-  pensar agent-runs show <runId> [--context] [--evidence] [--store <database>]
+  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--store <database>]
 
 The JSON spec supplies a stable runId and explicit model, tools and scope.
 Repeating a runId never starts another execution. Changed inputs are rejected.
@@ -29,6 +29,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       store: { type: "string" },
       context: { type: "boolean" },
       evidence: { type: "boolean" },
+      models: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -45,7 +46,8 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     !["start", "list", "show"].includes(command) ||
     (command === "show" && !runId) ||
     (command === "start" && !values.spec) ||
-    (command !== "show" && (values.context || values.evidence)) ||
+    (command !== "show" &&
+      (values.context || values.evidence || values.models)) ||
     (command !== "start" && values.spec !== undefined)
   ) {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
@@ -63,10 +65,35 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       const evidence = values.evidence
         ? await store.getEvidence(runId)
         : undefined;
+      const attempts = values.models
+        ? await store.listModelAttempts(runId)
+        : undefined;
       console.log(
         JSON.stringify(
           {
             ...record,
+            ...(attempts
+              ? {
+                  models: {
+                    attempts,
+                    retries: await store.listRetries(runId),
+                    limits: {
+                      maxModelAttempts:
+                        record.spec.limits?.maxModelAttempts ?? null,
+                      reservedModelAttempts: attempts.length,
+                      remainingModelAttempts:
+                        record.spec.limits?.maxModelAttempts === undefined
+                          ? null
+                          : Math.max(
+                              0,
+                              record.spec.limits.maxModelAttempts -
+                                attempts.length,
+                            ),
+                      deadlineAt: record.spec.limits?.deadlineAt ?? null,
+                    },
+                  },
+                }
+              : {}),
             ...(values.context
               ? { context: (await store.getContext(runId)) ?? null }
               : {}),

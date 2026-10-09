@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CredentialManager } from "../credentials";
 import { newSessionId } from "../id/id";
-import type { RunCheckpointStore } from "../runtime/runCheckpointStore";
+import type { RunModelStore } from "../runtime/runModelStore";
 import {
   type RecordedRunSpec,
   RecordedRunSpecSchema,
@@ -62,7 +62,13 @@ function makeRecord(spec: RecordedRunSpec): RunRecord {
 function makeStore() {
   let record: RunRecord | undefined;
   const transitionFailures = new Map<string, unknown>();
-  const store: RunCheckpointStore = {
+  const store: RunModelStore = {
+    startModelAttempt: vi.fn(async () => {}),
+    observeModelToolCall: vi.fn(async () => {}),
+    settleModelAttempt: vi.fn(async () => {}),
+    recordRetry: vi.fn(async () => {}),
+    listModelAttempts: vi.fn(async () => []),
+    listRetries: vi.fn(async () => []),
     commitContext: vi.fn(async () => ({ epoch: 1, revision: 1 })),
     getContext: vi.fn(async () => undefined),
     getEvidence: vi.fn(async () => undefined),

@@ -46,6 +46,7 @@ vi.mock("ai", async () => {
 
 vi.mock("./ai", () => ({
   buildOpenRouterProviderOptions: vi.fn(() => undefined),
+  recordContextRestart: vi.fn(async () => {}),
   streamResponse: mocks.streamResponse,
 }));
 

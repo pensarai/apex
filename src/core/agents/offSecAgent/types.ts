@@ -19,6 +19,7 @@ import type {
   AIAuthConfig,
   AIModel,
   CacheMetrics,
+  InferenceRecorder,
   OpenAIReasoningEffort,
   ThinkingEffort,
   UsageRecorder,
@@ -144,6 +145,9 @@ export interface AgentHooks {
 
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Records physical model attempts for this agent; never inherited by spawned agents. */
+  inferenceRecorder?: InferenceRecorder;
 
   /** Recorded-run durable context authority. Unset → no canonical persistence. */
   contextRecorder?: RunContextRecorder;

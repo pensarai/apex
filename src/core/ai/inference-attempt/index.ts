@@ -59,6 +59,12 @@ export {
   projectAttemptCacheMetrics,
   projectAttemptUsage,
 } from "./project";
+export type {
+  InferenceRecorder,
+  ModelRetryDecision,
+  ObservedModelToolCall,
+} from "./recording";
+export { getInferenceRecorder, runWithInferenceRecorder } from "./recording";
 export type { AttemptTokens, MaybeTokenCount } from "./tokens";
 export { UNKNOWN_TOKEN_COUNT, UNKNOWN_TOKENS } from "./tokens";
 export { parseInferenceAttempt } from "./validate";

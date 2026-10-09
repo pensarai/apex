@@ -30,6 +30,7 @@ Apex serves three audiences:
 | [PDR-008](./PDR-008-provider-attempt-envelope.md) | Inference telemetry is a physical-attempt contract, not a billing ledger     |
 | [PDR-009](./PDR-009-recorded-run-admission.md)    | Opt-in transactional run admission before local execution                    |
 | [PDR-010](./PDR-010-recorded-context.md)          | Commit canonical context and evidence references before selecting them       |
+| [PDR-011](./PDR-011-recorded-inference.md)        | Record physical inference attempts and enforce request limits                |
 
 ---
 

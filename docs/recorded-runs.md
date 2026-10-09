@@ -1,6 +1,6 @@
 # Recorded local runs
 
-Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
+Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
 
 This path requires Bun or Node 22.13+. It uses the runtime's built-in SQLite implementation and adds no native package dependency. Existing commands retain their current runtime requirements. Run the commands through `bun src/cli.ts` during development or `pensar` after building/installing.
 
@@ -34,7 +34,7 @@ Create an explicit JSON spec. The working directory must be absolute and already
 bun src/cli.ts agent-runs start --spec run.json
 bun src/cli.ts agent-runs list
 bun src/cli.ts agent-runs show run_local_smoke_01
-bun src/cli.ts agent-runs show run_local_smoke_01 --context --evidence
+bun src/cli.ts agent-runs show run_local_smoke_01 --context --evidence --models
 ```
 
 Repeating the same spec returns the existing run without starting another agent. Reusing its ID with changed inputs fails. Use a new ID only when you intend a new execution. This also applies to an admitted run whose process died before it could begin execution.
@@ -60,6 +60,26 @@ Context commits also retain SHA-256 references to the session's findings, inform
 The local schema upgrades version 1 stores transactionally. Older binaries reject the newer schema; there is no downgrade fallback. Runs admitted before context recording was available can have no saved context. Neither that absence nor a corrupt checkpoint permits a fresh execution under the same run ID.
 
 The supported path is a fresh local solo agent using the explicitly supported tool set. Existing sessions, TUI workflows, child agents, custom tool backends, browser sessions, and Daytona workers are not migrated by this feature. Session files remain the authority for assessment artifacts; recorded runs do not reconstruct those artifacts after environment loss.
+
+## Model attempts, retries, and limits
+
+`--models` prints physical model attempts, observed model tool-call IDs, retry decisions, and the remaining request allowance. Attempts use the same identities as native inference evidence. They reference the latest canonical agent context; a compaction or repair call has a different auxiliary prompt and does not claim that checkpoint is its exact request.
+
+An attempt commits before provider dispatch. `started` can therefore mean the process died before sending, or after sending without saving a result. `partial` can include observed tool calls whose effects have not been journaled. Neither state permits replay. Tool-call observations are model metadata, not accepted tool intents or committed tool results.
+
+Known token usage is retained per attempt; unreported fields stay `null`. These records are not a billing ledger. Native raw request/response capture remains a separate opt-in feature and is not enabled by recorded runs.
+
+The optional spec field `limits` accepts:
+
+```json
+{ "maxModelAttempts": 100, "deadlineAt": "2026-12-01T18:00:00Z" }
+```
+
+The request allowance counts all physical dispatch reservations, including SDK retries, compaction, and tool repair. Reservation and the limit check share one transaction. A crash between reservation and dispatch conservatively consumes one slot. The absolute deadline rejects late dispatch and cooperatively cancels active execution; it cannot undo external effects. If the deadline expires after the agent returns but before status settlement, the record is conservatively `cancelled` even when a result is available. Omit either field for no corresponding limit. The remaining allowance shown by the CLI is derived from committed reservations, never from transient process counters.
+
+Retry records retain the count, maximum, delay, and due time computed by Apex's existing retry loop. Counts belong to that loop or context-restart depth, not a new global retry controller. SDK-internal retries retain their attempt lineage; their internal backoff due time is not exposed and is not fabricated. Restarting this command still returns the saved run without re-executing it or resetting any allowance. A future recovery implementation must honor these records before it can resume.
+
+The database now migrates versions 1 and 2 to version 3 transactionally. Missing model history on older runs means unavailable history, not zero historical usage. Completed status requires the critical inference recorder to drain successfully; persistence errors fail the invocation even when a model callback would otherwise swallow them.
 
 ## Smoke checks
 

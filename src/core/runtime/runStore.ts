@@ -52,6 +52,13 @@ const recordedRunSpecShape = {
   environment: z.object(runEnvironmentShape).strict(),
   scope: z.object(runScopeShape).strict(),
   credentialRefs: z.array(z.string().min(1)),
+  limits: z
+    .object({
+      maxModelAttempts: z.number().int().positive().optional(),
+      deadlineAt: z.iso.datetime().optional(),
+    })
+    .strict()
+    .optional(),
 };
 
 export const RecordedRunSpecSchema = z

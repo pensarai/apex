@@ -10,8 +10,10 @@ import {
 } from "@ai-sdk/provider";
 import {
   type AttemptUsageInput,
+  getInferenceRecorder,
   type InferenceAttempt,
   type InferenceAttemptHandle,
+  type InferenceRecorder,
   startInferenceAttempt,
 } from "../inference-attempt";
 import {
@@ -137,6 +139,8 @@ interface StreamCollector {
   rawParts: JsonValue[];
   byteLength: number;
   rawByteLength: number;
+  /** Any output part passed through — partial-vs-failed signal when parts are not retained. */
+  sawOutput: boolean;
   truncated: boolean;
   rawTruncated: boolean;
   sawError: boolean;
@@ -214,6 +218,44 @@ function markInterrupted<T>(store: CaptureStore, value: T): T {
   }
   return value;
 }
+
+// Recorded-only runs have no evidence store; a disabled private store keeps
+// the attempt machinery (identity, lineage, finalizers) running without
+// serializing or collecting any prompt/output content.
+function recorderOnlyStore(runId: string): CaptureStore {
+  return {
+    enabled: false,
+    runId,
+    sink: undefined,
+    attemptSink: undefined,
+    limits: { ...DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS },
+    diagnostics: [],
+    attemptedRecords: 0,
+    writtenRecords: 0,
+    droppedRecords: 0,
+    deliveryUnknownRecords: 0,
+    pendingWrites: new Set(),
+    activeSinkWrites: new Set(),
+    activeAttemptWrites: new Set(),
+    retainedFailures: new Set(),
+    openFinalizers: new Set(),
+    flushers: new Set(),
+    nextSegment: 1,
+    nextTurnBySession: new Map(),
+    interrupted: false,
+  };
+}
+
+// Placeholder for the skipped input capture; evidence assembly never runs
+// against a disabled store, so it is never emitted.
+const RECORDER_ONLY_INPUT: PreparedInput = {
+  normalizedRef: createContentAddressedAsset(
+    { capture: "recorder-only" },
+    "recorder-only",
+  ).reference,
+  assets: [],
+  limitations: [],
+};
 
 export function createNativeRolloutEvidenceCapture(
   input: CreateNativeRolloutEvidenceCaptureInput,
@@ -639,11 +681,15 @@ function beginAttempt(
   options: LanguageModelV3CallOptions,
   retry?: PendingFailure,
 ): AttemptCapture {
-  const input = requiredContent(
-    store,
-    normalizedCallOptions(options),
-    "ai-sdk-v3-call-options",
-  );
+  // Disabled stores skip input capture entirely — a recorder-only attempt
+  // must not serialize the raw prompt or call options.
+  const input = store.enabled
+    ? requiredContent(
+        store,
+        normalizedCallOptions(options),
+        "ai-sdk-v3-call-options",
+      )
+    : RECORDER_ONLY_INPUT;
   if (!retry) {
     const turn = allocateTurn(store, context);
     const capture: AttemptCapture = {
@@ -703,6 +749,7 @@ function errorRequestBody(error: unknown): unknown {
 
 function emitAttempt(
   store: CaptureStore,
+  recorder: InferenceRecorder | undefined,
   capture: AttemptCapture,
   input: {
     lifecycle: NativeRolloutAttemptLifecycle;
@@ -720,6 +767,48 @@ function emitAttempt(
     limitations?: CaptureDiagnosticV1[];
   },
 ): void {
+  const usage: AttemptUsageInput = {
+    transport: "sdk-normalized",
+    usage: input.usage,
+    providerMetadata: input.providerMetadata,
+    providerRequestId: input.providerRequestId,
+    effective: {
+      provider: capture.provider,
+      modelId: input.effectiveModelId ?? capture.modelId,
+      ...(capture.modelContext.transport
+        ? { transport: capture.modelContext.transport }
+        : {}),
+    },
+  };
+  const settle = (attemptUsage?: AttemptUsageInput) => {
+    switch (input.lifecycle) {
+      case "completed":
+        return capture.attempt.complete(attemptUsage);
+      case "failed":
+        return capture.attempt.fail(attemptUsage);
+      case "partial":
+        return capture.attempt.partial(attemptUsage);
+      case "aborted":
+        return capture.attempt.abort(attemptUsage);
+      case "retried":
+        return capture.attempt.retried(attemptUsage);
+    }
+  };
+  let attempt: InferenceAttempt;
+  try {
+    attempt = settle(usage);
+  } catch {
+    addDiagnostic(store, {
+      code: "attempt_usage_unavailable",
+      message: "the inference-attempt observer could not normalize usage",
+    });
+    attempt = settle();
+  }
+  // Critical settlement precedes evidence assembly — assembly failures must
+  // not swallow it. settle() is synchronous and never throws by contract.
+  recorder?.settle(attempt);
+  queueAttempt(store, attempt);
+  if (!store.enabled) return;
   const assets = new Map<string, ContentAddressedAssetV1>();
   for (const asset of capture.input.assets) addAsset(assets, asset);
   const limitations = [
@@ -812,45 +901,6 @@ function emitAttempt(
     };
   }
 
-  const usage: AttemptUsageInput = {
-    transport: "sdk-normalized",
-    usage: input.usage,
-    providerMetadata: input.providerMetadata,
-    providerRequestId: input.providerRequestId,
-    effective: {
-      provider: capture.provider,
-      modelId: input.effectiveModelId ?? capture.modelId,
-      ...(capture.modelContext.transport
-        ? { transport: capture.modelContext.transport }
-        : {}),
-    },
-  };
-  const settle = (attemptUsage?: AttemptUsageInput) => {
-    switch (input.lifecycle) {
-      case "completed":
-        return capture.attempt.complete(attemptUsage);
-      case "failed":
-        return capture.attempt.fail(attemptUsage);
-      case "partial":
-        return capture.attempt.partial(attemptUsage);
-      case "aborted":
-        return capture.attempt.abort(attemptUsage);
-      case "retried":
-        return capture.attempt.retried(attemptUsage);
-    }
-  };
-  let attempt: InferenceAttempt;
-  try {
-    attempt = settle(usage);
-  } catch {
-    addDiagnostic(store, {
-      code: "attempt_usage_unavailable",
-      message: "the inference-attempt observer could not normalize usage",
-    });
-    attempt = settle();
-  }
-  queueAttempt(store, attempt);
-
   queueEnvelope(store, {
     schema: NATIVE_ROLLOUT_EVIDENCE_SCHEMA,
     version: NATIVE_ROLLOUT_EVIDENCE_VERSION,
@@ -913,11 +963,12 @@ function emitAttempt(
 
 function safeEmitAttempt(
   store: CaptureStore,
+  recorder: InferenceRecorder | undefined,
   capture: AttemptCapture,
-  input: Parameters<typeof emitAttempt>[2],
+  input: Parameters<typeof emitAttempt>[3],
 ): void {
   try {
-    emitAttempt(store, capture, input);
+    emitAttempt(store, recorder, capture, input);
   } catch {
     store.attemptedRecords += 1;
     store.droppedRecords += 1;
@@ -943,7 +994,13 @@ function collectStreamPart(
     collector.responseModelId = part.modelId;
   } else if (part.type === "error") {
     collector.sawError = true;
+  } else if (part.type !== "stream-start") {
+    collector.sawOutput = true;
   }
+
+  // Recorder-only collectors keep usage and metadata flags; output content is
+  // never retained.
+  if (!store.enabled) return;
 
   try {
     const normalized = toJsonValue(part);
@@ -982,6 +1039,7 @@ function collectStreamPart(
 
 function wrapCapturedStream(
   store: CaptureStore,
+  recorder: InferenceRecorder | undefined,
   capture: AttemptCapture,
   result: LanguageModelV3StreamResult,
   options: LanguageModelV3CallOptions,
@@ -992,6 +1050,7 @@ function wrapCapturedStream(
     rawParts: [],
     byteLength: Buffer.byteLength('{"parts":[]}'),
     rawByteLength: Buffer.byteLength('{"chunks":[]}'),
+    sawOutput: false,
     truncated: false,
     rawTruncated: false,
     sawError: false,
@@ -1042,7 +1101,7 @@ function wrapCapturedStream(
       });
     }
     const emit: PendingFailure["emit"] = (retryLifecycle) => {
-      safeEmitAttempt(store, capture, {
+      safeEmitAttempt(store, recorder, capture, {
         lifecycle: retryLifecycle ?? lifecycle,
         nativeInput: result.request?.body,
         normalizedOutput: { parts: collector.parts },
@@ -1112,16 +1171,21 @@ function wrapCapturedStream(
             const aborted = isAborted(options, next.value.error);
             finalize(aborted ? "aborted" : "partial", "interrupted", !aborted);
           }
+          // The tool gate withholds the chunk until the critical write lands;
+          // the SDK executes tools only after the part is enqueued.
+          if (recorder && next.value.type === "tool-call") {
+            await recorder.beforeToolCall(capture.attempt.attemptId, {
+              toolCallId: next.value.toolCallId,
+              toolName: next.value.toolName,
+            });
+            options.abortSignal?.throwIfAborted();
+          }
           controller.enqueue(next.value);
         } catch (error) {
           controller.error(error);
           const aborted = isAborted(options, error);
           finalize(
-            aborted
-              ? "aborted"
-              : collector.parts.length > 0
-                ? "partial"
-                : "failed",
+            aborted ? "aborted" : collector.sawOutput ? "partial" : "failed",
             "interrupted",
             !aborted,
           );
@@ -1150,8 +1214,11 @@ export function withNativeRolloutEvidenceModel(
   model: LanguageModelV3,
   defaultContext: NativeRolloutModelContext,
 ): LanguageModelV3 {
-  const store = captureStore.getStore();
-  if (!store?.enabled) return model;
+  const recorder = getInferenceRecorder();
+  const store =
+    captureStore.getStore() ??
+    (recorder ? recorderOnlyStore(recorder.runId) : undefined);
+  if (!store || (!store.enabled && !recorder)) return model;
   const activeStore = store;
 
   const pendingFailures = new Map<symbol, PendingFailure[]>();
@@ -1321,7 +1388,9 @@ export function withNativeRolloutEvidenceModel(
         options,
         retry,
       );
-    } catch {
+    } catch (error) {
+      // A recorded run without attempt identity cannot proceed — no fallback.
+      if (recorder) throw error;
       addDiagnostic(activeStore, {
         code: "capture_failure",
         message: "the passive collector could not start an attempt record",
@@ -1329,48 +1398,20 @@ export function withNativeRolloutEvidenceModel(
       return await model.doGenerate(options);
     }
 
+    // Pre-dispatch ack outside the dispatch try: its failure must not mint
+    // retry lineage or a failed record for a dispatch that never happened.
+    if (recorder) {
+      await recorder.beforeDispatch(capture.attempt.started);
+      options.abortSignal?.throwIfAborted();
+    }
+
+    let result: LanguageModelV3GenerateResult;
     try {
-      const result = await model.doGenerate(options);
-      const lifecycle =
-        result.finishReason.unified === "length" ? "partial" : "completed";
-      safeEmitAttempt(activeStore, capture, {
-        lifecycle,
-        nativeInput: result.request?.body,
-        normalizedOutput: {
-          content: result.content,
-          finishReason: result.finishReason,
-          usage: result.usage,
-          providerMetadata: result.providerMetadata,
-          response: result.response
-            ? {
-                id: result.response.id,
-                timestamp: result.response.timestamp,
-                modelId: result.response.modelId,
-              }
-            : undefined,
-        },
-        nativeOutput: result.response?.body,
-        providerMetadata: result.providerMetadata,
-        usage: result.usage,
-        providerRequestId: result.response?.id,
-        effectiveModelId: result.response?.modelId,
-        limitations:
-          lifecycle === "partial"
-            ? [
-                {
-                  code: "provider_length_limit",
-                  message:
-                    "the provider stopped generation at its output length limit",
-                  field: "boundary.output.normalized",
-                },
-              ]
-            : [],
-      });
-      return result;
+      result = await model.doGenerate(options);
     } catch (error) {
       const aborted = isAborted(options, error);
       const emit: PendingFailure["emit"] = (lifecycle) =>
-        safeEmitAttempt(activeStore, capture, {
+        safeEmitAttempt(activeStore, recorder, capture, {
           lifecycle: lifecycle ?? (aborted ? "aborted" : "failed"),
           nativeInput: errorRequestBody(error),
           normalizedOutputState: "interrupted",
@@ -1386,6 +1427,56 @@ export function withNativeRolloutEvidenceModel(
         );
       throw error;
     }
+
+    // Tool calls gate before the result reaches the SDK executor.
+    if (recorder) {
+      for (const item of result.content) {
+        if (item.type === "tool-call") {
+          await recorder.beforeToolCall(capture.attempt.attemptId, {
+            toolCallId: item.toolCallId,
+            toolName: item.toolName,
+          });
+          options.abortSignal?.throwIfAborted();
+        }
+      }
+    }
+
+    const lifecycle =
+      result.finishReason.unified === "length" ? "partial" : "completed";
+    safeEmitAttempt(activeStore, recorder, capture, {
+      lifecycle,
+      nativeInput: result.request?.body,
+      normalizedOutput: {
+        content: result.content,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        providerMetadata: result.providerMetadata,
+        response: result.response
+          ? {
+              id: result.response.id,
+              timestamp: result.response.timestamp,
+              modelId: result.response.modelId,
+            }
+          : undefined,
+      },
+      nativeOutput: result.response?.body,
+      providerMetadata: result.providerMetadata,
+      usage: result.usage,
+      providerRequestId: result.response?.id,
+      effectiveModelId: result.response?.modelId,
+      limitations:
+        lifecycle === "partial"
+          ? [
+              {
+                code: "provider_length_limit",
+                message:
+                  "the provider stopped generation at its output length limit",
+                field: "boundary.output.normalized",
+              },
+            ]
+          : [],
+    });
+    return result;
   }
 
   async function doStream(
@@ -1406,12 +1497,21 @@ export function withNativeRolloutEvidenceModel(
         options,
         retry,
       );
-    } catch {
+    } catch (error) {
+      // A recorded run without attempt identity cannot proceed — no fallback.
+      if (recorder) throw error;
       addDiagnostic(activeStore, {
         code: "capture_failure",
         message: "the passive collector could not start an attempt record",
       });
       return await model.doStream(options);
+    }
+
+    // Pre-dispatch ack outside the dispatch try: its failure must not mint
+    // retry lineage or a failed record for a dispatch that never happened.
+    if (recorder) {
+      await recorder.beforeDispatch(capture.attempt.started);
+      options.abortSignal?.throwIfAborted();
     }
 
     let result: LanguageModelV3StreamResult;
@@ -1420,7 +1520,7 @@ export function withNativeRolloutEvidenceModel(
     } catch (error) {
       const aborted = isAborted(options, error);
       const emit: PendingFailure["emit"] = (lifecycle) =>
-        safeEmitAttempt(activeStore, capture, {
+        safeEmitAttempt(activeStore, recorder, capture, {
           lifecycle: lifecycle ?? (aborted ? "aborted" : "failed"),
           nativeInput: errorRequestBody(error),
           normalizedOutputState: "interrupted",
@@ -1439,6 +1539,7 @@ export function withNativeRolloutEvidenceModel(
     try {
       return wrapCapturedStream(
         activeStore,
+        recorder,
         capture,
         result,
         options,
@@ -1450,7 +1551,8 @@ export function withNativeRolloutEvidenceModel(
           );
         },
       );
-    } catch {
+    } catch (error) {
+      if (recorder) throw error;
       addDiagnostic(activeStore, {
         code: "capture_failure",
         message: "the passive collector could not wrap the provider stream",

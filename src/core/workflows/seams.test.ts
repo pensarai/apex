@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { InferenceRecorder } from "../ai";
 import { AttackSurfaceRegistry } from "../findings/attackSurfaceRegistry";
 import { FindingsRegistry } from "../findings/registry";
 import type { RunContextRecorder } from "../runtime/runContext";
@@ -308,4 +309,31 @@ describe("resolveItemHooks recorder scope", () => {
     expect(children[1]?.checkpoint).not.toHaveBeenCalled();
     expect(parent.checkpoint).not.toHaveBeenCalled();
   });
+});
+
+it("requires a child inference binding instead of inheriting the parent's journal", () => {
+  const recorder: InferenceRecorder = {
+    runId: "parent",
+    beforeDispatch: vi.fn(),
+    beforeToolCall: vi.fn(),
+    settle: vi.fn(),
+    retry: vi.fn(),
+    flush: vi.fn(),
+  };
+  expect(
+    resolveItemHooks(
+      { inferenceRecorder: recorder },
+      inProcessSeams(),
+      "child",
+      0,
+    ).inferenceRecorder,
+  ).toBeUndefined();
+  const child = { ...recorder, runId: "child" };
+  const hooks = resolveItemHooks(
+    { inferenceRecorder: recorder },
+    inProcessSeams({ hooksForItem: () => ({ inferenceRecorder: child }) }),
+    "child",
+    0,
+  );
+  expect(hooks.inferenceRecorder).toBe(child);
 });

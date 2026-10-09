@@ -23,6 +23,8 @@ function makeStore() {
     get: vi.fn(),
     getContext: vi.fn(),
     getEvidence: vi.fn(),
+    listModelAttempts: vi.fn(async () => []),
+    listRetries: vi.fn(async () => []),
     close: vi.fn(),
   };
 }
@@ -336,5 +338,41 @@ describe("start", () => {
     expect(output()).toContain('"started": false');
     expect(output()).toContain('"status": "completed"');
     expect(store.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("model inspection", () => {
+  it("shows attempts, retry timing, and the remaining reservation allowance", async () => {
+    store.get.mockResolvedValue({ spec: { limits: { maxModelAttempts: 2 } } });
+    const attempt = {
+      attempt: { lifecycle: "started", tokens: { output: null } },
+    };
+    store.listModelAttempts.mockResolvedValue([attempt] as never);
+    store.listRetries.mockResolvedValue([
+      { sequence: 1, delayMs: 1000 },
+    ] as never);
+    await runAgentRunsCommand(["show", "run_models", "--models"]);
+    expect(JSON.parse(output()).models).toEqual({
+      attempts: [attempt],
+      retries: [{ sequence: 1, delayMs: 1000 }],
+      limits: {
+        maxModelAttempts: 2,
+        reservedModelAttempts: 1,
+        remainingModelAttempts: 1,
+        deadlineAt: null,
+      },
+    });
+    expect(store.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not invent a limit for runs admitted without one", async () => {
+    store.get.mockResolvedValue({ spec: {} });
+    await runAgentRunsCommand(["show", "run_models", "--models"]);
+    expect(
+      JSON.parse(output()).models.limits.remainingModelAttempts,
+    ).toBeNull();
+    await expect(runAgentRunsCommand(["list", "--models"])).rejects.toThrow(
+      "Invalid agent-runs arguments",
+    );
   });
 });
