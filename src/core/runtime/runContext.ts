@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type { ModelMessage } from "ai";
 import { RunPersistenceError } from "./persistenceError";
+import { RunControlInterruption } from "./runControlStore";
 
 /** Epoch counts replacements; revision orders all commits. Both begin at 1. */
 export interface ContextReference {
@@ -54,11 +55,14 @@ export function createRunContextRecorder(
   let ref: ContextReference | undefined;
   let committed: ModelMessage[] | undefined;
   let system: string | null = null;
-  let latched: RunPersistenceError | undefined;
+  let latched: Error | undefined;
   let tail: Promise<void> = Promise.resolve();
 
-  const latch = (cause: unknown): RunPersistenceError => {
-    latched ??= new RunPersistenceError(cause);
+  const latch = (cause: unknown): Error => {
+    latched ??=
+      cause instanceof RunControlInterruption
+        ? cause
+        : new RunPersistenceError(cause);
     return latched;
   };
 

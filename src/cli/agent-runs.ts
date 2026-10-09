@@ -4,6 +4,7 @@ import { buildAuthConfig } from "../core/ai";
 import { inspectSessionEvidence, runRecordedAgent } from "../core/api";
 import { config } from "../core/config";
 import { AgentEventBus } from "../core/eventBus";
+import type { RunControlStore } from "../core/runtime/runControlStore";
 import { openSqliteRunStore } from "../core/runtime/sqliteRunStore";
 
 const HELP = `pensar agent-runs — Record and inspect local agent runs
@@ -11,15 +12,36 @@ const HELP = `pensar agent-runs — Record and inspect local agent runs
 Usage:
   pensar agent-runs start --spec <file> [--store <database>]
   pensar agent-runs list [--store <database>]
-  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--store <database>]
+  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--control] [--store <database>]
+  pensar agent-runs pause <runId> [--store <database>]
+  pensar agent-runs stop <runId> [--store <database>]
+  pensar agent-runs approve <runId> --approval <approvalId> [--store <database>]
+  pensar agent-runs reject <runId> --approval <approvalId> [--store <database>]
 
 The JSON spec supplies a stable runId and explicit model, tools and scope.
 Repeating a runId never starts another execution. Changed inputs are rejected.
 Statuses describe the last saved state, not whether a worker is still alive.
-Interrupted runs cannot resume yet. Existing sessions are unchanged.
+Pause and stop persist a cooperative request: the run applies it at its next
+dispatch boundary, and accepted work may still finish. Approvals survive a
+lost client until decided. Interrupted runs cannot resume yet.
 
 Recording requires Bun or Node 22.13+. See docs/recorded-runs.md.
 `;
+
+const COMMANDS = [
+  "start",
+  "list",
+  "show",
+  "pause",
+  "stop",
+  "approve",
+  "reject",
+] as const;
+
+// Control methods are added to the shared handle by the control-store
+// wiring; the CLI programs against the finalized contract shape.
+type AgentRunsStore = Awaited<ReturnType<typeof openSqliteRunStore>> &
+  RunControlStore;
 
 export async function runAgentRunsCommand(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -31,6 +53,8 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       evidence: { type: "boolean" },
       models: { type: "boolean" },
       tools: { type: "boolean" },
+      control: { type: "boolean" },
+      approval: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -41,20 +65,34 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     return;
   }
   const [command, runId, ...extra] = positionals;
+  const showFlag =
+    values.context ||
+    values.evidence ||
+    values.models ||
+    values.tools ||
+    values.control;
+  const takesRunId =
+    command === "show" ||
+    command === "pause" ||
+    command === "stop" ||
+    command === "approve" ||
+    command === "reject";
   if (
     extra.length ||
-    (command !== "show" && runId !== undefined) ||
-    !["start", "list", "show"].includes(command) ||
-    (command === "show" && !runId) ||
+    !COMMANDS.includes(command as (typeof COMMANDS)[number]) ||
+    takesRunId !== (runId !== undefined) ||
     (command === "start" && !values.spec) ||
-    (command !== "show" &&
-      (values.context || values.evidence || values.models || values.tools)) ||
-    (command !== "start" && values.spec !== undefined)
+    (command !== "start" && values.spec !== undefined) ||
+    (command !== "show" && showFlag) ||
+    (command !== "approve" &&
+      command !== "reject" &&
+      values.approval !== undefined) ||
+    ((command === "approve" || command === "reject") && !values.approval)
   ) {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
   }
 
-  const store = await openSqliteRunStore(values.store);
+  const store = (await openSqliteRunStore(values.store)) as AgentRunsStore;
   try {
     if (command === "list") {
       console.log(JSON.stringify(await store.list(), null, 2));
@@ -119,11 +157,51 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
                     : null,
                 }
               : {}),
+            ...(values.control
+              ? {
+                  control: {
+                    record: (await store.getControl(runId)) ?? null,
+                    approvals: await store.listApprovals(runId),
+                  },
+                }
+              : {}),
           },
           null,
           2,
         ),
       );
+      return;
+    }
+
+    if (command === "pause" || command === "stop") {
+      const run = await store.get(runId);
+      if (!run) throw new Error(`Run not found: ${runId}`);
+      const control = await store.getControl(runId);
+      if (!control) {
+        throw new Error(`Run has no control record: ${runId}`);
+      }
+      const updated = await store.requestControl(
+        runId,
+        command,
+        control.revision,
+      );
+      // The persisted request, not an instantaneous state change: the
+      // run's last saved status is printed with the recorded intent.
+      console.log(
+        JSON.stringify({ status: run.status, control: updated }, null, 2),
+      );
+      return;
+    }
+
+    if (command === "approve" || command === "reject") {
+      const approvalId = values.approval;
+      if (!approvalId) throw new Error("An approval id is required");
+      const approval = await store.resolveApproval(
+        runId,
+        approvalId,
+        command === "approve" ? "approved" : "denied",
+      );
+      console.log(JSON.stringify(approval, null, 2));
       return;
     }
 

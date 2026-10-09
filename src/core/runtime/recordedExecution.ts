@@ -5,11 +5,15 @@ import type { ToolExecutionRecorder } from "./runToolStore";
 export function composeRecordedExecution(
   inference: InferenceRecorder,
   tools: () => ToolExecutionRecorder | undefined,
+  control?: () =>
+    | { beforeDispatch(): Promise<void>; flush(): Promise<void> }
+    | undefined,
 ): InferenceRecorder {
   const flush = async (): Promise<void> => {
     const results = await Promise.allSettled([
       inference.flush(),
       tools()?.flush(),
+      control?.()?.flush(),
     ]);
     const errors = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
@@ -25,6 +29,7 @@ export function composeRecordedExecution(
       ...args: Parameters<typeof inference.beforeDispatch>
     ) => {
       await tools()?.flush();
+      await control?.()?.beforeDispatch();
       await inference.beforeDispatch(...args);
     },
     beforeToolCall: async (

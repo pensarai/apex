@@ -27,6 +27,10 @@ function makeStore() {
     listRetries: vi.fn(async () => []),
     hasToolJournal: vi.fn(async () => false),
     listToolOperations: vi.fn(async () => []),
+    getControl: vi.fn(),
+    requestControl: vi.fn(),
+    resolveApproval: vi.fn(),
+    listApprovals: vi.fn(async () => []),
     close: vi.fn(),
   };
 }
@@ -118,6 +122,16 @@ describe("help and invalid arguments open no store", () => {
     [["list", "extra"]],
     [["show", "a", "b"]],
     [["list", "--spec", "spec.json"]],
+    [["pause"]],
+    [["stop"]],
+    [["approve", "run-1"]],
+    [["reject", "run-1"]],
+    [["approve", "run-1", "ap-1", "extra"]],
+    [["show", "run-1", "--approval", "ap-1"]],
+    [["list", "--approval", "ap-1"]],
+    [["pause", "run-1", "--spec", "spec.json"]],
+    [["stop", "run-1", "--control"]],
+    [["start", "--spec", "spec.json", "--approval", "ap-1"]],
   ])("rejects %j without opening the store", async (args) => {
     await expect(runAgentRunsCommand(args)).rejects.toThrow(
       /Invalid agent-runs arguments/,
@@ -409,5 +423,184 @@ describe("tool inspection", () => {
     await expect(runAgentRunsCommand(["list", "--tools"])).rejects.toThrow(
       "Invalid agent-runs arguments",
     );
+  });
+});
+
+describe("show --control", () => {
+  it("prints the control record and approvals", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    const control = {
+      runId: "run-1",
+      executionAttemptId: "exec-1",
+      intent: "run",
+      revision: 0,
+      updatedAt: "2026-10-05T00:00:00.000Z",
+    };
+    store.getControl.mockResolvedValue(control);
+    const pending = {
+      approvalId: "ap-1",
+      toolCallId: "tc_1",
+      toolName: "http_request",
+      state: "pending",
+      createdAt: "2026-10-05T00:00:01.000Z",
+    };
+    store.listApprovals.mockResolvedValue([pending] as never);
+    await runAgentRunsCommand(["show", "run-1", "--control"]);
+    const parsed = JSON.parse(output());
+    expect(parsed.control.record).toEqual(control);
+    expect(parsed.control.approvals).toEqual([pending]);
+    expect(store.getControl).toHaveBeenCalledWith("run-1");
+    expect(store.listApprovals).toHaveBeenCalledWith("run-1");
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("prints null control for runs that were never enrolled", async () => {
+    store.get.mockResolvedValue({ status: "completed" });
+    store.getControl.mockResolvedValue(undefined);
+    await runAgentRunsCommand(["show", "run-legacy", "--control"]);
+    const parsed = JSON.parse(output());
+    expect(parsed.control).toEqual({ record: null, approvals: [] });
+  });
+
+  it("does not read control state without the flag", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    await runAgentRunsCommand(["show", "run-1"]);
+    expect(store.getControl).not.toHaveBeenCalled();
+    expect(store.listApprovals).not.toHaveBeenCalled();
+    expect(JSON.parse(output()).control).toBeUndefined();
+  });
+
+  it("surfaces a pending approval left by a lost client without inventing a decision", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    store.getControl.mockResolvedValue({ intent: "pause", revision: 1 });
+    store.listApprovals.mockResolvedValue([
+      {
+        approvalId: "ap-2",
+        state: "pending",
+        createdAt: "2026-10-05T00:00:01.000Z",
+        decidedAt: undefined,
+      },
+    ] as never);
+    await runAgentRunsCommand(["show", "run-1", "--control"]);
+    const approval = JSON.parse(output()).control.approvals[0];
+    expect(approval.state).toBe("pending");
+    expect(approval).not.toHaveProperty("decidedAt", expect.anything());
+  });
+
+  it("errors for a missing run and still closes the store", async () => {
+    store.get.mockResolvedValue(null);
+    await expect(
+      runAgentRunsCommand(["show", "run-404", "--control"]),
+    ).rejects.toThrow("Run not found: run-404");
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pause and stop", () => {
+  it("prints the persisted request with the run's last saved status, not an instantaneous change", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    store.getControl.mockResolvedValue({ intent: "run", revision: 3 });
+    store.requestControl.mockResolvedValue({
+      runId: "run-1",
+      intent: "pause",
+      revision: 4,
+    });
+    await runAgentRunsCommand(["pause", "run-1"]);
+    expect(store.requestControl).toHaveBeenCalledWith("run-1", "pause", 3);
+    const parsed = JSON.parse(output());
+    expect(parsed.status).toBe("running");
+    expect(parsed.control.intent).toBe("pause");
+    expect(parsed.control.revision).toBe(4);
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop requests with the current revision as its CAS expectation", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    store.getControl.mockResolvedValue({ intent: "pause", revision: 7 });
+    store.requestControl.mockResolvedValue({ intent: "stop", revision: 8 });
+    await runAgentRunsCommand(["stop", "run-1"]);
+    expect(store.requestControl).toHaveBeenCalledWith("run-1", "stop", 7);
+    expect(JSON.parse(output()).control.intent).toBe("stop");
+  });
+
+  it("rejects runs without a control record and closes the store", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    store.getControl.mockResolvedValue(undefined);
+    await expect(runAgentRunsCommand(["pause", "run-legacy"])).rejects.toThrow(
+      "Run has no control record: run-legacy",
+    );
+    expect(store.requestControl).not.toHaveBeenCalled();
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates a CAS conflict without retrying", async () => {
+    store.get.mockResolvedValue({ status: "running" });
+    store.getControl.mockResolvedValue({ intent: "run", revision: 2 });
+    store.requestControl.mockRejectedValue(
+      new Error("control revision changed; re-read and retry"),
+    );
+    await expect(runAgentRunsCommand(["stop", "run-1"])).rejects.toThrow(
+      "control revision changed; re-read and retry",
+    );
+    expect(store.requestControl).toHaveBeenCalledTimes(1);
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("errors for an unknown run before touching control state", async () => {
+    store.get.mockResolvedValue(null);
+    await expect(runAgentRunsCommand(["stop", "run-404"])).rejects.toThrow(
+      "Run not found: run-404",
+    );
+    expect(store.getControl).not.toHaveBeenCalled();
+  });
+});
+
+describe("approve and reject", () => {
+  it("resolves an approval through the store and prints the decision", async () => {
+    store.resolveApproval.mockResolvedValue({
+      approvalId: "ap-1",
+      state: "approved",
+      decidedAt: "2026-10-05T00:00:02.000Z",
+    });
+    await runAgentRunsCommand(["approve", "run-1", "--approval", "ap-1"]);
+    expect(store.resolveApproval).toHaveBeenCalledWith(
+      "run-1",
+      "ap-1",
+      "approved",
+    );
+    expect(JSON.parse(output()).state).toBe("approved");
+    expect(store.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("reject records a user_rejected denial", async () => {
+    store.resolveApproval.mockResolvedValue({
+      approvalId: "ap-1",
+      state: "denied",
+      reason: "user_rejected",
+    });
+    await runAgentRunsCommand(["reject", "run-1", "--approval", "ap-1"]);
+    expect(store.resolveApproval).toHaveBeenCalledWith(
+      "run-1",
+      "ap-1",
+      "denied",
+    );
+    expect(JSON.parse(output()).state).toBe("denied");
+  });
+
+  it("propagates conflicting resolution and stop rejections, closing the store", async () => {
+    store.resolveApproval.mockRejectedValueOnce(
+      new Error("approval already denied"),
+    );
+    await expect(
+      runAgentRunsCommand(["approve", "run-1", "--approval", "ap-1"]),
+    ).rejects.toThrow("approval already denied");
+
+    store.resolveApproval.mockRejectedValueOnce(
+      new Error("run is stopped; approvals cannot change"),
+    );
+    await expect(
+      runAgentRunsCommand(["reject", "run-1", "--approval", "ap-1"]),
+    ).rejects.toThrow("run is stopped; approvals cannot change");
+    expect(store.close).toHaveBeenCalledTimes(2);
   });
 });

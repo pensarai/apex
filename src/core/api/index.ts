@@ -25,6 +25,13 @@ export type {
   SessionEvidence,
 } from "../runtime/runCheckpointStore";
 export type { ContextReference, ContextStore } from "../runtime/runContext";
+export type {
+  ApprovalDecision,
+  RecordedApproval,
+  RunControlIntent,
+  RunControlRecord,
+  RunControlStore,
+} from "../runtime/runControlStore";
 export { inspectSessionEvidence } from "../runtime/runEvidence";
 export type {
   RecordedModelAttempt,

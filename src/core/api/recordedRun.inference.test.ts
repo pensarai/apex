@@ -14,6 +14,10 @@ import type { InferenceAttempt } from "../ai";
 import { getInferenceRecorder } from "../ai";
 import { newSessionId } from "../id/id";
 import { RunPersistenceError } from "../runtime/persistenceError";
+import type {
+  RunControlRecord,
+  RunControlStore,
+} from "../runtime/runControlStore";
 import { RunLimitError, type RunModelStore } from "../runtime/runModelStore";
 import type { RecordedRunSpec, RunRecord } from "../runtime/runStore";
 import type {
@@ -96,8 +100,38 @@ function makeModelStore(script?: {
   onSettleCalled?: () => void;
 }) {
   let record: RunRecord | undefined;
+  let control: RunControlRecord | undefined;
   const calls: string[] = [];
   const store = {
+    initializeControl: async (runId: string, executionAttemptId: string) => {
+      control = {
+        schemaVersion: 1,
+        runId,
+        executionAttemptId,
+        intent: "run",
+        revision: 0,
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    getControl: async () => control,
+    requestControl: async (
+      _runId: string,
+      intent: "pause" | "stop",
+      revision: number,
+    ) => {
+      if (!control || control.revision !== revision)
+        throw new Error("Control revision changed");
+      control = { ...control, intent, revision: revision + 1 };
+      return control;
+    },
+    requestApproval: async () => {
+      throw new Error("Unexpected approval");
+    },
+    getApproval: async () => undefined,
+    listApprovals: async () => [],
+    resolveApproval: async () => {
+      throw new Error("Unexpected approval");
+    },
     initializeToolJournal: async () => {},
     hasToolJournal: async () => true,
     startToolOperation: async () => {
@@ -155,7 +189,7 @@ function makeModelStore(script?: {
     listRetries: async () => [],
   };
   return {
-    store: store as unknown as RunModelStore & RunToolStore,
+    store: store as unknown as RunModelStore & RunToolStore & RunControlStore,
     calls: () => calls,
     current: () => record,
   };

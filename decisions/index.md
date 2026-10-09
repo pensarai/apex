@@ -32,6 +32,7 @@ Apex serves three audiences:
 | [PDR-010](./PDR-010-recorded-context.md)          | Commit canonical context and evidence references before selecting them       |
 | [PDR-011](./PDR-011-recorded-inference.md)        | Record physical inference attempts and enforce request limits                |
 | [PDR-012](./PDR-012-recorded-tool-outcomes.md)    | Commit accepted tool intent and model-visible results before use             |
+| [PDR-013](PDR-013-durable-run-controls.md)        | Persist recorded-run control and approvals                                   |
 
 ---
 

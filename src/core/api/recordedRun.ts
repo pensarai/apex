@@ -6,8 +6,14 @@ import {
 } from "../ai";
 import type { CredentialManager } from "../credentials";
 import type { AgentEventBus } from "../eventBus";
+import { RunPersistenceError } from "../runtime/persistenceError";
 import { composeRecordedExecution } from "../runtime/recordedExecution";
 import { createRunContextRecorder } from "../runtime/runContext";
+import { createRunControl } from "../runtime/runControl";
+import {
+  RunControlInterruption,
+  type RunControlStore,
+} from "../runtime/runControlStore";
 import { runDeadline } from "../runtime/runDeadline";
 import { collectSessionEvidence } from "../runtime/runEvidence";
 import { createRunInferenceRecorder } from "../runtime/runInference";
@@ -26,7 +32,7 @@ const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
 export type RecordedRunAgentInput = {
   /** Raw (unparsed) run spec — the parsed, normalized form is the only version stored or executed. */
   spec: unknown;
-  store: RunModelStore & RunToolStore;
+  store: RunModelStore & RunToolStore & RunControlStore;
   authConfig?: AIAuthConfig;
   credentialManager?: CredentialManager;
   eventBus?: AgentEventBus;
@@ -76,7 +82,29 @@ export async function runRecordedAgent(
   const attemptId = admission.record.attemptId;
 
   const deadline = runDeadline(spec.limits?.deadlineAt, input.abortSignal);
-  const abortSignal = deadline.signal;
+  try {
+    await input.store.initializeControl(runId, attemptId);
+  } catch (error) {
+    deadline.dispose();
+    try {
+      await input.store.transition(runId, attemptId, "failed");
+    } catch (settlementError) {
+      throw new AggregateError(
+        [error, settlementError],
+        "Run control enrollment and status write failed",
+      );
+    }
+    throw error;
+  }
+  const control = createRunControl({
+    runId,
+    executionAttemptId: attemptId,
+    store: input.store,
+    requiredTools: spec.approval?.requiredTools ?? [],
+    abortSignal: deadline.signal,
+  });
+  const abortSignal = control.signal;
+  let agentStarted = false;
   const inferenceRecorder = createRunInferenceRecorder({
     runId,
     executionAttemptId: attemptId,
@@ -86,10 +114,28 @@ export async function runRecordedAgent(
   const executionRecorder = composeRecordedExecution(
     inferenceRecorder,
     () => toolRecorder,
+    () => control,
   );
   const flushRecorders = executionRecorder.flush;
   try {
-    if (abortSignal?.aborted) {
+    if (deadline.signal?.aborted) {
+      try {
+        await control.flush();
+      } catch (error) {
+        if (!onlyControlInterruptions(error)) {
+          // The enrolled run can never execute; settle failed so a
+          // stop-persist failure never leaves it silently admitted.
+          try {
+            await input.store.transition(runId, attemptId, "failed");
+          } catch (settlementError) {
+            throw new AggregateError(
+              [error, settlementError],
+              "Recorded run failed and its status write also failed",
+            );
+          }
+          throw error;
+        }
+      }
       const record = await input.store.transition(
         runId,
         attemptId,
@@ -132,7 +178,20 @@ export async function runRecordedAgent(
         inheritEnvironmentConfig: false,
       });
 
-      await input.store.transition(runId, attemptId, "running");
+      const runningRecord = await input.store.transition(
+        runId,
+        attemptId,
+        "running",
+      );
+      if (runningRecord.status === "cancelled") {
+        // The store settles a stop-won race as cancelled; nothing may be
+        // initialized or executed against the run afterwards. Teardown
+        // mirrors the success path so a latched failure surfaces instead
+        // of a silently clean return.
+        await control.dispose();
+        await flushRecorders();
+        return { started: false, record: runningRecord };
+      }
       await input.store.initializeToolJournal(runId, attemptId);
 
       const collectEvidence = async () => {
@@ -158,6 +217,7 @@ export async function runRecordedAgent(
         executionAttemptId: attemptId,
         store: input.store,
         collectEvidence,
+        beforeTool: control.beforeTool,
       });
 
       const contextRecorder = createRunContextRecorder({
@@ -166,7 +226,17 @@ export async function runRecordedAgent(
         store: {
           getContext: (id) => input.store.getContext(id),
           commitContext: async (id, attempt, revision, change) => {
-            await toolRecorder?.flush();
+            // Pause/stop fence new dispatch, not checkpoints of accepted work.
+            for (const flush of [
+              () => toolRecorder?.flush(),
+              () => control.flush(),
+            ]) {
+              try {
+                await flush();
+              } catch (error) {
+                if (!onlyControlInterruptions(error)) throw error;
+              }
+            }
             return input.store.commitContext(
               id,
               attempt,
@@ -178,6 +248,8 @@ export async function runRecordedAgent(
         },
       });
 
+      await control.beforeDispatch();
+      agentStarted = true;
       result = await runWithInferenceRecorder(executionRecorder, () =>
         runOffensiveSecurityAgent({
           session,
@@ -200,21 +272,38 @@ export async function runRecordedAgent(
           ...(abortSignal ? { abortSignal } : {}),
         }),
       );
+      await control.dispose();
       await flushRecorders();
     } catch (error) {
+      await control.dispose();
       try {
         await flushRecorders();
       } catch (persistenceError) {
-        if (error !== persistenceError) {
+        if (
+          error !== persistenceError &&
+          !onlyControlInterruptions(persistenceError)
+        ) {
           error = new AggregateError(
             [error, persistenceError],
             "Recorded run execution and inference persistence failed",
           );
         }
       }
+      if (onlyControlInterruptions(error)) {
+        const intent = (await input.store.getControl(runId))?.intent;
+        if (intent === "pause" || intent === "stop") {
+          const record = await input.store.transition(
+            runId,
+            attemptId,
+            intent === "stop" ? "cancelled" : "paused",
+          );
+          return { started: agentStarted, record };
+        }
+      }
       const status =
-        abortSignal?.aborted ||
-        (error instanceof Error && error.name === "AbortError")
+        !hasPersistenceFailure(error) &&
+        (abortSignal?.aborted ||
+          (error instanceof Error && error.name === "AbortError"))
           ? "cancelled"
           : "failed";
       try {
@@ -234,10 +323,30 @@ export async function runRecordedAgent(
     const record = await input.store.transition(
       runId,
       attemptId,
-      abortSignal?.aborted ? "cancelled" : "completed",
+      abortSignal.aborted || deadline.signal?.aborted
+        ? "cancelled"
+        : "completed",
     );
     return { started: true, record, result };
   } finally {
+    await control.dispose();
     deadline.dispose();
   }
+}
+
+function onlyControlInterruptions(error: unknown): boolean {
+  return (
+    error instanceof RunControlInterruption ||
+    (error instanceof AggregateError &&
+      error.errors.length > 0 &&
+      error.errors.every(onlyControlInterruptions))
+  );
+}
+
+function hasPersistenceFailure(error: unknown): boolean {
+  return (
+    error instanceof RunPersistenceError ||
+    (error instanceof AggregateError &&
+      error.errors.some(hasPersistenceFailure))
+  );
 }

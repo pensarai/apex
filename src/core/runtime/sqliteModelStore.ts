@@ -90,6 +90,7 @@ export function createSqliteModelStore(input: {
   transaction<T>(operation: () => T): T;
   getRun(runId: string): RunRecord | undefined;
   getContextReference(runId: string): ContextReference | null;
+  assertDispatchAllowed?(runId: string): void;
 }): ModelMethods {
   const { db, transaction } = input;
   const owningRun = (runId: string, executionAttemptId: string) => {
@@ -135,6 +136,7 @@ export function createSqliteModelStore(input: {
         throw new Error("Dispatch requires a started inference attempt");
       transaction(() => {
         const run = owningRun(runId, executionAttemptId);
+        input.assertDispatchAllowed?.(runId);
         const now = new Date().toISOString();
         const limits = run.spec.limits;
         if (limits?.deadlineAt && Date.now() >= Date.parse(limits.deadlineAt))

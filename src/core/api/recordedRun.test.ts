@@ -5,6 +5,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CredentialManager } from "../credentials";
 import { newSessionId } from "../id/id";
+import type {
+  RunControlRecord,
+  RunControlStore,
+} from "../runtime/runControlStore";
 import type { RunModelStore } from "../runtime/runModelStore";
 import {
   type RecordedRunSpec,
@@ -62,8 +66,38 @@ function makeRecord(spec: RecordedRunSpec): RunRecord {
 
 function makeStore() {
   let record: RunRecord | undefined;
+  let control: RunControlRecord | undefined;
   const transitionFailures = new Map<string, unknown>();
-  const store: RunModelStore & RunToolStore = {
+  const store: RunModelStore & RunToolStore & RunControlStore = {
+    initializeControl: async (runId: string, executionAttemptId: string) => {
+      control = {
+        schemaVersion: 1,
+        runId,
+        executionAttemptId,
+        intent: "run",
+        revision: 0,
+        updatedAt: new Date().toISOString(),
+      };
+    },
+    getControl: async () => control,
+    requestControl: async (
+      _runId: string,
+      intent: "pause" | "stop",
+      revision: number,
+    ) => {
+      if (!control || control.revision !== revision)
+        throw new Error("Control revision changed");
+      control = { ...control, intent, revision: revision + 1 };
+      return control;
+    },
+    requestApproval: async () => {
+      throw new Error("Unexpected approval");
+    },
+    getApproval: async () => undefined,
+    listApprovals: async () => [],
+    resolveApproval: async () => {
+      throw new Error("Unexpected approval");
+    },
     initializeToolJournal: vi.fn(async () => {}),
     hasToolJournal: vi.fn(async () => true),
     startToolOperation: vi.fn(async () => {
@@ -453,7 +487,7 @@ describe("the admitted, normalized spec drives execution", () => {
 });
 
 describe("runtime hooks pass through by identity", () => {
-  it("forwards the exact eventBus, abortSignal, authConfig, and credentialManager", async () => {
+  it("forwards credentials and events with a runtime-owned cancellation signal", async () => {
     const { store } = makeStore();
     const eventBus = { on: () => {}, emit: () => {} } as never;
     const controller = new AbortController();
@@ -471,7 +505,8 @@ describe("runtime hooks pass through by identity", () => {
 
     const agentInput = runAgent.mock.calls[0][0];
     expect(agentInput.eventBus).toBe(eventBus);
-    expect(agentInput.abortSignal).toBe(controller.signal);
+    expect(agentInput.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(agentInput.abortSignal.aborted).toBe(false);
     expect(agentInput.authConfig).toBe(authConfig);
     expect(agentInput.credentialManager).toBe(credentialManager);
   });
@@ -481,7 +516,7 @@ describe("runtime hooks pass through by identity", () => {
     await runRecordedAgent({ spec: baseSpec(tempCwd()), store });
     const agentInput = runAgent.mock.calls[0][0];
     expect("eventBus" in agentInput).toBe(false);
-    expect("abortSignal" in agentInput).toBe(false);
+    expect(agentInput.abortSignal).toBeInstanceOf(AbortSignal);
     expect("authConfig" in agentInput).toBe(false);
     expect("credentialManager" in agentInput).toBe(false);
   });

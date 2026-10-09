@@ -1,6 +1,7 @@
 import type { ToolResultPart } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { RunPersistenceError } from "./persistenceError";
+import { RunControlInterruption } from "./runControlStore";
 import type {
   RecordedToolInput,
   RecordedToolOperation,
@@ -561,6 +562,128 @@ describe("evidence collection", () => {
     await expect(failure).rejects.toMatchObject({
       cause: expect.objectContaining({ message: "evidence unavailable" }),
     });
+    await expect(r.flush()).rejects.toBeInstanceOf(RunPersistenceError);
+  });
+});
+
+describe("control interruption fencing", () => {
+  function gatedRecorder(
+    store: RunToolStore,
+    beforeTool: NonNullable<
+      Parameters<typeof createRunToolRecorder>[0]["beforeTool"]
+    >,
+  ) {
+    return createRunToolRecorder({
+      runId: "run_1",
+      executionAttemptId: "exec_1",
+      store,
+      collectEvidence: async () => ({ rootPath: "/session", files: [] }),
+      beforeTool,
+    });
+  }
+
+  const pausingGate = (pauseAfter: number) => {
+    let gateChecks = 0;
+    return async () => {
+      gateChecks++;
+      if (gateChecks > pauseAfter)
+        throw new RunControlInterruption("Run paused");
+      return undefined;
+    };
+  };
+
+  it("an accepted sibling still settles after an interruption fences fresh dispatch", async () => {
+    const { store, log } = makeStore();
+    const r = gatedRecorder(store, pausingGate(1));
+
+    // Sibling A is accepted and executing when a later gate check pauses.
+    await expect(r.beforeExecute(call("grep", "tc_a"))).resolves.toEqual({
+      kind: "execute",
+    });
+    await expect(r.beforeExecute(call("grep", "tc_b"))).rejects.toBeInstanceOf(
+      RunControlInterruption,
+    );
+
+    // Accepted work commits its outcome; the journal is not stranded.
+    await r.settle("tc_a", { type: "text", value: "done" });
+    expect(log.map((e) => e.method)).toEqual([
+      "startToolOperation",
+      "settleToolOperation",
+    ]);
+
+    // Fresh dispatch stays fenced; flush still surfaces the interruption.
+    await expect(
+      r.beforeExecute(call("read_file", "tc_c")),
+    ).rejects.toBeInstanceOf(RunControlInterruption);
+    await expect(r.flush()).rejects.toBeInstanceOf(RunControlInterruption);
+  });
+
+  it("unknown for accepted work still commits after an interruption", async () => {
+    const { store, log } = makeStore();
+    const r = gatedRecorder(store, pausingGate(1));
+
+    await r.beforeExecute(call("execute_command", "tc_a"));
+    await expect(
+      r.beforeExecute(call("http_request", "tc_b")),
+    ).rejects.toBeInstanceOf(RunControlInterruption);
+
+    await r.unknown("tc_a");
+    expect(log.map((e) => e.method)).toEqual([
+      "startToolOperation",
+      "markToolOutcomeUnknown",
+    ]);
+  });
+
+  it("a start queued behind awaited gate work cannot slip through after the pause", async () => {
+    const { store, log } = makeStore();
+    const gate = gated();
+    let slowReachedGate!: () => void;
+    const slowReachedGatePromise = new Promise<void>((resolve) => {
+      slowReachedGate = resolve;
+    });
+    const r = gatedRecorder(store, async (input) => {
+      if (input.toolCallId === "tc_slow") {
+        slowReachedGate();
+        await gate.promise;
+      }
+      if (input.toolCallId === "tc_pause")
+        throw new RunControlInterruption("Run paused");
+      return undefined;
+    });
+
+    const slow = r.beforeExecute(call("grep", "tc_slow"));
+    // tc_slow is parked inside the gate; its start write is not yet queued.
+    await slowReachedGatePromise;
+    await expect(
+      r.beforeExecute(call("grep", "tc_pause")),
+    ).rejects.toBeInstanceOf(RunControlInterruption);
+    gate.release();
+
+    // The pause landed while tc_slow's start write was still queued.
+    await expect(slow).rejects.toBeInstanceOf(RunControlInterruption);
+    expect(log).toHaveLength(0);
+  });
+
+  it("a failed receipt after an interruption fails closed and dominates the flush surface", async () => {
+    const { store } = makeStore({
+      fail: { method: "settleToolOperation", on: 1 },
+    });
+    const r = gatedRecorder(store, pausingGate(1));
+
+    await r.beforeExecute(call("grep", "tc_a"));
+    await expect(r.beforeExecute(call("grep", "tc_b"))).rejects.toBeInstanceOf(
+      RunControlInterruption,
+    );
+
+    // The accepted sibling's receipt write fails: persistence dominates.
+    await expect(
+      r.settle("tc_a", { type: "text", value: "done" }),
+    ).rejects.toBeInstanceOf(RunPersistenceError);
+    await expect(r.unknown("tc_a")).rejects.toBeInstanceOf(RunPersistenceError);
+    await expect(
+      r.beforeExecute(call("read_file", "tc_c")),
+    ).rejects.toBeInstanceOf(RunPersistenceError);
+    // The interruption must not hide the failed receipt in flush.
     await expect(r.flush()).rejects.toBeInstanceOf(RunPersistenceError);
   });
 });

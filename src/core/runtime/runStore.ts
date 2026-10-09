@@ -52,6 +52,14 @@ const recordedRunSpecShape = {
   environment: z.object(runEnvironmentShape).strict(),
   scope: z.object(runScopeShape).strict(),
   credentialRefs: z.array(z.string().min(1)),
+  approval: z
+    .object({
+      requiredTools: z
+        .array(z.enum(RECORDED_RUN_TOOL_ALLOWLIST))
+        .refine((tools) => new Set(tools).size === tools.length),
+    })
+    .strict()
+    .optional(),
   limits: z
     .object({
       maxModelAttempts: z.number().int().positive().optional(),
@@ -77,7 +85,16 @@ export const RecordedRunSpecSchema = z
       .strict(),
     credentialRefs: recordedRunSpecShape.credentialRefs.default([]),
   })
-  .strict();
+  .strict()
+  .refine(
+    (spec) =>
+      spec.approval?.requiredTools.every((tool) =>
+        spec.activeTools.includes(tool),
+      ) ?? true,
+    {
+      message: "Approval tools must be enabled in activeTools",
+    },
+  );
 
 export type RecordedRunSpec = z.output<typeof RecordedRunSpecSchema>;
 
@@ -85,7 +102,15 @@ export type RecordedRunSpec = z.output<typeof RecordedRunSpecSchema>;
 export const RunRecordSchema = z
   .object({
     schemaVersion: z.literal(1),
-    spec: z.object(recordedRunSpecShape).strict(),
+    spec: z
+      .object(recordedRunSpecShape)
+      .strict()
+      .refine(
+        (spec) =>
+          spec.approval?.requiredTools.every((tool) =>
+            spec.activeTools.includes(tool),
+          ) ?? true,
+      ),
     sessionId: z
       .string()
       .refine(isSessionId, { message: "sessionId must be a ses_ session id" }),
@@ -93,7 +118,14 @@ export const RunRecordSchema = z
       message: "attemptId must be exec_ followed by a UUID",
     }),
     runtimeVersion: z.string().min(1),
-    status: z.enum(["admitted", "running", "completed", "failed", "cancelled"]),
+    status: z.enum([
+      "admitted",
+      "running",
+      "paused",
+      "completed",
+      "failed",
+      "cancelled",
+    ]),
     admittedAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -111,6 +143,6 @@ export interface RunStore {
   transition(
     runId: string,
     attemptId: string,
-    status: "running" | "completed" | "failed" | "cancelled",
+    status: "running" | "paused" | "completed" | "failed" | "cancelled",
   ): Promise<RunRecord>;
 }

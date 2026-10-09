@@ -7,13 +7,22 @@ import type {
 } from "@ai-sdk/provider";
 import { simulateReadableStream, stepCountIs } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { wrapRecordedTools } from "../agents/offSecAgent/recordedTools";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import { composeRecordedExecution } from "../runtime/recordedExecution";
 import type { ContextReference } from "../runtime/runContext";
 import { createRunContextRecorder } from "../runtime/runContext";
+import { createRunControl } from "../runtime/runControl";
+import type {
+  RecordedApproval,
+  RunControlStore,
+} from "../runtime/runControlStore";
+import {
+  RunControlConflictError,
+  RunControlInterruption,
+} from "../runtime/runControlStore";
 import { createRunInferenceRecorder } from "../runtime/runInference";
 import type { RunModelStore } from "../runtime/runModelStore";
 import type {
@@ -107,9 +116,108 @@ function makeToolStore(fail?: { settle?: unknown }) {
   return { calls, store };
 }
 
+/** Minimal in-memory control store the test drives like an operator client. */
+function makeControlStore() {
+  let control = {
+    schemaVersion: 1 as const,
+    runId: RUN_ID,
+    executionAttemptId: EXECUTION_ATTEMPT_ID,
+    intent: "run" as "run" | "pause" | "stop",
+    revision: 0,
+    updatedAt: new Date().toISOString(),
+  };
+  const approvals = new Map<string, RecordedApproval>();
+  const store: RunControlStore = {
+    initializeControl: async () => {},
+    getControl: async () => structuredClone(control),
+    requestControl: async (
+      _runId: string,
+      intent: "pause" | "stop",
+      expectedRevision: number,
+    ) => {
+      if (control.intent === "stop" || control.revision !== expectedRevision) {
+        throw new RunControlConflictError("control revision changed");
+      }
+      control = {
+        ...control,
+        intent,
+        revision: control.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      return structuredClone(control);
+    },
+    requestApproval: async (
+      _runId: string,
+      _executionAttemptId: string,
+      request: { toolCallId: string; toolName: string; input: unknown },
+    ) => {
+      const approvalId = `apr_${request.toolCallId}`;
+      const existing = approvals.get(approvalId);
+      if (existing) return structuredClone(existing);
+      const record: RecordedApproval = {
+        schemaVersion: 1,
+        approvalId,
+        runId: RUN_ID,
+        executionAttemptId: EXECUTION_ATTEMPT_ID,
+        toolCallId: request.toolCallId,
+        toolName: request.toolName,
+        input: request.input,
+        specDigest: "digest",
+        context: { epoch: 1, revision: 1 },
+        state: "pending",
+        createdAt: new Date().toISOString(),
+      };
+      approvals.set(approvalId, record);
+      return structuredClone(record);
+    },
+    getApproval: async (_runId: string, approvalId: string) => {
+      const record = approvals.get(approvalId);
+      return record ? structuredClone(record) : undefined;
+    },
+    listApprovals: async () =>
+      [...approvals.values()].map((record) => structuredClone(record)),
+    resolveApproval: async (
+      _runId: string,
+      approvalId: string,
+      decision: "approved" | "denied",
+    ) => {
+      const record = approvals.get(approvalId);
+      if (!record) throw new Error("Approval not found");
+      if (record.state === decision) return structuredClone(record);
+      if (record.state !== "pending") {
+        throw new RunControlConflictError("approval already decided");
+      }
+      const next: RecordedApproval = {
+        ...record,
+        state: decision,
+        ...(decision === "denied" ? { reason: "user_rejected" as const } : {}),
+        decidedAt: new Date().toISOString(),
+      };
+      approvals.set(approvalId, next);
+      return structuredClone(next);
+    },
+  };
+  return {
+    store,
+    approvalIds: () => [...approvals.keys()],
+  };
+}
+
 /** Wires the recorders exactly as runRecordedAgent composes them. */
-function makeHarness(fail?: { settle?: unknown }) {
+function makeHarness(
+  fail?: { settle?: unknown },
+  options?: { requiredTools?: string[] },
+) {
   const tool = makeToolStore(fail);
+  const controlStore = makeControlStore();
+  const control = createRunControl({
+    runId: RUN_ID,
+    executionAttemptId: EXECUTION_ATTEMPT_ID,
+    store: controlStore.store,
+    requiredTools: options?.requiredTools ?? [],
+    pollIntervalMs: 25,
+  });
+  liveControls.push(control);
   const toolRecorder = createRunToolRecorder({
     runId: RUN_ID,
     executionAttemptId: EXECUTION_ATTEMPT_ID,
@@ -118,6 +226,7 @@ function makeHarness(fail?: { settle?: unknown }) {
       rootPath: EVIDENCE_ROOT,
       files: [],
     }),
+    beforeTool: control.beforeTool,
   });
   const modelStore = {
     startModelAttempt: async () => {},
@@ -144,6 +253,7 @@ function makeHarness(fail?: { settle?: unknown }) {
       change: { kind: string },
     ) => {
       await toolRecorder.flush();
+      await control.flush();
       contextCommits++;
       contextRef = !contextRef
         ? { epoch: 1, revision: 1 }
@@ -157,10 +267,13 @@ function makeHarness(fail?: { settle?: unknown }) {
   return {
     calls: tool.calls,
     toolRecorder,
+    controlStore: controlStore.store,
+    approvalIds: controlStore.approvalIds,
     contextCommits: () => contextCommits,
     executionRecorder: composeRecordedExecution(
       inferenceRecorder,
       () => toolRecorder,
+      () => control,
     ),
     contextRecorder: createRunContextRecorder({
       runId: RUN_ID,
@@ -169,6 +282,8 @@ function makeHarness(fail?: { settle?: unknown }) {
     }),
   };
 }
+
+const liveControls: Array<ReturnType<typeof createRunControl>> = [];
 
 function streamOf(chunks: unknown[]): LanguageModelV3StreamResult {
   return {
@@ -262,6 +377,12 @@ function settleRow(
 
 beforeEach(() => {
   state.model = undefined;
+});
+
+afterEach(async () => {
+  for (const control of liveControls.splice(0)) {
+    await control.dispose();
+  }
 });
 
 describe("tool journal at the execution boundary (real SDK)", () => {
@@ -585,5 +706,145 @@ describe("tool journal at the execution boundary (real SDK)", () => {
     // continues the run.
     expect(doStream).toHaveBeenCalledTimes(2);
     await harness.toolRecorder.flush();
+  });
+});
+
+describe("durable control at the execution boundary (real SDK)", () => {
+  it("cooperative pause: settled work checkpoints, the next dispatch is interrupted, and the interruption survives the SDK", async () => {
+    const harness = makeHarness();
+    let providerCalls = 0;
+    const doStream = vi.fn(async () => {
+      providerCalls++;
+      return providerCalls === 1
+        ? streamOf([
+            streamStartChunk(),
+            toolCallChunk("c1", '{"q":"x"}'),
+            finishChunk(),
+          ])
+        : streamOf([...textStep("t1"), finishChunk()]);
+    });
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+
+    const consumed = runWithInferenceRecorder(harness.executionRecorder, () =>
+      drain(
+        streamResponse({
+          model: MODEL,
+          prompt: "probe",
+          silent: true,
+          sessionId: "ses_tools",
+          stopWhen: stepCountIs(2),
+          contextRecorder: harness.contextRecorder,
+          tools: wrappedJournaledTool(harness.toolRecorder, (input) => {
+            harness.calls.push({ kind: "effect", toolCallId: "c1" });
+            expect(input).toEqual({ q: "x" });
+            // The operator pauses mid-tool: accepted work still finishes.
+            return (async () => {
+              const control = await harness.controlStore.getControl(RUN_ID);
+              if (!control) throw new Error("Expected enrolled control");
+              await harness.controlStore.requestControl(
+                RUN_ID,
+                "pause",
+                control.revision,
+              );
+              return "ok";
+            })();
+          }),
+        }),
+      ),
+    );
+
+    const error = await consumed.then(
+      () => {
+        throw new Error("expected the run to be interrupted");
+      },
+      (cause: unknown) => cause,
+    );
+    expect(error).toBeInstanceOf(RunControlInterruption);
+    expect((error as Error).message).toContain("paused before dispatch");
+    expect(providerCalls).toBe(1);
+    // Accepted work finished: effect, intent, and settlement all journaled.
+    const settle = settleRow(harness.calls, "c1");
+    expect(settle.output).toEqual({ type: "text", value: "ok" });
+    expect(harness.calls.some((call) => call.kind === "effect")).toBe(true);
+    // The tool step's checkpoint committed despite the persisted pause.
+    expect(harness.contextCommits()).toBe(2);
+    // The composed flush surfaces the gate-observed interruption.
+    await expect(harness.executionRecorder.flush()).rejects.toBeInstanceOf(
+      RunControlInterruption,
+    );
+    const control = await harness.controlStore.getControl(RUN_ID);
+    expect(control?.intent).toBe("pause");
+  });
+
+  it("denied approval blocks before intent: no executed effect, stable blocked result served to the model", async () => {
+    const harness = makeHarness(undefined, { requiredTools: [TOOL_NAME] });
+    const executedInputs: Array<{ q: string }> = [];
+    let providerCalls = 0;
+    let modelToolOutput: unknown;
+    const doStream = vi.fn(
+      async (options: { prompt?: Array<Record<string, unknown>> }) => {
+        providerCalls++;
+        if (providerCalls === 2) {
+          for (const message of options.prompt ?? []) {
+            for (const part of (message.content ?? []) as Array<
+              Record<string, unknown>
+            >) {
+              if (part.type === "tool-result") {
+                modelToolOutput = part.output;
+              }
+            }
+          }
+        }
+        return providerCalls === 1
+          ? streamOf([
+              streamStartChunk(),
+              toolCallChunk("c1", '{"q":"x"}'),
+              finishChunk(),
+            ])
+          : streamOf([...textStep("t1"), finishChunk()]);
+      },
+    );
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+
+    const consumed = runWithInferenceRecorder(harness.executionRecorder, () =>
+      drain(
+        streamResponse({
+          model: MODEL,
+          prompt: "probe",
+          silent: true,
+          sessionId: "ses_tools",
+          stopWhen: stepCountIs(2),
+          contextRecorder: harness.contextRecorder,
+          tools: wrappedJournaledTool(harness.toolRecorder, (input) => {
+            executedInputs.push(input);
+            return "ok";
+          }),
+        }),
+      ),
+    );
+
+    // The operator denies while the executor waits on the pending approval.
+    await vi.waitFor(() => expect(harness.approvalIds().length).toBe(1));
+    const [approvalId] = harness.approvalIds();
+    await harness.controlStore.resolveApproval(RUN_ID, approvalId, "denied");
+    await consumed;
+
+    // No intent, no effect, no settlement — only the durable decision.
+    expect(executedInputs).toEqual([]);
+    expect(harness.calls.filter((call) => call.kind === "start")).toHaveLength(
+      0,
+    );
+    expect(harness.calls.filter((call) => call.kind === "settle")).toHaveLength(
+      0,
+    );
+    // The next model turn sees the stable blocked output.
+    expect(modelToolOutput).toStrictEqual({
+      type: "json",
+      value: { blocked: true, reason: "Denied by operator" },
+    });
+    expect(providerCalls).toBe(2);
+    const approval = await harness.controlStore.getApproval(RUN_ID, approvalId);
+    expect(approval?.state).toBe("denied");
+    expect(approval?.reason).toBe("user_rejected");
   });
 });
