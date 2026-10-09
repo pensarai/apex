@@ -35,6 +35,7 @@ import {
 } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { wrapRecordedTools } from "./recordedTools";
 import {
   buildBundledAssetsSection,
   buildRuntimeContextSection,
@@ -654,6 +655,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     let tools: ToolSet = input.extraTools
       ? { ...builtinTools, ...input.extraTools }
       : { ...builtinTools };
+
+    // Only approved calls may reach the execution journal.
+    if (input.toolExecutionRecorder) {
+      tools = wrapRecordedTools(tools, input.toolExecutionRecorder);
+    }
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {

@@ -16,6 +16,10 @@ import { newSessionId } from "../id/id";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import { RunLimitError, type RunModelStore } from "../runtime/runModelStore";
 import type { RecordedRunSpec, RunRecord } from "../runtime/runStore";
+import type {
+  RunToolStore,
+  ToolExecutionRecorder,
+} from "../runtime/runToolStore";
 
 const sessionCreate = vi.hoisted(() => vi.fn());
 const runAgent = vi.hoisted(() => vi.fn());
@@ -94,6 +98,14 @@ function makeModelStore(script?: {
   let record: RunRecord | undefined;
   const calls: string[] = [];
   const store = {
+    initializeToolJournal: async () => {},
+    hasToolJournal: async () => true,
+    startToolOperation: async () => {
+      throw new Error("tool intent write failed");
+    },
+    settleToolOperation: async () => {},
+    markToolOutcomeUnknown: async () => {},
+    listToolOperations: async () => [],
     admit: async (spec: RecordedRunSpec) => {
       if (record) return { created: false, record };
       record = {
@@ -143,7 +155,7 @@ function makeModelStore(script?: {
     listRetries: async () => [],
   };
   return {
-    store: store as unknown as RunModelStore,
+    store: store as unknown as RunModelStore & RunToolStore,
     calls: () => calls,
     current: () => record,
   };
@@ -411,5 +423,59 @@ describe("duplicate admission performs no inference", () => {
     expect(outcome.started).toBe(false);
     expect(runAgent.mock.calls.length).toBe(agentCallsAfterFirst);
     expect(calls().filter((c) => c === "startModelAttempt").length).toBe(1);
+  });
+});
+
+describe("critical tool journal gates", () => {
+  it("blocks the next provider reservation after a discarded tool error", async () => {
+    const { store, calls, current } = makeModelStore();
+    runAgent.mockImplementationOnce(
+      async ({
+        toolExecutionRecorder,
+      }: {
+        toolExecutionRecorder: ToolExecutionRecorder;
+      }) => {
+        await toolExecutionRecorder
+          .beforeExecute({
+            toolCallId: "tc_lost_error",
+            toolName: "http_request",
+            input: { url: "http://127.0.0.1:8080" },
+          })
+          .catch(() => {});
+        await getInferenceRecorder()!.beforeDispatch(makeAttempt());
+        providerCalls.push("must not dispatch");
+        return RUN_RESULT;
+      },
+    );
+    await expect(
+      runRecordedAgent({ spec: baseSpec(tempCwd()), store }),
+    ).rejects.toBeInstanceOf(RunPersistenceError);
+    expect(calls()).not.toContain("startModelAttempt");
+    expect(providerCalls).toEqual([]);
+    expect(current()?.status).toBe("failed");
+  });
+
+  it("cannot report completed when the SDK discarded the final tool error", async () => {
+    const { store, current } = makeModelStore();
+    runAgent.mockImplementationOnce(
+      async ({
+        toolExecutionRecorder,
+      }: {
+        toolExecutionRecorder: ToolExecutionRecorder;
+      }) => {
+        await toolExecutionRecorder
+          .beforeExecute({
+            toolCallId: "tc_final_error",
+            toolName: "http_request",
+            input: { url: "http://127.0.0.1:8080" },
+          })
+          .catch(() => {});
+        return RUN_RESULT;
+      },
+    );
+    await expect(
+      runRecordedAgent({ spec: baseSpec(tempCwd()), store }),
+    ).rejects.toBeInstanceOf(RunPersistenceError);
+    expect(current()?.status).toBe("failed");
   });
 });

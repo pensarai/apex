@@ -1,6 +1,6 @@
 # Recorded local runs
 
-Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
+Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They do not support resume, tool replay, detached execution, or managed workers yet.
 
 This path requires Bun or Node 22.13+. It uses the runtime's built-in SQLite implementation and adds no native package dependency. Existing commands retain their current runtime requirements. Run the commands through `bun src/cli.ts` during development or `pensar` after building/installing.
 
@@ -34,7 +34,7 @@ Create an explicit JSON spec. The working directory must be absolute and already
 bun src/cli.ts agent-runs start --spec run.json
 bun src/cli.ts agent-runs list
 bun src/cli.ts agent-runs show run_local_smoke_01
-bun src/cli.ts agent-runs show run_local_smoke_01 --context --evidence --models
+bun src/cli.ts agent-runs show run_local_smoke_01 --context --evidence --models --tools
 ```
 
 Repeating the same spec returns the existing run without starting another agent. Reusing its ID with changed inputs fails. Use a new ID only when you intend a new execution. This also applies to an admitted run whose process died before it could begin execution.
@@ -79,7 +79,19 @@ The request allowance counts all physical dispatch reservations, including SDK r
 
 Retry records retain the count, maximum, delay, and due time computed by Apex's existing retry loop. Counts belong to that loop or context-restart depth, not a new global retry controller. SDK-internal retries retain their attempt lineage; their internal backoff due time is not exposed and is not fabricated. Restarting this command still returns the saved run without re-executing it or resetting any allowance. A future recovery implementation must honor these records before it can resume.
 
-The database now migrates versions 1 and 2 to version 3 transactionally. Missing model history on older runs means unavailable history, not zero historical usage. Completed status requires the critical inference recorder to drain successfully; persistence errors fail the invocation even when a model callback would otherwise swallow them.
+Schema version 3 introduced model history; upgrades remain transactional. Missing model history on older runs means unavailable history, not zero historical usage. Completed status requires the critical inference recorder to drain successfully; persistence errors fail the invocation even when a model callback would otherwise swallow them.
+
+## Tool outcomes
+
+`--tools` shows whether the run has a tool journal and lists accepted calls in order. Each operation binds its tool-call ID, validated input, execution owner, and context checkpoint. The start record commits before the existing tool executes. A successful settlement commits the exact model-visible output and evidence references before the SDK can use it; retained output under `logs/tool-output` is included in evidence inspection.
+
+- `settled`: the returned output is saved. Repeating the same call ID and input reuses that output without executing again. A returned error remains an observed result, not proof that an external effect was undone.
+- `started`: dispatch was reserved, but no result committed. The tool might still be active, might not have started, or might have already affected the target. This state is not permission to retry.
+- `outcome_unknown`: execution or result conversion threw after intent committed. Its effects remain uncertain; the call is not automatically repeated.
+
+Conflicting inputs for the same call ID fail explicitly. Read-only, external-effect, local-mutation, and shell-dependent classifications are diagnostic; none enables automatic retries in this version. A journal write failure blocks dependent model dispatch and canonical context writes even when the SDK converts the exception into a tool error.
+
+Schema version 4 adds journal enrollment and operation records transactionally. Existing runs remain readable with `journaled: false`; migration does not manufacture missing tool history. These records support inspection and later recovery work. They do not enable resume or restore a lost environment.
 
 ## Smoke checks
 
@@ -89,4 +101,4 @@ The database now migrates versions 1 and 2 to version 3 transactionally. Missing
 4. Change the prompt while keeping the run ID. Confirm an input conflict and no execution.
 5. Start another run with a new ID and kill its process. Inspect the original admitted/running record, then repeat the same command. It must not restart the assessment.
 
-Crash inspection is the guarantee at this stage. Safe recovery requires the later tool-outcome and recovery work.
+Crash inspection is the guarantee at this stage. Safe recovery still requires ownership and reconstruction checks in the next part of this stack.

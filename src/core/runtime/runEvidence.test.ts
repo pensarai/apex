@@ -82,6 +82,7 @@ async function writeSessionLayout(root: string): Promise<void> {
     "tool-results",
     "scratchpad",
     "logs",
+    "logs/tool-output",
     "subagents",
   ]) {
     await mkdir(join(root, dir));
@@ -91,6 +92,10 @@ async function writeSessionLayout(root: string): Promise<void> {
   await writeFile(join(root, "pocs", "poc-1.py"), "print('pwned')");
   await writeFile(join(root, "tasks", "task-1.json"), '{"done": false}');
   await writeFile(join(root, "tool-results", "spill-1.txt"), "spill body");
+  await writeFile(
+    join(root, "logs", "tool-output", "retained-1.txt"),
+    "retained command output",
+  );
   await writeFile(join(root, "plan.md"), "# plan");
   // Non-evidence session files must never be referenced.
   await writeFile(join(root, "messages.json"), "[]");
@@ -113,6 +118,7 @@ describe("collectSessionEvidence", () => {
     expect(refs.map((r) => r.path)).toEqual([
       "findings/f-1.json",
       "informational/note-1.md",
+      "logs/tool-output/retained-1.txt",
       "plan.md",
       "pocs/poc-1.py",
       "tasks/task-1.json",
@@ -124,16 +130,41 @@ describe("collectSessionEvidence", () => {
           ? "finding body"
           : ref.path === "informational/note-1.md"
             ? "note body"
-            : ref.path === "plan.md"
-              ? "# plan"
-              : ref.path === "pocs/poc-1.py"
-                ? "print('pwned')"
-                : ref.path === "tasks/task-1.json"
-                  ? '{"done": false}'
-                  : "spill body";
+            : ref.path === "logs/tool-output/retained-1.txt"
+              ? "retained command output"
+              : ref.path === "plan.md"
+                ? "# plan"
+                : ref.path === "pocs/poc-1.py"
+                  ? "print('pwned')"
+                  : ref.path === "tasks/task-1.json"
+                    ? '{"done": false}'
+                    : "spill body";
       expect(ref.sha256).toBe(sha256(content));
       expect(ref.bytes).toBe(Buffer.byteLength(content));
     }
+  });
+
+  it("checks retained tool output for modification and deletion", async () => {
+    const root = await freshRoot();
+    await mkdir(join(root, "logs", "tool-output"), { recursive: true });
+    const retained = join(root, "logs", "tool-output", "retained-1.txt");
+    await writeFile(retained, "retained command output");
+    const session = sessionAt(root);
+
+    const [ref] = await collectSessionEvidence(session);
+    expect(ref?.path).toBe("logs/tool-output/retained-1.txt");
+
+    await writeFile(retained, "retained command output tampered");
+    const [modified] = await inspectSessionEvidence(session, [ref]);
+    expect(modified).toMatchObject({
+      status: "modified",
+      sha256: sha256("retained command output tampered"),
+      bytes: Buffer.byteLength("retained command output tampered"),
+    });
+
+    await unlink(retained);
+    const [missing] = await inspectSessionEvidence(session, [ref]);
+    expect(missing.status).toBe("missing");
   });
 
   it("returns no references when every evidence location is absent", async () => {

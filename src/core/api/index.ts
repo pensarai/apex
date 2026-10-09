@@ -32,6 +32,12 @@ export type {
   RunModelStore,
 } from "../runtime/runModelStore";
 export type { RecordedRunSpec, RunRecord, RunStore } from "../runtime/runStore";
+export type {
+  RecordedToolInput,
+  RecordedToolOperation,
+  RecordedToolPolicy,
+  RunToolStore,
+} from "../runtime/runToolStore";
 export { openSqliteRunStore } from "../runtime/sqliteRunStore";
 export type {
   AppDetail,

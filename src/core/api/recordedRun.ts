@@ -6,12 +6,18 @@ import {
 } from "../ai";
 import type { CredentialManager } from "../credentials";
 import type { AgentEventBus } from "../eventBus";
+import { composeRecordedExecution } from "../runtime/recordedExecution";
 import { createRunContextRecorder } from "../runtime/runContext";
 import { runDeadline } from "../runtime/runDeadline";
 import { collectSessionEvidence } from "../runtime/runEvidence";
 import { createRunInferenceRecorder } from "../runtime/runInference";
 import type { RunModelStore } from "../runtime/runModelStore";
 import { RecordedRunSpecSchema, type RunRecord } from "../runtime/runStore";
+import type {
+  RunToolStore,
+  ToolExecutionRecorder,
+} from "../runtime/runToolStore";
+import { createRunToolRecorder } from "../runtime/runTools";
 import { create as createSession } from "../session";
 import { type RunAgentResult, runOffensiveSecurityAgent } from "./offesecAgent";
 
@@ -20,7 +26,7 @@ const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
 export type RecordedRunAgentInput = {
   /** Raw (unparsed) run spec — the parsed, normalized form is the only version stored or executed. */
   spec: unknown;
-  store: RunModelStore;
+  store: RunModelStore & RunToolStore;
   authConfig?: AIAuthConfig;
   credentialManager?: CredentialManager;
   eventBus?: AgentEventBus;
@@ -76,6 +82,12 @@ export async function runRecordedAgent(
     executionAttemptId: attemptId,
     store: input.store,
   });
+  let toolRecorder: ToolExecutionRecorder | undefined;
+  const executionRecorder = composeRecordedExecution(
+    inferenceRecorder,
+    () => toolRecorder,
+  );
+  const flushRecorders = executionRecorder.flush;
   try {
     if (abortSignal?.aborted) {
       const record = await input.store.transition(
@@ -121,21 +133,52 @@ export async function runRecordedAgent(
       });
 
       await input.store.transition(runId, attemptId, "running");
+      await input.store.initializeToolJournal(runId, attemptId);
+
+      const collectEvidence = async () => {
+        const files = await collectSessionEvidence(session);
+        const previous = new Map(
+          (await input.store.getEvidence(runId))?.files.map((ref) => [
+            ref.path,
+            ref,
+          ]),
+        );
+        return {
+          rootPath: session.rootPath,
+          // The store merges these into the current inventory. Avoid copying
+          // the entire accumulated inventory into every tool receipt.
+          files: files.filter((ref) => {
+            const known = previous.get(ref.path);
+            return known?.sha256 !== ref.sha256 || known.bytes !== ref.bytes;
+          }),
+        };
+      };
+      toolRecorder = createRunToolRecorder({
+        runId,
+        executionAttemptId: attemptId,
+        store: input.store,
+        collectEvidence,
+      });
 
       const contextRecorder = createRunContextRecorder({
         runId,
         attemptId,
         store: {
           getContext: (id) => input.store.getContext(id),
-          commitContext: async (id, attempt, revision, change) =>
-            input.store.commitContext(id, attempt, revision, change, {
-              rootPath: session.rootPath,
-              files: await collectSessionEvidence(session),
-            }),
+          commitContext: async (id, attempt, revision, change) => {
+            await toolRecorder?.flush();
+            return input.store.commitContext(
+              id,
+              attempt,
+              revision,
+              change,
+              await collectEvidence(),
+            );
+          },
         },
       });
 
-      result = await runWithInferenceRecorder(inferenceRecorder, () =>
+      result = await runWithInferenceRecorder(executionRecorder, () =>
         runOffensiveSecurityAgent({
           session,
           prompt: spec.prompt,
@@ -147,7 +190,8 @@ export async function runRecordedAgent(
           target: spec.target,
           agentCwd: spec.environment.cwd,
           contextRecorder,
-          inferenceRecorder,
+          inferenceRecorder: executionRecorder,
+          toolExecutionRecorder: toolRecorder,
           ...(input.authConfig ? { authConfig: input.authConfig } : {}),
           ...(input.credentialManager
             ? { credentialManager: input.credentialManager }
@@ -156,10 +200,10 @@ export async function runRecordedAgent(
           ...(abortSignal ? { abortSignal } : {}),
         }),
       );
-      await inferenceRecorder.flush();
+      await flushRecorders();
     } catch (error) {
       try {
-        await inferenceRecorder.flush();
+        await flushRecorders();
       } catch (persistenceError) {
         if (error !== persistenceError) {
           error = new AggregateError(

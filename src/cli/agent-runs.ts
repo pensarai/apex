@@ -11,7 +11,7 @@ const HELP = `pensar agent-runs — Record and inspect local agent runs
 Usage:
   pensar agent-runs start --spec <file> [--store <database>]
   pensar agent-runs list [--store <database>]
-  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--store <database>]
+  pensar agent-runs show <runId> [--context] [--evidence] [--models] [--tools] [--store <database>]
 
 The JSON spec supplies a stable runId and explicit model, tools and scope.
 Repeating a runId never starts another execution. Changed inputs are rejected.
@@ -30,6 +30,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
       context: { type: "boolean" },
       evidence: { type: "boolean" },
       models: { type: "boolean" },
+      tools: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -47,7 +48,7 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
     (command === "show" && !runId) ||
     (command === "start" && !values.spec) ||
     (command !== "show" &&
-      (values.context || values.evidence || values.models)) ||
+      (values.context || values.evidence || values.models || values.tools)) ||
     (command !== "start" && values.spec !== undefined)
   ) {
     throw new Error(`Invalid agent-runs arguments.\n${HELP}`);
@@ -72,6 +73,14 @@ export async function runAgentRunsCommand(args: string[]): Promise<void> {
         JSON.stringify(
           {
             ...record,
+            ...(values.tools
+              ? {
+                  tools: {
+                    journaled: await store.hasToolJournal(runId),
+                    operations: await store.listToolOperations(runId),
+                  },
+                }
+              : {}),
             ...(attempts
               ? {
                   models: {
