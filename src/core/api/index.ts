@@ -21,6 +21,32 @@ export {
   DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
 } from "../ai";
 export type {
+  RunCheckpointStore,
+  SessionEvidence,
+} from "../runtime/runCheckpointStore";
+export type { ContextReference, ContextStore } from "../runtime/runContext";
+export type {
+  ApprovalDecision,
+  RecordedApproval,
+  RunControlIntent,
+  RunControlRecord,
+  RunControlStore,
+} from "../runtime/runControlStore";
+export { inspectSessionEvidence } from "../runtime/runEvidence";
+export type {
+  RecordedModelAttempt,
+  RecordedRetry,
+  RunModelStore,
+} from "../runtime/runModelStore";
+export type { RecordedRunSpec, RunRecord, RunStore } from "../runtime/runStore";
+export type {
+  RecordedToolInput,
+  RecordedToolOperation,
+  RecordedToolPolicy,
+  RunToolStore,
+} from "../runtime/runToolStore";
+export { openSqliteRunStore } from "../runtime/sqliteRunStore";
+export type {
   AppDetail,
   ApplicationType,
   AppSummary,
@@ -125,10 +151,27 @@ export {
   searchTargetLogs,
   updateIssue,
 } from "./issues";
-export type { RunAgentResult } from "./offesecAgent";
-export { runOffensiveSecurityAgent } from "./offesecAgent";
+export { serveLocalRunWorker } from "./localWorker";
+export type {
+  OffensiveSecurityAgentClientInput,
+  RunAgentResult,
+} from "./offesecAgent";
+export {
+  createOffensiveSecurityAgentClient,
+  runOffensiveSecurityAgent,
+} from "./offesecAgent";
 export type { PatchingAgentInput, PatchResult } from "./patching";
 export { runPatchingAgent } from "./patching";
+export type {
+  RecordedRunAgentInput,
+  RecordedRunOutcome,
+  ResumeRecordedAgentInput,
+} from "./recordedRun";
+export {
+  RunRecoveryBlockedError,
+  resumeRecordedAgent,
+  runRecordedAgent,
+} from "./recordedRun";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,

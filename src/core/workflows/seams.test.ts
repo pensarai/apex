@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import type { InferenceRecorder } from "../ai";
 import { AttackSurfaceRegistry } from "../findings/attackSurfaceRegistry";
 import { FindingsRegistry } from "../findings/registry";
+import type { RunContextRecorder } from "../runtime/runContext";
+import type { ToolExecutionRecorder } from "../runtime/runToolStore";
 import * as concurrency from "../utils/concurrency";
 import {
   assertDepth,
@@ -10,6 +13,7 @@ import {
   inProcessConcurrencyRunner,
   inProcessSeams,
   noopOrchestrationHooks,
+  resolveItemHooks,
   sharedBrowserSessionProvider,
   WorkflowLimitExceededError,
   withFindingPersistedHook,
@@ -257,4 +261,126 @@ describe("withFindingPersistedHook", () => {
     expect(registry.unregister).toHaveBeenCalledWith(finding);
     expect(registry.groupByRootCause).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("resolveItemHooks recorder scope", () => {
+  const recorder = (): RunContextRecorder => ({
+    checkpoint: vi.fn(),
+    latest: vi.fn(),
+    flush: vi.fn(),
+  });
+
+  it("does not give a child the parent conversation recorder", () => {
+    const parent = recorder();
+    const abortSignal = new AbortController().signal;
+    const child = resolveItemHooks(
+      { contextRecorder: parent, abortSignal },
+      inProcessSeams(),
+      "target",
+      0,
+    );
+    expect(child.contextRecorder).toBeUndefined();
+    expect(child.abortSignal).toBe(abortSignal);
+    expect(parent.checkpoint).not.toHaveBeenCalled();
+  });
+
+  it("uses the host's per-item recorder without sharing sibling journals", async () => {
+    const parent = recorder();
+    const children = [recorder(), recorder()];
+    const seams = inProcessSeams({
+      hooksForItem: (_item, index) => ({ contextRecorder: children[index] }),
+    });
+    const first = resolveItemHooks(
+      { contextRecorder: parent },
+      seams,
+      "one",
+      0,
+    );
+    const second = resolveItemHooks(
+      { contextRecorder: parent },
+      seams,
+      "two",
+      1,
+    );
+    const context = { messages: [], system: null };
+    await first.contextRecorder?.checkpoint(context);
+    expect(first.contextRecorder).toBe(children[0]);
+    expect(second.contextRecorder).toBe(children[1]);
+    expect(children[0]?.checkpoint).toHaveBeenCalledWith(context);
+    expect(children[1]?.checkpoint).not.toHaveBeenCalled();
+    expect(parent.checkpoint).not.toHaveBeenCalled();
+  });
+});
+
+it("requires a child inference binding instead of inheriting the parent's journal", () => {
+  const recorder: InferenceRecorder = {
+    runId: "parent",
+    beforeDispatch: vi.fn(),
+    beforeToolCall: vi.fn(),
+    settle: vi.fn(),
+    retry: vi.fn(),
+    flush: vi.fn(),
+  };
+  expect(
+    resolveItemHooks(
+      { inferenceRecorder: recorder },
+      inProcessSeams(),
+      "child",
+      0,
+    ).inferenceRecorder,
+  ).toBeUndefined();
+  const child = { ...recorder, runId: "child" };
+  const hooks = resolveItemHooks(
+    { inferenceRecorder: recorder },
+    inProcessSeams({ hooksForItem: () => ({ inferenceRecorder: child }) }),
+    "child",
+    0,
+  );
+  expect(hooks.inferenceRecorder).toBe(child);
+});
+
+it("requires a child tool binding instead of inheriting the parent's receipts", async () => {
+  const recorder = (): ToolExecutionRecorder => ({
+    beforeExecute: vi.fn(async () => ({ kind: "execute" as const })),
+    settle: vi.fn(async () => {}),
+    unknown: vi.fn(async () => {}),
+    flush: vi.fn(async () => {}),
+  });
+  const parent = recorder();
+  expect(
+    resolveItemHooks(
+      { toolExecutionRecorder: parent },
+      inProcessSeams(),
+      "child",
+      0,
+    ).toolExecutionRecorder,
+  ).toBeUndefined();
+  const children = [recorder(), recorder()];
+  const seams = inProcessSeams({
+    hooksForItem: (_item, index) => ({
+      toolExecutionRecorder: children[index],
+    }),
+  });
+  const first = resolveItemHooks(
+    { toolExecutionRecorder: parent },
+    seams,
+    "first",
+    0,
+  );
+  const second = resolveItemHooks(
+    { toolExecutionRecorder: parent },
+    seams,
+    "second",
+    1,
+  );
+  expect(first.toolExecutionRecorder).toBe(children[0]);
+  expect(second.toolExecutionRecorder).toBe(children[1]);
+  await first.toolExecutionRecorder?.beforeExecute({
+    toolCallId: "tc_child",
+    toolName: "read_file",
+    input: {},
+  });
+  expect(children[0].beforeExecute).toHaveBeenCalledOnce();
+  expect(children[1].beforeExecute).not.toHaveBeenCalled();
+  expect(parent.beforeExecute).not.toHaveBeenCalled();
 });

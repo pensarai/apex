@@ -64,6 +64,43 @@ function request(cmd: string) {
 }
 
 describe.skipIf(process.platform === "win32")("owned background jobs", () => {
+  it("native start passes configured env and cwd to the local child", async () => {
+    // The remote path inherits ctx.environmentVariables through the
+    // bootstrap command's env; the native child must receive them too.
+    const root = await mkdtemp(join(tmpdir(), "apex-job-native-"));
+    roots.push(root);
+    const ctx = {
+      session: {
+        id: "session-native",
+        rootPath: root,
+        logsPath: join(root, "logs"),
+        scratchpadPath: join(root, "scratch"),
+        findingsPath: join(root, "findings"),
+        pocsPath: join(root, "pocs"),
+      },
+      agentCwd: root,
+      environmentVariables: { APEX_ENV_MARKER: "native-env-marker" },
+    } as unknown as ToolContext;
+    const jobs = resolveWhiteboxJobs(ctx);
+    const record = await jobs.start({
+      command: "printf '%s' \"$APEX_ENV_MARKER\"; printf '\\n%s\\n' \"$(pwd)\"",
+      cwd: root,
+      timeoutSeconds: 20,
+      name: "env-cwd",
+    });
+    stops.push(() => jobs.stop(record.id));
+    expect(record.cwd).toBe(root);
+    const deadline = Date.now() + 5_000;
+    while (
+      (await jobs.poll(record.id))?.status === "running" &&
+      Date.now() < deadline
+    ) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const log = await jobs.read(record.id);
+    expect(log.content).toContain("native-env-marker");
+    expect(log.content).toContain(root);
+  });
   it("routes start/poll/read/stop once each through injected command in caller order, with no native target path", async () => {
     const { jobs, root, calls } = await fixture();
     const record = await jobs.start(

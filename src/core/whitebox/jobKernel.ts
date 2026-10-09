@@ -160,6 +160,8 @@ export function createWhiteboxJobKernel(load: NodeJS.Require) {
     cwd: string;
     timeoutSeconds: number;
     name?: string;
+    /** Extra env for the child (merged over the supervisor's); unset inherits. */
+    env?: Record<string, string>;
   }): WhiteboxJobRecord {
     const id = input.id ?? makeJobId();
     const logsDir = join(input.session.logsPath, "whitebox");
@@ -183,6 +185,7 @@ export function createWhiteboxJobKernel(load: NodeJS.Require) {
       cwd: input.cwd,
       stdio: ["ignore", "pipe", "pipe"],
       detached: !isWin,
+      ...(input.env ? { env: { ...process.env, ...input.env } } : {}),
       ...(isWin ? { windowsVerbatimArguments: true } : {}),
     });
 

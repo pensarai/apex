@@ -2,6 +2,9 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/cli.ts",
+    "src/core/runtime/testfixtures/recoveryChild.ts",
+    "src/core/runtime/testfixtures/localWorkerChild.ts",
+    "src/core/runtime/testfixtures/localWorkerLauncher.ts",
     "loader-demo.tsx",
     "src/core/api/index.ts",
     "src/core/ai/index.ts",

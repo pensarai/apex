@@ -19,6 +19,7 @@ import type {
   AIAuthConfig,
   AIModel,
   CacheMetrics,
+  InferenceRecorder,
   OpenAIReasoningEffort,
   ThinkingEffort,
   UsageRecorder,
@@ -29,6 +30,8 @@ import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry
 import type { FindingsRegistry } from "../../findings/registry";
 import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
+import type { RunContextRecorder } from "../../runtime/runContext";
+import type { ToolExecutionRecorder } from "../../runtime/runToolStore";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolBackends } from "../../tools/backends/types";
@@ -144,6 +147,15 @@ export interface AgentHooks {
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
 
+  /** Records physical model attempts for this agent; never inherited by spawned agents. */
+  inferenceRecorder?: InferenceRecorder;
+
+  /** Recorded-run durable context authority. Unset → no canonical persistence. */
+  contextRecorder?: RunContextRecorder;
+
+  /** Recorded-run tool journal. Unset → tool executes are never wrapped. */
+  toolExecutionRecorder?: ToolExecutionRecorder;
+
   /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
   usageRecorder?: UsageRecorder;
 
@@ -166,7 +178,7 @@ export interface AgentHooks {
   sandbox?: UnifiedSandbox;
 }
 
-export type OffensiveSecurityAgentInput<TResult = void> = {
+export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
   attackSurfaceArtifactsPath?: string;
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;

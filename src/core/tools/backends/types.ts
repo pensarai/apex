@@ -160,7 +160,7 @@ export type CommandEvent =
     };
 
 export interface RunOpts {
-  /** Seconds. Millisecond-style values are normalised down. */
+  /** Seconds; no timeout when omitted. */
   timeoutSeconds?: number;
   /** Extra env for this command only (isolated via `env … bash -lc`). */
   envVars?: Record<string, string>;

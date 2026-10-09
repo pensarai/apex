@@ -21,9 +21,29 @@ export function resolveBackends(ctx: ToolContext): ToolBackends {
 
 const artifactsByContext = new WeakMap<ToolContext, ToolBackends["fs"]>();
 
-/** Classic findings persist host session artifacts even when execution is remote. */
-export function resolveArtifactFs(ctx: ToolContext): ToolBackends["fs"] {
+/**
+ * Classic findings persist host session artifacts even when execution is
+ * remote. The default instance allows unlimited retained text for artifact
+ * writers; pass `maxTextFileBytes` for a fresh, session-scoped instance whose
+ * reads are byte-capped (not memoised alongside the unlimited default).
+ */
+export function resolveArtifactFs(
+  ctx: ToolContext,
+  options: { maxTextFileBytes?: number } = {},
+): ToolBackends["fs"] {
   if (ctx.backends) return ctx.backends.fs;
+  if (options.maxTextFileBytes !== undefined) {
+    return LocalBackends(
+      {
+        ...ctx,
+        sandbox: undefined,
+        agentCwd: ctx.session.rootPath,
+        fileWorkspaceRoot: ctx.session.rootPath,
+      },
+      undefined,
+      { maxTextFileBytes: options.maxTextFileBytes },
+    ).fs;
+  }
   let fs = artifactsByContext.get(ctx);
   if (!fs) {
     fs = LocalBackends(
@@ -71,22 +91,62 @@ export async function appendArtifactSummary(
   return { success: true, error: "", path };
 }
 
-/** Native scripts use argv; remote scripts retain their journalled command bytes. */
-export function resolveScriptRunner(ctx: ToolContext) {
+function posixQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// Safe literal option arguments (flags) pass through unquoted so journalled
+// command bytes stay readable; anything else is single-quoted.
+function posixFlagArg(value: string): string {
+  return /^[-A-Za-z0-9_@+=:,./]+$/.test(value) ? value : posixQuote(value);
+}
+
+/**
+ * Transport for one program invocation: runner, option args, and a final
+ * target path. The final argument is always single-quoted (remote transports
+ * journal these exact command bytes); earlier args pass through unquoted
+ * when they are safe literals.
+ */
+export function resolveProgramRunner(ctx: ToolContext) {
   const command =
     ctx.backends || ctx.sandbox ? resolveBackends(ctx).command : undefined;
-  return (runner: string, scriptPath: string, options?: RunOpts) => {
+  // Injected command backends see only RunOpts, so the agent's configured
+  // environment is merged here with per-call envVars winning. The local and
+  // classic sandbox transports already merge it themselves. Options pass
+  // through untouched when there is nothing to merge.
+  const withConfiguredEnv = (options: RunOpts | undefined) =>
+    ctx.environmentVariables || options?.envVars
+      ? {
+          ...options,
+          envVars: { ...ctx.environmentVariables, ...options?.envVars },
+        }
+      : options;
+  return (runner: string, args: string[], options?: RunOpts) => {
     if (command?.platform === "windows") {
-      const invocation = windowsProgramInvocation(runner, [scriptPath]);
+      const invocation = windowsProgramInvocation(runner, args);
       return command.run(invocation.command, {
         ...options,
-        envVars: { ...options?.envVars, ...invocation.envVars },
+        envVars: {
+          ...ctx.environmentVariables,
+          ...options?.envVars,
+          ...invocation.envVars,
+        },
       });
     }
-    const quotedPath = `'${scriptPath.replace(/'/g, `'\\''`)}'`;
-    const commandText = `${runner} ${quotedPath}`;
+    const commandText = [
+      runner,
+      ...args.slice(0, -1).map(posixFlagArg),
+      posixQuote(args[args.length - 1] ?? ""),
+    ].join(" ");
     return command
-      ? command.run(commandText, options)
-      : runLocalProgram(ctx, commandText, runner, [scriptPath], options);
+      ? command.run(commandText, withConfiguredEnv(options))
+      : runLocalProgram(ctx, commandText, runner, args, options);
   };
+}
+
+/** Native scripts use argv; remote scripts retain their journalled command bytes. */
+export function resolveScriptRunner(ctx: ToolContext) {
+  const runProgram = resolveProgramRunner(ctx);
+  return (runner: string, scriptPath: string, options?: RunOpts) =>
+    runProgram(runner, [scriptPath], options);
 }

@@ -17,6 +17,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+// Direct file import: the barrel "./tools" is mocked below, and this test
+// needs the real registry to exercise its retained-handle retry semantics.
+import { CallbackListenerRegistry } from "./tools/callbackListener";
 
 const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 const streamResponseCalls = vi.hoisted(
@@ -88,6 +91,18 @@ vi.mock("./tools", () => ({
   ],
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
+  // Minimal registry stub: the agent constructs one per instance and
+  // finalization drains it; these tests never start listeners.
+  CallbackListenerRegistry: class {
+    register() {}
+    get() {
+      return undefined;
+    }
+    remove() {}
+    async stopAll() {
+      return [];
+    }
+  },
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
@@ -144,7 +159,9 @@ vi.mock("../../operator", () => ({
 }));
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
+import type { InferenceRecorder } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
+import type { RunContextRecorder } from "../../runtime/runContext";
 import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import {
@@ -431,6 +448,8 @@ function buildStubAgent(overrides: {
   resolveResult?: (sr: unknown) => unknown;
   browserSession?: { disconnect: () => Promise<void> };
   ownsBrowserSession?: boolean;
+  /** Overrides the default listener-registry stub (real registry in the finalization test). */
+  callbackListeners?: unknown;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
@@ -440,6 +459,7 @@ function buildStubAgent(overrides: {
   subagentName?: string;
   agentMode?: "default" | "plan" | "fast-strike";
   streamIdFactory?: (context: unknown) => string;
+  contextRecorder?: RunContextRecorder;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -451,6 +471,11 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "eventBus", { value: bus });
   Object.defineProperty(agent, "streamResult", {
     value: { fullStream: overrides.fullStream },
+  });
+  // Stub bypasses the constructor, so pre-settle the initialization seam —
+  // consume() awaits streamReady before touching the (stubbed) streamResult.
+  Object.defineProperty(agent, "streamInit", {
+    value: Promise.resolve(),
   });
   Object.defineProperty(agent, "subagentId", {
     value: overrides.subagentId,
@@ -491,6 +516,22 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "ownsBrowserSession", {
     value: overrides.ownsBrowserSession ?? false,
   });
+  // The constructor is bypassed, so provide the listener registry that
+  // finalizeRun drains; these tests never start listeners.
+  Object.defineProperty(agent, "callbackListeners", {
+    value:
+      overrides.callbackListeners ??
+      ({
+        register() {},
+        get() {
+          return undefined;
+        },
+        remove() {},
+        async stopAll() {
+          return [];
+        },
+      } as object),
+  });
   Object.defineProperty(agent, "messagesPath", {
     value: overrides.messagesPath ?? null,
   });
@@ -513,6 +554,9 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "streamIdFactory", {
     value: overrides.streamIdFactory,
+  });
+  Object.defineProperty(agent, "contextRecorder", {
+    value: overrides.contextRecorder,
   });
 
   return agent;
@@ -1262,6 +1306,54 @@ describe("OffensiveSecurityAgent.consume()", () => {
       });
 
       await expect(agent.consume()).resolves.toBe("captured");
+    });
+  });
+
+  describe("callback listener finalization (owned-resource drain)", () => {
+    it("consume() drains listeners; one failed stop never blocks another, and abortAndDrain retries", async () => {
+      const registry = new CallbackListenerRegistry();
+      const stopped: string[] = [];
+      registry.register({
+        jobId: "wjob_77777_fail01",
+        nonce: "a".repeat(32),
+        scriptPath: "/a.cjs",
+        bindAddress: "0.0.0.0",
+        port: 1,
+        selfTestConfirmed: false,
+        stop: async () => {
+          throw new Error("stop a failed");
+        },
+      });
+      registry.register({
+        jobId: "wjob_77777_pass01",
+        nonce: "b".repeat(32),
+        scriptPath: "/b.cjs",
+        bindAddress: "0.0.0.0",
+        port: 2,
+        selfTestConfirmed: false,
+        stop: async () => {
+          stopped.push("b");
+          return undefined;
+        },
+      });
+
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], new Error("stream boom")),
+        messagesPath: null,
+        callbackListeners: registry,
+      });
+
+      // The stream error stays primary; listener cleanup still ran.
+      await expect(agent.consume()).rejects.toThrow("stream boom");
+      expect(stopped).toEqual(["b"]);
+      expect(registry.get("wjob_77777_fail01")).toBeDefined();
+      expect(registry.get("wjob_77777_pass01")).toBeUndefined();
+
+      // Host teardown path: best-effort retry, never throws, keeps the
+      // failed owner registered for a later cleanup path.
+      await expect(agent.abortAndDrain()).resolves.toBeUndefined();
+      expect(stopped).toEqual(["b"]);
+      expect(registry.get("wjob_77777_fail01")).toBeDefined();
     });
   });
 
@@ -2436,5 +2528,100 @@ describe("trace identity and root IO", () => {
       await otel.teardown();
       process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
     }
+  });
+});
+
+describe("contextRecorder integration", () => {
+  const streamTextChunk = { type: "text-delta", id: "t1", delta: "hi" };
+  const CANONICAL = [
+    { role: "user", content: "recorded prompt" },
+    { role: "assistant", content: "recorded answer" },
+  ] as never[];
+
+  it("flush failure in finalization fails the run after the stream completed", async () => {
+    // Stream completes normally, but the last step's commit failed and the
+    // recorder latched it — finalizeRun's flush must surface it (the SDK
+    // swallows onStepFinish errors, so nothing else would).
+    const flushError = new Error("latched persistence failure");
+    const recorder: RunContextRecorder = {
+      checkpoint: vi.fn(async () => {}),
+      flush: vi.fn(async () => {
+        throw flushError;
+      }),
+      latest: vi.fn(() => undefined),
+    };
+
+    async function* complete(): AsyncGenerator<unknown, void, undefined> {
+      yield streamTextChunk;
+    }
+    const agent = buildStubAgent({
+      fullStream: complete(),
+      contextRecorder: recorder,
+    });
+
+    await expect(agent.consume()).rejects.toBe(flushError);
+  });
+
+  it("canonical latest drives the projection on steps and finish; no duplicated prefix", async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-recorder-projection-"));
+    streamResponseCalls.length = 0;
+    const recorder: RunContextRecorder = {
+      checkpoint: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+      latest: vi.fn(() => structuredClone(CANONICAL)),
+    };
+    const inferenceRecorder: InferenceRecorder = {
+      runId: "run_recorder_projection",
+      beforeDispatch: vi.fn(async () => {}),
+      beforeToolCall: vi.fn(async () => {}),
+      settle: vi.fn(),
+      retry: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+    };
+    const agent = new OffensiveSecurityAgent({
+      prompt: "recorded prompt",
+      model: "test-model",
+      session: {
+        id: "ses_recorder_projection",
+        rootPath,
+        scratchpadPath: join(rootPath, "scratchpad"),
+      },
+      activeTools: [],
+      contextRecorder: recorder,
+      inferenceRecorder,
+    } as never);
+    void agent.streamResult; // createStream is lazy — force construction
+
+    const streamOpts = streamResponseCalls[0] as {
+      onStepFinish: (event: unknown) => Promise<void>;
+      onFinish: (event: unknown) => Promise<void>;
+    };
+    expect(
+      (streamResponseCalls[0] as { contextRecorder: unknown }).contextRecorder,
+    ).toBe(recorder);
+    expect(streamResponseCalls[0]?.inferenceRecorder).toBe(inferenceRecorder);
+
+    const stepEvent = {
+      response: { id: "resp_1", messages: CANONICAL.slice(1) },
+      usage: {},
+    };
+    await streamOpts.onStepFinish(stepEvent);
+
+    // Writer snapshot equals canonical latest() exactly — the step's
+    // response.messages are already part of the committed context, so the
+    // projection must not re-prepend a base or duplicate them.
+    const writer = agent["writer" as keyof typeof agent] as unknown as {
+      waitForPendingWrites: () => Promise<void>;
+      latest: unknown[] | null;
+    };
+    await writer.waitForPendingWrites().catch(() => {});
+    const captured = writer.latest;
+
+    // onFinish falls back to canonical latest when the writer has nothing.
+    const finishEvent = { response: { messages: [] } };
+    await streamOpts.onFinish(finishEvent);
+
+    expect(recorder.latest).toHaveBeenCalled();
+    expect((captured as unknown[]).length).toBe(CANONICAL.length);
   });
 });

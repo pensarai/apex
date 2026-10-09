@@ -40,8 +40,8 @@ import {
   normalizeStepUsage,
 } from "../../../core/ai";
 import {
+  createOffensiveSecurityAgentClient,
   type RunAgentResult,
-  runOffensiveSecurityAgent,
 } from "../../../core/api";
 import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
 import {
@@ -251,7 +251,9 @@ export default function OperatorDashboard({
 
   // Agent/status state
   const [status, setStatus] = useState<DashboardStatus>("idle");
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const agentClientRef = useRef<ReturnType<
+    typeof createOffensiveSecurityAgentClient
+  > | null>(null);
   const generationRef = useRef(0);
 
   // Two-stage abort: first Ctrl+C cancels the running command, second kills the agent.
@@ -719,9 +721,9 @@ export default function OperatorDashboard({
       const gen = ++generationRef.current;
       displayEvents.finish();
       // Abort any previous run before starting a new one
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
+      if (agentClientRef.current) {
+        agentClientRef.current.abort();
+        agentClientRef.current = null;
       }
 
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
@@ -732,8 +734,8 @@ export default function OperatorDashboard({
       setError(null);
       displayEvents.resetPartialText();
 
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
+      const agentClient = createOffensiveSecurityAgentClient();
+      agentClientRef.current = agentClient;
 
       const prevMessages = conversationRef.current;
 
@@ -869,7 +871,6 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
-        abortSignal: controller.signal,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
@@ -929,7 +930,7 @@ export default function OperatorDashboard({
         );
 
         if (session) {
-          agentResult = await runOffensiveSecurityAgent({
+          agentResult = await agentClient.run({
             ...commonInput,
             system: systemPrompt,
             session,
@@ -957,7 +958,7 @@ export default function OperatorDashboard({
                 ? route.data.initialSkill?.args?.library
                 : undefined),
           };
-          agentResult = await runOffensiveSecurityAgent({
+          agentResult = await agentClient.run({
             ...commonInput,
             system: systemPrompt,
             sessionConfig,
@@ -1053,7 +1054,7 @@ export default function OperatorDashboard({
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
-          abortControllerRef.current = null;
+          agentClientRef.current = null;
 
           // Show plan review after the full response is rendered
           if (planSubmittedRef.current) {
@@ -1452,7 +1453,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   );
 
   const handleAbort = useCallback(() => {
-    if (!abortControllerRef.current) return;
+    if (!agentClientRef.current) return;
 
     const action = resolveAbortAction(commandCancelledRef.current, () =>
       cancelHandleRef.current.cancel(),
@@ -1476,8 +1477,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     generationRef.current++;
     displayEvents.finish();
     const recoveryMessages = displayMessagesRef.current;
-    abortControllerRef.current.abort();
-    abortControllerRef.current = null;
+    agentClientRef.current.abort();
+    agentClientRef.current = null;
     commandCancelledRef.current = false;
 
     // Clear queued messages before setting idle to prevent auto-send
@@ -1726,7 +1727,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     }
 
     // Ctrl+C while questions are pending — abort without resuming the agent.
-    // The abort controller is null at this point (runAgent's finally block
+    // The agent client is null at this point (runAgent's finally block
     // already cleared it), so handleAbort() would early-return. Handle it
     // explicitly: overwrite the sentinel tool-result so the next run doesn't
     // see stale "questions answered" data, then dismiss the form and go idle.

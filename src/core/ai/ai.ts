@@ -1,4 +1,5 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
+import { setTimeout as delay } from "node:timers/promises";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -33,6 +34,10 @@ import {
   type GenerationSpanTracker,
   withModelCallDiagnostics,
 } from "../observability";
+import { RunPersistenceError } from "../runtime/persistenceError";
+import type { RunContextRecorder } from "../runtime/runContext";
+import { RunControlInterruption } from "../runtime/runControlStore";
+import { RunLimitError } from "../runtime/runModelStore";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -49,6 +54,11 @@ import {
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
+import {
+  getInferenceRecorder,
+  type InferenceRecorder,
+  runWithInferenceRecorder,
+} from "./inference-attempt";
 import {
   getClaudeCapabilities,
   getMaxOutputTokens,
@@ -516,6 +526,20 @@ const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Observe the existing depth allowance only for accepted restarts.
+export async function recordContextRestart(
+  depth: number,
+  opts?: Pick<StreamResponseOpts, "inferenceRecorder">,
+): Promise<void> {
+  if (depth > MAX_RESTART_DEPTH) return;
+  await getInferenceRecorder(opts)?.retry({
+    authority: "context-restart",
+    count: depth,
+    maxRetries: MAX_RESTART_DEPTH,
+    delayMs: 0,
+  });
+}
+
 function getStreamIdleTimeoutMs(model: AIModel): number {
   // Pro cannot stream progress while reasoning; wait for its completed response.
   return /^(?:openai\/)?gpt-5\.5-pro(?:-|$)/.test(model)
@@ -757,9 +781,22 @@ function wrapStreamWithErrorHandler(
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
+              // SDK RetryError can wrap a critical failure after a prior provider retry.
+              await getInferenceRecorder(opts)?.flush();
+
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
+
+              // A latched persistence failure is terminal: retrying would
+              // dispatch a turn whose context was never durably committed.
+              if (
+                error instanceof RunPersistenceError ||
+                error instanceof RunLimitError ||
+                error instanceof RunControlInterruption
+              ) {
+                throw error;
+              }
 
               // Handle stream idle timeout — resume from accumulated messages
               if (
@@ -769,6 +806,12 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
+                await getInferenceRecorder(opts)?.retry({
+                  authority: "stream-idle",
+                  count: nextIdleCount,
+                  maxRetries: MAX_IDLE_RESUME_RETRIES,
+                  delayMs: 0,
+                });
                 // Surfaced on silent sub-agents too when stream-debugging.
                 if (!silent || STREAM_DEBUG) {
                   log.warn(
@@ -805,6 +848,13 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
+                const recorder = getInferenceRecorder(opts);
+                await recorder?.retry({
+                  authority: "stream-rate-limit",
+                  count: nextRetryCount,
+                  maxRetries: MAX_RATE_LIMIT_RETRIES,
+                  delayMs,
+                });
 
                 if (!silent) {
                   log.warn(
@@ -812,7 +862,11 @@ function wrapStreamWithErrorHandler(
                   );
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, delayMs));
+                if (recorder) {
+                  await delay(delayMs, undefined, { signal: opts.abortSignal });
+                } else {
+                  await new Promise((resolve) => setTimeout(resolve, delayMs));
+                }
 
                 const retriedStream = streamResponse({
                   ...opts,
@@ -905,6 +959,7 @@ function wrapStreamWithErrorHandler(
                     // forever. Without this, only Layer-3 escalation
                     // increments depth and a drift-driven loop can burn
                     // arbitrarily many failed provider calls.
+                    await recordContextRestart(postReactiveDepth + 1, opts);
                     const retried = streamResponse({
                       ...opts,
                       messages: fitted.messages,
@@ -1038,6 +1093,7 @@ function wrapStreamWithErrorHandler(
                   reset?.finish("completed");
                   if (reset && opts._compaction)
                     opts._compaction.last = reset.link;
+                  await recordContextRestart(postReactiveDepth + 1, opts);
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
@@ -1402,6 +1458,8 @@ export interface StreamResponseOpts {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   /** Provider middleware applied only to this stream's model calls. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Explicit undefined clears an inherited recorder for an unrecorded child. */
+  inferenceRecorder?: InferenceRecorder;
   /** Per-run usage recorder; when set it replaces the global usage callback for this stream. */
   usageRecorder?: UsageRecorder;
   abortSignal?: AbortSignal;
@@ -1435,6 +1493,12 @@ export interface StreamResponseOpts {
   /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
   sessionId?: string;
   /**
+   * Opt-in durable context authority for recorded runs. Turn-0 base and each
+   * step's cumulative context are checkpointed before selection/dispatch;
+   * unset → legacy behavior, no persistence.
+   */
+  contextRecorder?: RunContextRecorder;
+  /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
@@ -1458,11 +1522,16 @@ type InternalStreamResponseOpts = StreamResponseOpts & {
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
-  const recovery = (opts as InternalStreamResponseOpts)[NATIVE_STREAM_RECOVERY];
-  if (recovery) {
-    return recovery.run(() => streamResponseWithinOperation(opts, recovery));
-  }
-  return streamResponseWithinOperation(opts);
+  opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
+  return runWithInferenceRecorder(opts.inferenceRecorder, () => {
+    const recovery = (opts as InternalStreamResponseOpts)[
+      NATIVE_STREAM_RECOVERY
+    ];
+    if (recovery) {
+      return recovery.run(() => streamResponseWithinOperation(opts, recovery));
+    }
+    return streamResponseWithinOperation(opts);
+  });
 }
 
 function streamResponseWithinOperation(
@@ -1512,7 +1581,13 @@ function streamResponseWithinOperation(
     thinkingEffort,
     openAIReasoningEffort,
     sessionId,
+    contextRecorder,
   } = opts;
+
+  // Recorded-run base, captured once at the first prepareStep of this
+  // streamText call; only used to reconstruct cumulative prefixes in
+  // onStepFinish (response.messages excludes the input base).
+  let recorderBase: ModelMessage[] | undefined;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1521,6 +1596,25 @@ function streamResponseWithinOperation(
   // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     const stepUsage = normalizeStepUsage(step);
+    // Canonical commit precedes every downstream use; the recorder latches
+    // rejections (SDK notify() swallows them) until the next turn gate or
+    // agent-side flush turns the latch into a stream failure.
+    // Synthetic summarization/tool-repair events re-report context that
+    // already includes the base (messagesContainer.current) — committing
+    // them would duplicate the prefix.
+    if (
+      contextRecorder &&
+      step.response.id !== "summarization" &&
+      step.response.id !== "tool-repair"
+    ) {
+      if (!recorderBase) {
+        throw new Error("context recorder active without a committed base");
+      }
+      await contextRecorder.checkpoint({
+        messages: [...recorderBase, ...step.response.messages],
+        system: effectiveSystem ?? null,
+      });
+    }
     if (
       onCacheMetrics &&
       (stepUsage.cacheReadTokens > 0 || stepUsage.cacheWriteTokens > 0)
@@ -1721,7 +1815,22 @@ function streamResponseWithinOperation(
         authConfig?.customProviders,
         authConfig?.hoonifyModels,
       ),
-      prepareStep: (opts) => {
+      // Awaiting inside prepareStep keeps streamResponse synchronous; the
+      // SDK awaits it before provider dispatch, so every turn and every
+      // recovery re-entry commits before use.
+      prepareStep: async (opts) => {
+        if (contextRecorder) {
+          if (recorderBase === undefined) {
+            recorderBase = structuredClone(opts.messages);
+          }
+          // Full logical context each turn — accepted step outputs must
+          // survive into every later commit, and system is explicit (when
+          // cached into messages, effectiveSystem is undefined → null).
+          await contextRecorder.checkpoint({
+            messages: opts.messages,
+            system: effectiveSystem ?? null,
+          });
+        }
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
         // Mark the last message so the growing conversation caches incrementally
@@ -1746,9 +1855,16 @@ function streamResponseWithinOperation(
           errorMessage.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
+          if (getInferenceRecorder(opts)) {
+            // This SDK callback must not throw, including when cancellation ends its wait.
+            await delay(1000 * rateLimitRetryCount, undefined, {
+              signal: abortSignal,
+            }).catch(() => {});
+          } else {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1000 * rateLimitRetryCount),
+            );
+          }
         }
       },
       onStepFinish,
@@ -2025,6 +2141,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   /** Provider middleware applied only to this call's model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Explicit undefined clears an inherited recorder for an unrecorded child. */
+  inferenceRecorder?: InferenceRecorder;
   /** Per-run usage recorder; when set it replaces the global usage callback. */
   usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
@@ -2036,6 +2154,15 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
 
 export async function generateObjectResponse<T extends z.ZodType>(
+  opts: GenerateObjectOpts<T>,
+): Promise<z.infer<T>> {
+  opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
+  return runWithInferenceRecorder(opts.inferenceRecorder, () =>
+    generateObjectResponseWithinRecorder(opts),
+  );
+}
+
+async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>,
 ): Promise<z.infer<T>> {
   const {
@@ -2136,6 +2263,16 @@ export async function generateObjectResponse<T extends z.ZodType>(
           // from the schema generic for callers.
           return output as z.infer<T>;
         } catch (error) {
+          // Surface latched persistence/limit failures before any retry
+          // classification — they are terminal, never delayed or retried.
+          await getInferenceRecorder(opts)?.flush();
+          if (
+            error instanceof RunPersistenceError ||
+            error instanceof RunLimitError ||
+            error instanceof RunControlInterruption
+          ) {
+            throw error;
+          }
           lastError = error;
 
           if (checkIfContextLengthError(error)) {
@@ -2150,7 +2287,18 @@ export async function generateObjectResponse<T extends z.ZodType>(
             attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
           ) {
             const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            const recorder = getInferenceRecorder(opts);
+            await recorder?.retry({
+              authority: "object-rate-limit",
+              count: attempt + 1,
+              maxRetries: MAX_OBJECT_RATE_LIMIT_RETRIES,
+              delayMs,
+            });
+            if (recorder) {
+              await delay(delayMs, undefined, { signal: abortSignal });
+            } else {
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
             continue;
           }
 

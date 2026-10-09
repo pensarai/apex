@@ -526,6 +526,8 @@ export interface CreateInputProps {
   name?: string;
   prefix?: string;
   config?: SessionConfig;
+  /** Recorded runs bind configuration at admission instead of inheriting ambient settings. */
+  inheritEnvironmentConfig?: boolean;
   /** AI model for session name generation (optional). */
   model?: AIModel;
   /** Auth config for the AI provider (optional). */
@@ -571,13 +573,18 @@ export async function create(input: CreateInputProps) {
     }
   }
 
-  const smtpConfig = resolveSmtpConfig(normalizedConfig?.smtpConfig);
+  const smtpConfig =
+    input.inheritEnvironmentConfig === false
+      ? normalizedConfig?.smtpConfig
+      : resolveSmtpConfig(normalizedConfig?.smtpConfig);
 
   // Caller `headers` wins verbatim; otherwise snapshot the current global
   // defaultHeaders so the session is locked at create time.
   let snapshotHeaders: Record<string, string>;
   if (normalizedConfig?.headers !== undefined) {
     snapshotHeaders = { ...normalizedConfig.headers };
+  } else if (input.inheritEnvironmentConfig === false) {
+    snapshotHeaders = {};
   } else {
     const { config: appConfig } = await import("../config");
     const cfg = await appConfig.get();

@@ -24,7 +24,7 @@ import type { ToolContext } from "./types";
 
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
 
-/** Deadline applied when the model omits `timeout`. */
+/** Deadline applied when the model omits every timeout spelling. */
 export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
 export const MAX_COMMAND_TIMEOUT_SECONDS = 600;
 
@@ -59,6 +59,36 @@ export function validateExecuteCommandTimeout(
     };
   }
   return { ok: true, seconds: timeout };
+}
+
+export type ExecuteCommandTimeoutInputResolution =
+  | { ok: true; seconds: number | undefined }
+  | { ok: false; error: string };
+
+/**
+ * `timeoutSeconds` (canonical) and `timeout` (legacy) are one seconds field.
+ * Null is inactive — strict-mode models emit it for unset fields — and the
+ * default applies only after alias resolution. Equal aliases pass; a
+ * disagreement is rejected, never guessed or clamped.
+ */
+export function resolveExecuteCommandTimeoutInput(input: {
+  timeoutSeconds?: number | null;
+  timeout?: number | null;
+}): ExecuteCommandTimeoutInputResolution {
+  const canonical =
+    typeof input.timeoutSeconds === "number" ? input.timeoutSeconds : undefined;
+  const legacy = typeof input.timeout === "number" ? input.timeout : undefined;
+  if (
+    canonical !== undefined &&
+    legacy !== undefined &&
+    !Object.is(canonical, legacy)
+  ) {
+    return {
+      ok: false,
+      error: `Conflicting timeout values: timeoutSeconds=${canonical} and timeout=${legacy} — both are seconds; pass matching values or a single field`,
+    };
+  }
+  return { ok: true, seconds: canonical ?? legacy };
 }
 
 /**
@@ -105,11 +135,19 @@ const executeCommandInputSchema = z.object({
     .describe(
       "Optional runtime prompt-injection file pointer. Omit this entirely unless you are running a prompt-injection harness with a payload id from list_prompt_injections. When set, the tool resolves the id to a local payload file path and exposes that path through envVar. The raw payload text is never inserted into the command.",
     ),
-  timeout: z
+  timeoutSeconds: z
     .number()
+    .nullable()
     .optional()
     .describe(
-      `Timeout in seconds (maximum ${MAX_COMMAND_TIMEOUT_SECONDS}; over-max and non-positive values are rejected, not clamped). If omitted, defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds.`,
+      `Timeout in seconds (maximum ${MAX_COMMAND_TIMEOUT_SECONDS}; over-max and non-positive values are rejected, not clamped). Defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds when unset or null.`,
+    ),
+  timeout: z
+    .number()
+    .nullable()
+    .optional()
+    .describe(
+      "Legacy alias for timeoutSeconds — same seconds value. Prefer timeoutSeconds; if both are set they must match.",
     ),
   allow_unprotected: z
     .boolean()
@@ -302,8 +340,8 @@ SSL/TLS TESTING:
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
 - Use timeout command for long-running scans
-- The tool's timeout parameter is in SECONDS (default ${DEFAULT_COMMAND_TIMEOUT_SECONDS}, maximum ${MAX_COMMAND_TIMEOUT_SECONDS})
-- Good timeout examples: 30, 60, 120
+- The tool's timeoutSeconds parameter is in SECONDS (default ${DEFAULT_COMMAND_TIMEOUT_SECONDS}, maximum ${MAX_COMMAND_TIMEOUT_SECONDS}); the legacy timeout field takes the same value
+- Good timeoutSeconds examples: 30, 60, 120
 - Values over ${MAX_COMMAND_TIMEOUT_SECONDS} (including millisecond-style values like 30000) are REJECTED, not reinterpreted
 - Each stream captures up to 1 MiB in memory; a verbose process is never
   killed for output volume — capture keeps draining and reports truncation
@@ -312,9 +350,9 @@ OUTPUT HANDLING:
   and read targeted windows of it: with read_file/grep locally, or — when the
   command ran in the sandbox, where those files live inside the sandbox — via
   bounded execute_command reads like \`sed -n '1,200p' scratchpad/scan.txt\`.
-- If the tool's timeout is hit, the partial stdout the command had already
+- If timeoutSeconds is hit, the partial stdout the command had already
   produced is still returned (with exit code 124). It is safe to set a
-  conservative timeout: you will not lose the bytes a fuzzer printed
+  conservative timeoutSeconds: you will not lose the bytes a fuzzer printed
   before the kill.
 
 LONG-RUNNING FUZZERS AND SCANNERS:
@@ -322,20 +360,20 @@ LONG-RUNNING FUZZERS AND SCANNERS:
 Wordlist fuzzers (ffuf, gobuster, dirb, wfuzz, dirsearch) and large nmap
 scans against slow targets routinely take longer than a single tool call
 should. ALWAYS bound them with their OWN internal time budget, set BELOW
-the tool's timeout, so the tool exits cleanly with full output and you
-don't have to rely on signal-based truncation.
+the tool's timeoutSeconds, so the tool exits cleanly with full output and
+you don't have to rely on signal-based truncation.
 
 General rule: set the inner tool's runtime cap at least 5s below the
-execute_command timeout, so the tool exits gracefully and flushes its
-results to disk before any signal arrives.
+execute_command timeoutSeconds, so the tool exits gracefully and flushes
+its results to disk before any signal arrives.
 
 - ffuf: pair with -maxtime <seconds> and a sane -rate.
   Example: ffuf -u <url>/FUZZ -w <wordlist> -maxtime 55 -rate 50
-  with the tool's timeout=60.
+  with the tool's timeoutSeconds=60.
 - gobuster: has no -maxtime flag. Wrap with the \`timeout\` coreutils
   command and tune --timeout / --threads.
   Example: timeout 55 gobuster dir -u <url> -w <wordlist> --timeout 5s --threads 20
-  with the tool's timeout=60.
+  with the tool's timeoutSeconds=60.
 - nmap: prefer --host-timeout, --max-rtt-timeout, and -T4 / --min-rate
   to bound total runtime against slow networks.
 
@@ -353,6 +391,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     execute: async ({
       command,
       promptInjection,
+      timeoutSeconds,
       timeout,
       allow_unprotected,
     }): Promise<ExecuteCommandResult> => {
@@ -366,11 +405,25 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      // Fail loud on invalid explicit timeouts — silently dropping or
-      // clamping them would reinterpret the caller's deadline.
+      // Fail loud on alias conflicts and invalid explicit timeouts — silently
+      // dropping, guessing, or clamping them would reinterpret the caller's
+      // deadline. Aliases resolve before the default applies.
       let effectiveTimeout = DEFAULT_COMMAND_TIMEOUT_SECONDS;
-      if (timeout !== undefined) {
-        const validated = validateExecuteCommandTimeout(timeout);
+      const resolvedInput = resolveExecuteCommandTimeoutInput({
+        timeoutSeconds,
+        timeout,
+      });
+      if (!resolvedInput.ok) {
+        return {
+          success: false,
+          error: resolvedInput.error,
+          stdout: "",
+          stderr: resolvedInput.error,
+          command,
+        };
+      }
+      if (resolvedInput.seconds !== undefined) {
+        const validated = validateExecuteCommandTimeout(resolvedInput.seconds);
         if (!validated.ok) {
           return {
             success: false,
@@ -400,18 +453,27 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       // Inject session headers into the shell command. Fail closed for
       // unknown tools / pipelines so configured headers aren't silently
-      // dropped — agent can opt out with `allow_unprotected`.
+      // dropped — agent can opt out with `allow_unprotected`. The literal
+      // `2>&1` recognition is POSIX-shell-only, so the selected backend's
+      // declared platform decides whether it applies.
+      const backends = resolveBackends(ctx);
       const cmdHosts = extractHostsFromCommand(command);
       const inject = applyHeadersToShellCommand(
         command,
         resolverSessionFromCtx(ctx),
         cmdHosts,
+        backends.command.platform,
       );
       if (inject.status === "unknown-tool" && !allow_unprotected) {
+        const redirectGuidance =
+          backends.command.platform === "windows"
+            ? "on Windows command shells `2>&1` redirection is not supported for header injection — remove the redirect or use the http_request tool. "
+            : "the `2>&1` form requires fully literal arguments: expansions, escapes, concatenated words, and braces/brackets are forbidden — double quotes do not neutralize `$` or backslashes, and curl globs `{…}`/`[…]` URLs even when quoted. Remove the redirect or use the http_request tool. ";
         const msg =
-          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
-          "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
-          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined or chained. " +
+          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host. " +
+          redirectGuidance +
+          "Otherwise pass allow_unprotected: true to acknowledge headers will NOT be sent.";
         return {
           success: false,
           error: msg,
@@ -485,7 +547,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         let captured: Awaited<ReturnType<typeof collectCommand>>;
         try {
           captured = await collectCommand(
-            resolveBackends(ctx).command.run(commandWithHeaders, {
+            backends.command.run(commandWithHeaders, {
               timeoutSeconds: effectiveTimeout,
               envVars: promptInjectionEnvVars,
               abortSignal: ctx.abortSignal,

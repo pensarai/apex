@@ -30,13 +30,28 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
-export type { InferenceAttempt } from "./inference-attempt";
+export type {
+  InferenceAttempt,
+  InferenceRecorder,
+  ModelRetryDecision,
+  ObservedModelToolCall,
+} from "./inference-attempt";
+export {
+  getInferenceRecorder,
+  InferenceAttemptSchema,
+  parseInferenceAttempt,
+  runWithInferenceRecorder,
+} from "./inference-attempt";
 export {
   addRecentModelId,
   getRecentModels,
   MAX_RECENT_MODELS,
 } from "./model-history";
-export { AVAILABLE_MODELS, getModelInfo } from "./models";
+export {
+  AVAILABLE_MODELS,
+  getClaudeCapabilities,
+  getModelInfo,
+} from "./models";
 export type {
   CreateNativeRolloutEvidenceCaptureInput,
   NativeRolloutCaptureLimits,

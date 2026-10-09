@@ -4,6 +4,7 @@ export {
   type WhiteboxScanAdapter,
 } from "./adapters";
 export {
+  readTextPrefix,
   readWhiteboxArtifact,
   writeWhiteboxArtifact,
 } from "./artifacts";

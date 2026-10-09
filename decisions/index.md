@@ -28,6 +28,13 @@ Apex serves three audiences:
 | [PDR-006](./PDR-006-public-api.md)                | Public API layer separate from the TUI                                       |
 | [PDR-007](./PDR-007-multi-provider.md)            | Multi-provider AI model support                                              |
 | [PDR-008](./PDR-008-provider-attempt-envelope.md) | Inference telemetry is a physical-attempt contract, not a billing ledger     |
+| [PDR-009](./PDR-009-recorded-run-admission.md)    | Opt-in transactional run admission before local execution                    |
+| [PDR-010](./PDR-010-recorded-context.md)          | Commit canonical context and evidence references before selecting them       |
+| [PDR-011](./PDR-011-recorded-inference.md)        | Record physical inference attempts and enforce request limits                |
+| [PDR-012](./PDR-012-recorded-tool-outcomes.md)    | Commit accepted tool intent and model-visible results before use             |
+| [PDR-013](PDR-013-durable-run-controls.md)        | Persist recorded-run control and approvals                                   |
+| [PDR-014](./PDR-014-local-recorded-recovery.md)   | Explicit recovery of recorded local runs                                     |
+| [PDR-015](./PDR-015-local-run-workers.md)         | Optional independent local run workers                                       |
 
 ---
 

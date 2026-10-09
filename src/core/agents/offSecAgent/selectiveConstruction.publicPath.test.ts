@@ -173,16 +173,22 @@ describe("OffensiveSecurityAgent public-path construction counts", () => {
     });
   });
 
-  it("fast-strike full path constructs exactly the gated catalog: 40", async () => {
+  it("fast-strike full path constructs exactly the gated catalog: 43", async () => {
     await withRoot(async (root) => {
       reset();
       observed.armed = true;
       makeAgent(root, [], { mode: "fast-strike" });
       observed.armed = false;
       const tools = stream().tools;
-      expect(observed.constructed).toBe(40);
-      expect(Object.keys(tools)).toHaveLength(40);
+      expect(observed.constructed).toBe(43);
+      expect(Object.keys(tools)).toHaveLength(43);
       expect(tools).toHaveProperty("checkpoint_state");
+      // Callback helper tools are fast-strike-available (the whitebox job
+      // tools they wrap are not).
+      expect(tools).toHaveProperty("start_callback_listener");
+      expect(tools).toHaveProperty("poll_callback_listener");
+      expect(tools).toHaveProperty("stop_callback_listener");
+      expect(tools).not.toHaveProperty("start_whitebox_job");
       expect(tools).not.toHaveProperty("list_workspace_domains");
       expect(tools).not.toHaveProperty("send_email");
       // Real Zod schema on a constructed member, not a stub.

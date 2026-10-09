@@ -1,5 +1,7 @@
 import type { LanguageModelMiddleware, ToolSet } from "ai";
-import type { UsageRecorder } from "../ai";
+import type { InferenceRecorder, UsageRecorder } from "../ai";
+import type { RunContextRecorder } from "../runtime/runContext";
+import type { ToolExecutionRecorder } from "../runtime/runToolStore";
 import type { ToolBackends } from "../tools/backends/types";
 import type { AgentDefinition } from "./defineAgent";
 import {
@@ -27,6 +29,9 @@ export interface RequiredAgentHooks {
     | LanguageModelMiddleware
     | LanguageModelMiddleware[]
     | undefined;
+  inferenceRecorder: InferenceRecorder | undefined;
+  contextRecorder: RunContextRecorder | undefined;
+  toolExecutionRecorder: ToolExecutionRecorder | undefined;
   usageRecorder: UsageRecorder | undefined;
   streamIdFactory: StreamIdFactory | undefined;
   smsInbox: SmsInbox | undefined;
@@ -49,6 +54,9 @@ export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
     backends: opts.backends,
     subagentSpawner: opts.subagentSpawner,
     languageModelMiddleware: opts.languageModelMiddleware,
+    inferenceRecorder: opts.inferenceRecorder,
+    contextRecorder: opts.contextRecorder,
+    toolExecutionRecorder: opts.toolExecutionRecorder,
     usageRecorder: opts.usageRecorder,
     streamIdFactory: opts.streamIdFactory,
     smsInbox: opts.smsInbox,

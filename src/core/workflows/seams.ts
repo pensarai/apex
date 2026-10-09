@@ -229,7 +229,7 @@ export interface WorkflowSeams {
   /**
    * Per-item {@link AgentHooks} override for one item in a workflow's fan-out
    * (e.g. an endpoint's dedicated lease/backends, its own politeness budget).
-   * Unset → every item runs under the workflow's shared hooks unchanged.
+   * Recorders are agent-scoped: provide them here rather than sharing a parent journal.
    */
   hooksForItem?<TItem = unknown>(
     item: TItem,
@@ -259,16 +259,18 @@ export function inProcessSeams(
   };
 }
 
-/**
- * Merges a workflow's shared {@link AgentHooks} with `seams.hooksForItem`'s
- * per-item override, so every agent a fan-out constructs gets the caller's
- * hooks object unless a durable host swaps one field in for this item.
- */
+/** Inherits shared hooks while requiring an explicit recorder for each child. */
 export function resolveItemHooks<TItem>(
   hooks: AgentHooks | undefined,
   seams: WorkflowSeams,
   item: TItem,
   index: number,
 ): AgentHooks {
-  return { ...hooks, ...seams.hooksForItem?.(item, index) };
+  return {
+    ...hooks,
+    contextRecorder: undefined,
+    inferenceRecorder: undefined,
+    toolExecutionRecorder: undefined,
+    ...seams.hooksForItem?.(item, index),
+  };
 }
