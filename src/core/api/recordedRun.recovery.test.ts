@@ -333,6 +333,20 @@ describe("recovery through the public API", () => {
     const preContext = await store.getContext("run_settled_crash");
     expect(preContext).toBeDefined();
 
+    await expect(
+      resumeRecordedAgent({
+        runId: "run_settled_crash",
+        store,
+        expectedAttemptId: "exec_00000000-0000-0000-0000-000000000000",
+      }),
+    ).rejects.toThrow("Recovery attempt changed");
+    expect(await store.get("run_settled_crash")).toEqual(preRecord);
+    expect(await store.listRecoveries("run_settled_crash")).toEqual([]);
+    expect(await store.listModelAttempts("run_settled_crash")).toEqual(
+      preAttempts,
+    );
+    expect(targetHits).toBe(hitsAfterCrash);
+
     // The resumed agent consumes the reconstructed exchange — the saved
     // receipt is in its messages; no HTTP re-execution. It exercises the
     // real inference recorder (reservation + settlement) and recomposes the

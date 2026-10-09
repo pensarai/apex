@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runRecordedAgent = vi.hoisted(() => vi.fn());
+const serveLocalRunWorker = vi.hoisted(() => vi.fn());
+const launchLocalWorker = vi.hoisted(() => vi.fn());
+const resolveWorkerExecutable = vi.hoisted(() => vi.fn());
+const workerRequest = vi.hoisted(() => vi.fn());
 const resumeRecordedAgent = vi.hoisted(() => vi.fn());
 const inspectSessionEvidence = vi.hoisted(() => vi.fn());
 const openSqliteRunStore = vi.hoisted(() => vi.fn());
@@ -21,11 +25,32 @@ vi.mock("../core/api", () => {
     runRecordedAgent,
     resumeRecordedAgent,
     inspectSessionEvidence,
+    serveLocalRunWorker,
     RunRecoveryBlockedError,
   };
 });
 const { RunRecoveryBlockedError } = await import("../core/api");
 vi.mock("../core/runtime/sqliteRunStore", () => ({ openSqliteRunStore }));
+vi.mock("../core/runtime/launchLocalWorker", () => ({
+  launchLocalWorker,
+  resolveWorkerExecutable,
+}));
+vi.mock("../core/runtime/localWorkerTransport", () => ({
+  workerRequest,
+  LocalWorkerTransportError: class LocalWorkerTransportError extends Error {
+    readonly code?: string;
+    readonly uncertain: boolean;
+    constructor(
+      message: string,
+      options: { code?: string; uncertain?: boolean } = {},
+    ) {
+      super(message);
+      this.name = "LocalWorkerTransportError";
+      this.code = options.code;
+      this.uncertain = options.uncertain ?? false;
+    }
+  },
+}));
 vi.mock("../core/config", () => ({ config: { get: configGet } }));
 vi.mock("../core/ai", () => ({ buildAuthConfig }));
 
@@ -114,6 +139,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   log.mockRestore();
   stderrWrite.mockRestore();
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
@@ -792,5 +818,355 @@ describe("resume", () => {
 
     expect(resumeRecordedAgent).not.toHaveBeenCalled();
     expect(store.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("worker route (hidden)", () => {
+  it("serves the worker for --run and an absolute --store", async () => {
+    serveLocalRunWorker.mockResolvedValue(undefined);
+
+    await runAgentRunsCommand([
+      "worker",
+      "--run",
+      "run-1",
+      "--store",
+      "/tmp/abs/runs.sqlite",
+    ]);
+
+    expect(serveLocalRunWorker).toHaveBeenCalledWith({
+      runId: "run-1",
+      databasePath: "/tmp/abs/runs.sqlite",
+    });
+    expect(openSqliteRunStore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [["worker"]],
+    [["worker", "--run", "run-1"]],
+    [["worker", "--store", "/tmp/abs/runs.sqlite"]],
+    [["worker", "--run", "run-1", "--store", "/tmp/abs", "extra"]],
+  ])("rejects %j without opening a store or spawning", async (args) => {
+    await expect(runAgentRunsCommand(args)).rejects.toThrow(
+      /agent-runs worker requires/,
+    );
+    expect(openSqliteRunStore).not.toHaveBeenCalled();
+    expect(serveLocalRunWorker).not.toHaveBeenCalled();
+  });
+});
+
+describe("start --detach", () => {
+  const SPEC = {
+    schemaVersion: 1,
+    configVersion: 1,
+    runId: "run_detach",
+    model: "claude-sonnet-4-6",
+    prompt: "test the target",
+    target: "https://example.com",
+    activeTools: ["read_file"],
+    environment: { kind: "local", cwd: "/tmp/target" },
+    scope: { version: 1, strictScope: true },
+  };
+
+  it("launches a worker and dispatches the normalized start spec", async () => {
+    launchLocalWorker.mockResolvedValue({
+      socketPath: "/tmp/w/run_detach.sock",
+      logPath: "/tmp/w/run_detach.log",
+    });
+    resolveWorkerExecutable.mockReturnValue({ command: "pensar" });
+    workerRequest.mockResolvedValue({ phase: "executing" });
+
+    await runAgentRunsCommand([
+      "start",
+      "--spec",
+      specFile(SPEC),
+      "--detach",
+      "--store",
+      "/tmp/abs/runs.sqlite",
+    ]);
+
+    expect(launchLocalWorker).toHaveBeenCalledWith({
+      runId: "run_detach",
+      databasePath: "/tmp/abs/runs.sqlite",
+      executable: { command: "pensar" },
+    });
+    expect(workerRequest).toHaveBeenCalledTimes(1);
+    const [socketPath, request] = workerRequest.mock.calls[0];
+    expect(socketPath).toBe("/tmp/w/run_detach.sock");
+    expect(request.method).toBe("start");
+    expect(request.protocolVersion).toBe(1);
+    expect(request.spec).toEqual({
+      ...SPEC,
+      schemaVersion: 1,
+      configVersion: 1,
+      credentialRefs: [],
+      scope: {
+        ...SPEC.scope,
+        allowedHosts: [],
+        allowedPorts: [],
+        allowDestructiveActions: false,
+        allowRateLimitTesting: false,
+      },
+    });
+    const parsed = JSON.parse(output());
+    expect(parsed.detached).toBe(true);
+    expect(parsed.socketPath).toBe("/tmp/w/run_detach.sock");
+    expect(parsed.logPath).toBe("/tmp/w/run_detach.log");
+    expect(parsed.snapshot.phase).toBe("executing");
+    // No in-process execution path was taken.
+    expect(runRecordedAgent).not.toHaveBeenCalled();
+  });
+
+  it("propagates launcher failures without dispatching", async () => {
+    launchLocalWorker.mockRejectedValue(
+      new Error("Worker for run_detach did not become ready within 15ms"),
+    );
+
+    await expect(
+      runAgentRunsCommand(["start", "--spec", specFile(SPEC), "--detach"]),
+    ).rejects.toThrow(/did not become ready/);
+    expect(workerRequest).not.toHaveBeenCalled();
+  });
+
+  it("does not retry a lost start acknowledgement", async () => {
+    launchLocalWorker.mockResolvedValue({
+      socketPath: "/tmp/w/run_detach.sock",
+      logPath: "/tmp/w/run_detach.log",
+    });
+    workerRequest.mockRejectedValue(
+      Object.assign(new Error("request outcome uncertain"), {
+        uncertain: true,
+      }),
+    );
+
+    await expect(
+      runAgentRunsCommand(["start", "--spec", specFile(SPEC), "--detach"]),
+    ).rejects.toThrow("request outcome uncertain");
+    expect(workerRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resume --detach", () => {
+  it("launches a worker and dispatches resume with the saved attempt id", async () => {
+    store.get.mockResolvedValue({
+      runId: "run-1",
+      attemptId: "exec_00000000-0000-4000-8000-000000000001",
+      status: "paused",
+    });
+    launchLocalWorker.mockResolvedValue({
+      socketPath: "/tmp/w/run-1.sock",
+      logPath: "/tmp/w/run-1.log",
+    });
+    resolveWorkerExecutable.mockReturnValue({ command: "pensar" });
+    workerRequest.mockResolvedValue({ phase: "executing" });
+
+    await runAgentRunsCommand(["resume", "run-1", "--detach"]);
+
+    expect(launchLocalWorker).toHaveBeenCalledWith({
+      runId: "run-1",
+      databasePath: expect.any(String),
+      executable: { command: "pensar" },
+    });
+    const [socketPath, request] = workerRequest.mock.calls[0];
+    expect(socketPath).toBe("/tmp/w/run-1.sock");
+    expect(request).toEqual({
+      protocolVersion: 1,
+      method: "resume",
+      expectedAttemptId: "exec_00000000-0000-4000-8000-000000000001",
+    });
+    expect(JSON.parse(output()).detached).toBe(true);
+    expect(resumeRecordedAgent).not.toHaveBeenCalled();
+  });
+
+  it("errors for an unknown run before launching anything", async () => {
+    store.get.mockResolvedValue(null);
+
+    await expect(
+      runAgentRunsCommand(["resume", "run-404", "--detach"]),
+    ).rejects.toThrow("Run not found: run-404");
+    expect(launchLocalWorker).not.toHaveBeenCalled();
+    expect(workerRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("detach argument validation", () => {
+  it.each([
+    [["list", "--detach"]],
+    [["show", "run-1", "--detach"]],
+    [["pause", "run-1", "--detach"]],
+    [["stop", "run-1", "--detach"]],
+    [["approve", "run-1", "--approval", "ap-1", "--detach"]],
+    [["list", "--run", "run-1"]],
+    [["show", "run-1", "--run", "run-1"]],
+  ])("rejects %j without opening the store", async (args) => {
+    await expect(runAgentRunsCommand(args)).rejects.toThrow(
+      /Invalid agent-runs arguments/,
+    );
+    expect(openSqliteRunStore).not.toHaveBeenCalled();
+  });
+});
+
+describe("detach database path resolution", () => {
+  const SPEC = {
+    schemaVersion: 1,
+    configVersion: 1,
+    runId: "run_path",
+    model: "claude-sonnet-4-6",
+    prompt: "test the target",
+    target: "https://example.com",
+    activeTools: ["read_file"],
+    environment: { kind: "local", cwd: "/tmp/target" },
+    scope: { version: 1, strictScope: true },
+  };
+
+  it("defaults to ~/.pensar/runtime/runs.sqlite exactly like the store", async () => {
+    vi.stubEnv("PENSAR_DATA_DIR", undefined);
+    const previousHome = process.env.HOME;
+    try {
+      process.env.HOME = "/home/tester";
+      store.get.mockResolvedValue({
+        runId: "run_path",
+        attemptId: "exec_00000000-0000-4000-8000-000000000001",
+      });
+      launchLocalWorker.mockResolvedValue({
+        socketPath: "/tmp/w/run_path.sock",
+        logPath: "/tmp/w/run_path.log",
+      });
+      resolveWorkerExecutable.mockReturnValue({ command: "pensar" });
+      workerRequest.mockResolvedValue({ phase: "executing" });
+
+      await runAgentRunsCommand(["resume", "run_path", "--detach"]);
+
+      expect(launchLocalWorker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          databasePath: "/home/tester/.pensar/runtime/runs.sqlite",
+        }),
+      );
+    } finally {
+      process.env.HOME = previousHome;
+    }
+  });
+
+  it("uses PENSAR_DATA_DIR for both the client and detached worker", async () => {
+    vi.stubEnv("PENSAR_DATA_DIR", "/tmp/apex-custom-data");
+    launchLocalWorker.mockResolvedValue({
+      socketPath: "/tmp/w/run_path.sock",
+      logPath: "/tmp/w/run_path.log",
+    });
+    resolveWorkerExecutable.mockReturnValue({ command: "pensar" });
+    workerRequest.mockResolvedValue({ phase: "executing" });
+
+    await runAgentRunsCommand(["start", "--spec", specFile(SPEC), "--detach"]);
+
+    expect(openSqliteRunStore).toHaveBeenCalledWith(undefined);
+    expect(launchLocalWorker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        databasePath: "/tmp/apex-custom-data/runtime/runs.sqlite",
+      }),
+    );
+  });
+
+  it("resolves a relative --store for the worker instead of rejecting it", async () => {
+    launchLocalWorker.mockResolvedValue({
+      socketPath: "/tmp/w/run_path.sock",
+      logPath: "/tmp/w/run_path.log",
+    });
+    resolveWorkerExecutable.mockReturnValue({ command: "pensar" });
+    workerRequest.mockResolvedValue({ phase: "executing" });
+
+    await runAgentRunsCommand([
+      "start",
+      "--spec",
+      specFile(SPEC),
+      "--detach",
+      "--store",
+      "runs/nested.sqlite",
+    ]);
+
+    expect(launchLocalWorker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        databasePath: expect.stringMatching(/runs\/nested\.sqlite$/),
+      }),
+    );
+    const databasePath = launchLocalWorker.mock.calls[0][0].databasePath;
+    expect(databasePath.startsWith("/")).toBe(true);
+  });
+});
+
+describe("detach transport failure guidance", () => {
+  const SPEC = {
+    schemaVersion: 1,
+    configVersion: 1,
+    runId: "run_unc",
+    model: "claude-sonnet-4-6",
+    prompt: "test the target",
+    target: "https://example.com",
+    activeTools: ["read_file"],
+    environment: { kind: "local", cwd: "/tmp/target" },
+    scope: { version: 1, strictScope: true },
+  };
+
+  it("tells the user to inspect the run on an uncertain transport failure", async () => {
+    const { LocalWorkerTransportError } = await import(
+      "../core/runtime/localWorkerTransport"
+    );
+    launchLocalWorker.mockResolvedValue({
+      socketPath: "/tmp/w/run_unc.sock",
+      logPath: "/tmp/w/run_unc.log",
+    });
+    workerRequest.mockRejectedValue(
+      new LocalWorkerTransportError("connection lost mid-request", {
+        uncertain: true,
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await expect(
+        runAgentRunsCommand(["start", "--spec", specFile(SPEC), "--detach"]),
+      ).rejects.toThrow("connection lost mid-request");
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("uncertain and was NOT retried"),
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("agent-runs show run_unc"),
+      );
+      expect(workerRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe("worker store validation", () => {
+  it.each([
+    "--detach",
+    "--context",
+    "--spec=spec.json",
+  ])("rejects unrelated worker option %s", async (option) => {
+    await expect(
+      runAgentRunsCommand([
+        "worker",
+        "--run",
+        "run-1",
+        "--store",
+        "/tmp/runs.sqlite",
+        option,
+      ]),
+    ).rejects.toThrow(/agent-runs worker requires/);
+    expect(serveLocalRunWorker).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-absolute --store before invoking the worker", async () => {
+    await expect(
+      runAgentRunsCommand([
+        "worker",
+        "--run",
+        "run-1",
+        "--store",
+        "runs.sqlite",
+      ]),
+    ).rejects.toThrow(/absolute database/);
+    expect(serveLocalRunWorker).not.toHaveBeenCalled();
   });
 });

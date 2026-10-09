@@ -34,6 +34,7 @@ Apex serves three audiences:
 | [PDR-012](./PDR-012-recorded-tool-outcomes.md)    | Commit accepted tool intent and model-visible results before use             |
 | [PDR-013](PDR-013-durable-run-controls.md)        | Persist recorded-run control and approvals                                   |
 | [PDR-014](./PDR-014-local-recorded-recovery.md)   | Explicit recovery of recorded local runs                                     |
+| [PDR-015](./PDR-015-local-run-workers.md)         | Optional independent local run workers                                       |
 
 ---
 

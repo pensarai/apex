@@ -10,6 +10,7 @@ import { getCurrentVersion } from "../installation";
 import { acquireLocalRunLock } from "./localRunLock";
 import type { RunControlStore } from "./runControlStore";
 import type { RunModelStore } from "./runModelStore";
+import type { RunObservationStore } from "./runObservation";
 import type { ExecutionLock, RunRecoveryStore } from "./runRecoveryStore";
 import {
   type RecordedRunSpec,
@@ -108,6 +109,26 @@ function readContextRow(value: unknown) {
   }
 }
 
+// Deferred BEGIN preserves a multi-table snapshot without reserving a writer.
+function readTransaction<T>(db: Database, operation: () => T): T {
+  db.exec("BEGIN");
+  try {
+    const value = operation();
+    db.exec("COMMIT");
+    return value;
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        "Run read transaction failed",
+      );
+    }
+    throw error;
+  }
+}
+
 function transaction<T>(db: Database, operation: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -156,7 +177,8 @@ export async function openSqliteRunStore(
   RunModelStore &
     RunToolStore &
     RunControlStore &
-    RunRecoveryStore & { close(): void }
+    RunRecoveryStore &
+    RunObservationStore & { close(): void }
 > {
   // Leave the other runtime's builtin unresolved in both bundled distributions.
   const moduleName = typeof Bun !== "undefined" ? "bun:sqlite" : "node:sqlite";
@@ -269,6 +291,39 @@ export async function openSqliteRunStore(
         )
         .get(runId);
       return row ? readContextRow(row) : undefined;
+    };
+
+    const readContext = (runId: string) => {
+      // One query keeps the selected epoch and its deltas in one read snapshot.
+      const rows = db
+        .prepare(
+          `SELECT epoch, revision, change_json FROM run_context
+         WHERE run_id = ? AND epoch = (
+           SELECT epoch FROM run_context WHERE run_id = ? ORDER BY revision DESC LIMIT 1
+         ) ORDER BY revision`,
+        )
+        .all(runId, runId)
+        .map(readContextRow);
+      const base = rows[0];
+      if (!base) return undefined;
+      if (base.change.kind !== "replace") {
+        throw new Error("Context base is missing or corrupt");
+      }
+      const messages: ModelMessage[] = [...base.change.messages];
+      let revision = base.revision;
+      for (const row of rows.slice(1)) {
+        if (row.revision !== revision + 1 || row.change.kind !== "append") {
+          throw new Error("Context sequence is corrupt");
+        }
+        messages.push(...row.change.messages);
+        revision = row.revision;
+      }
+      return {
+        epoch: base.epoch,
+        revision,
+        messages,
+        system: base.change.system,
+      };
     };
 
     const getEvidence = (runId: string) => {
@@ -433,36 +488,16 @@ export async function openSqliteRunStore(
         return getEvidence(runId);
       },
       async getContext(runId) {
-        // One query keeps the selected epoch and its deltas in one read snapshot.
-        const rows = db
-          .prepare(
-            `SELECT epoch, revision, change_json FROM run_context
-           WHERE run_id = ? AND epoch = (
-             SELECT epoch FROM run_context WHERE run_id = ? ORDER BY revision DESC LIMIT 1
-           ) ORDER BY revision`,
-          )
-          .all(runId, runId)
-          .map(readContextRow);
-        const base = rows[0];
-        if (!base) return undefined;
-        if (base.change.kind !== "replace") {
-          throw new Error("Context base is missing or corrupt");
-        }
-        const messages: ModelMessage[] = [...base.change.messages];
-        let revision = base.revision;
-        for (const row of rows.slice(1)) {
-          if (row.revision !== revision + 1 || row.change.kind !== "append") {
-            throw new Error("Context sequence is corrupt");
-          }
-          messages.push(...row.change.messages);
-          revision = row.revision;
-        }
-        return {
-          epoch: base.epoch,
-          revision,
-          messages,
-          system: base.change.system,
-        };
+        return readContext(runId);
+      },
+      async observe(runId) {
+        return readTransaction(db, () => {
+          const record = get(runId) ?? null;
+          const context = record ? (readContext(runId) ?? null) : null;
+          const control = controlStore.readControl(runId) ?? null;
+          const approvals = record ? controlStore.readApprovals(runId) : [];
+          return { record, context, control, approvals };
+        });
       },
       async admit(input: RecordedRunSpec) {
         const spec = RecordedRunSpecSchema.parse(input);

@@ -101,6 +101,7 @@ export async function runRecordedAgent(
 
 export type ResumeRecordedAgentInput = Omit<RecordedRunAgentInput, "spec"> & {
   runId: string;
+  expectedAttemptId?: string;
 };
 
 export class RunRecoveryBlockedError extends Error {
@@ -133,6 +134,12 @@ export async function resumeRecordedAgent(
       const saved = await store.get(runId);
       if (!saved) throw new Error("Run does not exist");
       record = saved;
+      if (
+        input.expectedAttemptId !== undefined &&
+        saved.attemptId !== input.expectedAttemptId
+      ) {
+        throw new Error("Recovery attempt changed; inspect the run again");
+      }
       const { spec } = record;
       if (!["running", "paused", "failed"].includes(record.status)) {
         throw new Error(`Run status ${record.status} cannot be recovered`);

@@ -113,6 +113,8 @@ export function createSqliteControlStore(input: {
    * transactions atomically honor stop dominance and paused eligibility.
    */
   readControl(runId: string): RunControlRecord | undefined;
+  /** Synchronous approvals read for snapshot transactions. */
+  readApprovals(runId: string): RecordedApproval[];
   /**
    * Synchronous, no transaction of its own: called inside model/tool start
    * transactions. Validates the control owner; absent enrollment allows
@@ -543,5 +545,11 @@ export function createSqliteControlStore(input: {
     }
   };
 
-  return { methods, readControl, assertDispatchAllowed, assertToolApproved };
+  return {
+    methods,
+    readControl,
+    readApprovals,
+    assertDispatchAllowed,
+    assertToolApproved,
+  };
 }
