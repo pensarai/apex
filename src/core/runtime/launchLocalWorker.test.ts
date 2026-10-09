@@ -571,6 +571,16 @@ describe("retiring host teardown", () => {
 });
 
 describe("resolveWorkerExecutable", () => {
+  it("source TUI uses the CLI entry that understands worker commands", () => {
+    expect(
+      resolveWorkerExecutable({
+        execPath: "/bin/bun",
+        argv1: "/repo/src/tui/index.tsx",
+        bunMain: "/repo/src/tui/index.tsx",
+      }),
+    ).toEqual({ command: "/bin/bun", args: ["/repo/src/cli.ts"] });
+  });
+
   it("compiled Bun: the binary itself, no script arg (virtual Bun.main)", () => {
     expect(
       resolveWorkerExecutable({

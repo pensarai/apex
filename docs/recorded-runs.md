@@ -1,6 +1,6 @@
 # Recorded local runs
 
-Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They support durable pause/stop requests, optional tool approvals, and explicit recovery in the same local environment. Detached execution and managed worker recovery are not enabled.
+Recorded runs are an opt-in path for inspecting a local agent's admission, saved context, referenced evidence, model attempts, tool outcomes, and last saved execution status after its process exits. They support durable pause/stop requests, optional tool approvals, and explicit recovery in the same local environment. Optional [local workers](local-workers.md) keep execution alive when clients detach. Recovery remains an explicit action in the same local environment; managed worker recovery is not enabled.
 
 This path requires Bun or Node 22.13+. It uses the runtime's built-in SQLite implementation and adds no native package dependency. Existing commands retain their current runtime requirements. Run the commands through `bun src/cli.ts` during development or `pensar` after building/installing.
 

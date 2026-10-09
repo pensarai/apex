@@ -5,6 +5,8 @@ Recorded runs can execute in an independent local process on macOS and Linux:
 ```sh
 pensar agent-runs start --spec run.json --detach
 pensar agent-runs list
+pensar agent-runs attach run_example
+pensar agent-runs attach run_example --once
 pensar agent-runs show run_example --control
 pensar agent-runs pause run_example
 pensar agent-runs resume run_example --detach
@@ -19,7 +21,15 @@ Pause and stop are cooperative durable requests. Accepted work can finish before
 
 The worker serves a private Unix socket, with no TCP listener or mandatory daemon. Endpoint discovery uses the canonical database path and run ID. Independent runs have independent workers. Multiple clients can observe one run; concurrent controls retain their existing revision and approval checks.
 
-The internal versioned protocol offers atomic replacement snapshots and bounded change notifications. Snapshots contain committed conversation state, controls and approvals. They are not a live token transcript. Clients replace their view when a worker changes; the worker cursor is not a durable database revision or replay log. CLI/TUI attach views are a separate client slice.
+The internal versioned protocol offers atomic replacement snapshots and bounded change notifications. Snapshots contain committed conversation state, controls and approvals. They are not a live token transcript. Clients replace their view when a worker changes; the worker cursor is not a durable database revision or replay log.
+
+## Attach and control
+
+`agent-runs attach <runId>` prints a JSON snapshot when the committed state or connection changes. It follows a replacement worker when one becomes available. Ctrl-C ends observation without pausing, stopping, or deciding an approval. Use `--once` for one current observation. Starting or resuming a worker remains an explicit command; reconnecting never executes work.
+
+Inside the TUI, `/runs` opens the recorded-run list. `/runs <runId>` attaches directly, and `/runs --spec run.json` starts a detached recorded run from that specification. Add `--store <database>` to select a custom database. The dialog exposes run controls and individual pending approval decisions; Esc detaches. PgUp/PgDn scroll the committed transcript and full selected approval input. The existing `/resume` command continues to use legacy sessions.
+
+Connection and execution status answer different questions. `connected` means the local worker answered; `offline` means its socket was absent or refused; `error` means the endpoint could not be read safely. The saved run status remains visible in every case. An offline run saved as `running` might have a foreground executor or a lost worker; attaching does not declare it dead or bypass recovery checks. Corrupt, incompatible, or inaccessible endpoints are visible errors.
 
 ## Worker loss and startup errors
 

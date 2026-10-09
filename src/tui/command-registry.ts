@@ -1,3 +1,4 @@
+import { parseArgs } from "node:util";
 import { config } from "../core/config";
 import { isObfuscationEnabled } from "../core/obfuscation";
 import type { CommandDefinition } from "./command-router";
@@ -25,6 +26,11 @@ export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
+  openRecordedRunsDialog?: (options: {
+    runId?: string;
+    databasePath?: string;
+    specPath?: string;
+  }) => void;
   openThemeDialog?: () => void;
   openAdvancedDialog?: () => void;
   openModelDialog?: () => void;
@@ -89,6 +95,51 @@ export interface CommandConfig {
  * Array order = display order in autocomplete dropdown and help dialog.
  */
 export const commands: CommandConfig[] = [
+  {
+    name: "runs",
+    description: "Attach to and control recorded runs",
+    category: "General",
+    options: [
+      {
+        name: "--store",
+        valueHint: "<database>",
+        description: "Recorded-run database",
+      },
+      {
+        name: "--spec",
+        valueHint: "<file>",
+        description: "Start a detached run from a JSON spec",
+      },
+    ],
+    handler: (args, ctx) => {
+      try {
+        const { values, positionals } = parseArgs({
+          args,
+          allowPositionals: true,
+          strict: true,
+          options: { store: { type: "string" }, spec: { type: "string" } },
+        });
+        if (
+          positionals.length > 1 ||
+          (values.spec !== undefined && positionals.length)
+        ) {
+          throw new Error(
+            "Use /runs [runId] [--store <database>] or /runs --spec <file> [--store <database>]",
+          );
+        }
+        ctx.openRecordedRunsDialog?.({
+          ...(positionals[0] ? { runId: positionals[0] } : {}),
+          ...(values.store ? { databasePath: values.store } : {}),
+          ...(values.spec ? { specPath: values.spec } : {}),
+        });
+      } catch (error) {
+        ctx.toast?.(
+          error instanceof Error ? error.message : "Invalid /runs command",
+          "error",
+        );
+      }
+    },
+  },
   // — Pentesting —
   {
     name: "pentest",
