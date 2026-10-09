@@ -187,13 +187,15 @@ async function runSingleCodingAgent(
 
   const result = await spawner.spawn<CodingChildResult | undefined>({
     spec: { type: "code", codebasePath, objective },
-    // Mirrors the prior construction — no sandbox/display were forwarded here.
     runtime: {
       session: ctx.session,
       model: ctx.model!,
       authConfig: ctx.authConfig,
       abortSignal: ctx.abortSignal,
+      sandbox: ctx.sandbox,
       backends: ctx.backends,
+      environmentVariables: ctx.environmentVariables,
+      secretValues: ctx.secretValues,
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,

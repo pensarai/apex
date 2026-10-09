@@ -18,6 +18,7 @@ export interface SandboxExecuteOptions {
   envVars?: Record<string, string>;
   timeout?: number;
   retries?: number;
+  abortSignal?: AbortSignal;
 }
 
 export interface SandboxExecutionResult {

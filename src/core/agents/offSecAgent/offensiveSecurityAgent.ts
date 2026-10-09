@@ -447,6 +447,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.agentCwd ??
       input.session.config?.agentCwd ??
       input.session.rootPath;
+    // Same precedence for the file-tool workspace: an explicit root (e.g. a
+    // child agent's helper directory) wins over the session's remote root.
+    const fileWorkspaceRoot =
+      input.fileWorkspaceRoot ?? input.session.config?.remoteFileWorkspaceRoot;
 
     // -- Per-command executor (local mode only) -------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
@@ -543,7 +547,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         : {}),
       session: input.session,
       agentCwd,
-      fileWorkspaceRoot: input.fileWorkspaceRoot,
+      fileWorkspaceRoot,
       target: input.target,
       grpc: input.grpc,
       systemScope: input.systemScope,
@@ -788,7 +792,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.session,
       agentCwd,
       activeTools,
-      input.fileWorkspaceRoot,
+      fileWorkspaceRoot,
     );
     // Bundled wordlist paths are host-local: advertise them only when
     // commands execute locally.

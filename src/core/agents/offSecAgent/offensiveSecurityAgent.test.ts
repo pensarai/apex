@@ -89,8 +89,6 @@ vi.mock("./tools", () => ({
     "create_workspace_endpoint",
     "update_workspace_endpoint",
   ],
-  PerCommandShell: class {},
-  PlaywrightMcpSession: class {},
   // Minimal registry stub: the agent constructs one per instance and
   // finalization drains it; these tests never start listeners.
   CallbackListenerRegistry: class {
@@ -103,6 +101,8 @@ vi.mock("./tools", () => ({
       return [];
     }
   },
+  PerCommandShell: class {},
+  PlaywrightMcpSession: class {},
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
@@ -261,6 +261,70 @@ describe("assembled file-workspace instructions", () => {
       expect(system).not.toContain("Use relative paths for everything");
       expect(system).not.toContain("temporary scripts");
       expect(system).not.toContain("`list_files provided_files/`");
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the session's remote file workspace for the real tool context and prompt", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-remote-ws-"));
+    const agentCwd = join(rootPath, "agent-cwd");
+    const remoteRoot = join(rootPath, "remote-workspace");
+    toolContexts.length = 0;
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: {
+          id: "ses_remote_ws",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { agentCwd, remoteFileWorkspaceRoot: remoteRoot },
+        },
+        activeTools: ["create_file", "read_file"],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      expect(toolContexts[0].fileWorkspaceRoot).toBe(remoteRoot);
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(
+        `Native file tools are confined to ${remoteRoot}`,
+      );
+      expect(system).not.toContain(join(rootPath, "scratchpad"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("lets an explicit child helper root win over the session's remote workspace", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-remote-ws-explicit-"));
+    const remoteRoot = join(rootPath, "remote-workspace");
+    const childRoot = join(remoteRoot, "subagents", "sub_1", "helpers");
+    toolContexts.length = 0;
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: {
+          id: "ses_remote_ws_explicit",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { remoteFileWorkspaceRoot: remoteRoot },
+        },
+        fileWorkspaceRoot: childRoot,
+        activeTools: ["create_file"],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      expect(toolContexts[0].fileWorkspaceRoot).toBe(childRoot);
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(
+        `Native file tools are confined to ${childRoot}`,
+      );
     } finally {
       rmSync(rootPath, { recursive: true, force: true });
     }

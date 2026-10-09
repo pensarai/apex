@@ -599,6 +599,48 @@ describe("httpRequest body liveness", () => {
     });
   });
 
+  it.each([
+    { statusLine: "HTTP/2 200", status: 200, success: true },
+    { statusLine: "HTTP/3 404", status: 404, success: false },
+    { statusLine: "HTTP/1.1 200", status: 200, success: true },
+  ])("parses $statusLine without a reason phrase", async ({
+    statusLine,
+    status,
+    success,
+  }) => {
+    const execute = vi.fn(async (command: string) => {
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: Buffer.from(
+          `${statusLine}\r\nContent-Type: application/json\r\n\r\n{"status":"ok"}\n__APEX_${nonce}_CURL_EXIT_0\n`,
+        ).toString("base64"),
+        stderr: "",
+      };
+    });
+    const ctx = ctxWithScratchLogs({
+      sandbox: { execute } as unknown as ToolContext["sandbox"],
+    });
+    const result = (await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/health",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1_000,
+        toolCallDescription: "Read a response without a reason phrase",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(success);
+    expect(result.status).toBe(status);
+    expect(result.statusText).toBe("");
+    expect(result.headers["content-type"]).toBe("application/json");
+    expect(result.body).toBe('{"status":"ok"}');
+    expect(result.capture).toMatchObject({ complete: true, stopReason: "end" });
+  });
+
   it("preserves raw CRLF bytes in a sandbox response body", async () => {
     const execute = vi.fn(async (command: string) => {
       const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];

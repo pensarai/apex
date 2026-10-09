@@ -340,9 +340,11 @@ export async function requestSandboxHttp(
       }
     }
 
-    const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
+    const statusMatch = statusLine.match(
+      /^HTTP\/[\d.]+[ \t]+(\d{3})(?:[ \t]+(.*))?$/,
+    );
     const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-    const statusText = statusMatch ? statusMatch[2] : "Unknown";
+    const statusText = statusMatch ? (statusMatch[2]?.trim() ?? "") : "Unknown";
     // No HTTP line at all → the transport noise/error text is the body
     // evidence; a status line without a blank separator keeps the raw
     // remainder after it.
