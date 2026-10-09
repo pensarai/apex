@@ -594,7 +594,12 @@ describe("applyHeadersToShellCommand", () => {
 
   it("fails closed when 2>&1 rides a command with multiple hosts, mixed or not", () => {
     const session = makeSession({
-      config: { headers: { "X-API-Key": "abc" } },
+      config: {
+        headers: { "X-API-Key": "abc" },
+        scopeConstraints: {
+          allowedHosts: ["example.com", "*.example.com"],
+        },
+      },
     });
     for (const hosts of [
       ["example.com", "attacker.net"],
