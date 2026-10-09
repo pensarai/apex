@@ -3,14 +3,16 @@ import { mkdir, open } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { type ModelMessage, modelMessageSchema } from "ai";
+import { z } from "zod";
 import { newSessionId } from "../id/id";
 import { getCurrentVersion } from "../installation";
+import type { RunCheckpointStore } from "./runCheckpointStore";
 import {
   type RecordedRunSpec,
   RecordedRunSpecSchema,
   type RunRecord,
   RunRecordSchema,
-  type RunStore,
 } from "./runStore";
 
 type SqlValue = string | number | null;
@@ -25,7 +27,66 @@ interface Database {
 }
 
 const APPLICATION_ID = 0x41505258;
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
+
+const EvidenceSchema = z
+  .object({
+    rootPath: z.string().refine(path.isAbsolute),
+    files: z.array(
+      z
+        .object({
+          path: z
+            .string()
+            .min(1)
+            .refine(
+              (value) =>
+                !path.isAbsolute(value) && !value.split(/[\\/]/).includes(".."),
+            ),
+          sha256: z.string().regex(/^[a-f0-9]{64}$/),
+          bytes: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const ContextChangeSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("replace"),
+      messages: z.array(modelMessageSchema),
+      system: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("append"),
+      messages: z.array(modelMessageSchema),
+    })
+    .strict(),
+]);
+
+function readContextRow(value: unknown) {
+  try {
+    const row = z
+      .object({
+        epoch: z.number().int().positive(),
+        revision: z.number().int().positive(),
+        change_json: z.string(),
+      })
+      .parse(value);
+    const change: unknown = JSON.parse(row.change_json);
+    return {
+      epoch: row.epoch,
+      revision: row.revision,
+      change: ContextChangeSchema.parse(change),
+    };
+  } catch (cause) {
+    throw new Error("Run context is corrupt or has an unsupported schema", {
+      cause,
+    });
+  }
+}
 
 function transaction<T>(db: Database, operation: () => T): T {
   db.exec("BEGIN IMMEDIATE");
@@ -71,7 +132,7 @@ export async function openSqliteRunStore(
     "runtime",
     "runs.sqlite",
   ),
-): Promise<RunStore & { close(): void }> {
+): Promise<RunCheckpointStore & { close(): void }> {
   // Leave the other runtime's builtin unresolved in both bundled distributions.
   const moduleName = typeof Bun !== "undefined" ? "bun:sqlite" : "node:sqlite";
   let sqlite: {
@@ -93,6 +154,7 @@ export async function openSqliteRunStore(
   const db = new Constructor(resolved);
   try {
     db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("PRAGMA foreign_keys = ON");
     transaction(db, () => {
       const application = db.prepare("PRAGMA application_id").get() as {
         application_id: number;
@@ -106,10 +168,7 @@ export async function openSqliteRunStore(
       ) {
         throw new Error("Database is not an Apex run store");
       }
-      if (
-        version.user_version !== 0 &&
-        version.user_version !== STORE_VERSION
-      ) {
+      if (![0, 1, STORE_VERSION].includes(version.user_version)) {
         throw new Error(
           `Unsupported run store version: ${version.user_version}`,
         );
@@ -127,10 +186,26 @@ export async function openSqliteRunStore(
             record_json TEXT NOT NULL
           );
           PRAGMA application_id = ${APPLICATION_ID};
+          PRAGMA user_version = 1;
+        `);
+      } else if (version.user_version === 0) {
+        throw new Error("Run store schema version is missing");
+      }
+      if (version.user_version < 2) {
+        db.exec(`
+          CREATE TABLE run_context (
+            run_id TEXT NOT NULL REFERENCES runs(run_id),
+            revision INTEGER NOT NULL CHECK(revision > 0),
+            epoch INTEGER NOT NULL CHECK(epoch > 0),
+            change_json TEXT NOT NULL,
+            PRIMARY KEY(run_id, revision)
+          );
+          CREATE TABLE run_evidence (
+            run_id TEXT PRIMARY KEY NOT NULL REFERENCES runs(run_id),
+            evidence_json TEXT NOT NULL
+          );
           PRAGMA user_version = ${STORE_VERSION};
         `);
-      } else if (version.user_version !== STORE_VERSION) {
-        throw new Error("Run store schema version is missing");
       }
     });
     db.exec("PRAGMA journal_mode = WAL");
@@ -142,7 +217,127 @@ export async function openSqliteRunStore(
         runId,
       );
 
+    const headContext = (runId: string) => {
+      const row = db
+        .prepare(
+          "SELECT epoch, revision, change_json FROM run_context WHERE run_id = ? ORDER BY revision DESC LIMIT 1",
+        )
+        .get(runId);
+      return row ? readContextRow(row) : undefined;
+    };
+
+    const getEvidence = (runId: string) => {
+      const row = db
+        .prepare("SELECT evidence_json FROM run_evidence WHERE run_id = ?")
+        .get(runId) as { evidence_json: string } | undefined;
+      try {
+        return row
+          ? EvidenceSchema.parse(JSON.parse(row.evidence_json))
+          : undefined;
+      } catch (cause) {
+        throw new Error(
+          "Run evidence is corrupt or has an unsupported schema",
+          { cause },
+        );
+      }
+    };
+
     return {
+      async commitContext(
+        runId,
+        attemptId,
+        expectedRevision,
+        change,
+        evidence,
+      ) {
+        // Validate the JSON representation, not an in-memory value that JSON would lose.
+        const serialized = JSON.stringify(change);
+        const parsed = ContextChangeSchema.parse(JSON.parse(serialized));
+        const nextEvidence = evidence && EvidenceSchema.parse(evidence);
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+          throw new Error("Invalid expected context revision");
+        }
+        return transaction(db, () => {
+          const record = get(runId);
+          if (!record || record.attemptId !== attemptId) {
+            throw new Error("Execution attempt does not own this run");
+          }
+          if (record.status !== "running")
+            throw new Error("Run is not running");
+          const previous = headContext(runId);
+          if ((previous?.revision ?? 0) !== expectedRevision) {
+            throw new Error("Context revision conflict");
+          }
+          if (!previous && parsed.kind !== "replace") {
+            throw new Error("Context requires an initial replacement");
+          }
+          const reference = {
+            epoch: (previous?.epoch ?? 0) + (parsed.kind === "replace" ? 1 : 0),
+            revision: expectedRevision + 1,
+          };
+          db.prepare(
+            "INSERT INTO run_context (run_id, revision, epoch, change_json) VALUES (?, ?, ?, ?)",
+          ).run(runId, reference.revision, reference.epoch, serialized);
+          if (nextEvidence) {
+            const previousEvidence = getEvidence(runId);
+            if (
+              previousEvidence &&
+              previousEvidence.rootPath !== nextEvidence.rootPath
+            ) {
+              throw new Error("Session evidence location changed");
+            }
+            const files = new Map(
+              previousEvidence?.files.map((ref) => [ref.path, ref]),
+            );
+            for (const ref of nextEvidence.files) files.set(ref.path, ref);
+            const snapshot = {
+              rootPath: nextEvidence.rootPath,
+              files: [...files.values()].sort((a, b) =>
+                a.path.localeCompare(b.path),
+              ),
+            };
+            db.prepare(
+              "INSERT INTO run_evidence (run_id, evidence_json) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET evidence_json = excluded.evidence_json",
+            ).run(runId, JSON.stringify(snapshot));
+          }
+          return reference;
+        });
+      },
+      async getEvidence(runId) {
+        return getEvidence(runId);
+      },
+      async getContext(runId) {
+        // One query keeps the selected epoch and its deltas in one read snapshot.
+        const rows = db
+          .prepare(
+            `SELECT epoch, revision, change_json FROM run_context
+           WHERE run_id = ? AND epoch = (
+             SELECT epoch FROM run_context WHERE run_id = ? ORDER BY revision DESC LIMIT 1
+           ) ORDER BY revision`,
+          )
+          .all(runId, runId)
+          .map(readContextRow);
+        const base = rows[0];
+        if (!base) return undefined;
+        if (base.change.kind !== "replace") {
+          throw new Error("Context base is missing or corrupt");
+        }
+        const messages: ModelMessage[] = [...base.change.messages];
+        let revision = base.revision;
+        for (const row of rows.slice(1)) {
+          if (row.revision !== revision + 1 || row.change.kind !== "append") {
+            throw new Error("Context sequence is corrupt");
+          }
+          messages.push(...row.change.messages);
+          revision = row.revision;
+        }
+        return {
+          epoch: base.epoch,
+          revision,
+          messages,
+          system: base.change.system,
+        };
+      },
       async admit(input: RecordedRunSpec) {
         const spec = RecordedRunSpecSchema.parse(input);
         // Zod's fixed object shape supplies stable key order for admission equality.

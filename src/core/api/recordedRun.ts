@@ -2,11 +2,10 @@ import { stat } from "node:fs/promises";
 import { type AIAuthConfig, AVAILABLE_MODELS } from "../ai";
 import type { CredentialManager } from "../credentials";
 import type { AgentEventBus } from "../eventBus";
-import {
-  RecordedRunSpecSchema,
-  type RunRecord,
-  type RunStore,
-} from "../runtime/runStore";
+import type { RunCheckpointStore } from "../runtime/runCheckpointStore";
+import { createRunContextRecorder } from "../runtime/runContext";
+import { collectSessionEvidence } from "../runtime/runEvidence";
+import { RecordedRunSpecSchema, type RunRecord } from "../runtime/runStore";
 import { create as createSession } from "../session";
 import { type RunAgentResult, runOffensiveSecurityAgent } from "./offesecAgent";
 
@@ -15,7 +14,7 @@ const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
 export type RecordedRunAgentInput = {
   /** Raw (unparsed) run spec — the parsed, normalized form is the only version stored or executed. */
   spec: unknown;
-  store: RunStore;
+  store: RunCheckpointStore;
   authConfig?: AIAuthConfig;
   credentialManager?: CredentialManager;
   eventBus?: AgentEventBus;
@@ -103,6 +102,19 @@ export async function runRecordedAgent(
 
     await input.store.transition(runId, attemptId, "running");
 
+    const contextRecorder = createRunContextRecorder({
+      runId,
+      attemptId,
+      store: {
+        getContext: (id) => input.store.getContext(id),
+        commitContext: async (id, attempt, revision, change) =>
+          input.store.commitContext(id, attempt, revision, change, {
+            rootPath: session.rootPath,
+            files: await collectSessionEvidence(session),
+          }),
+      },
+    });
+
     result = await runOffensiveSecurityAgent({
       session,
       prompt: spec.prompt,
@@ -111,6 +123,7 @@ export async function runRecordedAgent(
       activeTools: spec.activeTools,
       target: spec.target,
       agentCwd: spec.environment.cwd,
+      contextRecorder,
       ...(input.authConfig ? { authConfig: input.authConfig } : {}),
       ...(input.credentialManager
         ? { credentialManager: input.credentialManager }

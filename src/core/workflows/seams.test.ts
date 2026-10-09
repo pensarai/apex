@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AttackSurfaceRegistry } from "../findings/attackSurfaceRegistry";
 import { FindingsRegistry } from "../findings/registry";
+import type { RunContextRecorder } from "../runtime/runContext";
 import * as concurrency from "../utils/concurrency";
 import {
   assertDepth,
@@ -10,6 +11,7 @@ import {
   inProcessConcurrencyRunner,
   inProcessSeams,
   noopOrchestrationHooks,
+  resolveItemHooks,
   sharedBrowserSessionProvider,
   WorkflowLimitExceededError,
   withFindingPersistedHook,
@@ -256,5 +258,54 @@ describe("withFindingPersistedHook", () => {
     expect(registry.isDuplicate).toHaveBeenCalledWith(finding);
     expect(registry.unregister).toHaveBeenCalledWith(finding);
     expect(registry.groupByRootCause).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resolveItemHooks recorder scope", () => {
+  const recorder = (): RunContextRecorder => ({
+    checkpoint: vi.fn(),
+    latest: vi.fn(),
+    flush: vi.fn(),
+  });
+
+  it("does not give a child the parent conversation recorder", () => {
+    const parent = recorder();
+    const abortSignal = new AbortController().signal;
+    const child = resolveItemHooks(
+      { contextRecorder: parent, abortSignal },
+      inProcessSeams(),
+      "target",
+      0,
+    );
+    expect(child.contextRecorder).toBeUndefined();
+    expect(child.abortSignal).toBe(abortSignal);
+    expect(parent.checkpoint).not.toHaveBeenCalled();
+  });
+
+  it("uses the host's per-item recorder without sharing sibling journals", async () => {
+    const parent = recorder();
+    const children = [recorder(), recorder()];
+    const seams = inProcessSeams({
+      hooksForItem: (_item, index) => ({ contextRecorder: children[index] }),
+    });
+    const first = resolveItemHooks(
+      { contextRecorder: parent },
+      seams,
+      "one",
+      0,
+    );
+    const second = resolveItemHooks(
+      { contextRecorder: parent },
+      seams,
+      "two",
+      1,
+    );
+    const context = { messages: [], system: null };
+    await first.contextRecorder?.checkpoint(context);
+    expect(first.contextRecorder).toBe(children[0]);
+    expect(second.contextRecorder).toBe(children[1]);
+    expect(children[0]?.checkpoint).toHaveBeenCalledWith(context);
+    expect(children[1]?.checkpoint).not.toHaveBeenCalled();
+    expect(parent.checkpoint).not.toHaveBeenCalled();
   });
 });

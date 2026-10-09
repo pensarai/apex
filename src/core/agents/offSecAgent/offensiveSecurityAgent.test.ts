@@ -160,6 +160,7 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
+import type { RunContextRecorder } from "../../runtime/runContext";
 import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import {
@@ -457,6 +458,7 @@ function buildStubAgent(overrides: {
   subagentName?: string;
   agentMode?: "default" | "plan" | "fast-strike";
   streamIdFactory?: (context: unknown) => string;
+  contextRecorder?: RunContextRecorder;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -551,6 +553,9 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "streamIdFactory", {
     value: overrides.streamIdFactory,
+  });
+  Object.defineProperty(agent, "contextRecorder", {
+    value: overrides.contextRecorder,
   });
 
   return agent;
@@ -2522,5 +2527,90 @@ describe("trace identity and root IO", () => {
       await otel.teardown();
       process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
     }
+  });
+});
+
+describe("contextRecorder integration", () => {
+  const streamTextChunk = { type: "text-delta", id: "t1", delta: "hi" };
+  const CANONICAL = [
+    { role: "user", content: "recorded prompt" },
+    { role: "assistant", content: "recorded answer" },
+  ] as never[];
+
+  it("flush failure in finalization fails the run after the stream completed", async () => {
+    // Stream completes normally, but the last step's commit failed and the
+    // recorder latched it — finalizeRun's flush must surface it (the SDK
+    // swallows onStepFinish errors, so nothing else would).
+    const flushError = new Error("latched persistence failure");
+    const recorder: RunContextRecorder = {
+      checkpoint: vi.fn(async () => {}),
+      flush: vi.fn(async () => {
+        throw flushError;
+      }),
+      latest: vi.fn(() => undefined),
+    };
+
+    async function* complete(): AsyncGenerator<unknown, void, undefined> {
+      yield streamTextChunk;
+    }
+    const agent = buildStubAgent({
+      fullStream: complete(),
+      contextRecorder: recorder,
+    });
+
+    await expect(agent.consume()).rejects.toBe(flushError);
+  });
+
+  it("canonical latest drives the projection on steps and finish; no duplicated prefix", async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-recorder-projection-"));
+    streamResponseCalls.length = 0;
+    const recorder: RunContextRecorder = {
+      checkpoint: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+      latest: vi.fn(() => structuredClone(CANONICAL)),
+    };
+    const agent = new OffensiveSecurityAgent({
+      prompt: "recorded prompt",
+      model: "test-model",
+      session: {
+        id: "ses_recorder_projection",
+        rootPath,
+        scratchpadPath: join(rootPath, "scratchpad"),
+      },
+      activeTools: [],
+      contextRecorder: recorder,
+    } as never);
+    void agent.streamResult; // createStream is lazy — force construction
+
+    const streamOpts = streamResponseCalls[0] as {
+      onStepFinish: (event: unknown) => Promise<void>;
+      onFinish: (event: unknown) => Promise<void>;
+    };
+    expect(
+      (streamResponseCalls[0] as { contextRecorder: unknown }).contextRecorder,
+    ).toBe(recorder);
+
+    const stepEvent = {
+      response: { id: "resp_1", messages: CANONICAL.slice(1) },
+      usage: {},
+    };
+    await streamOpts.onStepFinish(stepEvent);
+
+    // Writer snapshot equals canonical latest() exactly — the step's
+    // response.messages are already part of the committed context, so the
+    // projection must not re-prepend a base or duplicate them.
+    const writer = agent["writer" as keyof typeof agent] as unknown as {
+      waitForPendingWrites: () => Promise<void>;
+      latest: unknown[] | null;
+    };
+    await writer.waitForPendingWrites().catch(() => {});
+    const captured = writer.latest;
+
+    // onFinish falls back to canonical latest when the writer has nothing.
+    const finishEvent = { response: { messages: [] } };
+    await streamOpts.onFinish(finishEvent);
+
+    expect(recorder.latest).toHaveBeenCalled();
+    expect((captured as unknown[]).length).toBe(CANONICAL.length);
   });
 });

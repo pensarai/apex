@@ -26,6 +26,7 @@ import {
 } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import type { RunContextRecorder } from "../../runtime/runContext";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import {
@@ -372,6 +373,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private readonly streamIdFactory?: StreamIdFactory;
 
+  /** Recorded-run durable context authority; flushed (and failing) in finalizeRun. */
+  private readonly contextRecorder?: RunContextRecorder;
+
   /** The user-facing prompt passed to the model. */
   public readonly userPrompt: string;
 
@@ -431,6 +435,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.agentMode = input.mode ?? "default";
     this.abortSignal = input.abortSignal;
     this.streamIdFactory = input.streamIdFactory;
+    this.contextRecorder = input.contextRecorder;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
@@ -834,6 +839,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         toolChoice: "auto",
         languageModelMiddleware: input.languageModelMiddleware,
         usageRecorder: input.usageRecorder,
+        contextRecorder: input.contextRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -853,10 +859,16 @@ export class OffensiveSecurityAgent<TResult = void> {
             return;
           }
 
-          this.writer.setLatest([
+          // Recorded runs project the canonical committed context; the
+          // legacy path reconstructs from the (possibly stale after a fit)
+          // initial prefix. Canonical latest() already includes this step's
+          // messages — committing happens upstream in the ai layer's
+          // onStepFinish wrapper, before this user callback runs.
+          const canonical = input.contextRecorder?.latest() ?? [
             ...initialMessagesRef.current,
             ...event.response.messages,
-          ]);
+          ];
+          this.writer.setLatest(canonical);
           schedulePersist();
           traceWriter.recordStep(
             event.response.messages as ModelMessage[],
@@ -882,10 +894,11 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.writer.cancelTimer();
           // Skip if the interrupted-step finalizer already wrote the abort snapshot.
           if (!this.writer.syntheticsPersisted) {
-            const finalMessages = this.writer.latest ?? [
-              ...initialMessagesRef.current,
-              ...event.response.messages,
-            ];
+            const finalMessages = input.contextRecorder?.latest() ??
+              this.writer.latest ?? [
+                ...initialMessagesRef.current,
+                ...event.response.messages,
+              ];
             this.writer.setLatest(finalMessages);
             await this.writer.enqueueWrite(finalMessages).catch(() => {});
           }
@@ -1376,6 +1389,15 @@ export class OffensiveSecurityAgent<TResult = void> {
         }
       } catch (error) {
         recordFinalizationError(error);
+      }
+      // Flush after disposal: surfaces the latched step-commit failure (the
+      // SDK swallows onStepFinish errors) without skipping owned cleanup.
+      if (this.contextRecorder) {
+        try {
+          await this.contextRecorder.flush();
+        } catch (error) {
+          recordFinalizationError(error);
+        }
       }
       // Flush tool-errors that never reached a finish-step into the snapshot.
       for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {

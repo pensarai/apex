@@ -20,6 +20,12 @@ export {
   createNativeRolloutEvidenceCapture,
   DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
 } from "../ai";
+export type {
+  RunCheckpointStore,
+  SessionEvidence,
+} from "../runtime/runCheckpointStore";
+export type { ContextReference, ContextStore } from "../runtime/runContext";
+export { inspectSessionEvidence } from "../runtime/runEvidence";
 export type { RecordedRunSpec, RunRecord, RunStore } from "../runtime/runStore";
 export { openSqliteRunStore } from "../runtime/sqliteRunStore";
 export type {
