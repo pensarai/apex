@@ -321,9 +321,13 @@ describe("callback listener helper (real local jobs)", () => {
     expect(foreign.status).toBe(404);
     expect(foreign.body).toBe("not found");
 
-    const evidencePoll = await pollListener(ctx, listener.jobId);
-    expect(evidencePoll.data.callbackHits).toBe(1);
-    expect(evidencePoll.data.unrelatedHits).toBe(1);
+    // HTTP completion can precede the supervisor draining the listener's stdout.
+    const evidencePoll = await vi.waitFor(async () => {
+      const poll = await pollListener(ctx, listener.jobId);
+      expect(poll.data.callbackHits).toBe(1);
+      expect(poll.data.unrelatedHits).toBe(1);
+      return poll;
+    });
     expect(evidencePoll.data.recentHits[0]).toMatchObject({
       method: "GET",
       path: `/${listener.nonce}/cb?probe=1`,
