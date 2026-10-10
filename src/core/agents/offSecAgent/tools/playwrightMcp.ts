@@ -10,7 +10,6 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -434,7 +433,6 @@ export class PlaywrightMcpSession {
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
   private readonly headerPolicy: BrowserHeaderPolicy | undefined;
-  private headerRouteInstalled = false;
   /** X display for the spawned browser; overrides `process.env.DISPLAY`. */
   private readonly display: string | undefined;
   readonly engine: BrowserEngine;
@@ -678,13 +676,7 @@ export class PlaywrightMcpSession {
 
   private async installHeaderRoute(client: Client): Promise<void> {
     if (!this.headerPolicy) return;
-    // #region agent log
-    appendFileSync(
-      "/opt/cursor/logs/debug.log",
-      `${JSON.stringify({ hypothesisId: "H1,H3", location: "playwrightMcp.ts:installHeaderRoute:entry", message: "Installing browser header route", data: { allowedHostsCount: this.headerPolicy.allowedHosts.length, headerNames: Object.keys(this.headerPolicy.headers) }, timestamp: Date.now() })}\n`,
-    );
-    // #endregion
-    const result = await withTimeout(
+    await withTimeout(
       client.callTool({
         name: "browser_run_code",
         arguments: {
@@ -694,24 +686,6 @@ export class PlaywrightMcpSession {
       MCP_TOOL_CALL_TIMEOUT_MS,
       "Browser header route installation timed out",
     );
-    const resultRecord =
-      result && typeof result === "object"
-        ? (result as Record<string, unknown>)
-        : undefined;
-    const content = Array.isArray(resultRecord?.content)
-      ? (resultRecord.content as Array<Record<string, unknown>>)
-      : [];
-    const resultText = content
-      .filter((item) => item.type === "text" && typeof item.text === "string")
-      .map((item) => item.text as string)
-      .join("\n");
-    this.headerRouteInstalled = resultRecord?.isError !== true;
-    // #region agent log
-    appendFileSync(
-      "/opt/cursor/logs/debug.log",
-      `${JSON.stringify({ hypothesisId: "H3,H4", location: "playwrightMcp.ts:installHeaderRoute:exit", message: "Browser header route install response", data: { resultType: typeof result, isError: resultRecord?.isError === true, contentTypes: content.map((item) => item.type), reportsMissingUrlGlobal: resultText.includes("urlType") && resultText.includes("undefined") }, timestamp: Date.now() })}\n`,
-    );
-    // #endregion
   }
 
   /**
@@ -1006,12 +980,6 @@ export class PlaywrightMcpSession {
     );
 
     try {
-      // #region agent log
-      appendFileSync(
-        "/opt/cursor/logs/debug.log",
-        `${JSON.stringify({ hypothesisId: "H1,H2,H5", location: "playwrightMcp.ts:callTool:before", message: "Calling browser tool after route setup", data: { toolName, headerPolicyConfigured: this.headerPolicy !== undefined, headerRouteInstalled: this.headerRouteInstalled }, timestamp: Date.now() })}\n`,
-      );
-      // #endregion
       const result = await client.callTool(
         { name: toolName, arguments: args },
         undefined,
