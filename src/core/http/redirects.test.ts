@@ -4,6 +4,7 @@ import {
   MAX_TARGET_REDIRECTS,
   redirectRequest,
   sanitizeRedirectHeaders,
+  TargetRedirectError,
 } from "./redirects";
 
 afterEach(() => {
@@ -200,15 +201,20 @@ describe("fetchWithScopedRedirects", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(
-      fetchWithScopedRedirects(
-        "https://example.com/start",
-        { redirect: "follow" },
-        () => ({}),
-      ),
-    ).rejects.toThrow(
+    const pending = fetchWithScopedRedirects(
+      "https://example.com/start",
+      { redirect: "follow" },
+      () => ({}),
+    );
+    await expect(pending).rejects.toThrow(
       `Maximum redirect count exceeded (${MAX_TARGET_REDIRECTS})`,
     );
+    await pending.catch((error: unknown) => {
+      expect(error).toBeInstanceOf(TargetRedirectError);
+      expect((error as TargetRedirectError).redirectChain).toHaveLength(
+        MAX_TARGET_REDIRECTS + 1,
+      );
+    });
     expect(fetchMock).toHaveBeenCalledTimes(MAX_TARGET_REDIRECTS + 1);
   });
 });
