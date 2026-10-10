@@ -222,6 +222,47 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     expect(cfg.browser.launchOptions.chromiumSandbox).toBe(false);
   });
 
+  it("keeps scoped credentials out of global context options", async () => {
+    const session = new PlaywrightMcpSession({
+      engine: "chrome",
+      headerPolicy: {
+        allowedHosts: ["example.com"],
+        headers: { "X-Scoped-Secret": "secret" },
+      },
+    }) as unknown as {
+      buildMcpLaunch(id: string): Promise<{ cfg: unknown }>;
+    };
+
+    const { cfg } = await session.buildMcpLaunch("test");
+    expect(JSON.stringify(cfg)).not.toContain("extraHTTPHeaders");
+    expect(JSON.stringify(cfg)).not.toContain("X-Scoped-Secret");
+  });
+
+  it("installs scoped header routing through browser_run_code", async () => {
+    const session = new PlaywrightMcpSession({
+      headerPolicy: {
+        allowedHosts: ["example.com"],
+        headers: { "X-Scoped-Secret": "secret" },
+      },
+    });
+    const callTool = vi.fn(async () => ({}));
+    const internal = session as unknown as {
+      installHeaderRoute(client: { callTool: typeof callTool }): Promise<void>;
+    };
+
+    await internal.installHeaderRoute({ callTool });
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    const request = callTool.mock.calls[0]?.[0] as {
+      name: string;
+      arguments: { code: string };
+    };
+    expect(request.name).toBe("browser_run_code");
+    expect(request.arguments.code).toContain("context.route('**/*'");
+    expect(request.arguments.code).toContain("X-Scoped-Secret");
+    expect(request.arguments.code).not.toContain("extraHTTPHeaders");
+  });
+
   it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {
     const session = new PlaywrightMcpSession({
       headless: true,

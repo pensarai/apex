@@ -109,6 +109,52 @@ describe("SandboxBrowserBackend", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("routes scoped headers per request instead of configuring them globally", async () => {
+    const { sandbox, commands } = makeFakeSandbox({
+      success: true,
+      url: "https://target.example/dashboard",
+      title: "Dashboard",
+    });
+    const ctx = makeCtx(sandbox, rootPath);
+    ctx.session.config = {
+      headers: { "X-Session-Secret": "session-secret" },
+    } as NonNullable<ToolContext["session"]["config"]>;
+    ctx.session.credentialManager = {
+      listCredentialsWithHeaders: () => [
+        {
+          tokens: {
+            customHeaders: {
+              "X-Credential-Secret": "credential-secret",
+            },
+          },
+        },
+      ],
+    } as ToolContext["session"]["credentialManager"];
+    const backend = SandboxBrowserBackend(ctx);
+
+    await backend.navigate("https://target.example/dashboard");
+
+    const command = commands.find((item) => item.includes("pw_action.js"));
+    const encoded = command?.match(/echo "([^"]+)" \| base64 -d/)?.[1];
+    const script = encoded
+      ? Buffer.from(encoded, "base64").toString("utf8")
+      : "";
+    expect(script).toContain("context.route('**/*'");
+    expect(script).toContain("X-Session-Secret");
+    expect(script).toContain("X-Credential-Secret");
+    expect(script).not.toContain("extraHTTPHeaders");
+  });
+
+  it("rejects direct out-of-scope navigation before launching a browser", async () => {
+    const { sandbox, commands } = makeFakeSandbox({ success: true });
+    const backend = SandboxBrowserBackend(makeCtx(sandbox, rootPath));
+
+    await expect(
+      backend.navigate("https://outside.example.net/"),
+    ).rejects.toThrow(/Scope violation/);
+    expect(commands.some((item) => item.includes("pw_action.js"))).toBe(false);
+  });
+
   it("surfaces a failed sandbox script as a result, not a throw", async () => {
     const { sandbox } = makeFakeSandbox({
       success: false,
@@ -116,7 +162,7 @@ describe("SandboxBrowserBackend", () => {
     });
     const backend = SandboxBrowserBackend(makeCtx(sandbox, rootPath));
 
-    const result = await backend.navigate("https://down.example");
+    const result = await backend.navigate("https://target.example/down");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("net::ERR_CONNECTION_REFUSED");
