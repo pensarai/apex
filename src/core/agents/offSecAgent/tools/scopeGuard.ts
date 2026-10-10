@@ -25,21 +25,16 @@
  * also allowed (suffix match on the hostname).
  */
 
-import { getDomain } from "tldts";
 import { parseTargetUrl } from "../../../../util/url";
 import type { ResolverSession } from "../../../http/targetHeaders";
+import {
+  getRegistrableDomain,
+  getSessionAllowedHosts,
+  isHostInScope,
+} from "../../../http/targetScope";
 import type { ToolContext } from "./types";
 
-/**
- * Compute the registrable domain (eTLD+1) for a hostname using the
- * Public Suffix List. Falls back to the hostname itself for IPs,
- * `localhost`, and other hosts without a recognised public suffix.
- */
-export function getRegistrableDomain(hostname: string): string {
-  const lower = hostname.toLowerCase();
-  const domain = getDomain(lower, { allowPrivateDomains: false });
-  return domain ?? lower;
-}
+export { getRegistrableDomain };
 
 export class ScopeViolationError extends Error {
   constructor(
@@ -72,28 +67,7 @@ export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
  * Returns an empty array when no scope is configured (= no enforcement).
  */
 export function getAllowedHosts(ctx: ToolContext): string[] {
-  const hosts = new Set<string>();
-
-  if (ctx.target) {
-    const parsed = parseTargetUrl(ctx.target);
-    if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
-  }
-
-  if (ctx.session?.targets) {
-    for (const t of ctx.session.targets) {
-      const parsed = parseTargetUrl(t);
-      if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
-    }
-  }
-
-  const explicit = ctx.session?.config?.scopeConstraints?.allowedHosts;
-  if (explicit) {
-    for (const h of explicit) {
-      hosts.add(h.toLowerCase());
-    }
-  }
-
-  return [...hosts];
+  return getSessionAllowedHosts(resolverSessionFromCtx(ctx));
 }
 
 /**
@@ -110,16 +84,7 @@ export function isHostAllowed(
   allowedHosts: string[],
 ): boolean {
   if (allowedHosts.length === 0) return true;
-
-  const lower = hostname.toLowerCase();
-
-  for (const allowed of allowedHosts) {
-    const allowedLower = allowed.toLowerCase();
-    if (lower === allowedLower) return true;
-    if (lower.endsWith(`.${allowedLower}`)) return true;
-  }
-
-  return false;
+  return isHostInScope(hostname, allowedHosts);
 }
 
 /**

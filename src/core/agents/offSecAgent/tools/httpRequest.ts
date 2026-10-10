@@ -79,6 +79,7 @@ export type HttpRequestResult = {
   body: string;
   url: string;
   redirected: boolean;
+  redirectChain?: string[];
   error?: string;
   method?: string;
   /** Structured producer-capture outcome; the inline body is only a preview. */

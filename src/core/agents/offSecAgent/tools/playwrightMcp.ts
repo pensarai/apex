@@ -22,6 +22,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { BrowserBackend } from "../../../tools/backends/types";
 import {
+  type BrowserHeaderPolicy,
+  browserHeaderRouteFunction,
+} from "./browserHeaderRouting";
+import {
   type BrowserToolMode,
   createBackendBrowserToolFactories,
 } from "./browserToolFactories";
@@ -392,7 +396,7 @@ export interface PlaywrightMcpSessionOptions {
   readonly headless?: boolean;
   readonly userAgent?: string | null;
   readonly viewportSize?: string | null;
-  readonly extraHttpHeaders?: Record<string, string> | null;
+  readonly headerPolicy?: BrowserHeaderPolicy;
   /**
    * Browser to launch. Camoufox (Firefox) is the default for pentest traffic.
    * Chrome is required for Sign in with Google — Google blocks Camoufox.
@@ -428,7 +432,7 @@ export class PlaywrightMcpSession {
   private readonly headless: boolean;
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
-  private readonly extraHttpHeaders: Record<string, string> | undefined;
+  private readonly headerPolicy: BrowserHeaderPolicy | undefined;
   /** X display for the spawned browser; overrides `process.env.DISPLAY`. */
   private readonly display: string | undefined;
   readonly engine: BrowserEngine;
@@ -448,14 +452,8 @@ export class PlaywrightMcpSession {
    * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
   constructor(options: PlaywrightMcpSessionOptions = {}) {
-    const {
-      headless,
-      userAgent,
-      viewportSize,
-      extraHttpHeaders,
-      display,
-      engine,
-    } = options;
+    const { headless, userAgent, viewportSize, headerPolicy, display, engine } =
+      options;
     this.engine = engine ?? "camoufox";
 
     // An explicit `display` option wins over the process-wide env (needed when
@@ -491,12 +489,14 @@ export class PlaywrightMcpSession {
           : (defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
     }
 
-    // Snapshot headers so post-construction mutations don't leak in.
-    const headerSource =
-      extraHttpHeaders === null ? undefined : extraHttpHeaders;
-    this.extraHttpHeaders =
-      headerSource && Object.keys(headerSource).length > 0
-        ? { ...headerSource }
+    this.headerPolicy =
+      headerPolicy &&
+      headerPolicy.allowedHosts.length > 0 &&
+      Object.keys(headerPolicy.headers).length > 0
+        ? {
+            allowedHosts: [...headerPolicy.allowedHosts],
+            headers: { ...headerPolicy.headers },
+          }
         : undefined;
   }
 
@@ -626,9 +626,6 @@ export class PlaywrightMcpSession {
               args: ["--disable-dev-shm-usage"],
             },
             contextOptions: {
-              ...(this.extraHttpHeaders
-                ? { extraHTTPHeaders: this.extraHttpHeaders }
-                : {}),
               ...(viewport ? { viewport } : {}),
             },
           },
@@ -666,9 +663,6 @@ export class PlaywrightMcpSession {
             firefoxUserPrefs: camou.firefoxUserPrefs,
             headless: camou.headless,
           },
-          ...(this.extraHttpHeaders
-            ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
-            : {}),
         },
       },
       env: {
@@ -678,6 +672,20 @@ export class PlaywrightMcpSession {
         ...env,
       },
     };
+  }
+
+  private async installHeaderRoute(client: Client): Promise<void> {
+    if (!this.headerPolicy) return;
+    await withTimeout(
+      client.callTool({
+        name: "browser_run_code",
+        arguments: {
+          code: browserHeaderRouteFunction(this.headerPolicy),
+        },
+      }),
+      MCP_TOOL_CALL_TIMEOUT_MS,
+      "Browser header route installation timed out",
+    );
   }
 
   /**
@@ -752,6 +760,7 @@ export class PlaywrightMcpSession {
           MCP_CONNECT_TIMEOUT_MS,
           "MCP client connection timed out",
         );
+        await this.installHeaderRoute(client);
 
         this.mcpClient = client;
         this.mcpTransport = transport;
@@ -1028,7 +1037,7 @@ export function createPlaywrightBrowserBackend(
   userAgent?: string | null,
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
-  extraHttpHeaders?: Record<string, string> | null,
+  headerPolicy?: BrowserHeaderPolicy,
 ): BrowserBackend {
   let session: PlaywrightMcpSession;
 
@@ -1045,7 +1054,7 @@ export function createPlaywrightBrowserBackend(
       headless,
       userAgent,
       viewportSize,
-      extraHttpHeaders,
+      headerPolicy,
     });
 
     if (abortSignal) {
@@ -1363,7 +1372,7 @@ export function createBrowserToolFactories(
   userAgent?: string | null,
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
-  extraHttpHeaders?: Record<string, string> | null,
+  headerPolicy?: BrowserHeaderPolicy,
 ) {
   return createBackendBrowserToolFactories(
     createPlaywrightBrowserBackend(
@@ -1374,7 +1383,7 @@ export function createBrowserToolFactories(
       userAgent,
       viewportSize,
       existingSession,
-      extraHttpHeaders,
+      headerPolicy,
     ),
     { targetUrl, mode },
   );
@@ -1390,7 +1399,7 @@ export function createBrowserTools(
   userAgent?: string | null,
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
-  extraHttpHeaders?: Record<string, string> | null,
+  headerPolicy?: BrowserHeaderPolicy,
 ) {
   const factories = createBrowserToolFactories(
     targetUrl,
@@ -1402,7 +1411,7 @@ export function createBrowserTools(
     userAgent,
     viewportSize,
     existingSession,
-    extraHttpHeaders,
+    headerPolicy,
   );
   return {
     browser_navigate: factories.browser_navigate(),

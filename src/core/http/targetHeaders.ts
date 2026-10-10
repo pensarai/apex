@@ -5,8 +5,15 @@
 // The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
-import { getDomain } from "tldts";
-import { parseTargetUrl } from "../../util/url";
+import {
+  fetchWithScopedRedirects,
+  type RedirectFetchResult,
+} from "./redirects";
+import {
+  getSessionAllowedHosts,
+  isHostInScope,
+  isUrlInSessionScope,
+} from "./targetScope";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
 // Structural subset of session shape the resolver reads. Kept loose so
@@ -25,51 +32,6 @@ export interface ResolverSession {
       readonly tokens?: { readonly customHeaders?: HeaderRecord };
     }>;
   };
-}
-
-// ---------------------------------------------------------------------------
-// Scope check
-// ---------------------------------------------------------------------------
-
-function getRegistrableDomain(hostname: string): string {
-  const lower = hostname.toLowerCase();
-  return getDomain(lower, { allowPrivateDomains: false }) ?? lower;
-}
-
-function getAllowedHosts(session: ResolverSession): string[] {
-  const hosts = new Set<string>();
-
-  if (session.targets) {
-    for (const t of session.targets) {
-      const parsed = parseTargetUrl(t);
-      if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
-    }
-  }
-
-  const explicit = session.config?.scopeConstraints?.allowedHosts;
-  if (explicit) {
-    for (const h of explicit) {
-      hosts.add(h.toLowerCase());
-    }
-  }
-
-  return [...hosts];
-}
-
-function isHostInScope(hostname: string, allowedHosts: string[]): boolean {
-  if (allowedHosts.length === 0) return false;
-  const lower = hostname.toLowerCase();
-  for (const allowed of allowedHosts) {
-    if (lower === allowed) return true;
-    if (lower.endsWith(`.${allowed}`)) return true;
-  }
-  return false;
-}
-
-function isUrlInSessionScope(url: string, session: ResolverSession): boolean {
-  const parsed = parseTargetUrl(url);
-  if (!parsed) return false;
-  return isHostInScope(parsed.hostname, getAllowedHosts(session));
 }
 
 // ---------------------------------------------------------------------------
@@ -189,28 +151,22 @@ function normalizeHeadersInit(
   return { ...(init as Record<string, string>) };
 }
 
-function mergeHeadersInto(
-  init: RequestInit | undefined,
-  session: ResolverSession,
-  url: string,
-): RequestInit {
-  const callerHeaders = normalizeHeadersInit(init?.headers);
-  const merged = resolveEffectiveHeaders(session, url, callerHeaders);
-  return {
-    ...(init ?? {}),
-    headers: merged,
-  };
-}
-
-// Blessed fetch for target HTTP — behaves like `fetch(url, init)` plus
-// resolver-merged headers. Out-of-scope URLs pass through unchanged.
+// Redirect hops are dispatched manually so each destination gets a fresh
+// scope decision instead of inheriting the initial target's credentials.
 export function targetFetch(
   session: ResolverSession,
   url: string,
   init?: RequestInit,
-): Promise<Response> {
-  const merged = mergeHeadersInto(init, session, url);
-  return fetch(url, merged);
+): Promise<RedirectFetchResult> {
+  const callerHeaders = normalizeHeadersInit(init?.headers);
+  const { headers: _headers, ...requestInit } = init ?? {};
+  return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) =>
+    resolveEffectiveHeaders(
+      session,
+      hopUrl,
+      context.crossOriginTainted ? undefined : callerHeaders,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -605,7 +561,7 @@ export function applyHeadersToShellCommand(
   // CommandBackend contract — custom transports default to POSIX
   // regardless of host OS.
   const allowDescriptorRedirect = platform !== "windows";
-  const allowed = getAllowedHosts(session);
+  const allowed = getSessionAllowedHosts(session);
   const inScopeHost = commandHosts.find((h) => isHostInScope(h, allowed));
   if (!inScopeHost) {
     return { command, status: "no-headers", tool: null };
