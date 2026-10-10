@@ -6,14 +6,14 @@
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
 import {
+  fetchWithScopedRedirects,
+  type RedirectFetchResult,
+} from "./redirects";
+import {
   getSessionAllowedHosts,
   isHostInScope,
   isUrlInSessionScope,
 } from "./targetScope";
-import {
-  fetchWithScopedRedirects,
-  type RedirectFetchResult,
-} from "./redirects";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
 // Structural subset of session shape the resolver reads. Kept loose so

@@ -8,6 +8,10 @@ export {
   AskUserQuestionSchema,
   type AskUserQuestionsResult,
 } from "./askUserQuestions";
+export {
+  type BrowserHeaderPolicy,
+  resolveBrowserHeaderPolicy,
+} from "./browserHeaderRouting";
 // Browser automation tools
 export {
   BROWSER_TOOL_NAMES,
