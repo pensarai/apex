@@ -15,6 +15,7 @@ import {
 
 import { join } from "node:path";
 import { applyPatchImpl } from "../../agents/offSecAgent/tools/applyPatchImpl";
+import { resolveBrowserHeaderPolicy } from "../../agents/offSecAgent/tools/browserHeaderRouting";
 import {
   deleteWorkspaceFile,
   readWorkspaceFile,
@@ -24,7 +25,6 @@ import {
 import { globImpl } from "../../agents/offSecAgent/tools/globImpl";
 import { grepImpl } from "../../agents/offSecAgent/tools/grepImpl";
 import { listFilesImpl } from "../../agents/offSecAgent/tools/listFilesImpl";
-import { resolveBrowserHeaderPolicy } from "../../agents/offSecAgent/tools/browserHeaderRouting";
 import { createPlaywrightBrowserBackend } from "../../agents/offSecAgent/tools/playwrightMcp";
 import { readFileImpl } from "../../agents/offSecAgent/tools/readFileImpl";
 import { SandboxBrowserBackend } from "../../agents/offSecAgent/tools/sandboxPlaywright";
