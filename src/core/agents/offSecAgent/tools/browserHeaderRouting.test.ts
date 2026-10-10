@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import {
   browserHeaderRouteFunction,
@@ -66,12 +67,12 @@ describe("browserHeaderRouteFunction", () => {
         },
       ),
     };
-    const fn = new Function(
-      `return (${browserHeaderRouteFunction({
+    const fn = runInNewContext(
+      `(${browserHeaderRouteFunction({
         allowedHosts: ["example.com"],
         headers: { "X-Scoped-Secret": "secret" },
       })})`,
-    )() as (page: {
+    ) as (page: {
       context(): typeof context;
     }) => Promise<{ installed: boolean }>;
 
@@ -107,6 +108,21 @@ describe("browserHeaderRouteFunction", () => {
     await handler({
       request: () => ({
         url: () => "https://outside.example.net/data",
+        allHeaders: async () => ({ accept: "application/json" }),
+      }),
+      continue: continueRequest,
+    });
+
+    expect(continueRequest).toHaveBeenCalledWith();
+  });
+
+  it("uses the destination host rather than matching userinfo", async () => {
+    const handler = await installRoute();
+    const continueRequest = vi.fn(async () => {});
+
+    await handler({
+      request: () => ({
+        url: () => "https://api.example.com@outside.example.net/data",
         allHeaders: async () => ({ accept: "application/json" }),
       }),
       continue: continueRequest,
