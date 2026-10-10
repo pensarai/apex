@@ -35,11 +35,8 @@ export function browserHeaderRouteBody(policy: BrowserHeaderPolicy): string {
   return `
 const __apexAllowedHosts = ${JSON.stringify(policy.allowedHosts)};
 const __apexHeaders = ${JSON.stringify(policy.headers)};
-const __apexRouteDebug = { invocations: 0, allowed: 0, rejected: 0, urlType: typeof URL, parseErrors: 0 };
-context.__apexRouteDebug = __apexRouteDebug;
 if (__apexAllowedHosts.length > 0 && Object.keys(__apexHeaders).length > 0) {
   await context.route('**/*', async route => {
-    __apexRouteDebug.invocations++;
     const request = route.request();
     let allowed = false;
     try {
@@ -56,15 +53,12 @@ if (__apexAllowedHosts.length > 0 && Object.keys(__apexHeaders).length > 0) {
         });
       }
     } catch {
-      __apexRouteDebug.parseErrors++;
       allowed = false;
     }
     if (!allowed) {
-      __apexRouteDebug.rejected++;
       await route.continue();
       return;
     }
-    __apexRouteDebug.allowed++;
     const requestHeaders = await request.allHeaders();
     await route.continue({ headers: { ...requestHeaders, ...__apexHeaders } });
   });
@@ -78,6 +72,6 @@ export function browserHeaderRouteFunction(
   return `async (page) => {
   const context = page.context();
   ${browserHeaderRouteBody(policy)}
-  return { installed: true, urlType: typeof URL };
+  return { installed: true };
 }`;
 }
