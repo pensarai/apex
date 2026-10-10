@@ -129,7 +129,7 @@ describe("SandboxBrowserBackend", () => {
           },
         },
       ],
-    } as ToolContext["session"]["credentialManager"];
+    } as unknown as ToolContext["session"]["credentialManager"];
     const backend = SandboxBrowserBackend(ctx);
 
     await backend.navigate("https://target.example/dashboard");
