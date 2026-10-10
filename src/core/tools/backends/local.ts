@@ -24,13 +24,17 @@ import {
 import { globImpl } from "../../agents/offSecAgent/tools/globImpl";
 import { grepImpl } from "../../agents/offSecAgent/tools/grepImpl";
 import { listFilesImpl } from "../../agents/offSecAgent/tools/listFilesImpl";
+import { resolveBrowserHeaderPolicy } from "../../agents/offSecAgent/tools/browserHeaderRouting";
 import { createPlaywrightBrowserBackend } from "../../agents/offSecAgent/tools/playwrightMcp";
 import { readFileImpl } from "../../agents/offSecAgent/tools/readFileImpl";
 import { SandboxBrowserBackend } from "../../agents/offSecAgent/tools/sandboxPlaywright";
 import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuard";
 import { HttpSmsInbox } from "../../agents/offSecAgent/tools/smsInbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
-import { fetchWithScopedRedirects } from "../../http/redirects";
+import {
+  fetchWithScopedRedirects,
+  TargetRedirectError,
+} from "../../http/redirects";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
@@ -311,6 +315,7 @@ export function LocalBackends(
           undefined,
           undefined,
           ctx.browserSession,
+          resolveBrowserHeaderPolicy(resolverSessionFromCtx(ctx), ctx.target),
         );
     return localBrowser;
   }
@@ -630,6 +635,8 @@ async function fetchStandard(
     };
   } catch (error: unknown) {
     const isAbort = error instanceof Error && error.name === "AbortError";
+    const redirectChain =
+      error instanceof TargetRedirectError ? error.redirectChain : undefined;
     const stopReason = isAbort
       ? o?.abortSignal?.aborted
         ? "aborted"
@@ -642,13 +649,14 @@ async function fetchStandard(
           ? "Request aborted by user"
           : `Request timeout after ${timeout}ms`
         : errMessage(error),
-      url: req.url,
+      url: redirectChain?.at(-1) ?? req.url,
       method,
       status: 0,
       statusText: "",
       headers: {},
       body: "",
-      redirected: false,
+      redirected: (redirectChain?.length ?? 0) > 1,
+      ...(redirectChain && redirectChain.length > 1 ? { redirectChain } : {}),
       capture: {
         complete: false,
         stopReason,
@@ -782,6 +790,8 @@ async function fetchReadable(
     };
   } catch (error: unknown) {
     const isAbort = error instanceof Error && error.name === "AbortError";
+    const redirectChain =
+      error instanceof TargetRedirectError ? error.redirectChain : undefined;
     const errorMsg = isAbort
       ? o?.abortSignal?.aborted
         ? "Request aborted by user"
@@ -789,12 +799,13 @@ async function fetchReadable(
       : `Failed to fetch page: ${errMessage(error)}`;
     return {
       success: false,
-      url,
+      url: redirectChain?.at(-1) ?? url,
       status: 0,
       statusText: "",
       headers: {},
       body: "",
-      redirected: false,
+      redirected: (redirectChain?.length ?? 0) > 1,
+      ...(redirectChain && redirectChain.length > 1 ? { redirectChain } : {}),
       error: errorMsg,
       contentTruncated: true,
       stopReason: isAbort

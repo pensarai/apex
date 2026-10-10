@@ -28,6 +28,16 @@ export interface RedirectFetchResult {
   readonly redirectChain: string[];
 }
 
+export class TargetRedirectError extends TypeError {
+  constructor(
+    message: string,
+    readonly redirectChain: string[],
+  ) {
+    super(message);
+    this.name = "TargetRedirectError";
+  }
+}
+
 export function redirectRequest<T>(
   status: number,
   method: string,
@@ -114,16 +124,29 @@ export async function fetchWithScopedRedirects(
     }
     if (redirectMode === "error") {
       await response.body?.cancel();
-      throw new TypeError("Redirect encountered while redirect mode is error");
+      throw new TargetRedirectError(
+        "Redirect encountered while redirect mode is error",
+        [...redirectChain],
+      );
     }
     if (redirectCount >= MAX_TARGET_REDIRECTS) {
       await response.body?.cancel();
-      throw new TypeError(
+      throw new TargetRedirectError(
         `Maximum redirect count exceeded (${MAX_TARGET_REDIRECTS})`,
+        [...redirectChain],
       );
     }
 
-    const nextUrl = resolveRedirectUrl(currentUrl, location);
+    let nextUrl: string;
+    try {
+      nextUrl = resolveRedirectUrl(currentUrl, location);
+    } catch (error) {
+      await response.body?.cancel();
+      throw new TargetRedirectError(
+        error instanceof Error ? error.message : String(error),
+        [...redirectChain],
+      );
+    }
     crossOriginTainted ||=
       new URL(currentUrl).origin !== new URL(nextUrl).origin;
 
