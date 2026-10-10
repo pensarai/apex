@@ -82,10 +82,7 @@ export function sanitizeRedirectHeaders(
 export async function fetchWithScopedRedirects(
   initialUrl: string,
   init: Omit<RequestInit, "headers">,
-  headersForUrl: (
-    url: string,
-    context: RedirectHeaderContext,
-  ) => HeaderRecord,
+  headersForUrl: (url: string, context: RedirectHeaderContext) => HeaderRecord,
 ): Promise<RedirectFetchResult> {
   const redirectMode = init.redirect ?? "follow";
   let currentUrl = new URL(initialUrl).toString();
@@ -127,7 +124,8 @@ export async function fetchWithScopedRedirects(
     }
 
     const nextUrl = resolveRedirectUrl(currentUrl, location);
-    crossOriginTainted ||= new URL(currentUrl).origin !== new URL(nextUrl).origin;
+    crossOriginTainted ||=
+      new URL(currentUrl).origin !== new URL(nextUrl).origin;
 
     const redirectedRequest = redirectRequest(response.status, method, body);
     method = redirectedRequest.method;

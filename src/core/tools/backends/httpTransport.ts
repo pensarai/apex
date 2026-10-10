@@ -208,7 +208,9 @@ export async function requestSandboxHttp(
       ...response,
       url: currentUrl,
       redirected: redirectChain.length > 1,
-      ...(redirectChain.length > 1 ? { redirectChain: [...redirectChain] } : {}),
+      ...(redirectChain.length > 1
+        ? { redirectChain: [...redirectChain] }
+        : {}),
     };
 
     const location = response.headers.location;

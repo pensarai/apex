@@ -11,10 +11,6 @@ import type {
 import { hasToolCall } from "ai";
 import { normalizeStepUsage, streamResponse } from "../../ai";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
-import {
-  resolveEffectiveHeaders,
-  stripBrowserManagedHeaders,
-} from "../../http/targetHeaders";
 import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
 import {
@@ -60,6 +56,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
+  resolveBrowserHeaderPolicy,
   SEND_EMAIL_TOOL_NAME,
   SMS_TOOL_NAMES_ACTIVE,
   sessionHasSmsPasswordless,
@@ -475,16 +472,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
-      // Snapshot resolved headers into the browser session. Later mutations
-      // require a browser restart to take effect.
-      const sessionHeaders = input.target
-        ? resolveEffectiveHeaders(input.session, input.target)
-        : input.session.config?.headers;
       this.ownsBrowserSession = !input.browserSession;
       this.browserSession =
         input.browserSession ??
         new PlaywrightMcpSession({
-          extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
+          headerPolicy: resolveBrowserHeaderPolicy(input.session, input.target),
           display: input.display,
           engine: input.browserEngine,
         });
