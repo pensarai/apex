@@ -88,7 +88,7 @@ describe("injected HTTP backends", () => {
           },
         },
       ],
-    } as ToolContext["session"]["credentialManager"];
+    } as unknown as ToolContext["session"]["credentialManager"];
     const commands: string[] = [];
     const execute = vi.fn(async (command: string) => {
       commands.push(command);
@@ -330,7 +330,7 @@ describe("redirect credential isolation", () => {
           },
         },
       ],
-    } as ToolContext["session"]["credentialManager"];
+    } as unknown as ToolContext["session"]["credentialManager"];
 
     const pageResult = await getPage(ctx).execute!(
       {

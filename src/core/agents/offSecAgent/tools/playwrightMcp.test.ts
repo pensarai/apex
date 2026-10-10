@@ -245,7 +245,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
         headers: { "X-Scoped-Secret": "secret" },
       },
     });
-    const callTool = vi.fn(async () => ({}));
+    const callTool = vi.fn(async (_request: unknown) => ({}));
     const internal = session as unknown as {
       installHeaderRoute(client: { callTool: typeof callTool }): Promise<void>;
     };
@@ -253,7 +253,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     await internal.installHeaderRoute({ callTool });
 
     expect(callTool).toHaveBeenCalledTimes(1);
-    const request = callTool.mock.calls[0]?.[0] as {
+    const request = callTool.mock.calls[0]?.[0] as unknown as {
       name: string;
       arguments: { code: string };
     };
