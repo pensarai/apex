@@ -6,6 +6,13 @@ import type {
 import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuard";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { buildWindowsCurlCommand } from "../../agents/offSecAgent/tools/windowsCurl";
+import {
+  isRedirectStatus,
+  MAX_TARGET_REDIRECTS,
+  redirectRequest,
+  resolveRedirectUrl,
+  sanitizeRedirectHeaders,
+} from "../../http/redirects";
 import { resolveEffectiveHeaders, shellQuote } from "../../http/targetHeaders";
 
 const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
@@ -148,6 +155,115 @@ export async function requestSandboxHttp(
   },
 ): Promise<HttpRequestResult> {
   const { url, method, headers, body, followRedirects, timeout } = opts;
+  const session = resolverSessionFromCtx(ctx);
+  const deadline = timeout === undefined ? undefined : Date.now() + timeout;
+  const requestHeaders = headers ?? {};
+  const redirectChain = [new URL(url).toString()];
+  let currentUrl = redirectChain[0];
+  let currentMethod = method.toUpperCase();
+  let currentBody = body;
+  let bodyDropped = false;
+  let crossOriginTainted = false;
+
+  for (let redirectCount = 0; ; redirectCount++) {
+    const remaining =
+      deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
+    if (remaining === 0) {
+      return {
+        success: false,
+        status: 0,
+        statusText: "",
+        headers: {},
+        body: "",
+        url: currentUrl,
+        method: currentMethod,
+        redirected: redirectChain.length > 1,
+        ...(redirectChain.length > 1 ? { redirectChain } : {}),
+        error: `Request timeout after ${timeout}ms`,
+        capture: {
+          complete: false,
+          stopReason: "timeout",
+          capturedBytes: 0,
+          capturedBytesBasis: "raw",
+        },
+      };
+    }
+
+    const mergedHeaders = sanitizeRedirectHeaders(
+      resolveEffectiveHeaders(
+        session,
+        currentUrl,
+        crossOriginTainted ? undefined : requestHeaders,
+      ),
+      { crossOriginTainted, bodyDropped },
+    );
+    const response = await requestSandboxHttpSingleHop(ctx, {
+      url: currentUrl,
+      method: currentMethod,
+      headers: mergedHeaders,
+      body: currentBody,
+      timeout: remaining,
+    });
+    const withRedirectMetadata: HttpRequestResult = {
+      ...response,
+      url: currentUrl,
+      redirected: redirectChain.length > 1,
+      ...(redirectChain.length > 1 ? { redirectChain: [...redirectChain] } : {}),
+    };
+
+    const location = response.headers.location;
+    if (
+      !followRedirects ||
+      !response.capture.complete ||
+      !isRedirectStatus(response.status) ||
+      location === undefined
+    ) {
+      return withRedirectMetadata;
+    }
+    if (redirectCount >= MAX_TARGET_REDIRECTS) {
+      return {
+        ...withRedirectMetadata,
+        success: false,
+        error: `Maximum redirect count exceeded (${MAX_TARGET_REDIRECTS})`,
+      };
+    }
+
+    let nextUrl: string;
+    try {
+      nextUrl = resolveRedirectUrl(currentUrl, location);
+    } catch (error) {
+      return {
+        ...withRedirectMetadata,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    crossOriginTainted ||=
+      new URL(currentUrl).origin !== new URL(nextUrl).origin;
+    const nextRequest = redirectRequest(
+      response.status,
+      currentMethod,
+      currentBody,
+    );
+    currentMethod = nextRequest.method;
+    currentBody = nextRequest.body;
+    bodyDropped ||= nextRequest.bodyDropped;
+    currentUrl = nextUrl;
+    redirectChain.push(currentUrl);
+  }
+}
+
+async function requestSandboxHttpSingleHop(
+  ctx: ToolContext,
+  opts: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    timeout: number | undefined;
+  },
+): Promise<HttpRequestResult> {
+  const { url, method, headers, body, timeout } = opts;
 
   const { sandbox } = ctx;
   if (!sandbox) {
@@ -181,14 +297,6 @@ export async function requestSandboxHttp(
   let bodyTempFile: string | null = null;
 
   try {
-    // Resolve session/credential headers so the sandbox curl path matches
-    // the local fetch path. Caller `headers` win as the request layer.
-    const mergedHeaders = resolveEffectiveHeaders(
-      resolverSessionFromCtx(ctx),
-      url,
-      headers,
-    );
-
     const timeoutSeconds =
       timeout === undefined ? 0 : Math.ceil(timeout / 1000);
     const nonce = randomBytes(8).toString("hex");
@@ -216,10 +324,9 @@ export async function requestSandboxHttp(
       const win = buildWindowsCurlCommand({
         url,
         method,
-        headers: mergedHeaders,
+        headers,
         body:
           body && ["POST", "PUT", "PATCH"].includes(method) ? body : undefined,
-        followRedirects,
         timeoutSeconds,
         maxBytes: MAX_DOWNLOAD_BYTES,
         exitMarker,
@@ -228,7 +335,7 @@ export async function requestSandboxHttp(
       executeOpts.envVars = win.envVars;
     } else {
       let curlCommand = `curl -sS -i -X ${method}`;
-      for (const [key, value] of Object.entries(mergedHeaders)) {
+      for (const [key, value] of Object.entries(headers)) {
         curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
       }
 
@@ -267,10 +374,6 @@ export async function requestSandboxHttp(
         }
 
         curlCommand += ` --data-binary @${bodyTempFile}`;
-      }
-
-      if (followRedirects) {
-        curlCommand += " -L";
       }
 
       curlCommand += ` --max-time ${timeoutSeconds}`;

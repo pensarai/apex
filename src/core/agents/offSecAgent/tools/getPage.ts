@@ -22,6 +22,7 @@ type GetPageInput = z.infer<typeof getPageInputSchema>;
 export interface GetPageResponse {
   success: boolean;
   url: string;
+  redirectChain?: string[];
   title?: string;
   content?: string;
   error?: string;
@@ -56,6 +57,7 @@ BEST PRACTICES:
         return {
           success: response.success,
           url: response.url,
+          redirectChain: response.redirectChain,
           title: response.title,
           content: response.body,
           error: response.error,

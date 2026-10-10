@@ -10,6 +10,10 @@ import {
   isHostInScope,
   isUrlInSessionScope,
 } from "./targetScope";
+import {
+  fetchWithScopedRedirects,
+  type RedirectFetchResult,
+} from "./redirects";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
 // Structural subset of session shape the resolver reads. Kept loose so
@@ -147,28 +151,22 @@ function normalizeHeadersInit(
   return { ...(init as Record<string, string>) };
 }
 
-function mergeHeadersInto(
-  init: RequestInit | undefined,
-  session: ResolverSession,
-  url: string,
-): RequestInit {
-  const callerHeaders = normalizeHeadersInit(init?.headers);
-  const merged = resolveEffectiveHeaders(session, url, callerHeaders);
-  return {
-    ...(init ?? {}),
-    headers: merged,
-  };
-}
-
-// Blessed fetch for target HTTP — behaves like `fetch(url, init)` plus
-// resolver-merged headers. Out-of-scope URLs pass through unchanged.
+// Redirect hops are dispatched manually so each destination gets a fresh
+// scope decision instead of inheriting the initial target's credentials.
 export function targetFetch(
   session: ResolverSession,
   url: string,
   init?: RequestInit,
-): Promise<Response> {
-  const merged = mergeHeadersInto(init, session, url);
-  return fetch(url, merged);
+): Promise<RedirectFetchResult> {
+  const callerHeaders = normalizeHeadersInit(init?.headers);
+  const { headers: _headers, ...requestInit } = init ?? {};
+  return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) =>
+    resolveEffectiveHeaders(
+      session,
+      hopUrl,
+      context.crossOriginTainted ? undefined : callerHeaders,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
