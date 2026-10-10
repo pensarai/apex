@@ -43,10 +43,7 @@ export function isHostInScope(
   });
 }
 
-export function isUrlInSessionScope(
-  url: string,
-  scope: TargetScope,
-): boolean {
+export function isUrlInSessionScope(url: string, scope: TargetScope): boolean {
   const parsed = parseTargetUrl(url);
   return (
     parsed !== null &&
