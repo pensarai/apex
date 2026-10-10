@@ -43,11 +43,18 @@ if (__apexAllowedHosts.length > 0 && Object.keys(__apexHeaders).length > 0) {
     const request = route.request();
     let allowed = false;
     try {
-      const hostname = new URL(request.url()).hostname.toLowerCase();
-      allowed = __apexAllowedHosts.some(value => {
-        const allowedHost = value.toLowerCase();
-        return hostname === allowedHost || hostname.endsWith('.' + allowedHost);
-      });
+      const authority = request.url().match(/^[a-z][a-z\\d+.-]*:\\/\\/([^/?#]*)/i)?.[1];
+      if (authority) {
+        const hostPort = authority.slice(authority.lastIndexOf('@') + 1);
+        const hostname = (hostPort.startsWith('[')
+          ? hostPort.slice(0, hostPort.indexOf(']') + 1)
+          : hostPort.split(':', 1)[0]
+        ).toLowerCase();
+        allowed = __apexAllowedHosts.some(value => {
+          const allowedHost = value.toLowerCase();
+          return hostname === allowedHost || hostname.endsWith('.' + allowedHost);
+        });
+      }
     } catch {
       __apexRouteDebug.parseErrors++;
       allowed = false;
