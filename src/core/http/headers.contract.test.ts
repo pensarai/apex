@@ -1,8 +1,10 @@
 // Contract tests for the custom-headers subsystem: resolver layering/scope,
 // `targetFetch`, shell injection, history redaction, parser errors.
 
+import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -253,6 +255,119 @@ describe("targetFetch", () => {
     });
 
     spy.mockRestore();
+  });
+});
+
+describe("targetFetch redirect scoping", () => {
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    await Promise.all(
+      servers
+        .splice(0)
+        .map(
+          (server) =>
+            new Promise<void>((resolve) => server.close(() => resolve())),
+        ),
+    );
+  });
+
+  async function listen(server: Server): Promise<number> {
+    servers.push(server);
+    server.listen(0);
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("test server did not bind");
+    }
+    return address.port;
+  }
+
+  it("drops managed and caller headers on an out-of-scope redirect", async () => {
+    let received: import("node:http").IncomingHttpHeaders = {};
+    const outsidePort = await listen(
+      createServer((request, response) => {
+        received = request.headers;
+        response.end("outside");
+      }),
+    );
+    const targetPort = await listen(
+      createServer((_request, response) => {
+        response.writeHead(302, {
+          Location: `http://127.0.0.1:${outsidePort}/stolen`,
+        });
+        response.end();
+      }),
+    );
+    const target = `http://localhost:${targetPort}`;
+    const session = makeSession({
+      targets: [target],
+      config: {
+        headers: {
+          "X-Session-Secret": "session-secret",
+          Authorization: "Bearer session-secret",
+          Cookie: "sid=session-secret",
+        },
+      },
+      credentialManager: {
+        listCredentialsWithHeaders: () => [
+          {
+            tokens: {
+              customHeaders: {
+                "X-Credential-Secret": "credential-secret",
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await targetFetch(session, `${target}/start`, {
+      headers: { "X-Request-Secret": "request-secret" },
+      redirect: "follow",
+    });
+    await result.response.text();
+
+    expect(received["x-session-secret"]).toBeUndefined();
+    expect(received["x-credential-secret"]).toBeUndefined();
+    expect(received["x-request-secret"]).toBeUndefined();
+    expect(received.authorization).toBeUndefined();
+    expect(received.cookie).toBeUndefined();
+    expect(result.redirectChain).toEqual([
+      `${target}/start`,
+      `http://127.0.0.1:${outsidePort}/stolen`,
+    ]);
+    expect(result.response.url).toBe(`http://127.0.0.1:${outsidePort}/stolen`);
+  });
+
+  it("does not dispatch the redirect when manual mode is selected", async () => {
+    let outsideRequests = 0;
+    const outsidePort = await listen(
+      createServer((_request, response) => {
+        outsideRequests++;
+        response.end("outside");
+      }),
+    );
+    const targetPort = await listen(
+      createServer((_request, response) => {
+        response.writeHead(302, {
+          Location: `http://127.0.0.1:${outsidePort}/stolen`,
+        });
+        response.end();
+      }),
+    );
+    const target = `http://localhost:${targetPort}`;
+
+    const result = await targetFetch(
+      makeSession({ targets: [target] }),
+      `${target}/start`,
+      { redirect: "manual" },
+    );
+    await result.response.text();
+
+    expect(result.response.status).toBe(302);
+    expect(result.redirectChain).toEqual([`${target}/start`]);
+    expect(outsideRequests).toBe(0);
   });
 });
 
