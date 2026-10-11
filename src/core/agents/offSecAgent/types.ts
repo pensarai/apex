@@ -134,7 +134,15 @@ export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
  * re-declaring the fields, so a specialized agent can no longer drop a hook
  * by forgetting to list it in a hand-written constructor.
  */
+export interface ToolExecutionContext {
+  run<T>(
+    call: { toolCallId: string; toolName: string },
+    execute: () => Promise<T>,
+  ): Promise<T>;
+}
+
 export interface AgentHooks {
+  toolExecutionContext?: ToolExecutionContext;
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
 

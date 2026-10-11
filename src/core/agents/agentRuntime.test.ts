@@ -32,6 +32,7 @@ interface FakeOpts extends SpecializedAgentInput {
 
 function buildHooks() {
   return {
+    toolExecutionContext: { run: vi.fn() },
     backends: { fs: {}, command: {}, http: {}, browser: {}, inbox: {} },
     subagentSpawner: { spawnMany: vi.fn() },
     languageModelMiddleware: { wrapGenerate: vi.fn() },
@@ -190,6 +191,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
         "inferenceRecorder",
         "contextRecorder",
         "toolExecutionRecorder",
+        "toolExecutionContext",
         "usageRecorder",
         "streamIdFactory",
         "smsInbox",
@@ -210,6 +212,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       inferenceRecorder: undefined,
       contextRecorder: undefined,
       toolExecutionRecorder: undefined,
+      toolExecutionContext: undefined,
       usageRecorder: undefined,
       streamIdFactory: undefined,
       smsInbox: undefined,
@@ -230,6 +233,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       inferenceRecorder: undefined,
       contextRecorder: undefined,
       toolExecutionRecorder: undefined,
+      toolExecutionContext: undefined,
       usageRecorder: undefined,
       streamIdFactory: undefined,
       smsInbox: undefined,
