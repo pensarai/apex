@@ -1,5 +1,5 @@
 import { type ToolSet, tool } from "ai";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { AgentEventBus } from "../eventBus";
 import { CanonicalCapabilityInvoker } from "./capabilityInvoker";
@@ -108,6 +108,63 @@ const canonicalTools: ToolSet = {
 };
 
 describe("createCodeModeTools", () => {
+  test.each([
+    false,
+    true,
+  ])("cancels wait polling without terminating the cell (already aborted: %s)", async (alreadyAborted) => {
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: {},
+      allowedTools: [],
+      eventBus: new AgentEventBus(),
+      sessionId: "session_wait",
+      getMessageId: () => "message_wait",
+    });
+    const cellRuntime = new CodeModeRuntime(invoker);
+    const presented = createCodeModeTools("schema-code", cellRuntime, {}, []);
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, "removeEventListener");
+    try {
+      const pending = await cellRuntime.execute(
+        "await new Promise(() => {})",
+        {
+          parentToolCallId: "exec_pending",
+          messages: [],
+        },
+        0,
+      );
+      expect(pending.status).toBe("running");
+      const executeWait = presented.wait.execute;
+      if (!executeWait) throw new Error("Missing wait executor");
+      if (alreadyAborted) controller.abort(new Error("stop polling"));
+      const result = executeWait(
+        { cell_id: pending.cellId, yield_time_ms: 60_000 },
+        {
+          toolCallId: "wait_cancelled",
+          messages: [],
+          abortSignal: controller.signal,
+        },
+      );
+      const rejected = expect(result).rejects.toThrow("stop polling");
+      if (!alreadyAborted) controller.abort(new Error("stop polling"));
+      await rejected;
+      if (!alreadyAborted) {
+        expect(removeListener).toHaveBeenCalledWith(
+          "abort",
+          expect.any(Function),
+        );
+      }
+      expect(
+        (await cellRuntime.wait(pending.cellId, { yieldTimeMs: 0 })).status,
+      ).toBe("running");
+      expect(
+        (await cellRuntime.wait(pending.cellId, { terminate: true })).status,
+      ).toBe("terminated");
+    } finally {
+      removeListener.mockRestore();
+      await cellRuntime.dispose();
+    }
+  }, 2_000);
+
   test("rejects injected direct tools that collide with exec or wait", () => {
     expect(() =>
       createCodeModeTools(

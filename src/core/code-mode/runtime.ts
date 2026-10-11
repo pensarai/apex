@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import RELEASE_SYNC from "@jitl/quickjs-singlefile-cjs-release-sync";
 import type { ModelMessage } from "ai";
-import { newQuickJSWASMModule, type QuickJSHandle } from "quickjs-emscripten";
+import { newQuickJSWASMModule, Scope } from "quickjs-emscripten";
 import type {
   CanonicalCapabilityInvoker,
   CodeModeCellMetrics,
@@ -199,8 +199,9 @@ const GUEST_PRELUDE = `
     }
     const results = new Array(items.length);
     let nextIndex = 0;
+    let stopped = false;
     const lane = async () => {
-      while (nextIndex < items.length) {
+      while (!stopped && nextIndex < items.length) {
         const index = nextIndex++;
         if (settle) {
           try {
@@ -212,7 +213,12 @@ const GUEST_PRELUDE = `
             results[index] = { status: "rejected", reason: String(reason) };
           }
         } else {
-          results[index] = await worker(items[index], index);
+          try {
+            results[index] = await worker(items[index], index);
+          } catch (error) {
+            stopped = true;
+            throw error;
+          }
         }
       }
     };
@@ -277,8 +283,13 @@ export class CodeModeRuntime {
 
   async wait(
     cellId: string,
-    options: { yieldTimeMs?: number; terminate?: boolean } = {},
+    options: {
+      yieldTimeMs?: number;
+      terminate?: boolean;
+      abortSignal?: AbortSignal;
+    } = {},
   ): Promise<CodeCellResult> {
+    options.abortSignal?.throwIfAborted();
     const cell = this.cells.get(cellId);
     if (!cell) throw new Error(`Unknown or completed code cell: ${cellId}`);
     if (options.terminate) cell.controller.abort("Terminated by wait");
@@ -286,6 +297,7 @@ export class CodeModeRuntime {
       cellId,
       cell.promise,
       options.yieldTimeMs ?? DEFAULT_YIELD_MS,
+      options.abortSignal,
     );
   }
 
@@ -316,7 +328,9 @@ export class CodeModeRuntime {
     cellId: string,
     promise: Promise<CodeCellResult>,
     requestedYieldMs: number,
+    abortSignal?: AbortSignal,
   ): Promise<CodeCellResult> {
+    abortSignal?.throwIfAborted();
     const yieldTimeMs = Math.min(Math.max(0, requestedYieldMs), MAX_YIELD_MS);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const running = new Promise<CodeCellResult>((resolve) => {
@@ -325,12 +339,19 @@ export class CodeModeRuntime {
         yieldTimeMs,
       );
     });
+    let onAbort: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      if (!abortSignal) return;
+      onAbort = () => reject(abortSignal.reason);
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    });
     try {
-      const result = await Promise.race([promise, running]);
+      const result = await Promise.race([promise, running, cancelled]);
       if (result.status !== "running") this.cells.delete(cellId);
       return result;
     } finally {
       if (timer) clearTimeout(timer);
+      if (onAbort) abortSignal?.removeEventListener("abort", onAbort);
     }
   }
 
@@ -355,221 +376,235 @@ export class CodeModeRuntime {
     let loadedValueChars = 0;
     const deadline = Date.now() + MAX_CELL_RUNTIME_MS;
     let cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
-    quickJS ??= newQuickJSWASMModule(RELEASE_SYNC);
-    const QuickJS = await quickJS;
-    const runtime = QuickJS.newRuntime();
-    runtime.setMemoryLimit(MEMORY_LIMIT_BYTES);
-    runtime.setInterruptHandler(
-      () =>
-        context.abortSignal?.aborted === true ||
-        Date.now() > deadline ||
-        Date.now() > cpuDeadline,
-    );
-    const vm = runtime.newContext();
-    let pendingJobs = Promise.resolve();
-    const pumpJobs = () => {
-      pendingJobs = pendingJobs.then(() => {
-        cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
-        const result = runtime.executePendingJobs();
-        if (result.error) {
-          const error = vm.dump(result.error);
-          result.error.dispose();
-          throw new Error(serializeOutput(error));
-        }
-      });
-      return pendingJobs;
-    };
-
-    const bridgePromise = <T>(
-      deferred: ReturnType<typeof vm.newPromise>,
-      operation: Promise<T>,
-      serialize: (value: T) => string | undefined,
-      onAbort?: () => void,
-    ) => {
-      let settled = false;
-      const operationState: {
-        finish?: (kind: "resolve" | "reject", value?: unknown) => void;
-      } = {};
-      let completeBridge: () => void = () => {};
-      const bridge = new Promise<void>((resolve) => {
-        completeBridge = resolve;
-      });
-      hostCalls.add(bridge);
-
-      const finish = (kind: "resolve" | "reject", value?: unknown) => {
-        if (settled) return;
-        settled = true;
-        operationState.finish = undefined;
-        context.abortSignal?.removeEventListener("abort", abort);
-
-        const encoded =
-          kind === "resolve"
-            ? serialize(value as T)
-            : value instanceof Error
-              ? value.message
-              : String(value);
-        const handle =
-          encoded === undefined ? vm.undefined : vm.newString(encoded);
-        if (kind === "resolve") deferred.resolve(handle);
-        else deferred.reject(handle);
-        if (handle !== vm.undefined) handle.dispose();
-
-        void pumpJobs()
-          .catch(() => undefined)
-          .finally(() => {
-            hostCalls.delete(bridge);
-            completeBridge();
-          });
-      };
-      operationState.finish = finish;
-      const abort = () => {
-        onAbort?.();
-        finish(
-          "reject",
-          context.abortSignal?.reason ?? "Code-mode execution aborted",
-        );
-      };
-
-      if (context.abortSignal?.aborted) abort();
-      else
-        context.abortSignal?.addEventListener("abort", abort, { once: true });
-
-      void operation.then(
-        (value) => operationState.finish?.("resolve", value),
-        (error) => operationState.finish?.("reject", error),
-      );
-      return deferred.handle;
-    };
-    const drainHostCalls = async () => {
-      while (hostCalls.size > 0) {
-        await Promise.allSettled([...hostCalls]);
-        await pendingJobs.catch(() => undefined);
-      }
-      await pendingJobs.catch(() => undefined);
-    };
-
-    const invokeHandle = vm.newFunction(
-      "__apexInvoke",
-      (nameHandle, inputHandle) => {
-        if (++nestedCalls > MAX_NESTED_CALLS) {
-          throw new Error(
-            `Code-mode cells are limited to ${MAX_NESTED_CALLS} nested calls`,
-          );
-        }
-        const name = vm.getString(nameHandle);
-        const input = JSON.parse(vm.getString(inputHandle)) as unknown;
-        const deferred = vm.newPromise();
-        const call = this.invoker
-          .invoke(name, input, {
-            parentToolCallId: context.parentToolCallId,
-            messages: context.messages,
-            abortSignal: context.abortSignal,
-            experimental_context: context.experimental_context,
-          })
-          .then((result) => {
-            const encoded = JSON.stringify(result ?? null);
-            if (nestedResultChars + encoded.length > MAX_NESTED_RESULT_CHARS) {
-              throw new Error(
-                `Code-mode nested results are limited to ${MAX_NESTED_RESULT_CHARS} characters per cell; split large reads across cells and persist only compact state or artifacts with create_file`,
-              );
-            }
-            nestedResultChars += encoded.length;
-            return encoded;
-          });
-        return bridgePromise(deferred, call, (result) => result);
-      },
-    );
-    vm.setProp(vm.global, "__apexInvoke", invokeHandle);
-    invokeHandle.dispose();
-
-    const describeHandle = vm.newFunction("__apexDescribe", (nameHandle) => {
-      const deferred = vm.newPromise();
-      return bridgePromise(
-        deferred,
-        this.invoker.describe(vm.getString(nameHandle)),
-        (result) => JSON.stringify(result),
-      );
-    });
-    vm.setProp(vm.global, "__apexDescribe", describeHandle);
-    describeHandle.dispose();
-
-    const sleepHandle = vm.newFunction("__apexSleep", (durationHandle) => {
-      const durationMs = Math.min(
-        30_000,
-        Math.max(0, Math.floor(vm.getNumber(durationHandle))),
-      );
-      const deferred = vm.newPromise();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      let finishSleep: () => void = () => {};
-      const sleep = new Promise<void>((resolve) => {
-        finishSleep = resolve;
-        timer = setTimeout(resolve, durationMs);
-      });
-      return bridgePromise(
-        deferred,
-        sleep,
-        () => undefined,
-        () => {
-          if (timer) clearTimeout(timer);
-          finishSleep();
-        },
-      );
-    });
-    vm.setProp(vm.global, "__apexSleep", sleepHandle);
-    sleepHandle.dispose();
-
-    const textHandle = vm.newFunction("__apexText", (valueHandle) => {
-      const value = JSON.parse(vm.getString(valueHandle)) as unknown;
-      appendOutput(value);
-    });
-    vm.setProp(vm.global, "__apexText", textHandle);
-    textHandle.dispose();
-
-    const storeHandle = vm.newFunction(
-      "__apexStore",
-      (keyHandle, valueHandle) => {
-        const value = vm.getString(valueHandle);
-        if (value.length > MAX_STORED_VALUE_CHARS) {
-          throw new Error(
-            `Stored code-mode values are limited to ${MAX_STORED_VALUE_CHARS} characters; persist large artifacts with create_file instead`,
-          );
-        }
-        const key = vm.getString(keyHandle);
-        const previous = this.storedValues.get(key);
-        const total =
-          this.storedChars -
-          (previous?.length ?? 0) +
-          value.length +
-          (previous === undefined ? key.length : 0);
-        if (total > MAX_STORED_TOTAL_CHARS) {
-          throw new Error(
-            `Stored code-mode state is limited to ${MAX_STORED_TOTAL_CHARS} characters in total; persist large artifacts with create_file instead`,
-          );
-        }
-        this.storedValues.set(key, value);
-        this.storedChars = total;
-      },
-    );
-    vm.setProp(vm.global, "__apexStore", storeHandle);
-    storeHandle.dispose();
-
-    const loadHandle = vm.newFunction("__apexLoad", (keyHandle) => {
-      const value = this.storedValues.get(vm.getString(keyHandle));
-      if (value === undefined) return vm.undefined;
-      if (loadedValueChars + value.length > MAX_STORED_VALUE_CHARS) {
-        throw new Error(
-          `Loaded code-mode values are limited to ${MAX_STORED_VALUE_CHARS} characters per cell; load compact state and page large artifacts with read_file`,
-        );
-      }
-      loadedValueChars += value.length;
-      return vm.newString(value);
-    });
-    vm.setProp(vm.global, "__apexLoad", loadHandle);
-    loadHandle.dispose();
-
-    let promiseHandle: QuickJSHandle | undefined;
+    const scope = new Scope();
     let onAbort: (() => void) | undefined;
+    let drainHostCalls = async () => {};
     try {
+      quickJS ??= newQuickJSWASMModule(RELEASE_SYNC).catch((error) => {
+        quickJS = undefined;
+        throw error;
+      });
+      const QuickJS = await quickJS;
+      context.abortSignal?.throwIfAborted();
+      const runtime = scope.manage(QuickJS.newRuntime());
+      runtime.setMemoryLimit(MEMORY_LIMIT_BYTES);
+      runtime.setInterruptHandler(
+        () =>
+          context.abortSignal?.aborted === true ||
+          Date.now() > deadline ||
+          Date.now() > cpuDeadline,
+      );
+      const vm = scope.manage(runtime.newContext());
+      let pendingJobs = Promise.resolve();
+      const pumpJobs = () => {
+        pendingJobs = pendingJobs.then(() => {
+          cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
+          const result = runtime.executePendingJobs();
+          if (result.error) {
+            const error = vm.dump(result.error);
+            result.error.dispose();
+            throw new Error(serializeOutput(error));
+          }
+        });
+        return pendingJobs;
+      };
+
+      const bridgePromise = <T>(
+        deferred: ReturnType<typeof vm.newPromise>,
+        operation: Promise<T>,
+        serialize: (value: T) => string | undefined,
+        onAbort?: () => void,
+      ) => {
+        let settled = false;
+        const operationState: {
+          finish?: (kind: "resolve" | "reject", value?: unknown) => void;
+        } = {};
+        let completeBridge: () => void = () => {};
+        const bridge = new Promise<void>((resolve) => {
+          completeBridge = resolve;
+        });
+        hostCalls.add(bridge);
+
+        const finish = (kind: "resolve" | "reject", value?: unknown) => {
+          if (settled) return;
+          settled = true;
+          operationState.finish = undefined;
+          context.abortSignal?.removeEventListener("abort", abort);
+
+          const encoded =
+            kind === "resolve"
+              ? serialize(value as T)
+              : value instanceof Error
+                ? value.message
+                : String(value);
+          const handle =
+            encoded === undefined ? vm.undefined : vm.newString(encoded);
+          if (kind === "resolve") deferred.resolve(handle);
+          else deferred.reject(handle);
+          if (handle !== vm.undefined) handle.dispose();
+
+          void pumpJobs()
+            .catch(() => undefined)
+            .finally(() => {
+              hostCalls.delete(bridge);
+              completeBridge();
+            });
+        };
+        operationState.finish = finish;
+        const abort = () => {
+          onAbort?.();
+          finish(
+            "reject",
+            context.abortSignal?.reason ?? "Code-mode execution aborted",
+          );
+        };
+
+        if (context.abortSignal?.aborted) abort();
+        else
+          context.abortSignal?.addEventListener("abort", abort, { once: true });
+
+        void operation.then(
+          (value) => operationState.finish?.("resolve", value),
+          (error) => operationState.finish?.("reject", error),
+        );
+        return deferred.handle;
+      };
+      drainHostCalls = async () => {
+        while (hostCalls.size > 0) {
+          await Promise.allSettled([...hostCalls]);
+          await pendingJobs.catch(() => undefined);
+        }
+        await pendingJobs.catch(() => undefined);
+      };
+
+      const invokeHandle = scope.manage(
+        vm.newFunction("__apexInvoke", (nameHandle, inputHandle) => {
+          if (++nestedCalls > MAX_NESTED_CALLS) {
+            throw new Error(
+              `Code-mode cells are limited to ${MAX_NESTED_CALLS} nested calls`,
+            );
+          }
+          const name = vm.getString(nameHandle);
+          const input = JSON.parse(vm.getString(inputHandle)) as unknown;
+          const deferred = vm.newPromise();
+          const call = this.invoker
+            .invoke(name, input, {
+              parentToolCallId: context.parentToolCallId,
+              messages: context.messages,
+              abortSignal: context.abortSignal,
+              experimental_context: context.experimental_context,
+            })
+            .then((result) => {
+              const encoded = JSON.stringify(result ?? null);
+              if (
+                nestedResultChars + encoded.length >
+                MAX_NESTED_RESULT_CHARS
+              ) {
+                throw new Error(
+                  `Code-mode nested results are limited to ${MAX_NESTED_RESULT_CHARS} characters per cell; split large reads across cells and persist only compact state or artifacts with create_file`,
+                );
+              }
+              nestedResultChars += encoded.length;
+              return encoded;
+            });
+          return bridgePromise(deferred, call, (result) => result);
+        }),
+      );
+      vm.setProp(vm.global, "__apexInvoke", invokeHandle);
+      invokeHandle.dispose();
+
+      const describeHandle = scope.manage(
+        vm.newFunction("__apexDescribe", (nameHandle) => {
+          const deferred = vm.newPromise();
+          return bridgePromise(
+            deferred,
+            this.invoker.describe(vm.getString(nameHandle)),
+            (result) => JSON.stringify(result),
+          );
+        }),
+      );
+      vm.setProp(vm.global, "__apexDescribe", describeHandle);
+      describeHandle.dispose();
+
+      const sleepHandle = scope.manage(
+        vm.newFunction("__apexSleep", (durationHandle) => {
+          const durationMs = Math.min(
+            30_000,
+            Math.max(0, Math.floor(vm.getNumber(durationHandle))),
+          );
+          const deferred = vm.newPromise();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let finishSleep: () => void = () => {};
+          const sleep = new Promise<void>((resolve) => {
+            finishSleep = resolve;
+            timer = setTimeout(resolve, durationMs);
+          });
+          return bridgePromise(
+            deferred,
+            sleep,
+            () => undefined,
+            () => {
+              if (timer) clearTimeout(timer);
+              finishSleep();
+            },
+          );
+        }),
+      );
+      vm.setProp(vm.global, "__apexSleep", sleepHandle);
+      sleepHandle.dispose();
+
+      const textHandle = scope.manage(
+        vm.newFunction("__apexText", (valueHandle) => {
+          const value = JSON.parse(vm.getString(valueHandle)) as unknown;
+          appendOutput(value);
+        }),
+      );
+      vm.setProp(vm.global, "__apexText", textHandle);
+      textHandle.dispose();
+
+      const storeHandle = scope.manage(
+        vm.newFunction("__apexStore", (keyHandle, valueHandle) => {
+          const value = vm.getString(valueHandle);
+          if (value.length > MAX_STORED_VALUE_CHARS) {
+            throw new Error(
+              `Stored code-mode values are limited to ${MAX_STORED_VALUE_CHARS} characters; persist large artifacts with create_file instead`,
+            );
+          }
+          const key = vm.getString(keyHandle);
+          const previous = this.storedValues.get(key);
+          const total =
+            this.storedChars -
+            (previous?.length ?? 0) +
+            value.length +
+            (previous === undefined ? key.length : 0);
+          if (total > MAX_STORED_TOTAL_CHARS) {
+            throw new Error(
+              `Stored code-mode state is limited to ${MAX_STORED_TOTAL_CHARS} characters in total; persist large artifacts with create_file instead`,
+            );
+          }
+          this.storedValues.set(key, value);
+          this.storedChars = total;
+        }),
+      );
+      vm.setProp(vm.global, "__apexStore", storeHandle);
+      storeHandle.dispose();
+
+      const loadHandle = scope.manage(
+        vm.newFunction("__apexLoad", (keyHandle) => {
+          const value = this.storedValues.get(vm.getString(keyHandle));
+          if (value === undefined) return vm.undefined;
+          if (loadedValueChars + value.length > MAX_STORED_VALUE_CHARS) {
+            throw new Error(
+              `Loaded code-mode values are limited to ${MAX_STORED_VALUE_CHARS} characters per cell; load compact state and page large artifacts with read_file`,
+            );
+          }
+          loadedValueChars += value.length;
+          return vm.newString(value);
+        }),
+      );
+      vm.setProp(vm.global, "__apexLoad", loadHandle);
+      loadHandle.dispose();
+
       cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
       vm.unwrapResult(
         vm.evalCode(this.guestPrelude, "apex-code-mode.js"),
@@ -579,7 +614,7 @@ export class CodeModeRuntime {
         `(async () => {\n${code}\n})()`,
         "apex-exec.js",
       );
-      promiseHandle = vm.unwrapResult(evaluated);
+      const promiseHandle = scope.manage(vm.unwrapResult(evaluated));
       const resolution = vm.resolvePromise(promiseHandle);
       // Register the resolver first; even pure guest promises need a job pump.
       await pumpJobs();
@@ -650,9 +685,7 @@ export class CodeModeRuntime {
       return result;
     } finally {
       if (onAbort) context.abortSignal?.removeEventListener("abort", onAbort);
-      promiseHandle?.dispose();
-      vm.dispose();
-      runtime.dispose();
+      scope.dispose();
     }
   }
 
