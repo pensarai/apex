@@ -1,5 +1,6 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -606,7 +607,8 @@ async function* withIdleTimeout<T>(
 function isStreamIdleTimeoutError(error: unknown): boolean {
   // AI SDK may rewrap the error, so walk `cause`.
   for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
-    if (e instanceof StreamIdleTimeoutError) return true;
+    if (e instanceof StreamIdleTimeoutError ||
+      (e as { name?: unknown }).name === "StreamIdleTimeoutError") return true;
     e = (e as { cause?: unknown }).cause;
   }
   return false;
@@ -686,6 +688,7 @@ function wrapStreamWithErrorHandler(
   rateLimitRetryCount: number = 0,
   idleResumeCount: number = 0,
   generationSpans?: GenerationSpanTracker,
+  drainIdleStream?: (reason: unknown) => Promise<void>,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -797,6 +800,8 @@ function wrapStreamWithErrorHandler(
               ) {
                 throw error;
               }
+
+              if (isStreamIdleTimeoutError(error)) await drainIdleStream?.(error);
 
               // Handle stream idle timeout — resume from accumulated messages
               if (
@@ -1511,7 +1516,7 @@ export interface StreamResponseOpts {
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
 
 interface NativeStreamRecovery {
-  model: LanguageModel;
+  model: ReturnType<typeof getProviderModel>;
   run<T>(fn: () => T): T;
 }
 
@@ -1781,8 +1786,68 @@ function streamResponseWithinOperation(
     // Create the appropriate provider instance. The span tracker captures
     // the SDK's root generation span for error marking (see below).
     const generationSpans = createGenerationSpanTracker();
-    const responseOptions: Parameters<typeof streamText>[0] = {
+    const attemptAbort = new AbortController();
+    const attemptSignal = abortSignal
+      ? AbortSignal.any([abortSignal, attemptAbort.signal])
+      : attemptAbort.signal;
+    let cancelModelStream: ((reason: unknown) => Promise<void>) | undefined;
+    // Cancelling the SDK fullStream only detaches its subscriber.
+    const attemptModel = wrapLanguageModel({
       model: providerModel,
+      middleware: {
+        specificationVersion: "v3",
+        wrapStream: async ({ doStream }) => {
+          const pending = doStream();
+          let reader: ReadableStreamDefaultReader<LanguageModelV3StreamPart> | undefined;
+          cancelModelStream = async (reason) => {
+            try {
+              const source = await pending;
+              await (reader ? reader.cancel(reason) : source.stream.cancel(reason));
+            } catch (error) {
+              if (!(error instanceof Error) || (error.name !== "AbortError" && !isStreamIdleTimeoutError(error))) {
+                throw error;
+              }
+            }
+          };
+          const source = await pending;
+          reader = source.stream.getReader();
+          const ownedReader = reader;
+          return {
+            ...source,
+            stream: new ReadableStream({
+              async pull(controller) {
+                const next = await ownedReader.read();
+                if (next.done) controller.close();
+                else controller.enqueue(next.value);
+              },
+              cancel: (reason) => ownedReader.cancel(reason),
+            }),
+          };
+        },
+      },
+    });
+    const drainIdleStream = async (reason: unknown) => {
+      attemptAbort.abort(reason);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          cancelModelStream?.(reason),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(Object.assign(
+                new Error("Stalled model stream did not drain within 30 seconds"),
+                { name: "ModelStreamDrainTimeoutError" },
+              )),
+              30_000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    const responseOptions: Parameters<typeof streamText>[0] = {
+      model: attemptModel,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
@@ -1868,7 +1933,7 @@ function streamResponseWithinOperation(
         }
       },
       onStepFinish,
-      abortSignal,
+      abortSignal: attemptSignal,
       activeTools: allowedTools,
       experimental_repairToolCall: async ({
         toolCall,
@@ -2081,6 +2146,7 @@ function streamResponseWithinOperation(
       0,
       0,
       generationSpans,
+      drainIdleStream,
     );
   } catch (error) {
     // Check if the error is related to context length
