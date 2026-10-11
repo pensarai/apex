@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { describe, expect, it, vi } from "vitest";
 import type { ToolSet } from "ai";
+import { expect, it, vi } from "vitest";
 import { wrapToolExecutionContext } from "./toolExecutionContext";
 
 it("establishes context before tool work and preserves concurrent tool identities", async () => {

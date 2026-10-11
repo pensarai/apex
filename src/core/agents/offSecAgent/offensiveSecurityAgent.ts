@@ -36,7 +36,6 @@ import {
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { wrapRecordedTools } from "./recordedTools";
-import { wrapToolExecutionContext } from "./toolExecutionContext";
 import {
   buildBundledAssetsSection,
   buildRuntimeContextSection,
@@ -48,6 +47,7 @@ import {
 } from "./runtimeContext";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
+import { wrapToolExecutionContext } from "./toolExecutionContext";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
