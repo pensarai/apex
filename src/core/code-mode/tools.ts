@@ -123,9 +123,13 @@ export function createCodeModeTools(
       yield_time_ms: z.number().int().min(0).max(60_000).optional(),
       terminate: z.boolean().optional(),
     }),
-    execute: ({ cell_id, yield_time_ms, terminate }) =>
+    execute: ({ cell_id, yield_time_ms, terminate }, options) =>
       runtime
-        .wait(cell_id, { yieldTimeMs: yield_time_ms, terminate })
+        .wait(cell_id, {
+          yieldTimeMs: yield_time_ms,
+          terminate,
+          abortSignal: options.abortSignal,
+        })
         .then(serializeCellResult),
   });
 

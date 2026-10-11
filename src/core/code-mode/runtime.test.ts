@@ -194,6 +194,47 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test.each([
+    false,
+    true,
+  ])("stops scheduling after failure unless collecting settled results (settled: %s)", async (settled) => {
+    const started: number[] = [];
+    const finished: number[] = [];
+    const runtime = createRuntime({
+      inspect: tool({
+        inputSchema: z.object({ value: z.number() }),
+        execute: async ({ value }) => {
+          started.push(value);
+          await new Promise((resolve) =>
+            setTimeout(resolve, value === 0 ? 5 : 30),
+          );
+          if (value === 0) throw new Error("probe failed");
+          finished.push(value);
+          return value;
+        },
+      }),
+    });
+    try {
+      const helper = settled ? "mapLimitSettled" : "mapLimit";
+      const result = await runtime.execute(
+        `text(await ${helper}([0, 1, 2, 3], 2, value => tools.call("inspect", {value})))`,
+        context,
+      );
+      expect(result.status).toBe(settled ? "completed" : "failed");
+      expect(started).toEqual(settled ? [0, 1, 2, 3] : [0, 1]);
+      expect(finished.sort()).toEqual(settled ? [1, 2, 3] : [1]);
+      if (settled) {
+        expect(
+          JSON.parse(result.output).map(
+            (item: { status: string }) => item.status,
+          ),
+        ).toEqual(["rejected", "fulfilled", "fulfilled", "fulfilled"]);
+      }
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   test("rejects oversized stored host-call results without leaking the runtime", async () => {
     const payload = "x".repeat(100_000);
     const runtime = createRuntime({
