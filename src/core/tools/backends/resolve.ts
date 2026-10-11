@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import { appendLocalWorkspaceFile } from "../../agents/offSecAgent/tools/fileWorkspace";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { LocalBackends, runLocalProgram } from "./local";
@@ -5,6 +6,12 @@ import type { RunOpts, ToolBackends, WriteResult } from "./types";
 import { windowsProgramInvocation } from "./windowsProgram";
 
 export const SANDBOX_ARTIFACTS_ROOT = "/workspace/repo/.pensar";
+
+export function sandboxArtifactsRoot(session: ToolContext["session"]): string {
+  return session.config?.remoteFileWorkspaceRoot
+    ? posix.join(session.config.remoteFileWorkspaceRoot, ".pensar")
+    : SANDBOX_ARTIFACTS_ROOT;
+}
 
 const localByContext = new WeakMap<ToolContext, ToolBackends>();
 
