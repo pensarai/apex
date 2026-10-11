@@ -105,6 +105,7 @@ vi.mock("./tools", () => ({
   PlaywrightMcpSession: class {},
 }));
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: Record<string, unknown>) => {
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };

@@ -16,6 +16,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -24,6 +25,7 @@ import type {
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
+import type { CodeCellResult } from "../../code-mode";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -135,6 +137,14 @@ export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
  * by forgetting to list it in a hand-written constructor.
  */
 export interface AgentHooks {
+  /** Defaults to auto; APEX_CODE_MODE can select a process-wide default. */
+  toolProtocol?: AgentToolProtocolPreference;
+  /** Restrict these active capabilities to direct calls, excluding the exec bridge. */
+  directTools?: string[];
+  /** Also allow injected tools inside exec; lifecycle contracts always remain direct. */
+  nestedTools?: string[];
+  onCodeCellComplete?: (result: CodeCellResult) => void;
+
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
 
