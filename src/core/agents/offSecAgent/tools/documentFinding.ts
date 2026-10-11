@@ -11,7 +11,7 @@ import {
   resolveArtifactFs,
   resolveBackends,
   resolveScriptRunner,
-  SANDBOX_ARTIFACTS_ROOT,
+  sandboxArtifactsRoot,
 } from "../../../tools/backends/resolve";
 import type { WriteOpts, WriteResult } from "../../../tools/backends/types";
 import { scopedLogger } from "../../../util/lazyLogger";
@@ -200,18 +200,20 @@ function artifactPath(ctx: ToolContext, ...parts: string[]): string {
 }
 
 function artifactsRoot(ctx: ToolContext): string {
-  return isRealSandbox(ctx) ? SANDBOX_ARTIFACTS_ROOT : ctx.session.rootPath;
+  return isRealSandbox(ctx)
+    ? sandboxArtifactsRoot(ctx.session)
+    : ctx.session.rootPath;
 }
 
 function pocsRoot(ctx: ToolContext): string {
   return isRealSandbox(ctx)
-    ? `${SANDBOX_ARTIFACTS_ROOT}/pocs`
+    ? `${sandboxArtifactsRoot(ctx.session)}/pocs`
     : ctx.session.pocsPath;
 }
 
 function findingsRoot(ctx: ToolContext): string {
   return isRealSandbox(ctx)
-    ? `${SANDBOX_ARTIFACTS_ROOT}/findings`
+    ? `${sandboxArtifactsRoot(ctx.session)}/findings`
     : ctx.session.findingsPath;
 }
 
