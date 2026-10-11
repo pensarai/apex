@@ -149,7 +149,10 @@ describe("streamResponse durability hooks", () => {
       expect(mocks.wrapLanguageModel).toHaveBeenCalledOnce();
       expect(mocks.wrapLanguageModel).toHaveBeenCalledWith({
         model: mocks.baseModel,
-        middleware: { specificationVersion: "v3", wrapStream: expect.any(Function) },
+        middleware: {
+          specificationVersion: "v3",
+          wrapStream: expect.any(Function),
+        },
       });
       expect(streamCall(0).model).toBe(mocks.wrappedModel);
       expect(streamCall(0).maxRetries).toBe(3);
@@ -175,7 +178,10 @@ describe("streamResponse durability hooks", () => {
       });
       expect(mocks.wrapLanguageModel).toHaveBeenNthCalledWith(2, {
         model: mocks.wrappedModel,
-        middleware: { specificationVersion: "v3", wrapStream: expect.any(Function) },
+        middleware: {
+          specificationVersion: "v3",
+          wrapStream: expect.any(Function),
+        },
       });
       expect(streamCall(0).model).toBe(attemptModel);
     });

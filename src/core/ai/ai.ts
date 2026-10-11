@@ -1,9 +1,9 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import {
   generateText,
   type LanguageModel,
@@ -615,8 +615,11 @@ async function* withIdleTimeout<T>(
 function isStreamIdleTimeoutError(error: unknown): boolean {
   // AI SDK may rewrap the error, so walk `cause`.
   for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
-    if (e instanceof StreamIdleTimeoutError ||
-      (e as { name?: unknown }).name === "StreamIdleTimeoutError") return true;
+    if (
+      e instanceof StreamIdleTimeoutError ||
+      (e as { name?: unknown }).name === "StreamIdleTimeoutError"
+    )
+      return true;
     e = (e as { cause?: unknown }).cause;
   }
   return false;
@@ -849,7 +852,8 @@ function wrapStreamWithErrorHandler(
                 throw error;
               }
 
-              if (isStreamIdleTimeoutError(error)) await drainIdleStream?.(error);
+              if (isStreamIdleTimeoutError(error))
+                await drainIdleStream?.(error);
 
               // Handle stream idle timeout — resume from accumulated messages
               if (
@@ -1974,13 +1978,21 @@ function streamResponseWithinOperation(
         specificationVersion: "v3",
         wrapStream: async ({ doStream }) => {
           const pending = doStream();
-          let reader: ReadableStreamDefaultReader<LanguageModelV3StreamPart> | undefined;
+          let reader:
+            | ReadableStreamDefaultReader<LanguageModelV3StreamPart>
+            | undefined;
           cancelModelStream = async (reason) => {
             try {
               const source = await pending;
-              await (reader ? reader.cancel(reason) : source.stream.cancel(reason));
+              await (reader
+                ? reader.cancel(reason)
+                : source.stream.cancel(reason));
             } catch (error) {
-              if (!(error instanceof Error) || (error.name !== "AbortError" && !isStreamIdleTimeoutError(error))) {
+              if (
+                !(error instanceof Error) ||
+                (error.name !== "AbortError" &&
+                  !isStreamIdleTimeoutError(error))
+              ) {
                 throw error;
               }
             }
@@ -2010,10 +2022,15 @@ function streamResponseWithinOperation(
           cancelModelStream?.(reason),
           new Promise<never>((_, reject) => {
             timer = setTimeout(
-              () => reject(Object.assign(
-                new Error("Stalled model stream did not drain within 30 seconds"),
-                { name: "ModelStreamDrainTimeoutError" },
-              )),
+              () =>
+                reject(
+                  Object.assign(
+                    new Error(
+                      "Stalled model stream did not drain within 30 seconds",
+                    ),
+                    { name: "ModelStreamDrainTimeoutError" },
+                  ),
+                ),
               30_000,
             );
           }),
