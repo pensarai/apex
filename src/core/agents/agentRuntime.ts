@@ -24,6 +24,7 @@ import type { FindingPolicy, StreamIdFactory } from "./offSecAgent/types";
  */
 export interface RequiredAgentHooks {
   findingPolicy: FindingPolicy | undefined;
+  toolExecutionContext: AgentHooks["toolExecutionContext"];
   backends: ToolBackends | undefined;
   subagentSpawner: SubagentSpawner | undefined;
   languageModelMiddleware:
@@ -53,6 +54,7 @@ export interface RequiredAgentHooks {
 export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
   return {
     findingPolicy: opts.findingPolicy,
+    toolExecutionContext: opts.toolExecutionContext,
     backends: opts.backends,
     subagentSpawner: opts.subagentSpawner,
     languageModelMiddleware: opts.languageModelMiddleware,

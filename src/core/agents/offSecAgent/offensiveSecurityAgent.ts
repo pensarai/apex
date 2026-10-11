@@ -32,6 +32,7 @@ import {
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { wrapRecordedTools } from "./recordedTools";
+import { wrapToolExecutionContext } from "./toolExecutionContext";
 import {
   buildBundledAssetsSection,
   buildRuntimeContextSection,
@@ -744,6 +745,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           },
         ),
       };
+    }
+
+    if (input.toolExecutionContext) {
+      tools = wrapToolExecutionContext(tools, input.toolExecutionContext);
     }
 
     if (input.resolveResult) {
