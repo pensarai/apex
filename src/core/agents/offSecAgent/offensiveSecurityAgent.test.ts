@@ -361,6 +361,69 @@ describe("spawned-agent usage callbacks", () => {
 });
 
 describe("auxiliary model events", () => {
+  it("persists prepared context instead of restoring a fitted-away prefix", async () => {
+    streamResponseCalls.length = 0;
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-fitted-history-"));
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        messages: [{ role: "user", content: "old large prefix" }],
+        session: { id: "ses_fitted_history", rootPath },
+        activeTools: [],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onContextPrepared: (context: {
+          messages: Array<{ role: string; content: unknown }>;
+          responseMessageOffset: number;
+        }) => void;
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      const firstStep = [
+        { role: "assistant", content: "first call" },
+        { role: "tool", content: "full first result" },
+      ];
+      call.onContextPrepared({
+        messages: [{ role: "user", content: "fitted prefix" }],
+        responseMessageOffset: 0,
+      });
+      await call.onStepFinish({
+        response: { id: "step-1", messages: firstStep },
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      const compacted = [
+        { role: "user", content: "fitted prefix" },
+        { role: "assistant", content: "first call" },
+        { role: "tool", content: "short first result" },
+      ];
+      call.onContextPrepared({
+        messages: compacted,
+        responseMessageOffset: 2,
+      });
+      const secondStep = [
+        { role: "assistant", content: "second call" },
+        { role: "tool", content: "second result" },
+      ];
+      await call.onStepFinish({
+        response: {
+          id: "step-2",
+          messages: [...firstStep, ...secondStep],
+        },
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      expect(writer.latest).toEqual([...compacted, ...secondStep]);
+      writer.cancelTimer();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the last complete message snapshot while forwarding usage", async () => {
     streamResponseCalls.length = 0;
     traceRecordStepCalls.length = 0;

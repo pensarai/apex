@@ -45,8 +45,24 @@ asserts an 18K peak and 1.3M cumulative ceiling to catch a return to
 unbounded growth without requiring an exact output from the tokenizer
 heuristic.
 
-The benchmark's input figures use Apex's `estimateMessageTokens` heuristic on
-the provider-visible prompt, not provider-reported usage. The synthetic model
-does not enforce its context limit; that makes the unbounded growth observable
-without a provider error. Later changes should preserve all 72 tool executions
-and the final response while reducing the peak and cumulative input.
+The provider input figures use Apex's `estimateMessageTokens` heuristic, not
+provider-reported usage. The synthetic model does not enforce its context
+limit; that makes the baseline's unbounded growth observable without a provider
+error.
+
+## Fitted transcript handoff
+
+The same test file also replays a new stream with 40 synthetic prior tool
+exchanges and one final response. The entry fit shortens old tool results, then
+the benchmark reconstructs the legacy `messages.json` snapshot both ways:
+
+| Transcript source                           | Messages | Estimated tokens |
+| ------------------------------------------- | -------: | ---------------: |
+| Original input plus generated response      |       82 |           41,352 |
+| Prepared context plus new response messages |       82 |            6,870 |
+
+Using the prepared context reduces the persisted estimate by 83.4% in this
+fixture while retaining the conversation structure and the persisted tool-result
+references. This measures transcript size, not provider billing. The earlier
+writer could restore a fitted-away prefix at the end of a stream and force the
+next stream to compact it again.

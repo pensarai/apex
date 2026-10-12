@@ -1526,6 +1526,11 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** The fitted context and prior generated-message count for transcript writers. */
+  onContextPrepared?: (context: {
+    messages: ModelMessage[];
+    responseMessageOffset: number;
+  }) => void;
   /**
    * Deprecated host shim: fires only when a cache counter is `> 0`.
    * Apex internals read cache from {@link normalizeStepUsage} on the step.
@@ -1635,13 +1640,14 @@ function streamResponseWithinOperation(
     sessionId,
     sessionPath,
     contextRecorder,
+    onContextPrepared,
   } = opts;
 
-  // response.messages accumulates all generated steps, even after prepareStep
-  // replaces the provider context. Track its previous length so a compacted
-  // recorder base only receives newly completed messages.
+  // response.messages accumulates generated steps after prepareStep rewrites
+  // provider context. The offset prevents transcript writers from appending
+  // older, pre-fit messages again.
   let recorderBase: ModelMessage[] | undefined;
-  let recordedResponseLength = 0;
+  let responseMessageLength = 0;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1667,11 +1673,13 @@ function streamResponseWithinOperation(
       await contextRecorder.checkpoint({
         messages: [
           ...recorderBase,
-          ...step.response.messages.slice(recordedResponseLength),
+          ...step.response.messages.slice(responseMessageLength),
         ],
         system: effectiveSystem ?? null,
       });
-      recordedResponseLength = step.response.messages.length;
+    }
+    if (step.response?.messages) {
+      responseMessageLength = step.response.messages.length;
     }
     if (
       onCacheMetrics &&
@@ -1920,6 +1928,10 @@ function streamResponseWithinOperation(
         }
         // Update the container with the latest messages
         messagesContainer.current = stepMessages;
+        onContextPrepared?.({
+          messages: stepMessages,
+          responseMessageOffset: responseMessageLength,
+        });
         // Mark the last message so the growing conversation caches incrementally
         if (cacheBreakpoint) {
           return {

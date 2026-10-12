@@ -182,6 +182,7 @@ describe("step commits (real SDK)", () => {
   it("commits fitted in-stream context before dispatch without restoring old tool results", async () => {
     const output = "e".repeat(8_000);
     const seenAtDispatch: number[] = [];
+    const preparedOffsets: number[] = [];
     const { recorder } = fakeRecorder();
     let calls = 0;
     state.model = new MockLanguageModelV3({
@@ -218,6 +219,9 @@ describe("step commits (real SDK)", () => {
         },
         stopWhen: stepCountIs(20),
         contextRecorder: recorder,
+        onContextPrepared: ({ responseMessageOffset }) => {
+          preparedOffsets.push(responseMessageOffset);
+        },
         authConfig: {
           customProviders: {
             fixture: {
@@ -233,6 +237,7 @@ describe("step commits (real SDK)", () => {
 
     expect(calls).toBe(9);
     expect(seenAtDispatch).toHaveLength(9);
+    expect(preparedOffsets).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16]);
     expect(Math.max(...seenAtDispatch)).toBeLessThan(7_000);
     const final = recorder.latest();
     expect(final).toHaveLength(18);

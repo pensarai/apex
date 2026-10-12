@@ -759,17 +759,25 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
     this.messagesPath = join(messagesDir, "messages.json");
 
-    // Mutable so that summarization can clear stale history.
-    const initialMessagesRef: { current: ModelMessage[] } = {
-      current: input.messages
-        ? [...input.messages]
-        : [
-            {
-              role: "user" as const,
-              content: [{ type: "text", text: input.prompt }],
-            },
-          ],
+    const preparedContextRef = {
+      current: {
+        messages: input.messages
+          ? [...input.messages]
+          : [
+              {
+                role: "user" as const,
+                content: [{ type: "text" as const, text: input.prompt }],
+              },
+            ],
+        responseMessageOffset: 0,
+      },
     };
+    const legacyMessages = (responseMessages: ModelMessage[]) => [
+      ...preparedContextRef.current.messages,
+      ...responseMessages.slice(
+        preparedContextRef.current.responseMessageOffset,
+      ),
+    ];
 
     // Agent-local persistence: debounce, latest snapshot, and the
     // serialized write queue live in the writer (see ./messagePersistence).
@@ -861,6 +869,12 @@ export class OffensiveSecurityAgent<TResult = void> {
         usageRecorder: input.usageRecorder,
         contextRecorder: input.contextRecorder,
         inferenceRecorder: input.inferenceRecorder,
+        onContextPrepared: (context) => {
+          preparedContextRef.current = {
+            messages: [...context.messages],
+            responseMessageOffset: context.responseMessageOffset,
+          };
+        },
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -880,15 +894,9 @@ export class OffensiveSecurityAgent<TResult = void> {
             return;
           }
 
-          // Recorded runs project the canonical committed context; the
-          // legacy path reconstructs from the (possibly stale after a fit)
-          // initial prefix. Canonical latest() already includes this step's
-          // messages — committing happens upstream in the ai layer's
-          // onStepFinish wrapper, before this user callback runs.
-          const canonical = input.contextRecorder?.latest() ?? [
-            ...initialMessagesRef.current,
-            ...event.response.messages,
-          ];
+          const canonical =
+            input.contextRecorder?.latest() ??
+            legacyMessages(event.response.messages);
           this.writer.setLatest(canonical);
           schedulePersist();
           traceWriter.recordStep(
@@ -905,9 +913,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           await input.onStepFinish?.(event);
         },
         onSummarized: () => {
-          // Context was reset by summarization — discard the old history so
-          // subsequent onStepFinish writes only persist post-summary messages.
-          initialMessagesRef.current = [];
+          preparedContextRef.current = {
+            messages: [],
+            responseMessageOffset: 0,
+          };
           traceWriter.markSummarized();
         },
         onFinish: async (event) => {
@@ -915,11 +924,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.writer.cancelTimer();
           // Skip if the interrupted-step finalizer already wrote the abort snapshot.
           if (!this.writer.syntheticsPersisted) {
-            const finalMessages = input.contextRecorder?.latest() ??
-              this.writer.latest ?? [
-                ...initialMessagesRef.current,
-                ...event.response.messages,
-              ];
+            const finalMessages =
+              input.contextRecorder?.latest() ??
+              this.writer.latest ??
+              legacyMessages(event.response.messages);
             this.writer.setLatest(finalMessages);
             await this.writer.enqueueWrite(finalMessages).catch(() => {});
           }
