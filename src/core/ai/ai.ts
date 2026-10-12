@@ -1678,7 +1678,11 @@ function streamResponseWithinOperation(
         system: effectiveSystem ?? null,
       });
     }
-    if (step.response?.messages) {
+    if (
+      step.response?.id !== "summarization" &&
+      step.response?.id !== "tool-repair" &&
+      step.response?.messages
+    ) {
       responseMessageLength = step.response.messages.length;
     }
     if (

@@ -511,6 +511,9 @@ describe("critical failure modes (real SDK)", () => {
     // Every commit is the base optionally extended, never base + base.
     const base = checkpoints[0]?.messages ?? [];
     expect(base.length).toBeGreaterThan(0);
+    expect(checkpoints.at(-1)?.messages.map((message) => message.role)).toEqual(
+      ["user", "assistant", "tool"],
+    );
     for (const c of checkpoints) {
       expect(c.messages.slice(0, base.length)).toEqual(base);
       expect(c.messages.slice(base.length, base.length * 2)).not.toEqual(base);
