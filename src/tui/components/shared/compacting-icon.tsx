@@ -1,7 +1,8 @@
 import type { RGBA } from "@opentui/core";
 import { useEffect, useState } from "react";
 
-const FRAMES = ["[====]", "[=== ]", "[==  ]", "[=   ]"];
+// From throbber-widgets FALLING_SAND (MIT); local to avoid its react-dom peer.
+const FRAMES = [..."⠁⠂⠄⡀⡈⡐⡠⣀⣁⣂⣄⣌⣔⣤⣥⣦⣮⣶⣷⣿⡿⠿⢟⠟⡛⠛⠫⢋⠋⠍⡉⠉⠑⠡⢁"];
 
 export function CompactingIcon({ fg }: { fg: RGBA }) {
   const [frame, setFrame] = useState(0);
@@ -9,7 +10,7 @@ export function CompactingIcon({ fg }: { fg: RGBA }) {
   useEffect(() => {
     const interval = setInterval(() => {
       setFrame((current) => (current + 1) % FRAMES.length);
-    }, 180);
+    }, 80);
     return () => clearInterval(interval);
   }, []);
 

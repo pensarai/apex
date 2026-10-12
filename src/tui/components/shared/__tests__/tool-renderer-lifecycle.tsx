@@ -70,7 +70,7 @@ try {
     messageCount: 20,
   });
   const pendingFrame = await frame(compacting);
-  assert.ok(pendingFrame.includes("[====] Compacting"));
+  assert.ok(pendingFrame.includes("⠁ Compacting"));
   assert.ok(!pendingFrame.includes("summarize_conversation"));
 
   const completedFrame = await frame(
