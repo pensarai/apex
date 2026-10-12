@@ -806,10 +806,16 @@ function wrapStreamWithErrorHandler(
               }
 
               if (error instanceof InStreamCompactionRequired) {
-                const summarizationStream = createSummarizationStream(
-                  error.messages,
-                  { ...opts, _compactionTrigger: "proactive" },
+                const summarizationStream = wrapStreamWithErrorHandler(
+                  createSummarizationStream(
+                    error.messages,
+                    { ...opts, _compactionTrigger: "proactive" },
+                    model,
+                  ),
+                  messagesContainer,
+                  opts,
                   model,
+                  silent,
                 );
                 for await (const chunk of summarizationStream.fullStream) {
                   yield chunk;
