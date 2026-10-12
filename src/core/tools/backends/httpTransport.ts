@@ -379,7 +379,7 @@ async function requestSandboxHttpSingleHop(
       }
 
       curlCommand += ` --max-time ${timeoutSeconds}`;
-      curlCommand += ` "${url}"`;
+      curlCommand += ` "${shellQuote(url)}"`;
 
       // Reserve metadata space so a completed exact-cap response keeps its
       // exit marker. Any response bytes using that reserve are clipped below.
