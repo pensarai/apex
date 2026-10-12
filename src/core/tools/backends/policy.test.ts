@@ -78,6 +78,27 @@ describe("defaultPolicy", () => {
     expect(decision).toEqual({ allow: true });
   });
 
+  it("denies a direct browser navigation outside scope", async () => {
+    const decision = await defaultPolicy.beforeCall({
+      backend: "browser",
+      op: "navigate",
+      args: { url: "https://outside.example.net/" },
+      ctx: scopedCtx(),
+    });
+    expect(decision.allow).toBe(false);
+    if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
+  });
+
+  it("allows direct browser navigation when no scope is configured", async () => {
+    const decision = await defaultPolicy.beforeCall({
+      backend: "browser",
+      op: "navigate",
+      args: { url: "https://outside.example.net/" },
+      ctx: unscopedCtx(),
+    });
+    expect(decision).toEqual({ allow: true });
+  });
+
   it("allows fs ops by default", async () => {
     const decision = await defaultPolicy.beforeCall({
       backend: "fs",
