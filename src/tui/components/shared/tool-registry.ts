@@ -150,6 +150,7 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
 
   // Utility tools
   scratchpad: () => "note",
+  summarize_conversation: () => "Compacting",
 };
 
 /**

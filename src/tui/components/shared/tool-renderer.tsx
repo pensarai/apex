@@ -10,6 +10,7 @@ import { useObfuscation } from "../../context/obfuscation";
 import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { ShiningText } from "../loaders";
+import { CompactingIcon } from "./compacting-icon";
 import { PentestWorkflowDisplay } from "./pentest-workflow-display";
 import { getResultSummary, type ResultSummary } from "./result-registry";
 import { getToolDisplayLabel } from "./tool-registry";
@@ -74,10 +75,14 @@ export const ToolRenderer = memo(function ToolRenderer({
   const isError = message.status === "error";
   const { toolName, result, logs } = message;
   const args = message.args ?? {};
+  const isCompacting = toolName === "summarize_conversation";
 
-  const summary = getToolDisplayLabel(toolName, args, {
-    preferDescription: isPending,
-  });
+  const summary =
+    isCompacting && isCompleted
+      ? "Context compacted"
+      : getToolDisplayLabel(toolName, args, {
+          preferDescription: isPending,
+        });
 
   // For execute_command, extract both description and command so we can show
   // both. Strings flow into `<text>` children, so the centralised
@@ -101,9 +106,11 @@ export const ToolRenderer = memo(function ToolRenderer({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError
-      ? getResultSummary(result, toolName, args, colors)
-      : null;
+    isCompleted && isCompacting
+      ? null
+      : isCompleted || isError
+        ? getResultSummary(result, toolName, args, colors)
+        : null;
 
   // Determine border color based on status
   const borderColor = isError
@@ -121,7 +128,14 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Tool header line */}
         <box flexDirection="row" gap={1}>
           {isPending ? (
-            <ShiningText text={summary} fg={colors.warning} />
+            isCompacting ? (
+              <>
+                <CompactingIcon fg={colors.primary} />
+                <text fg={colors.info}>{summary}</text>
+              </>
+            ) : (
+              <ShiningText text={summary} fg={colors.warning} />
+            )
           ) : (
             <>
               <text fg={isError ? colors.error : colors.success}>
