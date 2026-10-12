@@ -5,6 +5,20 @@ import { isToolMessage } from "../shared/type-guards";
 /** Cap on retained command-output lines per tool message. */
 export const MAX_LOG_LINES = 200;
 
+export function createDisplayMessageUpdater(
+  snapshot: { current: DisplayMessage[] },
+  publish: (messages: DisplayMessage[]) => void,
+) {
+  return (
+    next: DisplayMessage[] | ((previous: DisplayMessage[]) => DisplayMessage[]),
+  ) => {
+    // Abort recovery must see the same snapshot before React's next commit.
+    snapshot.current =
+      typeof next === "function" ? next(snapshot.current) : next;
+    publish(snapshot.current);
+  };
+}
+
 export function appendStreamedText(
   messages: readonly DisplayMessage[],
   accumulated: string,
@@ -117,9 +131,9 @@ export function mergeCommandOutput(
   const msg = messages[idx];
   const existing = msg.logs ?? [];
   const incoming = buf.split("\n");
-  // If last existing line was partial (no trailing newline), merge it
+  // The last entry is the current line, including an empty one after a newline.
   let merged: string[];
-  if (existing.length > 0 && !buf.startsWith("\n")) {
+  if (existing.length > 0) {
     merged = [...existing];
     merged[merged.length - 1] += incoming[0];
     merged.push(...incoming.slice(1));

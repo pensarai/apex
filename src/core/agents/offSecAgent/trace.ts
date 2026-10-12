@@ -434,6 +434,8 @@ export class StepTraceWriter {
    * @param responseMessages - `event.response.messages` from the AI SDK
    *   (cumulative response messages, NOT including initial prompt messages)
    * @param usage - `event.usage` from the AI SDK (this step's token counts)
+   * @param options.usageOnly - record token usage without advancing the
+   *   cumulative response-message cursor
    */
   recordStep(
     responseMessages: ModelMessage[],
@@ -443,10 +445,16 @@ export class StepTraceWriter {
       cacheReadTokens?: number;
       cacheWriteTokens?: number;
     },
+    options?: { usageOnly?: boolean },
   ): void {
     const now = Date.now();
-    const newMessages = responseMessages.slice(this.previousMessageCount);
-    this.previousMessageCount = responseMessages.length;
+    const usageOnly = options?.usageOnly ?? false;
+    const newMessages = usageOnly
+      ? []
+      : responseMessages.slice(this.previousMessageCount);
+    if (!usageOnly) {
+      this.previousMessageCount = responseMessages.length;
+    }
 
     const observations: NonNullable<StepRecord["observations"]> = [];
     const reasoningParts: string[] = [];
@@ -538,13 +546,13 @@ export class StepTraceWriter {
 
       stepDurationMs: now - this.lastStepTime,
       elapsedMs: now - this.agentStartTime,
-      summarized: this.summarized,
+      summarized: usageOnly ? false : this.summarized,
     };
 
     this.appendRecord(record);
     this.stepIndex++;
     this.lastStepTime = now;
-    this.summarized = false;
+    if (!usageOnly) this.summarized = false;
   }
 
   // ---------------------------------------------------------------------------

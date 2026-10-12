@@ -21,10 +21,6 @@ export const MANTLE_GPT_5_5_ROUTED_ID = `${MANTLE_PREFIX}${MANTLE_GPT_5_5_MODEL_
  */
 export const MANTLE_REGION = process.env.BEDROCK_MANTLE_REGION || "us-east-2";
 
-export function isMantleModel(modelId: string): boolean {
-  return modelId.startsWith(MANTLE_PREFIX);
-}
-
 export function stripMantlePrefix(modelId: string): string {
   return modelId.startsWith(MANTLE_PREFIX)
     ? modelId.slice(MANTLE_PREFIX.length)

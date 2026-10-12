@@ -2,11 +2,10 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hasToolCall, stepCountIs } from "ai";
 import type { SessionInfo } from "../../../session";
-import {
-  OffensiveSecurityAgent,
-  type SpecializedAgentInput,
-} from "../../offSecAgent";
-import { detectOSAndEnhancePrompt } from "../utils";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
+import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
@@ -53,6 +52,100 @@ export interface AttackSurfaceResult {
 // AttackSurfaceAgent
 // ---------------------------------------------------------------------------
 
+interface BlackboxState {
+  target: string;
+  subagentFolder: string;
+}
+
+function resolveBlackboxTarget(opts: AttackSurfaceAgentInput): string {
+  return opts.target ?? (opts.cwd as string);
+}
+
+export const blackboxAttackSurfaceDefinition = defineAgent<
+  AttackSurfaceAgentInput,
+  AttackSurfaceResult,
+  BlackboxState
+>({
+  name: "blackbox-attack-surface",
+  role: "orchestrator",
+  createState: (opts) => {
+    const subagentFolder = join(
+      opts.session.rootPath,
+      "subagents",
+      "attack-surface-agent",
+    );
+    if (!existsSync(subagentFolder)) {
+      mkdirSync(subagentFolder, { recursive: true });
+    }
+    return { target: resolveBlackboxTarget(opts), subagentFolder };
+  },
+  system: () => ATTACK_SURFACE_SYSTEM_PROMPT,
+  activeTools: () => [
+    // Core recon tools
+    "execute_command",
+    "document_app",
+    "document_endpoint",
+    "create_attack_surface_report",
+    // Browser automation for SPAs, JS-heavy apps, and auth flows
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_screenshot",
+    "browser_click",
+    "browser_fill",
+    "browser_evaluate",
+    "browser_console",
+    "browser_get_cookies",
+    // Email tools (filtered out by base class when no inboxes configured)
+    "email_list_inboxes",
+    "email_list_messages",
+    "email_search_messages",
+    "email_get_message",
+    // Send email (filtered out by base class when no SMTP configured)
+    "send_email",
+    // Mobile OTP list (filtered out by base class when no Mobile OTP cred)
+    "sms_list_messages",
+    // Web search tools — research target technologies, find known vulnerabilities
+    "web_search",
+    "get_page",
+  ],
+  stopWhen: () => [
+    hasToolCall("create_attack_surface_report"),
+    stepCountIs(10_000),
+  ],
+  target: (_opts, state) => state.target,
+  prompt: (opts, state) => buildBlackboxPrompt(state.target, opts.session),
+  resolveResult: (opts) => {
+    const resultsPath = join(
+      opts.session.rootPath,
+      "attack-surface-results.json",
+    );
+    const assetsPath = join(opts.session.rootPath, "assets");
+    let results: AttackSurfaceAnalysisResults | null = null;
+    let targets: PentestTarget[] = [];
+
+    if (existsSync(resultsPath)) {
+      try {
+        results = loadAttackSurfaceResults(resultsPath);
+        targets = results.targets || [];
+      } catch {
+        // Report may not have been written yet
+      }
+    }
+
+    return { results, targets, resultsPath, assetsPath };
+  },
+  onStepFinish: (opts, state) => (e) => {
+    opts.onStepFinish?.(e);
+    const messages = e.response.messages;
+    if (messages !== undefined) {
+      writeFileSync(
+        join(state.subagentFolder, "attack-surface-agent.log"),
+        JSON.stringify(messages, null, 2),
+      );
+    }
+  },
+});
+
 /**
  * A recon-focused specialisation of {@link OffensiveSecurityAgent}.
  *
@@ -77,114 +170,13 @@ export interface AttackSurfaceResult {
  * console.log(`Identified ${targets.length} targets for deep testing`);
  * ```
  */
-export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
+export class BlackboxAttackSurfaceAgent extends AgentRuntime<
+  AttackSurfaceAgentInput,
+  AttackSurfaceResult,
+  BlackboxState
+> {
   constructor(opts: AttackSurfaceAgentInput) {
-    const {
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
-    const target = opts.target ?? opts.cwd!;
-
-    const resultsPath = join(session.rootPath, "attack-surface-results.json");
-    const assetsPath = join(session.rootPath, "assets");
-
-    const subagentFolder = join(
-      session.rootPath,
-      "subagents",
-      "attack-surface-agent",
-    );
-
-    if (!existsSync(subagentFolder)) {
-      mkdirSync(subagentFolder, { recursive: true });
-    }
-
-    super({
-      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
-      prompt: buildPrompt(target, session),
-      model,
-      session,
-      target,
-      authConfig,
-      onStepFinish: (e) => {
-        onStepFinish?.(e);
-        const messages = e.response.messages;
-        if (messages !== undefined) {
-          writeFileSync(
-            join(subagentFolder, "attack-surface-agent.log"),
-            JSON.stringify(messages, null, 2),
-          );
-        }
-      },
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      messages: opts.messages,
-      activeTools: [
-        // Core recon tools
-        "execute_command",
-        "document_app",
-        "document_endpoint",
-        "create_attack_surface_report",
-        // Browser automation for SPAs, JS-heavy apps, and auth flows
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_screenshot",
-        "browser_click",
-        "browser_fill",
-        "browser_evaluate",
-        "browser_console",
-        "browser_get_cookies",
-        // Email tools (filtered out by base class when no inboxes configured)
-        "email_list_inboxes",
-        "email_list_messages",
-        "email_search_messages",
-        "email_get_message",
-        // Send email (filtered out by base class when no SMTP configured)
-        "send_email",
-        // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
-        "sms_list_messages",
-        // Web search tools — research target technologies, find known vulnerabilities
-        "web_search",
-        "get_page",
-      ],
-
-      stopWhen: [
-        hasToolCall("create_attack_surface_report"),
-        stepCountIs(10_000),
-      ],
-      toolChoice: "auto",
-
-      resolveResult: () => {
-        let results: AttackSurfaceAnalysisResults | null = null;
-        let targets: PentestTarget[] = [];
-
-        if (existsSync(resultsPath)) {
-          try {
-            results = loadAttackSurfaceResults(resultsPath);
-            targets = results.targets || [];
-          } catch {
-            // Report may not have been written yet
-          }
-        }
-
-        return { results, targets, resultsPath, assetsPath };
-      },
-    });
+    super(blackboxAttackSurfaceDefinition, opts);
   }
 }
 
@@ -192,7 +184,10 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(target: string, session: SessionInfo): string {
+export function buildBlackboxPrompt(
+  target: string,
+  session: SessionInfo,
+): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;
@@ -220,7 +215,7 @@ function buildPrompt(target: string, session: SessionInfo): string {
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
 Then use browser tools to authenticate. Pass the credentialId to delegate_to_auth_subagent — secrets are resolved automatically.
 For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
-When a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login identifier — not MFA-after-password. Fill credentialField="phoneNumber", click send-code, sleep with execute_command, then sms_list_messages with sinceMs from that click (claim=true once a message is present). If the list stays empty, stop and report — do not hang. Do not report phone_verification as a barrier. TOTP-via-env for authenticator MFA is unchanged.
+${MOBILE_OTP_PROMPT_GUIDANCE}
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.

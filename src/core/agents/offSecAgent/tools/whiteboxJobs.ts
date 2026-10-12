@@ -2,13 +2,13 @@ import { isAbsolute, relative, sep } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  remoteWhiteboxJobId,
+  resolveWhiteboxJobs,
+} from "../../../tools/backends/whiteboxJobs";
+import {
   readWhiteboxArtifact as loadWhiteboxSessionArtifact,
-  pollWhiteboxJob as pollJob,
-  readWhiteboxJobLog,
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
-  startWhiteboxJob as startJob,
-  stopWhiteboxJob as stopJob,
 } from "../../../whitebox";
 import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
@@ -29,7 +29,7 @@ export function startWhiteboxJob(ctx: ToolContext) {
 Use this for long-running work that needs polling and logs. Prefer scratch-space
 harnesses; do not modify the target repo unless the operator approved it.
 Network scope constraints apply to hostnames in the command string; local shell
-execution is not sandboxed.`,
+execution uses the configured tool backend.`,
     inputSchema: z.object({
       command: z.string().describe("Shell command to run"),
       cwd: z
@@ -50,7 +50,7 @@ execution is not sandboxed.`,
         .string()
         .describe("A concise description of the whitebox job"),
     }),
-    execute: async ({ command, cwd, timeoutSeconds = 300, name }) => {
+    execute: async ({ command, cwd, timeoutSeconds = 300, name }, options) => {
       try {
         assertCommandInScope(command, ctx);
       } catch (error) {
@@ -88,13 +88,15 @@ execution is not sandboxed.`,
         };
       }
 
-      const record = startJob({
-        session: ctx.session,
-        command,
-        cwd: rootPath,
-        timeoutSeconds,
-        name,
-      });
+      const record = await resolveWhiteboxJobs(ctx).start(
+        {
+          command,
+          cwd: rootPath,
+          timeoutSeconds,
+          name,
+        },
+        options.toolCallId,
+      );
       const logPath = displayPath(ctx, record.logPath);
       return {
         success: true,
@@ -119,7 +121,7 @@ export function pollWhiteboxJob(ctx: ToolContext) {
       toolCallDescription: z.string().describe("A concise polling description"),
     }),
     execute: async ({ jobId }) => {
-      const record = pollJob(jobId, ctx.session.id);
+      const record = await resolveWhiteboxJobs(ctx).poll(jobId);
       if (!record) {
         return {
           success: false,
@@ -154,7 +156,7 @@ export function stopWhiteboxJob(ctx: ToolContext) {
       toolCallDescription: z.string().describe("A concise stop description"),
     }),
     execute: async ({ jobId }) => {
-      const record = stopJob(jobId, ctx.session.id);
+      const record = await resolveWhiteboxJobs(ctx).stop(jobId);
       if (!record) {
         return {
           success: false,
@@ -218,10 +220,25 @@ Prefer \`path\` from tool results (e.g. scan artifacts, code-query output, job l
       if (path) {
         try {
           const relativePath = normalizeArtifactRelativePath(ctx, path);
-          const loaded = await loadWhiteboxSessionArtifact({
-            session: ctx.session,
-            path: relativePath,
-          });
+          const remoteJobId =
+            ctx.backends || ctx.sandbox
+              ? remoteWhiteboxJobId(relativePath)
+              : undefined;
+          const remote = remoteJobId
+            ? await resolveWhiteboxJobs(ctx).read(remoteJobId)
+            : undefined;
+          if (remoteJobId && !remote?.record)
+            throw new Error(`Whitebox job not found: ${remoteJobId}`);
+          const loaded = remote
+            ? {
+                absolutePath: relativePath,
+                content: remote.content,
+                truncated: remote.truncated,
+              }
+            : await loadWhiteboxSessionArtifact({
+                session: ctx.session,
+                path: relativePath,
+              });
           const display = displayPath(ctx, loaded.absolutePath);
           return {
             success: true,
@@ -255,7 +272,7 @@ Prefer \`path\` from tool results (e.g. scan artifacts, code-query output, job l
       }
 
       if (jobId) {
-        const result = readWhiteboxJobLog(jobId, ctx.session.id);
+        const result = await resolveWhiteboxJobs(ctx).read(jobId);
         if (!result.record) {
           return {
             success: false,

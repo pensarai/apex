@@ -37,6 +37,9 @@ const DEFAULT_HEADER_RECORD: Record<string, string> = {
 };
 
 const AuthCredentialsObject = z.object({
+  // Stable identity from the caller (Console credential UUID). When present,
+  // CredentialManager keeps this id instead of minting a session-only `cred_*`.
+  id: z.string().min(1).optional(),
   // Username/password auth
   username: z.string().optional(),
   password: z.string().optional(),
@@ -56,6 +59,9 @@ const AuthCredentialsObject = z.object({
       customHeaders: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
+  // Target uses Sign in with Google; the auth agent must use Chrome and
+  // fill accounts.google.com rather than the target's native login form.
+  googleSignIn: z.boolean().optional(),
 });
 
 export type AuthCredentials = z.infer<typeof AuthCredentialsObject>;
@@ -135,6 +141,14 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     emailAddress: z.string(),
     endpoint: z.string(),
     token: z.string(),
+  }),
+  // Read through a host-supplied adapter, not a transport of its own. Carries
+  // no credential: the host resolves it (see EmailAdapterResolver).
+  z.object({
+    provider: z.literal("pensar-managed"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
   }),
 ]);
 
@@ -220,10 +234,11 @@ const SessionConfigObject = z.object({
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().optional(),
   /**
-   * Opt-in: the client has authorized destructive testing (DB deletes/drops,
-   * API write-deletes, catastrophic host operations). Defaults to off — when
-   * absent or false, the destructive-action guard blocks those operations at
-   * the `http_request` / `execute_command` tool boundary. See
+   * Opt-in: the client has authorized destructive testing (financial
+   * mutations, DB deletes/drops, API write-deletes, catastrophic host
+   * operations). Defaults to off — when absent or false, the
+   * destructive-action guard blocks those operations at the `http_request`,
+   * `execute_command`, and `document_vulnerability` tool boundaries. See
    * `agents/offSecAgent/tools/destructiveGuard.ts`.
    */
   allowDestructiveActions: z.boolean().optional(),
@@ -252,12 +267,34 @@ const SessionConfigObject = z.object({
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
+  /**
+   * Execution-sandbox root for agent helper files when command execution is
+   * remote. Helper file tools and worker prompts root here (per-subagent
+   * subdirectories mirror the host layout); durable session artifacts
+   * (findings, PoCs, evidence, logs) stay in host session paths. Absent —
+   * host session directories, unchanged.
+   */
+  remoteFileWorkspaceRoot: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */
   prompt: z.string().optional(),
   /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */
   taskDriven: z.boolean().optional(),
+  /** Explicit per-invocation destination for native model-boundary evidence. */
+  nativeRolloutEvidence: z
+    .object({ outputDirectory: z.string().min(1) })
+    .optional(),
   /** When true, pentest agents run a plan phase before execution (default: false) */
   requirePlan: z.boolean().optional(),
+  /**
+   * Opt-out: disable sub-agent orchestration for targeted pentests. When true,
+   * the per-target pentest agent runs SOLO as a single worker — it tests every
+   * objective itself instead of acting as an orchestrator that spawns one
+   * `spawn_pentest_agent` worker per objective. Removes the `spawn_pentest_agent`
+   * tool and swaps the orchestrator system prompt for the worker prompt. Defaults
+   * to off (orchestrated fan-out). Trades depth for lower cost and duration — the
+   * orchestrated path is more thorough but spends a full agent run per objective.
+   */
+  disableSubagents: z.boolean().optional(),
   /** Local filesystem path for prompt-injection payload library */
   promptInjectionLibrarySource: z.string().optional(),
 });
@@ -497,6 +534,8 @@ export interface CreateInputProps {
   name?: string;
   prefix?: string;
   config?: SessionConfig;
+  /** Recorded runs bind configuration at admission instead of inheriting ambient settings. */
+  inheritEnvironmentConfig?: boolean;
   /** AI model for session name generation (optional). */
   model?: AIModel;
   /** Auth config for the AI provider (optional). */
@@ -542,13 +581,18 @@ export async function create(input: CreateInputProps) {
     }
   }
 
-  const smtpConfig = resolveSmtpConfig(normalizedConfig?.smtpConfig);
+  const smtpConfig =
+    input.inheritEnvironmentConfig === false
+      ? normalizedConfig?.smtpConfig
+      : resolveSmtpConfig(normalizedConfig?.smtpConfig);
 
   // Caller `headers` wins verbatim; otherwise snapshot the current global
   // defaultHeaders so the session is locked at create time.
   let snapshotHeaders: Record<string, string>;
   if (normalizedConfig?.headers !== undefined) {
     snapshotHeaders = { ...normalizedConfig.headers };
+  } else if (input.inheritEnvironmentConfig === false) {
+    snapshotHeaders = {};
   } else {
     const { config: appConfig } = await import("../config");
     const cfg = await appConfig.get();
@@ -598,6 +642,7 @@ export async function create(input: CreateInputProps) {
       userMessage: input.userMessage,
       model: input.model,
       authConfig: input.authConfig,
+      sessionId: result.id,
     }).then((aiName) => {
       if (aiName) {
         result.name = aiName;

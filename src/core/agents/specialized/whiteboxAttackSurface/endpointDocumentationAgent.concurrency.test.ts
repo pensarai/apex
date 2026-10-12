@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 import type { SessionInfo } from "../../../session";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
+import type { SubagentSpawner } from "../../offSecAgent/subagentSpawner";
 import type { AppInfo } from "./types";
 
 // Tracks how many mocked CodeAgent runs are executing at once so we can assert
@@ -43,7 +44,19 @@ vi.mock("../codeAgent/agent", () => ({
   },
 }));
 
+import { CodeAgent } from "../codeAgent/agent";
 import { runAppEndpointDocumentation } from "./endpointDocumentationAgent";
+
+const codeSpawner = {
+  async spawn() {
+    return new CodeAgent({} as never).consume();
+  },
+  spawnMany: (
+    items: unknown[],
+    worker: (item: unknown, i: number) => Promise<unknown>,
+    opts: { concurrency: number },
+  ) => runWithBoundedConcurrency(items, opts.concurrency, worker),
+} as unknown as SubagentSpawner;
 
 const NUM_APPS = 50;
 const ENDPOINTS_PER_APP = 100;
@@ -93,6 +106,7 @@ async function runAllApps(
       model: "test-model",
       session: {} as unknown as SessionInfo,
       agentLimiter,
+      subagentSpawner: codeSpawner,
     }),
   );
 }

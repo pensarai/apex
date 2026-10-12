@@ -1,8 +1,12 @@
-import { readdir, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
+import type { ListFilesResult } from "./listFilesImpl";
+import { MAX_RECURSIVE } from "./listFilesImpl";
 import type { ToolContext } from "./types";
+
+export { listRecursive } from "./listFilesImpl";
+export type { ListFilesResult };
 
 const listFilesInputSchema = z.object({
   directory: z
@@ -22,58 +26,6 @@ const listFilesInputSchema = z.object({
     ),
 });
 
-type ListFilesInput = z.infer<typeof listFilesInputSchema>;
-
-export type ListFilesResult = {
-  success: boolean;
-  error: string;
-  files: string[];
-  directory: string;
-  count: number;
-  totalFound?: number;
-};
-
-const MAX_RECURSIVE = 200;
-const MAX_NON_RECURSIVE = 500;
-
-async function listRecursive(
-  dir: string,
-  maxEntries: number,
-): Promise<{ paths: string[]; total: number }> {
-  const results: string[] = [];
-  let total = 0;
-
-  async function walk(current: string) {
-    let entries: import("fs").Dirent[];
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      total++;
-      const fullPath = join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (results.length < maxEntries) results.push(`${fullPath}/`);
-        await walk(fullPath);
-      } else {
-        if (results.length < maxEntries) results.push(fullPath);
-      }
-    }
-  }
-
-  await walk(dir);
-  return { paths: results, total };
-}
-
-function toRelative(base: string, paths: string[]): string[] {
-  return paths.map((p) => {
-    const isDir = p.endsWith("/");
-    const rel = relative(base, isDir ? p.slice(0, -1) : p);
-    return isDir ? `${rel}/` : rel;
-  });
-}
-
 export function listFiles(ctx: ToolContext) {
   return tool({
     description: `List files and directories at a given path.
@@ -90,70 +42,8 @@ Each directory entry is suffixed with "/" for easy identification.`,
       directory,
       recursive = false,
     }): Promise<ListFilesResult> => {
-      const dir = directory
-        ? isAbsolute(directory)
-          ? directory
-          : resolve(ctx.agentCwd, directory)
-        : ctx.agentCwd;
-
-      try {
-        const info = await stat(dir);
-        if (!info.isDirectory()) {
-          return {
-            success: false,
-            error: `${dir} is not a directory`,
-            files: [],
-            directory: dir,
-            count: 0,
-          };
-        }
-
-        if (recursive) {
-          const { paths, total } = await listRecursive(dir, MAX_RECURSIVE);
-          const relPaths = toRelative(dir, paths);
-          return {
-            success: true,
-            error:
-              total > MAX_RECURSIVE
-                ? `Showing ${MAX_RECURSIVE} of ${total} entries — narrow the directory or use grep`
-                : "",
-            files: relPaths,
-            directory: dir,
-            count: relPaths.length,
-            totalFound: total > MAX_RECURSIVE ? total : undefined,
-          };
-        }
-
-        const entries = await readdir(dir, { withFileTypes: true });
-        const fullPaths = entries.map((e) => {
-          const name = join(dir, e.name);
-          return e.isDirectory() ? `${name}/` : name;
-        });
-
-        const capped = fullPaths.slice(0, MAX_NON_RECURSIVE);
-        const relPaths = toRelative(dir, capped);
-
-        return {
-          success: true,
-          error:
-            entries.length > MAX_NON_RECURSIVE
-              ? `Showing ${MAX_NON_RECURSIVE} of ${entries.length} entries`
-              : "",
-          files: relPaths,
-          directory: dir,
-          count: relPaths.length,
-          totalFound:
-            entries.length > MAX_NON_RECURSIVE ? entries.length : undefined,
-        };
-      } catch (err: unknown) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-          files: [],
-          directory: dir,
-          count: 0,
-        };
-      }
+      const { fs } = resolveBackends(ctx);
+      return fs.list(directory ?? ".", { recursive });
     },
   });
 }

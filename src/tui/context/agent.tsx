@@ -19,8 +19,8 @@ import {
 } from "../../core/ai";
 import { writeErrorLog } from "../../core/logger";
 import {
-  getAvailableModels,
   getDefaultModelForConfig,
+  getSavedModelForConfig,
 } from "../../core/providers/utils";
 import { useConfig } from "./config";
 import { SessionUsageStore } from "./session-usage";
@@ -71,7 +71,11 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const appConfig = useConfig();
 
   const [model, setModelInternal] = useState<ModelInfo>(() => {
-    return getDefaultModelForConfig(appConfig.data) ?? AVAILABLE_MODELS[0]!;
+    return (
+      getSavedModelForConfig(appConfig.data) ??
+      getDefaultModelForConfig(appConfig.data) ??
+      AVAILABLE_MODELS[0]!
+    );
   });
   const [isModelUserSelected, setIsModelUserSelected] =
     useState<boolean>(false);
@@ -186,17 +190,12 @@ export function AgentProvider({ children }: AgentProviderProps) {
     if (isModelUserSelected) return;
 
     const cfg = appConfig.data;
-    const available = getAvailableModels(cfg);
-    if (available.length === 0) return;
-
     // Honour a previously saved preference
-    if (cfg.selectedModelId) {
-      const savedModel = available.find((m) => m.id === cfg.selectedModelId);
-      if (savedModel) {
-        setModelInternal(savedModel);
-        setIsModelUserSelected(true);
-        return;
-      }
+    const savedModel = getSavedModelForConfig(cfg);
+    if (savedModel) {
+      setModelInternal(savedModel);
+      setIsModelUserSelected(true);
+      return;
     }
 
     // Dynamic default based on configured providers

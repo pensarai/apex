@@ -189,6 +189,36 @@ describe("CredentialManager", () => {
       expect(id1).not.toBe(id2);
       expect(cm.size).toBe(2);
     });
+
+    it("preserves a caller-supplied AuthCredentials id", () => {
+      const id = cm.addFromAuthCredentials({
+        id: "11111111-1111-1111-1111-111111111111",
+        username: "alice",
+        password: "s3cret",
+        role: "admin",
+      });
+
+      expect(id).toBe("11111111-1111-1111-1111-111111111111");
+      expect(cm.resolve(id)?.username).toBe("alice");
+      expect(cm.toAuthCredentials(id)?.id).toBe(id);
+    });
+
+    it("does not collapse two caller-supplied ids even when secrets match", () => {
+      const a = cm.addFromAuthCredentials({
+        id: "cred-a",
+        username: "alice",
+        password: "same",
+      });
+      const b = cm.addFromAuthCredentials({
+        id: "cred-b",
+        username: "alice",
+        password: "same",
+      });
+
+      expect(a).toBe("cred-a");
+      expect(b).toBe("cred-b");
+      expect(cm.size).toBe(2);
+    });
   });
 
   // =========================================================================
@@ -314,6 +344,23 @@ describe("CredentialManager", () => {
       expect(cm.formatForPrompt()).toBe("");
     });
 
+    it("includes a caller-supplied id in formatForPrompt without secrets", () => {
+      cm.addFromAuthCredentials({
+        id: "cred-stable",
+        username: "alice",
+        password: "hidden-secret",
+        role: "admin",
+        context: "staff portal",
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain("cred-stable");
+      expect(prompt).toContain("admin");
+      expect(prompt).toContain("alice");
+      expect(prompt).toContain("staff portal");
+      expect(prompt).not.toContain("hidden-secret");
+    });
+
     it("formats credentials safely for agent prompts", () => {
       cm.add({
         id: "cred-1",
@@ -374,6 +421,70 @@ describe("CredentialManager", () => {
       expect(prompt).toContain("TOTP_SEED");
       expect(prompt).not.toContain("JBSWY3DPEHPK3PXP");
     });
+
+    it("surfaces the Mobile OTP method without exposing its number", () => {
+      cm.add({
+        id: "cred-sms-mfa",
+        username: "tester",
+        password: "secret",
+        additionalFields: {
+          authMethod: "sms-mfa",
+          phoneNumber: "stage-managed-number",
+        },
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain("Authentication method: sms-mfa");
+      expect(prompt).toContain("Additional secret fields: phoneNumber");
+      expect(prompt).not.toContain("stage-managed-number");
+    });
+
+    it("lists unrecognized authMethod as a secret field instead of dropping it", () => {
+      cm.add({
+        id: "cred-unknown-auth",
+        username: "tester",
+        password: "secret",
+        additionalFields: {
+          authMethod: "email-otp",
+          recoveryCode: "hidden-recovery",
+        },
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).not.toContain("Authentication method:");
+      expect(prompt).toContain(
+        "Additional secret fields: authMethod, recoveryCode",
+      );
+      expect(prompt).not.toContain("email-otp");
+      expect(prompt).not.toContain("hidden-recovery");
+    });
+
+    it("marks Sign in with Google without leaking the password", () => {
+      cm.addFromAuthCredentials({
+        username: "agent@agents.example.com",
+        password: "google-secret",
+        loginUrl: "https://app.example.com/login",
+        googleSignIn: true,
+        additionalFields: { "Google employee ID": "deadbeef" },
+      });
+
+      expect(cm.hasGoogleSignIn()).toBe(true);
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain("Sign-in: Google");
+      expect(prompt).toContain("accounts.google.com");
+      expect(prompt).toContain("Google employee ID");
+      expect(prompt).not.toContain("google-secret");
+      expect(prompt).not.toContain("deadbeef");
+      const id = cm.listReferences()[0]?.id;
+      expect(id).toBeDefined();
+      expect(cm.listReferences()[0]?.googleSignIn).toBe(true);
+      expect(cm.toAuthCredentials(id ?? "")?.googleSignIn).toBe(true);
+    });
+
+    it("hasGoogleSignIn is false without a Google credential", () => {
+      cm.addFromAuthCredentials({ username: "a", password: "b" });
+      expect(cm.hasGoogleSignIn()).toBe(false);
+    });
   });
 
   describe("additional secret fields", () => {
@@ -395,6 +506,39 @@ describe("CredentialManager", () => {
     it("omits the key list when there are no extra fields", () => {
       const id = cm.add({ username: "admin", password: "pw" });
       expect(cm.getReference(id)!.additionalFieldKeys).toBeUndefined();
+    });
+
+    it("surfaces a recognized Mobile OTP method separately from secrets", () => {
+      const id = cm.add({
+        username: "admin",
+        password: "pw",
+        additionalFields: {
+          authMethod: "sms-passwordless",
+          phoneNumber: "stage-managed-number",
+        },
+      });
+
+      const ref = cm.getReference(id)!;
+      expect(ref.authMethod).toBe("sms-passwordless");
+      expect(ref.additionalFieldKeys).toEqual(["phoneNumber"]);
+      expect(JSON.stringify(ref)).not.toContain("stage-managed-number");
+    });
+
+    it("keeps unrecognized authMethod on the secret-field list", () => {
+      const id = cm.add({
+        username: "admin",
+        password: "pw",
+        additionalFields: {
+          authMethod: "email-otp",
+          phoneNumber: "stage-managed-number",
+        },
+      });
+
+      const ref = cm.getReference(id)!;
+      expect(ref.authMethod).toBeUndefined();
+      expect(ref.additionalFieldKeys).toEqual(["authMethod", "phoneNumber"]);
+      expect(JSON.stringify(ref)).not.toContain("email-otp");
+      expect(JSON.stringify(ref)).not.toContain("stage-managed-number");
     });
 
     it("keeps credentials that differ only by additional fields distinct", () => {

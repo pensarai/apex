@@ -10,11 +10,6 @@ export interface UpgradeResult {
   toVersion: string;
 }
 
-export async function resolveVersion(): Promise<string> {
-  if (process.env.APEX_VERSION) return process.env.APEX_VERSION;
-  return getLatestVersion();
-}
-
 export function getCurrentVersion(): string {
   return packageJson.version;
 }

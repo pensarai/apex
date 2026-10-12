@@ -1,5 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
 import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
@@ -8,7 +7,8 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
-import { agentLogsDir } from "./agentScratch";
+import { collectCommand } from "../../../tools/backends/collectCommand";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import {
   assertCommandActionAllowed,
   DestructiveActionError,
@@ -19,11 +19,77 @@ import {
   resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
+import { toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 50_000;
-const MS_TIMEOUT_THRESHOLD = 10_000;
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
+
+/** Deadline applied when the model omits every timeout spelling. */
+export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
+export const MAX_COMMAND_TIMEOUT_SECONDS = 600;
+
+export type ExecuteCommandTimeoutValidation =
+  | { ok: true; seconds: number }
+  | { ok: false; error: string };
+
+/**
+ * Explicit timeouts are seconds, taken literally: nonfinite, nonpositive, and
+ * over-max values are rejected — never silently clamped or reinterpreted
+ * (millisecond-style values like 30000 fail as over-max, by design).
+ */
+export function validateExecuteCommandTimeout(
+  timeout: number,
+): ExecuteCommandTimeoutValidation {
+  if (!Number.isFinite(timeout)) {
+    return {
+      ok: false,
+      error: `Invalid timeout: must be a finite number of seconds (got ${timeout})`,
+    };
+  }
+  if (timeout <= 0) {
+    return {
+      ok: false,
+      error: `Invalid timeout: must be a positive number of seconds (got ${timeout})`,
+    };
+  }
+  if (timeout > MAX_COMMAND_TIMEOUT_SECONDS) {
+    return {
+      ok: false,
+      error: `Invalid timeout: ${timeout} exceeds the ${MAX_COMMAND_TIMEOUT_SECONDS}-second maximum — pass seconds, not milliseconds`,
+    };
+  }
+  return { ok: true, seconds: timeout };
+}
+
+export type ExecuteCommandTimeoutInputResolution =
+  | { ok: true; seconds: number | undefined }
+  | { ok: false; error: string };
+
+/**
+ * `timeoutSeconds` (canonical) and `timeout` (legacy) are one seconds field.
+ * Null is inactive — strict-mode models emit it for unset fields — and the
+ * default applies only after alias resolution. Equal aliases pass; a
+ * disagreement is rejected, never guessed or clamped.
+ */
+export function resolveExecuteCommandTimeoutInput(input: {
+  timeoutSeconds?: number | null;
+  timeout?: number | null;
+}): ExecuteCommandTimeoutInputResolution {
+  const canonical =
+    typeof input.timeoutSeconds === "number" ? input.timeoutSeconds : undefined;
+  const legacy = typeof input.timeout === "number" ? input.timeout : undefined;
+  if (
+    canonical !== undefined &&
+    legacy !== undefined &&
+    !Object.is(canonical, legacy)
+  ) {
+    return {
+      ok: false,
+      error: `Conflicting timeout values: timeoutSeconds=${canonical} and timeout=${legacy} — both are seconds; pass matching values or a single field`,
+    };
+  }
+  return { ok: true, seconds: canonical ?? legacy };
+}
 
 /**
  * Placeholder ids models emit for the optional promptInjection pointer when
@@ -69,11 +135,19 @@ const executeCommandInputSchema = z.object({
     .describe(
       "Optional runtime prompt-injection file pointer. Omit this entirely unless you are running a prompt-injection harness with a payload id from list_prompt_injections. When set, the tool resolves the id to a local payload file path and exposes that path through envVar. The raw payload text is never inserted into the command.",
     ),
-  timeout: z
+  timeoutSeconds: z
     .number()
+    .nullable()
     .optional()
     .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+      `Timeout in seconds (maximum ${MAX_COMMAND_TIMEOUT_SECONDS}; over-max and non-positive values are rejected, not clamped). Defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds when unset or null.`,
+    ),
+  timeout: z
+    .number()
+    .nullable()
+    .optional()
+    .describe(
+      "Legacy alias for timeoutSeconds — same seconds value. Prefer timeoutSeconds; if both are set they must match.",
     ),
   allow_unprotected: z
     .boolean()
@@ -83,7 +157,7 @@ const executeCommandInputSchema = z.object({
     ),
 });
 
-type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 /**
  * Models sometimes fill the optional promptInjection pointer with placeholder
@@ -109,72 +183,10 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
-  outputFile?: string;
+  exitCode?: number;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
 };
-
-/**
- * Defensively normalize obviously-millisecond timeout values into seconds.
- *
- * The tool contract is seconds, but models sometimes emit JavaScript-style
- * millisecond values like 30000 or 120000. Without normalization, those become
- * multi-hour hangs instead of 30s / 120s command limits.
- */
-export function normalizeExecuteCommandTimeout(
-  timeout?: number,
-): number | undefined {
-  if (timeout == null || !Number.isFinite(timeout) || timeout <= 0) {
-    return undefined;
-  }
-
-  if (timeout >= MS_TIMEOUT_THRESHOLD) {
-    return Math.max(1, Math.ceil(timeout / 1_000));
-  }
-
-  return timeout;
-}
-
-/**
- * If `raw` exceeds the inline limit, save the full text to a file under this
- * agent's log dir (`cmd-output/`) and return truncated text + file path.
- * Otherwise return the text as-is with no file. Scoped per-subagent via
- * {@link agentLogsDir} so a host can reclaim a finished subagent's command
- * dumps mid-scan.
- */
-function maybeSaveFullOutput(
-  raw: string,
-  ctx: ToolContext,
-): { text: string; file?: string } {
-  if (raw.length <= MAX_INLINE) {
-    return { text: raw || "(no output)" };
-  }
-
-  const outputDir = join(agentLogsDir(ctx), "cmd-output");
-  if (!existsSync(outputDir)) {
-    mkdirSync(outputDir, { recursive: true });
-  }
-
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `output-${ts}.txt`;
-  const filePath = join(outputDir, filename);
-
-  try {
-    writeFileSync(filePath, raw);
-  } catch {
-    return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
-    };
-  }
-
-  const truncated = raw.substring(0, MAX_INLINE);
-  return {
-    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Use read_file or grep to analyze.`,
-    file: filePath,
-  };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
 
 /**
  * Redact known secret values from command output. Longest-first to avoid
@@ -191,27 +203,10 @@ export function redactSecretValues(text: string, secrets?: string[]): string {
   return out;
 }
 
-function wrapCommandWithEnv(
-  command: string,
-  envVars?: Record<string, string>,
-): string {
-  if (!envVars || Object.keys(envVars).length === 0) return command;
-
-  const assignments = Object.entries(envVars)
-    .map(([name, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-        throw new Error(`Invalid environment variable name: ${name}`);
-      }
-      return `${name}=${shellQuote(value)}`;
-    })
-    .join(" ");
-
-  return `env ${assignments} bash -lc ${shellQuote(command)}`;
-}
-
 async function resolvePromptInjectionEnv(
   promptInjection: ExecuteCommandInput["promptInjection"],
   ctx: ToolContext,
+  timeoutSeconds: number,
 ): Promise<
   | {
       envVars?: Record<string, string>;
@@ -242,6 +237,48 @@ async function resolvePromptInjectionEnv(
     };
   }
 
+  const backends = resolveBackends(ctx);
+  if (backends.sandboxed) {
+    const encoded = Buffer.from(payloadContent).toString("base64");
+    const envVars: Record<string, string> = {
+      APEX_HIDDEN_PAYLOAD_COUNT: String(Math.ceil(encoded.length / 6000)),
+    };
+    for (let offset = 0; offset < encoded.length; offset += 6000)
+      envVars[`APEX_HIDDEN_PAYLOAD_${offset / 6000}`] = encoded.slice(
+        offset,
+        offset + 6000,
+      );
+    const filename = `apex_payload_${randomUUID()}.txt`;
+    let writeCommand: string;
+    if (backends.command.platform === "windows") {
+      const script = `$ErrorActionPreference='Stop';$data='';for($i=0;$i -lt [int]$env:APEX_HIDDEN_PAYLOAD_COUNT;$i++){$data += [Environment]::GetEnvironmentVariable('APEX_HIDDEN_PAYLOAD_'+$i)};$path=[IO.Path]::Combine([IO.Path]::GetTempPath(),'${filename}');[IO.File]::WriteAllBytes($path,[Convert]::FromBase64String($data));[Console]::Write($path)`;
+      writeCommand = `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, "utf16le").toString("base64")}`;
+    } else {
+      writeCommand = `umask 077; (i=0; while [ "$i" -lt "$APEX_HIDDEN_PAYLOAD_COUNT" ]; do printenv "APEX_HIDDEN_PAYLOAD_$i"; i=$((i+1)); done) | base64 -d > '/tmp/${filename}' && printf '%s' '/tmp/${filename}'`;
+    }
+    const written = await collectCommand(
+      backends.command.run(writeCommand, {
+        envVars,
+        timeoutSeconds: Math.min(timeoutSeconds, 30),
+        abortSignal: ctx.abortSignal,
+      }),
+    );
+    if (written.exitCode !== 0 || written.timedOut || written.stdoutTruncated) {
+      return {
+        library,
+        error: `Failed to materialize prompt injection payload in sandbox: ${written.stderr || "write failed"}`,
+      };
+    }
+    const path = written.stdout.trim();
+    if (!path) throw new Error("Payload materialization returned no path");
+    return {
+      library,
+      envVars: {
+        [normalized.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]: path,
+      },
+    };
+  }
+
   const payloadFilePath = library.getPayloadFilePath(normalized.id);
   if (!payloadFilePath) {
     return {
@@ -265,9 +302,21 @@ export function executeCommand(ctx: ToolContext) {
   return tool({
     description: `Execute a shell command for penetration testing activities.
 
-The shell is persistent — environment variables, working directory (cd), and
-background processes survive across calls. You do NOT need nohup/& tricks to
-keep processes alive between calls; just background them normally with &.
+Each call runs in a FRESH shell in your working directory: cd, export,
+aliases, and background jobs do NOT persist between calls. Chain related
+steps in one command (cd dir && ./run) or use absolute paths. Environment
+activation (virtualenv, exports) must happen in the SAME command that uses
+it, or come from the session's configured environment.
+
+LOCAL SERVICES: to start a long-running service, background it WITH
+redirected stdio so the call returns immediately and the service survives as
+a plain process:
+  nohup python server.py > scratchpad/server.log 2>&1 & echo $! > scratchpad/server.pid
+Check later with cat scratchpad/server.log; stop with kill $(cat
+scratchpad/server.pid). There is no shell job table across calls — recorded
+PIDs/files plus explicit lifecycle are how you manage services. Note: a
+command that FAILS (nonzero exit) takes its background children down with it;
+only a successful launcher leaves its redirected service running.
 
 COMMON COMMANDS FOR BLACK BOX TESTING:
 
@@ -291,12 +340,19 @@ SSL/TLS TESTING:
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
 - Use timeout command for long-running scans
-- The tool's timeout parameter is in SECONDS, not milliseconds
-- Good timeout examples: 30, 60, 120
-- Do NOT pass millisecond values like 30000 or 120000
-- If the tool's timeout is hit, the partial stdout the command had already
+- The tool's timeoutSeconds parameter is in SECONDS (default ${DEFAULT_COMMAND_TIMEOUT_SECONDS}, maximum ${MAX_COMMAND_TIMEOUT_SECONDS}); the legacy timeout field takes the same value
+- Good timeoutSeconds examples: 30, 60, 120
+- Values over ${MAX_COMMAND_TIMEOUT_SECONDS} (including millisecond-style values like 30000) are REJECTED, not reinterpreted
+- Each stream captures up to 1 MiB in memory; a verbose process is never
+  killed for output volume — capture keeps draining and reports truncation
+  honestly (capped output is labeled INCOMPLETE). For large evidence, redirect
+  the command's output directly to a file (e.g. \`... > scratchpad/scan.txt 2>&1\`)
+  and read targeted windows of it: with read_file/grep locally, or — when the
+  command ran in the sandbox, where those files live inside the sandbox — via
+  bounded execute_command reads like \`sed -n '1,200p' scratchpad/scan.txt\`.
+- If timeoutSeconds is hit, the partial stdout the command had already
   produced is still returned (with exit code 124). It is safe to set a
-  conservative timeout: you will not lose the bytes a fuzzer printed
+  conservative timeoutSeconds: you will not lose the bytes a fuzzer printed
   before the kill.
 
 LONG-RUNNING FUZZERS AND SCANNERS:
@@ -304,20 +360,20 @@ LONG-RUNNING FUZZERS AND SCANNERS:
 Wordlist fuzzers (ffuf, gobuster, dirb, wfuzz, dirsearch) and large nmap
 scans against slow targets routinely take longer than a single tool call
 should. ALWAYS bound them with their OWN internal time budget, set BELOW
-the tool's timeout, so the tool exits cleanly with full output and you
-don't have to rely on signal-based truncation.
+the tool's timeoutSeconds, so the tool exits cleanly with full output and
+you don't have to rely on signal-based truncation.
 
 General rule: set the inner tool's runtime cap at least 5s below the
-execute_command timeout, so the tool exits gracefully and flushes its
-results to disk before any signal arrives.
+execute_command timeoutSeconds, so the tool exits gracefully and flushes
+its results to disk before any signal arrives.
 
 - ffuf: pair with -maxtime <seconds> and a sane -rate.
   Example: ffuf -u <url>/FUZZ -w <wordlist> -maxtime 55 -rate 50
-  with the tool's timeout=60.
+  with the tool's timeoutSeconds=60.
 - gobuster: has no -maxtime flag. Wrap with the \`timeout\` coreutils
   command and tune --timeout / --threads.
   Example: timeout 55 gobuster dir -u <url> -w <wordlist> --timeout 5s --threads 20
-  with the tool's timeout=60.
+  with the tool's timeoutSeconds=60.
 - nmap: prefer --host-timeout, --max-rtt-timeout, and -T4 / --min-rate
   to bound total runtime against slow networks.
 
@@ -330,9 +386,12 @@ PROMPT-INJECTION PAYLOADS:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
+    toModelOutput: ({ output }) =>
+      toolOutputForModel(ctx, output as ExecuteCommandResult),
     execute: async ({
       command,
       promptInjection,
+      timeoutSeconds,
       timeout,
       allow_unprotected,
     }): Promise<ExecuteCommandResult> => {
@@ -344,6 +403,37 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           stderr: "",
           command,
         };
+      }
+
+      // Fail loud on alias conflicts and invalid explicit timeouts — silently
+      // dropping, guessing, or clamping them would reinterpret the caller's
+      // deadline. Aliases resolve before the default applies.
+      let effectiveTimeout = DEFAULT_COMMAND_TIMEOUT_SECONDS;
+      const resolvedInput = resolveExecuteCommandTimeoutInput({
+        timeoutSeconds,
+        timeout,
+      });
+      if (!resolvedInput.ok) {
+        return {
+          success: false,
+          error: resolvedInput.error,
+          stdout: "",
+          stderr: resolvedInput.error,
+          command,
+        };
+      }
+      if (resolvedInput.seconds !== undefined) {
+        const validated = validateExecuteCommandTimeout(resolvedInput.seconds);
+        if (!validated.ok) {
+          return {
+            success: false,
+            error: validated.error,
+            stdout: "",
+            stderr: validated.error,
+            command,
+          };
+        }
+        effectiveTimeout = validated.seconds;
       }
 
       try {
@@ -363,18 +453,27 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       // Inject session headers into the shell command. Fail closed for
       // unknown tools / pipelines so configured headers aren't silently
-      // dropped — agent can opt out with `allow_unprotected`.
+      // dropped — agent can opt out with `allow_unprotected`. The literal
+      // `2>&1` recognition is POSIX-shell-only, so the selected backend's
+      // declared platform decides whether it applies.
+      const backends = resolveBackends(ctx);
       const cmdHosts = extractHostsFromCommand(command);
       const inject = applyHeadersToShellCommand(
         command,
         resolverSessionFromCtx(ctx),
         cmdHosts,
+        backends.command.platform,
       );
       if (inject.status === "unknown-tool" && !allow_unprotected) {
+        const redirectGuidance =
+          backends.command.platform === "windows"
+            ? "on Windows command shells `2>&1` redirection is not supported for header injection — remove the redirect or use the http_request tool. "
+            : "the `2>&1` form requires fully literal arguments: expansions, escapes, concatenated words, and braces/brackets are forbidden — double quotes do not neutralize `$` or backslashes, and curl globs `{…}`/`[…]` URLs even when quoted. Remove the redirect or use the http_request tool. ";
         const msg =
-          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
-          "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
-          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined or chained. " +
+          "Run a supported HTTP tool (curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto) on a single target host. " +
+          redirectGuidance +
+          "Otherwise pass allow_unprotected: true to acknowledge headers will NOT be sent.";
         return {
           success: false,
           error: msg,
@@ -409,9 +508,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;
-      let promptInjectionPayloadContent: string | undefined;
       try {
-        const resolved = await resolvePromptInjectionEnv(promptInjection, ctx);
+        const resolved = await resolvePromptInjectionEnv(
+          promptInjection,
+          ctx,
+          effectiveTimeout,
+        );
         if (resolved.error) {
           return {
             success: false,
@@ -423,7 +525,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
         promptInjectionLibrary = resolved.library;
         promptInjectionEnvVars = resolved.envVars;
-        promptInjectionPayloadContent = resolved.payloadContent;
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return {
@@ -442,69 +543,18 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         return redactSecretValues(stripped, ctx.secretValues);
       };
 
-      // Sandbox mode: route execution through the sandbox
-      if (ctx.sandbox) {
+      {
+        let captured: Awaited<ReturnType<typeof collectCommand>>;
         try {
-          const ssmOpts: {
-            timeout?: number;
-            envVars?: Record<string, string>;
-          } = {};
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
-          if (normalizedTimeout != null) {
-            ssmOpts.timeout = normalizedTimeout;
-          }
-
-          // If we have a prompt injection payload for sandbox mode, we need to write
-          // it to a temp file in the sandbox first, since the host file path won't
-          // be accessible from inside the sandbox.
-          if (promptInjectionPayloadContent && promptInjection) {
-            const envVarName =
-              promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
-            const sandboxTempFile = `/tmp/apex_payload_${Date.now()}.txt`;
-
-            // Write the payload to a temp file in the sandbox
-            const escapedPayload = promptInjectionPayloadContent
-              .replace(/\\/g, "\\\\")
-              .replace(/'/g, "'\\''");
-            const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
-
-            const writeResult = await ctx.sandbox.execute(writeCommand, {
-              timeout: normalizedTimeout ?? 30,
-            });
-
-            if (!writeResult.success) {
-              const errorMsg = `Failed to write prompt injection payload to sandbox: ${writeResult.stderr || "unknown error"}`;
-              return {
-                success: false,
-                error: errorMsg,
-                stdout: writeResult.stdout,
-                stderr: writeResult.stderr || errorMsg,
-                command,
-              };
-            }
-
-            // Update env vars to point to the sandbox temp file
-            ssmOpts.envVars = {
-              [envVarName]: sandboxTempFile,
-            };
-          } else if (promptInjectionEnvVars) {
-            ssmOpts.envVars = promptInjectionEnvVars;
-          }
-
-          const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            redact(result.stdout),
-            ctx,
+          captured = await collectCommand(
+            backends.command.run(commandWithHeaders, {
+              timeoutSeconds: effectiveTimeout,
+              envVars: promptInjectionEnvVars,
+              abortSignal: ctx.abortSignal,
+            }),
+            (chunk) =>
+              ctx.eventBus?.emit("command-output", { data: redact(chunk) }),
           );
-          const stderr = redact(result.stderr || "");
-          return {
-            success: result.success,
-            error: !result.success ? stderr || "Command failed" : "",
-            stdout,
-            stderr,
-            command,
-            outputFile,
-          };
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
           return {
@@ -515,59 +565,40 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             command,
           };
         }
-      }
-
-      // Local mode: use the persistent shell
-      if (ctx.persistentShell) {
-        try {
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
-          const onData = ctx.eventBus
-            ? (data: string) =>
-                ctx.eventBus?.emit("command-output", { data: redact(data) })
-            : undefined;
-          const result = await ctx.persistentShell.execute(
-            wrapCommandWithEnv(commandWithHeaders, promptInjectionEnvVars),
-            normalizedTimeout,
-            onData,
-            ctx.abortSignal,
-          );
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            redact(result.stdout),
-            ctx,
-          );
-          const stderr = redact(result.stderr);
-          return {
-            success: result.exitCode === 0,
-            error:
-              result.exitCode === 124
-                ? "Command timed out"
-                : result.exitCode !== 0
-                  ? `Exit code: ${result.exitCode}`
+        const {
+          stdout,
+          stderr,
+          exitCode,
+          timedOut,
+          stdoutTruncated,
+          stderrTruncated,
+        } = captured;
+        return {
+          success: exitCode === 0,
+          error:
+            timedOut || exitCode === 124
+              ? "Command timed out"
+              : exitCode === 130
+                ? "Command aborted"
+                : exitCode !== 0
+                  ? `Exit code: ${exitCode}`
                   : "",
-            stdout,
-            stderr,
-            command,
-            outputFile,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
-        }
+          stdout:
+            (redact(stdout) || "(no output)") +
+            (stdoutTruncated
+              ? "\n\n(INCOMPLETE — stdout capture truncated at the byte limit)"
+              : ""),
+          stderr:
+            redact(stderr) +
+            (stderrTruncated
+              ? "\n\n(INCOMPLETE — stderr capture truncated at the byte limit)"
+              : ""),
+          command: redact(command),
+          exitCode,
+          stdoutTruncated,
+          stderrTruncated,
+        };
       }
-
-      return {
-        success: false,
-        error: "No shell or sandbox available",
-        stdout: "",
-        stderr: "",
-        command,
-      };
     },
   });
 }

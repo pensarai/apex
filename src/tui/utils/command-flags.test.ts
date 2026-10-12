@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  buildSwarmSessionConfig,
   parseWebFlags,
   resolveFlagValue,
   resolveThreatModelPrompt,
@@ -23,13 +22,6 @@ describe("parseWebFlags", () => {
 
     expect(flags.hosts).toEqual(["example.com"]);
     expect(flags.ports).toEqual([8080]);
-
-    const params = buildSwarmSessionConfig(flags);
-
-    expect(params.config.scopeConstraints).toMatchObject({
-      allowedHosts: ["example.com"],
-      allowedPorts: [8080],
-    });
   });
 
   it("merges target-derived scope with explicit hosts and ports", () => {
@@ -254,5 +246,24 @@ describe("parseWebFlags prompt/threatModel", () => {
     const flags = parseWebFlags(["--target", "http://example.com"]);
     expect(flags.prompt).toBeUndefined();
     expect(flags.threatModel).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Exit routing: an invalid --header throws (surfacing through the TUI exit
+// handler: renderer teardown + bounded trace flush) instead of a direct
+// process.exit that would discard both.
+// ---------------------------------------------------------------------------
+
+describe("parseWebFlags exit routing", () => {
+  it("throws on an invalid --header instead of exiting the process", () => {
+    expect(() =>
+      parseWebFlags([
+        "--target",
+        "https://example.com",
+        "--header",
+        "bad header line",
+      ]),
+    ).toThrowError(/--header "bad header line" rejected/);
   });
 });

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
 import { buildPatchingPrompt, buildSystemPrompt } from "./prompts";
 import {
   type PatchingAgentInput,
@@ -63,6 +64,19 @@ export function readAgentsMd(cwd: string): string | undefined {
 }
 
 /**
+ * Resolve the project instructions for a patching run.
+ *
+ * Sandbox runs must not import host-side files: the agent reads the repo's own
+ * instructions from the actual runtime via read_file instead.
+ */
+export function resolvePatchingAgentsMd(
+  cwd: string,
+  sandboxed: boolean,
+): string | undefined {
+  return sandboxed ? undefined : readAgentsMd(cwd);
+}
+
+/**
  * A security patching agent that analyzes vulnerabilities and applies fixes.
  *
  * Uses filesystem tools to read, search, and modify code directly, and
@@ -70,11 +84,12 @@ export function readAgentsMd(cwd: string): string | undefined {
  *
  * When an optional `sandbox` is provided, tools like `execute_command`,
  * `create_file`, and `update_file` automatically route operations through
- * the sandbox instead of the local filesystem.
+ * the sandbox instead of the local filesystem, and project instructions are
+ * read from the runtime rather than the host.
  *
- * Automatically reads AGENTS.md (or CLAUDE.md) from the repository root and
- * injects it into the prompt so the agent knows the project's build/test
- * commands and conventions.
+ * The repository (`cwd`) is the agent's working directory: commands start
+ * there and relative file-tool paths resolve against it — not against the
+ * session root.
  *
  * Returns a structured {@link PatchResult} with the list of changed files,
  * PR title, and PR description.
@@ -94,42 +109,38 @@ export function readAgentsMd(cwd: string): string | undefined {
  * });
  * ```
  */
-export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
+export const patchingAgentDefinition = defineAgent<
+  PatchingAgentInput,
+  PatchResult
+>({
+  name: "patching-agent",
+  role: "worker",
+  system: () => buildSystemPrompt(),
+  activeTools: () => [...PATCHING_ACTIVE_TOOLS],
+  responseSchema: () => PatchResultSchema,
+  // Sandbox runs read the repo's own AGENTS.md via read_file at runtime rather
+  // than inlining a host file (canary #1099); the cwd is the agent's working
+  // directory so commands and relative file-tool paths resolve at the repo.
+  prompt: (opts) =>
+    buildPatchingPrompt(
+      opts.vulnerability,
+      opts.cwd,
+      resolvePatchingAgentsMd(
+        opts.cwd,
+        Boolean(opts.backends?.sandboxed || opts.sandbox),
+      ),
+      {
+        runtimeInstructions: Boolean(opts.backends?.sandboxed || opts.sandbox),
+      },
+    ),
+  agentCwd: (opts) => opts.cwd,
+});
+
+export class PatchingAgent extends AgentRuntime<
+  PatchingAgentInput,
+  PatchResult
+> {
   constructor(opts: PatchingAgentInput) {
-    const {
-      model,
-      cwd,
-      vulnerability,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
-
-    const agentsMd = readAgentsMd(cwd);
-
-    super({
-      system: buildSystemPrompt(),
-      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
-      activeTools: [...PATCHING_ACTIVE_TOOLS],
-
-      responseSchema: PatchResultSchema,
-    });
+    super(patchingAgentDefinition, opts);
   }
 }

@@ -16,8 +16,12 @@ import {
   BasicTracerProvider,
   BatchSpanProcessor,
   type SpanExporter,
+  type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { version as apexVersion } from "../../../package.json";
+import { createLogger } from "../logger/structured";
+import { endAllActiveRootSpans } from "./active-root-spans";
+import { ActiveSpanProcessor } from "./active-spans";
 
 /**
  * Optional standalone OTLP/HTTP trace runtime. Apex keeps OTel disabled
@@ -27,14 +31,51 @@ import { version as apexVersion } from "../../../package.json";
  * SDK and must not have Apex install a competing global provider.
  */
 
+export type ObservabilityShutdownResult = "completed" | "timed-out";
+
 export interface ObservabilityRuntime {
   forceFlush(): Promise<void>;
-  shutdown(): Promise<void>;
+  /** Idempotent and bounded: ends active spans, flushes, shuts down. */
+  shutdown(): Promise<ObservabilityShutdownResult>;
 }
+
+/** Options for {@link startObservabilityRuntime}. */
+export interface StartObservabilityRuntimeOptions {
+  /** Bound on shutdown (flush + exporter teardown); default 5000ms. */
+  shutdownTimeoutMs?: number;
+  /** Replace the default BatchSpanProcessor(OTLP exporter) — tests. */
+  spanProcessors?: SpanProcessor[];
+}
+
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+function withTimeout(
+  promise: Promise<void>,
+  timeoutMs: number,
+): Promise<ObservabilityShutdownResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (result: ObservabilityShutdownResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => settle("timed-out"), timeoutMs);
+    promise.then(
+      () => settle("completed"),
+      () => settle("completed"),
+    );
+  });
+}
+
+const log = createLogger("observability");
 
 const NOOP_RUNTIME: ObservabilityRuntime = {
   async forceFlush() {},
-  async shutdown() {},
+  async shutdown() {
+    return "completed";
+  },
 };
 
 type Env = Record<string, string | undefined>;
@@ -131,40 +172,195 @@ let activeRuntime: ObservabilityRuntime | null = null;
  */
 export function startObservabilityRuntime(
   env: Env = process.env,
+  opts?: StartObservabilityRuntimeOptions,
 ): ObservabilityRuntime {
   if (activeRuntime) return activeRuntime;
   if (isOtelSdkDisabled(env)) return NOOP_RUNTIME;
   if (!resolveTracesEndpoint(env)) return NOOP_RUNTIME;
 
+  const shutdownTimeoutMs =
+    opts?.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const exporter = createTraceExporter(resolveTracesProtocol(env));
+  const activeSpans = new ActiveSpanProcessor();
   const provider = new BasicTracerProvider({
     resource: buildResource(env),
-    spanProcessors: [new BatchSpanProcessor(exporter)],
+    spanProcessors: [
+      activeSpans,
+      ...(opts?.spanProcessors ?? [new BatchSpanProcessor(exporter)]),
+    ],
   });
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
 
-  trace.setGlobalTracerProvider(provider);
-  context.setGlobalContextManager(contextManager);
+  // Ownership check: registration fails (returns false) when a host already
+  // owns the global. Apex must never disrupt host-owned state — only disable
+  // globals it registered itself.
+  const ownsTracerGlobal = trace.setGlobalTracerProvider(provider);
 
+  if (!ownsTracerGlobal) {
+    // A host owns the tracer provider: our provider would never receive
+    // spans. Clean up our own components, leave the host untouched, and do
+    // NOT mark an Apex runtime active (embedded mode). The context global
+    // was never touched — it is only registered after tracer ownership is
+    // confirmed.
+    log.warn(
+      "OTel tracer provider already registered by the host — Apex stays embedded and will not register its own",
+    );
+    contextManager.disable();
+    void provider
+      .shutdown()
+      .catch((error) =>
+        log.warn("Orphaned provider shutdown failed", { error: String(error) }),
+      );
+    return NOOP_RUNTIME;
+  }
+  const ownsContextGlobal = context.setGlobalContextManager(contextManager);
+  if (!ownsContextGlobal) {
+    log.warn(
+      "OTel context manager already registered by the host — Apex reuses it and will not disable it",
+    );
+  }
+
+  let shutdownPromise: Promise<ObservabilityShutdownResult> | null = null;
   const runtime: ObservabilityRuntime = {
     async forceFlush() {
       await provider.forceFlush();
     },
-    async shutdown() {
-      activeRuntime = null;
-      await provider.shutdown();
-      contextManager.disable();
-      // Reset globals so a later start (or the host's own SDK) begins clean.
-      trace.disable();
-      context.disable();
+    shutdown() {
+      // Idempotent: every caller awaits the same bounded shutdown.
+      if (!shutdownPromise) {
+        const shutdownWork = async () => {
+          // OpenTelemetry only queues spans for export from onEnd(). Close all
+          // still-recording spans, deepest-first, before the final flush.
+          activeSpans.endAll();
+          // Clear stale references from the legacy root registry too. Its
+          // recording spans were already ended by the general tracker.
+          endAllActiveRootSpans();
+          try {
+            await provider.forceFlush();
+          } finally {
+            // Async work can start spans while forceFlush yields. End that
+            // final window explicitly before downstream processors shut down.
+            activeSpans.endAll();
+            await provider.shutdown().catch((error) => {
+              log.warn("OTLP export/shutdown failed", { error: String(error) });
+            });
+          }
+        };
+        shutdownPromise = withTimeout(shutdownWork(), shutdownTimeoutMs)
+          .then((result) => {
+            contextManager.disable();
+            if (ownsContextGlobal) {
+              context.disable();
+            }
+            // Only reset globals Apex owns. The tracer is ours by
+            // construction here; the context global may belong to the host.
+            trace.disable();
+            return result;
+          })
+          .finally(() => {
+            activeRuntime = null;
+          });
+      }
+      return shutdownPromise;
     },
   };
   activeRuntime = runtime;
   return runtime;
 }
 
-/** Test/teardown hook: stop any active runtime and reset the singleton. */
+/**
+ * Standalone-process exit wiring: signals and fatal errors run the bounded
+ * runtime shutdown before exiting — never a direct process.exit() while a
+ * flush could still complete. `cleanup` runs synchronously before the flush
+ * (entrypoint teardown such as renderer destruction); fatal errors are
+ * reported after cleanup — so the TUI has left the alternate screen buffer
+ * and the output survives — and preserved via exit code 1.
+ */
+export function installObservabilityExitHandlers(
+  runtime: ObservabilityRuntime,
+  opts?: {
+    /** Synchronous entrypoint teardown before the flush. */
+    cleanup?: (code: number) => void;
+    /** Report a fatal error (entrypoints own their logging). */
+    onError?: (
+      error: unknown,
+      source: "uncaughtException" | "unhandledRejection",
+    ) => void;
+  },
+): (
+  code: number,
+  error?: unknown,
+  source?: "uncaughtException" | "unhandledRejection",
+) => Promise<void> {
+  let exitPromise: Promise<void> | null = null;
+  let exitCode = 0;
+  let fatalSeen = false;
+  const reportError = (
+    error: unknown,
+    source: "uncaughtException" | "unhandledRejection",
+  ) => {
+    try {
+      opts?.onError?.(error, source);
+    } catch {
+      // Error reporting must not block the process exit path.
+    }
+  };
+  const exitWith = (
+    code: number,
+    error?: unknown,
+    source?: "uncaughtException" | "unhandledRejection",
+  ) => {
+    let pendingReport: (() => void) | null = null;
+    if (error !== undefined && !fatalSeen) {
+      fatalSeen = true;
+      exitCode = 1;
+      const fatalSource = source ?? "uncaughtException";
+      pendingReport = () => reportError(error, fatalSource);
+    } else if (!fatalSeen && exitCode === 0) {
+      exitCode = code;
+    }
+    if (exitPromise) {
+      // Cleanup already ran (terminal restored) — a late fatal reports now.
+      pendingReport?.();
+      return exitPromise;
+    }
+    try {
+      opts?.cleanup?.(code);
+    } catch (cleanupError) {
+      if (!fatalSeen) {
+        fatalSeen = true;
+        exitCode = 1;
+        pendingReport = () => reportError(cleanupError, "uncaughtException");
+      }
+    }
+    // Report only after entrypoint teardown: the TUI must leave the
+    // alternate screen buffer first or the console output is discarded.
+    pendingReport?.();
+    exitPromise = runtime
+      .shutdown()
+      .catch(() => {})
+      .then(() => process.exit(exitCode));
+    return exitPromise;
+  };
+
+  process.on("SIGINT", () => void exitWith(130));
+  process.on("SIGTERM", () => void exitWith(143));
+  process.on(
+    "uncaughtException",
+    (error) => void exitWith(1, error, "uncaughtException"),
+  );
+  process.on(
+    "unhandledRejection",
+    (reason) => void exitWith(1, reason, "unhandledRejection"),
+  );
+  return exitWith;
+}
+
+/** Test/teardown hook: stop any active runtime and reset the singleton.
+ *
+ * @knipignore test hook for resetting module-level runtime state.
+ */
 export async function resetObservabilityRuntime(): Promise<void> {
   if (activeRuntime) {
     await activeRuntime.shutdown();

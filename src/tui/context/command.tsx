@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { isObfuscationEnabled } from "../../core/obfuscation";
+import { resolveWorkerExecutable } from "../../core/runtime/launchLocalWorker";
 import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 import {
   type AppCommandContext,
@@ -15,7 +16,9 @@ import {
   commands,
 } from "../command-registry";
 import { CommandRouter } from "../command-router";
+import { RecordedRunsDialog } from "../components/commands/recorded-runs";
 import type { AutocompleteOption } from "../components/shared";
+import { useDialog } from "./dialog";
 import { useObfuscation } from "./obfuscation";
 import { useRoute, type WebCommandOptions } from "./route";
 import { useToast } from "./toast";
@@ -64,6 +67,7 @@ interface CommandProviderProps {
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
   onOpenSkillsDialog?: (slug?: string) => void;
+  onExit?: () => Promise<void>;
 }
 
 export function CommandProvider({
@@ -78,10 +82,12 @@ export function CommandProvider({
   onOpenAuthDialog,
   onOpenPentestDialog,
   onOpenSkillsDialog,
+  onExit,
 }: CommandProviderProps) {
   const route = useRoute();
   const obfuscation = useObfuscation();
   const { toast } = useToast();
+  const dialog = useDialog();
   const [registry] = useState(() => createSkillsRegistry());
   const [registryVersion, setRegistryVersion] = useState(0);
 
@@ -90,6 +96,16 @@ export function CommandProvider({
       route: route.data,
       navigate: route.navigate,
       openSessionsDialog: onOpenSessionsDialog,
+      openRecordedRunsDialog: (options) => {
+        dialog.replace(
+          <RecordedRunsDialog
+            key={JSON.stringify(options)}
+            {...options}
+            executable={resolveWorkerExecutable()}
+          />,
+          { size: "xlarge" },
+        );
+      },
       openThemeDialog: onOpenThemeDialog,
       openAdvancedDialog: onOpenAdvancedDialog,
       openModelDialog: onOpenModelDialog,
@@ -99,6 +115,7 @@ export function CommandProvider({
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
       openSkillsDialog: onOpenSkillsDialog,
+      exitApplication: onExit,
       setObfuscation: (enabled) => {
         // Read live engine state so toast feedback is accurate even if
         // this closure was captured on an earlier render. The provider's
@@ -114,6 +131,7 @@ export function CommandProvider({
     return ctx;
   }, [
     route,
+    dialog,
     onOpenSessionsDialog,
     onOpenThemeDialog,
     onOpenAdvancedDialog,
@@ -124,6 +142,7 @@ export function CommandProvider({
     onOpenAuthDialog,
     onOpenPentestDialog,
     onOpenSkillsDialog,
+    onExit,
     obfuscation,
     toast,
   ]);

@@ -2,11 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import {
-  resolveEffectiveHeaders,
-  shellQuote,
-  targetFetch,
-} from "../../../http/targetHeaders";
+import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
 import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
@@ -15,6 +11,8 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
+import { resolveBackends } from "../../../tools/backends/resolve";
+import type { HttpResponse } from "../../../tools/backends/types";
 import { agentLogsDir } from "./agentScratch";
 import { assertHttpActionAllowed } from "./destructiveGuard";
 import {
@@ -25,6 +23,84 @@ import {
 import type { ToolContext } from "./types";
 
 const MAX_INLINE_BODY = 5_000;
+
+/** Deadline applied when the model omits every timeout spelling. */
+export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
+
+export type HttpRequestTimeoutInputResolution =
+  | { ok: true; ms: number | undefined }
+  | { ok: false; error: string };
+
+/**
+ * `timeoutMs` (canonical) and `timeout` (legacy) are one milliseconds field.
+ * Null is inactive — strict-mode models emit it for unset fields — and the
+ * default applies only after alias resolution. Equal aliases pass; a
+ * disagreement is rejected, never guessed or clamped.
+ */
+export function resolveHttpRequestTimeoutInput(input: {
+  timeoutMs?: number | null;
+  timeout?: number | null;
+}): HttpRequestTimeoutInputResolution {
+  const canonical =
+    typeof input.timeoutMs === "number" ? input.timeoutMs : undefined;
+  const legacy = typeof input.timeout === "number" ? input.timeout : undefined;
+  if (
+    canonical !== undefined &&
+    legacy !== undefined &&
+    !Object.is(canonical, legacy)
+  ) {
+    return {
+      ok: false,
+      error: `Conflicting timeout values: timeoutMs=${canonical} and timeout=${legacy} — both are milliseconds; pass matching values or a single field`,
+    };
+  }
+  return { ok: true, ms: canonical ?? legacy };
+}
+
+/** Why the body capture ended. `end` is the only complete outcome. */
+export type BodyCaptureStopReason =
+  | "end"
+  | "byte-cap"
+  | "timeout"
+  | "aborted"
+  | "error"
+  | "curl-exit"
+  | "sandbox-exec";
+
+export type HttpRequestResult = {
+  /**
+   * True only when the transfer completed AND the status is 2xx/3xx. A capped
+   * or interrupted capture is never an ordinary success — see `capture`.
+   */
+  success: boolean;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  redirected: boolean;
+  redirectChain?: string[];
+  error?: string;
+  method?: string;
+  /** Structured producer-capture outcome; the inline body is only a preview. */
+  capture: {
+    complete: boolean;
+    stopReason: BodyCaptureStopReason;
+    /**
+     * `raw` counts undecoded body bytes on the local path. `decoded` counts
+     * the UTF-8 length of the sandbox body text, after decoding; replacement
+     * characters can make this larger than the raw capture limit.
+     */
+    capturedBytes: number;
+    capturedBytesBasis: "raw" | "decoded";
+    /**
+     * Advertised Content-Length, when the response carried one. With
+     * auto-decompression this is the ENCODED length — it is not a denominator
+     * for capturedBytes.
+     */
+    declaredBytes?: number;
+  };
+};
 
 const promptInjectionRefSchema = z.object({
   kind: z.literal("prompt_injection_ref"),
@@ -56,27 +132,26 @@ const httpRequestInputSchema = z.object({
     .describe(
       "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers.",
     ),
-  timeout: z.number().default(10000),
+  timeoutMs: z
+    .number()
+    .nullable()
+    .optional()
+    .describe(
+      `Request timeout in milliseconds. Defaults to ${DEFAULT_HTTP_TIMEOUT_MS}ms when unset or null.`,
+    ),
+  timeout: z
+    .number()
+    .nullable()
+    .optional()
+    .describe(
+      "Legacy alias for timeoutMs — same milliseconds value. Prefer timeoutMs; if both are set they must match.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')",
     ),
 });
-
-type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
-
-export type HttpRequestResult = {
-  success: boolean;
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-  body: string;
-  url: string;
-  redirected: boolean;
-  error?: string;
-  method?: string;
-};
 
 type HttpRequestBody = string | PromptInjectionRef | undefined;
 
@@ -109,13 +184,22 @@ function containsPromptInjectionRef(value: unknown): boolean {
  * If `body` exceeds the inline limit, save the full text to a file under
  * this agent's log dir (`http-responses/`) and return truncated text + file
  * path. Scoped per-subagent via {@link agentLogsDir} so a host can reclaim a
- * finished subagent's response dumps mid-scan.
+ * finished subagent's response dumps mid-scan. An `incompleteNote` marks a
+ * known-partial capture — the inline text never claims a full response was
+ * saved when it wasn't.
  */
 function maybeSaveBody(
   body: string,
   ctx: ToolContext,
+  opts?: { incompleteNote?: string },
 ): { text: string; file?: string } {
-  if (body.length <= MAX_INLINE_BODY) return { text: body };
+  const incomplete = opts?.incompleteNote;
+
+  if (body.length <= MAX_INLINE_BODY) {
+    return {
+      text: incomplete ? `${body}\n\n(INCOMPLETE — ${incomplete})` : body,
+    };
+  }
 
   const outputDir = join(agentLogsDir(ctx), "http-responses");
   if (!existsSync(outputDir)) {
@@ -129,13 +213,24 @@ function maybeSaveBody(
   try {
     writeFileSync(filePath, body);
   } catch {
+    const failedNote = incomplete
+      ? `INCOMPLETE — ${incomplete}; failed to save partial response to file`
+      : "failed to save full response to file";
     return {
-      text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — failed to save full response to file)`,
+      text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — ${failedNote})`,
     };
   }
 
+  const savedNote = incomplete
+    ? `INCOMPLETE — ${incomplete}; partial response saved to ${filePath}`
+    : `full response saved to ${filePath}`;
+  const inspection = ctx.sandbox
+    ? "This retained artifact is on the Apex host. For evidence readable by sandbox file tools, save it with execute_command inside your file workspace."
+    : ctx.fileWorkspaceRoot
+      ? "This retained artifact is outside your native file workspace. Use execute_command to inspect it, or save subsequent evidence inside your file workspace."
+      : "Use read_file or grep to analyze.";
   return {
-    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — full response saved to ${filePath}). Use read_file or grep to analyze.`,
+    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — ${savedNote}). ${inspection}`,
     file: filePath,
   };
 }
@@ -174,6 +269,14 @@ CORS TESTING (per Fetch specification browser enforcement rules):
 - ALWAYS actively test for origin reflection: send an OPTIONS or GET request with "Origin: https://evil.example.com" header and inspect whether Access-Control-Allow-Origin echoes it back. This is the most dangerous CORS pattern.
 - IMPORTANT: CORS is only relevant for endpoints that use cookie-based or token-based authentication. If the endpoint requires NO authentication at all, CORS configuration does not change the risk — the endpoint is directly callable from any client regardless of CORS headers. Do not document CORS misconfigurations on unauthenticated endpoints.
 
+RESPONSES ARE BOUNDED: bodies larger than 5 MiB are capped and marked
+INCOMPLETE — the saved partial file holds only the captured prefix, not the
+full body. For larger evidence, use execute_command to save it inside your
+file workspace (e.g. curl -o file), then page it with read_file byte windows.
+When a sandbox is configured, command execution and native file tools both
+operate there. Retained HTTP artifacts are stored on the Apex host; their
+location is separate from files created by a sandbox command.
+
 COMMON TESTING PATTERNS:
 - Test with/without authentication
 - Try different user agents
@@ -187,25 +290,49 @@ COMMON TESTING PATTERNS:
       headers: rawHeaders,
       body,
       followRedirects,
+      timeoutMs,
       timeout,
-    }): Promise<HttpRequestResult> => {
+    }): Promise<HttpResponse> => {
       let headers = parseHeaders(rawHeaders);
+
+      // Pre-dispatch failures: nothing was requested, so nothing was captured.
+      const notSent = (
+        error: string,
+        stopReason: BodyCaptureStopReason = "error",
+      ): HttpRequestResult => ({
+        success: false,
+        error,
+        url,
+        method,
+        status: 0,
+        statusText: "",
+        headers: {},
+        body: "",
+        redirected: false,
+        capture: {
+          complete: false,
+          stopReason,
+          capturedBytes: 0,
+          capturedBytesBasis: "raw",
+        },
+      });
+
+      // Pre-dispatch alias resolution: conflicts fail before anything is
+      // requested, and the default applies only after the aliases resolve.
+      const resolvedTimeout = resolveHttpRequestTimeoutInput({
+        timeoutMs,
+        timeout,
+      });
+      if (!resolvedTimeout.ok) {
+        return notSent(resolvedTimeout.error);
+      }
+      const effectiveTimeoutMs = resolvedTimeout.ms ?? DEFAULT_HTTP_TIMEOUT_MS;
 
       try {
         assertUrlInScope(url, ctx);
       } catch (e) {
         if (e instanceof ScopeViolationError) {
-          return {
-            success: false,
-            error: e.message,
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-          };
+          return notSent(e.message);
         }
         throw e;
       }
@@ -249,17 +376,7 @@ COMMON TESTING PATTERNS:
           ctx,
         );
       } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : String(e),
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        return notSent(e instanceof Error ? e.message : String(e));
       }
 
       // Rate-limit chokepoint for both dispatch paths (no-op when unset).
@@ -267,266 +384,42 @@ COMMON TESTING PATTERNS:
         (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
       if (ctx.abortSignal?.aborted) {
         if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
-        return {
-          success: false,
-          error: "Request aborted by user",
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        return notSent("Request aborted by user", "aborted");
       }
 
-      // Sandbox mode: build a curl command and run it inside the sandbox
-      if (ctx.sandbox) {
-        return executeSandboxHttpRequest(
-          ctx,
-          {
-            url,
-            method,
-            headers,
-            body: resolvedBody,
-            followRedirects,
-            timeout,
-          },
-          library,
+      {
+        const response = await resolveBackends(ctx).http.request(
+          { url, method, headers, body: resolvedBody, followRedirects },
+          { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
         );
-      }
-
-      // Local mode: use native fetch
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-      try {
-        const timeoutController = new AbortController();
-        timeoutId = setTimeout(() => timeoutController.abort(), timeout);
-
-        const combinedSignal = ctx.abortSignal
-          ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
-          : timeoutController.signal;
-
-        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
-          method,
-          headers,
-          body: resolvedBody || undefined,
-          redirect: followRedirects ? "follow" : "manual",
-          signal: combinedSignal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((value, key) => {
-          responseHeaders[key] = value;
-        });
-
-        let responseBody = "";
-        try {
-          responseBody = await response.text();
-        } catch {
-          responseBody = "(unable to read response body)";
-        }
-
-        const redactedBody = redactPromptInjectionPayloads(
-          responseBody,
-          library,
-        );
-        const redactedHeaders = Object.fromEntries(
-          Object.entries(responseHeaders).map(([key, value]) => [
-            key,
-            redactPromptInjectionPayloads(value, library),
-          ]),
-        );
-        const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
-
-        return {
-          success: true,
-          status: response.status,
-          statusText: response.statusText,
-          headers: redactedHeaders,
-          body: truncatedBody,
-          url: response.url,
-          redirected: response.redirected,
-        };
-      } catch (error: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
-
-        const isAbort = error instanceof Error && error.name === "AbortError";
-        const errorMsg = isAbort
-          ? ctx.abortSignal?.aborted
-            ? "Request aborted by user"
-            : `Request timeout after ${timeout}ms`
-          : error instanceof Error
-            ? error.message
-            : String(error);
-
-        return {
-          success: false,
-          error: errorMsg,
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        return formatHttpResponse(response, ctx, library);
       }
     },
   });
 }
 
-// ---------------------------------------------------------------------------
-// Sandbox HTTP helper (curl-based)
-// ---------------------------------------------------------------------------
-
-async function executeSandboxHttpRequest(
+function formatHttpResponse<T extends HttpResponse>(
+  response: T,
   ctx: ToolContext,
-  opts: {
-    url: string;
-    method: string;
-    headers?: Record<string, string>;
-    body?: string;
-    followRedirects: boolean;
-    timeout: number;
-  },
   library: PromptInjectionLibrary,
-): Promise<HttpRequestResult> {
-  const { url, method, headers, body, followRedirects, timeout } = opts;
-
-  const { sandbox } = ctx;
-  if (!sandbox) {
-    throw new Error("executeSandboxHttpRequest requires a sandbox");
-  }
-
-  // Hoisted so the `finally` can delete the request-body temp file on every
-  // path — otherwise every POST/PUT/PATCH leaves a `/tmp/apex_http_body_*`
-  // file behind for the life of the sandbox, and a body-heavy scan can fill
-  // the disk (ENOSPC).
-  let bodyTempFile: string | null = null;
-
-  try {
-    let curlCommand = `curl -i -X ${method}`;
-
-    // Resolve session/credential headers so the sandbox curl path matches
-    // the local fetch path. Caller `headers` win as the request layer.
-    const mergedHeaders = resolveEffectiveHeaders(
-      resolverSessionFromCtx(ctx),
-      url,
-      headers,
-    );
-    for (const [key, value] of Object.entries(mergedHeaders)) {
-      curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
-    }
-
-    // If we have a body to send, write it to a temp file in the sandbox
-    // to avoid shell escaping issues with multiline content
-    if (body && ["POST", "PUT", "PATCH"].includes(method)) {
-      bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
-
-      // Use printf to safely write the body to the temp file
-      const escapedForPrintf = body.replace(/\\/g, "\\\\").replace(/%/g, "%%");
-      const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
-
-      const writeResult = await sandbox.execute(writeCommand, { timeout: 30 });
-      if (!writeResult.success || writeResult.exitCode !== 0) {
-        return {
-          success: false,
-          error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
-      }
-
-      curlCommand += ` --data-binary @${bodyTempFile}`;
-    }
-
-    if (followRedirects) {
-      curlCommand += " -L";
-    }
-
-    const timeoutSeconds = Math.ceil(timeout / 1000);
-    curlCommand += ` --max-time ${timeoutSeconds}`;
-    curlCommand += ` "${url}" 2>&1`;
-
-    const ssmTimeout = Math.max(timeoutSeconds, 30);
-    const result = await sandbox.execute(curlCommand, {
-      timeout: ssmTimeout,
-    });
-
-    const output = result.stdout || "";
-    const lines = output.split("\n");
-    let statusLine = "";
-    const responseHeaders: Record<string, string> = {};
-    let bodyStartIndex = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.startsWith("HTTP/")) {
-        statusLine = line;
-        for (let j = i + 1; j < lines.length; j++) {
-          if (lines[j].trim() === "") {
-            bodyStartIndex = j + 1;
-            break;
-          }
-          const headerMatch = lines[j].match(/^([^:]+):\s*(.+)$/);
-          if (headerMatch) {
-            responseHeaders[headerMatch[1].toLowerCase()] = headerMatch[2];
-          }
-        }
-        break;
-      }
-    }
-
-    const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
-    const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-    const statusText = statusMatch ? statusMatch[2] : "Unknown";
-    const responseBody = lines.slice(bodyStartIndex).join("\n");
-
-    const redactedBody = redactPromptInjectionPayloads(responseBody, library);
-    const redactedHeaders = Object.fromEntries(
-      Object.entries(responseHeaders).map(([key, value]) => [
+): T {
+  const body = redactPromptInjectionPayloads(response.body, library);
+  const capture = response.capture;
+  const incompleteNote =
+    capture && !capture.complete
+      ? `${response.error ?? capture.stopReason} (captured ${capture.capturedBytes} bytes${capture.declaredBytes !== undefined ? `; advertised Content-Length: ${capture.declaredBytes}` : ""})`
+      : undefined;
+  return {
+    ...response,
+    body: maybeSaveBody(body, ctx, { incompleteNote }).text,
+    headers: Object.fromEntries(
+      Object.entries(response.headers).map(([key, value]) => [
         key,
         redactPromptInjectionPayloads(value, library),
       ]),
-    );
-    const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
-
-    return {
-      success: status >= 200 && status < 400,
-      status,
-      statusText,
-      headers: redactedHeaders,
-      body: truncatedBody,
-      url,
-      redirected: false,
-    };
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      error: msg,
-      status: 0,
-      statusText: "Error",
-      headers: {},
-      body: "",
-      url,
-      redirected: false,
-    };
-  } finally {
-    // Reclaim the request-body temp file now that curl has read it. Best-effort
-    // — a failed cleanup must not change the request result.
-    if (bodyTempFile) {
-      await sandbox
-        .execute(`rm -f ${bodyTempFile}`, { timeout: 10 })
-        .catch(() => {});
-    }
-  }
+    ),
+    ...(response.error
+      ? { error: redactPromptInjectionPayloads(response.error, library) }
+      : {}),
+  };
 }

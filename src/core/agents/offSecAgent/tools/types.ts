@@ -1,10 +1,15 @@
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import type {
+  LanguageModelMiddleware,
+  StreamTextOnStepFinishCallback,
+  ToolSet,
+} from "ai";
 import type {
   AIAuthConfig,
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
@@ -13,12 +18,17 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { ToolBackends } from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
+import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
-import type { SystemPentestScope } from "../types";
-import type { PersistentShell } from "./persistentShell";
+import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type { CallbackListenerRegistry } from "./callbackListener";
+import type { EmailAdapterResolver } from "./email/adapters";
+import type { PerCommandShell } from "./perCommandShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
+import type { SmsInbox } from "./smsInbox";
 
 /**
  * Shared context passed to every tool factory.
@@ -28,11 +38,22 @@ import type { UnifiedSandbox } from "./sandbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  attackSurfaceArtifactsPath?: string;
+
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
 
   /** The agent's operational working directory. Defaults to session.rootPath. */
   agentCwd: string;
+
+  /**
+   * Root that scopes this agent's native file tools (read_file, list_files,
+   * glob, grep, create_file, update_file, delete_file, apply_patch) when they
+   * resolve relative paths and enforce confinement. Only file-tool path
+   * resolution is affected — command cwd and shell/OS permissions are NOT
+   * restricted by this value.
+   */
+  fileWorkspaceRoot?: string;
 
   /** The target URL / host — needed by browser tools for context */
   target?: string;
@@ -49,6 +70,12 @@ export type ToolContext = {
 
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;
+
+  /**
+   * Execution backends for fs / command / http / browser / inbox. Unset means
+   * local execution; hosts inject sandbox-backed implementations.
+   */
+  backends?: ToolBackends;
 
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
@@ -98,11 +125,11 @@ export type ToolContext = {
   environmentVariables?: Record<string, string>;
 
   /**
-   * Long-lived bash process shared across execute_command calls.
-   * Environment variables, working directory, and background processes
-   * persist between invocations. Only used in local (non-sandbox) mode.
+   * Per-command executor: every invocation runs in a fresh process group
+   * with this agent's working directory and configured environment. Nothing
+   * carries across calls. Only used in local (non-sandbox) mode.
    */
-  persistentShell?: PersistentShell;
+  commandShell?: PerCommandShell;
 
   /**
    * Skills registry for on-demand skill loading.
@@ -196,4 +223,45 @@ export type ToolContext = {
    * virtual desktop instead of falling back to the process-wide `DISPLAY`.
    */
   display?: string;
+
+  /**
+   * Seam through which orchestration tools spawn sub-agents. Resolved once when
+   * the agent builds its tools (`OffensiveSecurityAgentInput.subagentSpawner` ??
+   * the in-process spawner), so it is always present here and tools never
+   * re-default it; a durable runtime injects one that spawns child workflows
+   * instead. The three durable hooks below are inherited by every child the
+   * spawner constructs.
+   */
+  subagentSpawner: SubagentSpawner;
+
+  /**
+   * Callback listeners started by this agent's callback helper tools.
+   * The owning agent drains it on run finalization (and after abort), so
+   * listener cleanup stays possible once the run abort signal has fired.
+   * Unset → the callback helper tools refuse to start (ownership-tracked
+   * cleanup is required).
+   */
+  callbackListeners?: CallbackListenerRegistry;
+
+  /**
+   * Transport for inbound SMS reads. Unset → the Console agent API over HTTP,
+   * which needs sandbox dispatch; a host with direct database access injects
+   * one that reads in-process.
+   */
+  smsInbox?: SmsInbox;
+
+  /**
+   * Supplies an adapter for an inbox with no transport of its own (a
+   * `pensar-managed` inbox). Unset → the config-driven factory.
+   */
+  emailAdapterFor?: EmailAdapterResolver;
+
+  /** Provider middleware inherited by spawned children. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Usage recorder inherited by spawned children. Unset → process-global callback. */
+  usageRecorder?: UsageRecorder;
+
+  /** Streamed-id factory inherited by spawned children. Unset → random ULIDs. */
+  streamIdFactory?: StreamIdFactory;
 };

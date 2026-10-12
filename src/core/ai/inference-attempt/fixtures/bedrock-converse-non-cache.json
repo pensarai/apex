@@ -1,0 +1,24 @@
+{
+  "transport": "bedrock-converse",
+  "usage": {
+    "inputTokens": 800,
+    "outputTokens": 20,
+    "inputTokenDetails": {
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0
+    }
+  },
+  "cacheBreakpoint": "bedrock.cachePoint",
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 800,
+      "uncachedInput": 800,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "output": 20
+    },
+    "evidence": {
+      "cacheBreakpoint": "bedrock.cachePoint"
+    }
+  }
+}

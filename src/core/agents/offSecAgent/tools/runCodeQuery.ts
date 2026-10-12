@@ -1,12 +1,13 @@
 import { relative } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
 import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
-  runSpawnBounded,
   writeWhiteboxArtifact,
 } from "../../../whitebox";
+import type { BoundedCommandRunner } from "../../../whitebox/boundedProcess";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE_MATCHES = 40;
@@ -50,6 +51,7 @@ async function runSingleQuery(input: {
   cwd: string;
   targetPath: string;
   timeoutSeconds: number;
+  run: BoundedCommandRunner;
 }): Promise<{
   stdout: string;
   stderr: string;
@@ -61,12 +63,10 @@ async function runSingleQuery(input: {
     input.engine,
     ...buildArgs(input.engine, input.pattern, input.targetPath),
   ];
-  return runSpawnBounded({
-    command: argv,
+  return input.run(argv, {
     cwd: input.cwd,
     timeoutSeconds: input.timeoutSeconds,
     maxTotalBytes: MAX_QUERY_CAPTURE_BYTES,
-    detached: false,
   });
 }
 
@@ -135,6 +135,7 @@ instead of flooding context with every match. Output size and runtime are bounde
         };
       }
 
+      const backend = resolveWhiteboxBackend(ctx);
       const results: QueryResult[] = [];
       for (const query of queries) {
         let targetPathForEngine = ".";
@@ -163,6 +164,7 @@ instead of flooding context with every match. Output size and runtime are bounde
           cwd: rootPath,
           targetPath: targetPathForEngine,
           timeoutSeconds,
+          run: backend.run,
         });
         const lines = output.stdout.split("\n").filter(Boolean);
         const combined =

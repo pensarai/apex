@@ -1,10 +1,12 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
+import { setTimeout as delay } from "node:timers/promises";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import {
   generateText,
   type LanguageModel,
+  type LanguageModelMiddleware,
   type ModelMessage,
   Output,
   type StopCondition,
@@ -15,22 +17,60 @@ import {
   type TextStreamPart,
   type ToolChoice,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 import type { z } from "zod";
+import {
+  type CustomProviders,
+  parseCustomModelId,
+  resolveCustomModel,
+} from "../config/customProviders";
+import { type HoonifyModel, resolveHoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
-import { createAiTelemetrySettings } from "../observability";
+import {
+  type AiTelemetryOperation,
+  createAiTelemetrySettings,
+  createGenerationSpanTracker,
+  type GenerationSpanTracker,
+  withModelCallDiagnostics,
+} from "../observability";
+import { RunPersistenceError } from "../runtime/persistenceError";
+import type { RunContextRecorder } from "../runtime/runContext";
+import { RunControlInterruption } from "../runtime/runControlStore";
+import { RunLimitError } from "../runtime/runModelStore";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
   withCachedLastMessage,
   withCachedSystemPrompt,
 } from "./caching";
-import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import {
+  beginCompaction,
+  type CompactionLink,
+  type CompactionTrigger,
+} from "./compactionTelemetry";
+import {
+  estimateMessageTokens,
+  fitMessagesToContext,
+  truncateWithMarker,
+} from "./contextManagement";
+import {
+  getInferenceRecorder,
+  type InferenceRecorder,
+  runWithInferenceRecorder,
+} from "./inference-attempt";
+import {
+  getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
 } from "./models";
+import {
+  runWithNativeRolloutOperation,
+  withNativeRolloutEvidenceModel,
+} from "./native-rollout-evidence";
+import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
+import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
@@ -47,6 +87,14 @@ const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
 
+function nativeRolloutOperation(
+  operation?: AiTelemetryOperation,
+): "structured.generate" | "context.summarize" | "tool.repair" {
+  if (operation === "apex.context.summarize") return "context.summarize";
+  if (operation === "apex.tool.repair") return "tool.repair";
+  return "structured.generate";
+}
+
 /**
  * Tools whose arguments carry a security-authorization boundary the model must
  * never have re-synthesized by tool-call repair. Repair asks a model to invent
@@ -54,6 +102,12 @@ const RESPONSE_TOOL_NAME = "response";
  * (e.g. a default/localhost `target`) would silently bypass deterministic scope
  * enforcement. Repair therefore FAILS CLOSED for them — it returns `null` and
  * the original invalid call is never executed.
+ *
+ * Result-submission tools (`submit_results`, `document_vulnerability`) are
+ * deliberately NOT listed: they carry no authorization boundary, so repair is
+ * safe and desirable — it re-prompts the model to fix a mis-shaped field (e.g.
+ * `method` sent as an array) instead of dropping a completed recon or a
+ * confirmed finding.
  */
 const REPAIR_FAIL_CLOSED_TOOLS: ReadonlySet<string> = new Set([
   "spawn_pentest_agent",
@@ -82,13 +136,23 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 /**
  * Anthropic adaptive-thinking effort hint. Soft guidance for how much the model
- * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `high` (the
- * model default) reasons deeply. Only meaningful for models that support
- * adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
+ * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `max`
+ * reasons hardest (`high` is the model default). Only meaningful for models that
+ * support adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
  */
-export type ThinkingEffort = "low" | "medium" | "high";
+export type ThinkingEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-6.1-sol",
+  "gpt-6-luna",
+  "gpt-6-sol",
+  "gpt-6-astra",
+  "gpt-5.5-pro",
+  "gpt-5.5-pro-2026-04-23",
+  "gpt-5.4-nano",
+  "gpt-5.4-nano-2026-03-17",
+  "gpt-5.4-mini",
+  "gpt-5.4-mini-2026-03-17",
   "gpt-5",
   "gpt-5-2025-08-07",
   "gpt-5.1",
@@ -132,9 +196,24 @@ export type UsageCallback = (
   outputTokens: number,
   context: UsageCallbackContext,
 ) => void | Promise<void>;
+
+/**
+ * Per-run usage recorder threaded through {@link StreamResponseOpts}. When set
+ * it replaces the ALS run sink and the ambient {@link onUsage} callback for
+ * that call. Async work is awaited before the next model step. Receives the
+ * same cache-aware {@link UsageCallbackContext} as the global callback, so
+ * the cached/uncached split travels on the usage event itself.
+ */
+export type UsageRecorder = (
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  context?: UsageCallbackContext,
+) => void | Promise<void>;
+
 let _usageCallback: UsageCallback | null = null;
 
-/** Register a callback to receive token usage reports from all AI operations. */
+/** Ambient default usage sink when no run-context sink is set. */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
 }
@@ -205,17 +284,28 @@ interface StepContext {
   sessionId?: string;
   /** Next step index to hand out; mutated in place as steps finish. */
   next: number;
+  /** Per-run usage sink; wins over the ambient {@link onUsage} callback. */
+  usageSink?: UsageCallback;
 }
 
 const stepContextStore = new AsyncLocalStorage<StepContext>();
 
 /** Runs `fn` in a per-run step-counting context; `streamResponse` steps inside it report usage tagged with `sessionId` and an increasing `stepSeq` starting at `seedStepSeq`. */
 export function runWithStepContext<T>(
-  opts: { sessionId?: string; seedStepSeq?: number },
+  opts: {
+    sessionId?: string;
+    seedStepSeq?: number;
+    usageSink?: UsageCallback;
+  },
   fn: () => T,
 ): T {
+  const parent = stepContextStore.getStore();
   return stepContextStore.run(
-    { sessionId: opts.sessionId, next: opts.seedStepSeq ?? 0 },
+    {
+      sessionId: opts.sessionId,
+      next: opts.seedStepSeq ?? 0,
+      usageSink: opts.usageSink ?? parent?.usageSink,
+    },
     fn,
   );
 }
@@ -229,7 +319,35 @@ export function takeStepContext(): UsageStepContext | undefined {
   return { sessionId: store.sessionId, stepSeq };
 }
 
+/**
+ * Report one finished model call to a usage sink. Advances `stepSeq` whenever
+ * a sink is present (including zero-token steps) so the index stays aligned
+ * with the AI SDK. Skips the callback itself when both token counts are 0.
+ */
+async function emitUsage(
+  model: string,
+  stepUsage: NormalizedStepUsage,
+  sink: UsageRecorder | UsageCallback | null | undefined,
+): Promise<void> {
+  if (!sink) return;
+  const stepCtx = takeStepContext();
+  if (stepUsage.inputTokens <= 0 && stepUsage.outputTokens <= 0) return;
+  await sink(model, stepUsage.inputTokens, stepUsage.outputTokens, {
+    ...stepCtx,
+    cacheReadTokens: stepUsage.cacheReadTokens,
+    cacheWriteTokens: stepUsage.cacheWriteTokens,
+  });
+}
+
+/** explicit recorder > ALS run sink > ambient {@link onUsage}. */
+function resolveUsageSink(
+  explicit?: UsageRecorder,
+): UsageRecorder | UsageCallback | null {
+  return explicit ?? stepContextStore.getStore()?.usageSink ?? _usageCallback;
+}
+
 export type AIModelProvider =
+  | "custom"
   | "anthropic"
   | "openai"
   | "google"
@@ -239,10 +357,19 @@ export type AIModelProvider =
   | "bedrock-mantle"
   | "pensar"
   | "inception"
+  | "hoonify"
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
-export function getContextWindow(modelId: string): number {
+export function getContextWindow(
+  modelId: string,
+  customProviders?: CustomProviders,
+  hoonifyModels?: HoonifyModel[],
+): number {
+  if (modelId.startsWith("hoonify:"))
+    return resolveHoonifyModel(modelId, hoonifyModels).contextLength;
+  if (parseCustomModelId(modelId))
+    return resolveCustomModel(modelId, customProviders).model.contextLength;
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
@@ -330,9 +457,95 @@ function applySequentialToolCallPolicy(
   return system;
 }
 
+// The structured-output `response` tool is injected by the caller alongside its
+// own tools, so an allowlist of those tools must not hide it from the model.
+// Composed into `resolveEffectiveTools` at the call site so the executable map
+// keeps `response` even when a caller omits it from `activeTools`.
+export function withResponseToolActive(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): string[] | undefined {
+  if (
+    !tools ||
+    !activeTools ||
+    activeTools.length === 0 ||
+    !(RESPONSE_TOOL_NAME in tools) ||
+    activeTools.includes(RESPONSE_TOOL_NAME)
+  ) {
+    return activeTools;
+  }
+  return [...activeTools, RESPONSE_TOOL_NAME];
+}
+
+/**
+ * Resolve the effective toolset from `activeTools` before any context
+ * fitting. The AI SDK treats `activeTools` as advertise-only — it still
+ * parses, executes, and enumerates every tool in the full map — so the
+ * executable map itself must be filtered here for budgeting, provider
+ * exposure, execution, and repair to agree. Built with DefineOwnProperty
+ * semantics so prototype-shaped names like `__proto__` survive as own keys.
+ * Feed it `withResponseToolActive(tools, activeTools)` so the injected
+ * structured-output tool survives the filter.
+ */
+export function resolveEffectiveTools(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): Pick<StreamResponseOpts, "tools" | "activeTools"> {
+  if (!tools || !activeTools) return {};
+  if (activeTools.length === 0) return { tools: {}, activeTools: undefined };
+  const allow = new Set(activeTools);
+  return {
+    tools: Object.fromEntries(
+      Object.entries(tools).filter(([name]) => allow.has(name)),
+    ),
+    activeTools: undefined,
+  };
+}
+
+// Kept for callers/tests that filter a tool map without consuming `activeTools`
+// (e.g. `withResponseToolActive` composition). `resolveEffectiveTools` is the
+// stream-loop entry point; this is the same filter returning just the map.
+export function restrictToolsToActive(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): ToolSet | undefined {
+  if (!tools || !activeTools || activeTools.length === 0) {
+    return tools;
+  }
+  const allow = new Set(activeTools);
+  const restricted: ToolSet = {};
+  for (const [name, tool] of Object.entries(tools)) {
+    if (allow.has(name)) {
+      restricted[name] = tool;
+    }
+  }
+  return restricted;
+}
+
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+// Observe the existing depth allowance only for accepted restarts.
+export async function recordContextRestart(
+  depth: number,
+  opts?: Pick<StreamResponseOpts, "inferenceRecorder">,
+): Promise<void> {
+  if (depth > MAX_RESTART_DEPTH) return;
+  await getInferenceRecorder(opts)?.retry({
+    authority: "context-restart",
+    count: depth,
+    maxRetries: MAX_RESTART_DEPTH,
+    delayMs: 0,
+  });
+}
+
+function getStreamIdleTimeoutMs(model: AIModel): number {
+  // Pro cannot stream progress while reasoning; wait for its completed response.
+  return /^(?:openai\/)?gpt-5\.5-pro(?:-|$)/.test(model)
+    ? OPENAI_PRO_TIMEOUT_MS
+    : STREAM_IDLE_TIMEOUT_MS;
+}
 
 class StreamIdleTimeoutError extends Error {
   constructor(idleMs: number) {
@@ -411,8 +624,8 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  *
  * Parallel tool calls are tracked by `toolCallId`. Duplicate `tool-call`
  * chunks for the same id (defensive — should never happen in practice) are
- * deduplicated. `tool-result` chunks without a matching open call are
- * ignored so the counter can never go negative.
+ * deduplicated. Terminal chunks (`tool-result` / `tool-error`) without a
+ * matching open call are ignored so the counter can never go negative.
  *
  * EXCEPTION: `response` is never gated — its `execute` returns synchronously so
  * it's not a slow tool, but a Bedrock stream wedging mid-payload while
@@ -446,7 +659,10 @@ function createToolExecutionGate(): {
         } else {
           inFlight++;
         }
-      } else if (chunk.type === "tool-result") {
+      } else if (chunk.type === "tool-result" || chunk.type === "tool-error") {
+        // A failed tool is just as terminal for the gate as a successful one —
+        // without this, a tool-error leaves its slot open forever, suppressing
+        // the idle timeout for the rest of the run.
         const id = chunk.toolCallId;
         if (id) {
           if (open.delete(id)) {
@@ -469,6 +685,7 @@ function wrapStreamWithErrorHandler(
   silent?: boolean,
   rateLimitRetryCount: number = 0,
   idleResumeCount: number = 0,
+  generationSpans?: GenerationSpanTracker,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -487,10 +704,11 @@ function wrapStreamWithErrorHandler(
           const toolGate = createToolExecutionGate();
 
           wrappedStream = (async function* () {
+            let streamError: unknown;
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
-                STREAM_IDLE_TIMEOUT_MS,
+                getStreamIdleTimeoutMs(opts.model),
                 toolGate.shouldEnforceIdleTimeout,
               )) {
                 toolGate.observe(chunk);
@@ -522,19 +740,63 @@ function wrapStreamWithErrorHandler(
 
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
+                // Instead of throwing mid-stream, capture the error and drain
+                // the tail (finish-step/finish): the AI SDK's terminal
+                // lifecycle — root-span end included — only runs when the
+                // stream completes, and aborting the iteration leaks it.
                 if (chunk.type === "error") {
-                  throw (chunk as unknown as { error: unknown }).error;
+                  streamError = (chunk as unknown as { error: unknown }).error;
+                  // Mark the root generation span failed NOW: the SDK's
+                  // flush ends it mid-drain, before the loop exits — a
+                  // later mark is a no-op on an ended span.
+                  generationSpans?.markFailed(streamError);
+                  continue;
+                }
+                // Drain the post-error tail silently: the terminal parts
+                // must be consumed for the SDK's finalization, but consumers
+                // must not observe step-close-out after a fatal error.
+                if (streamError !== undefined) {
+                  continue;
                 }
 
                 yield chunk;
               }
-            } catch (error) {
+              if (streamError !== undefined) {
+                // The tail is consumed but the SDK's finalization
+                // (root-span end) settles with the response promise —
+                // await it so the error never overtakes the span lifecycle.
+                await Promise.resolve(originalStream.response).catch(() => {});
+                throw streamError;
+              }
+            } catch (caughtError) {
+              // A tail-drain failure must not replace the provider error that
+              // put the wrapper into drain mode.
+              const error =
+                streamError !== undefined ? streamError : caughtError;
+              // Error-part runs complete normally inside the SDK, so nothing
+              // sets the root generation span failed — mark it here (the
+              // SDK's own thrown-error marking is guarded against below).
+              generationSpans?.markFailed(error);
+
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
+
+              // SDK RetryError can wrap a critical failure after a prior provider retry.
+              await getInferenceRecorder(opts)?.flush();
 
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
+
+              // A latched persistence failure is terminal: retrying would
+              // dispatch a turn whose context was never durably committed.
+              if (
+                error instanceof RunPersistenceError ||
+                error instanceof RunLimitError ||
+                error instanceof RunControlInterruption
+              ) {
+                throw error;
+              }
 
               // Handle stream idle timeout — resume from accumulated messages
               if (
@@ -544,6 +806,12 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
+                await getInferenceRecorder(opts)?.retry({
+                  authority: "stream-idle",
+                  count: nextIdleCount,
+                  maxRetries: MAX_IDLE_RESUME_RETRIES,
+                  delayMs: 0,
+                });
                 // Surfaced on silent sub-agents too when stream-debugging.
                 if (!silent || STREAM_DEBUG) {
                   log.warn(
@@ -580,6 +848,13 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
+                const recorder = getInferenceRecorder(opts);
+                await recorder?.retry({
+                  authority: "stream-rate-limit",
+                  count: nextRetryCount,
+                  maxRetries: MAX_RATE_LIMIT_RETRIES,
+                  delayMs,
+                });
 
                 if (!silent) {
                   log.warn(
@@ -587,7 +862,11 @@ function wrapStreamWithErrorHandler(
                   );
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, delayMs));
+                if (recorder) {
+                  await delay(delayMs, undefined, { signal: opts.abortSignal });
+                } else {
+                  await new Promise((resolve) => setTimeout(resolve, delayMs));
+                }
 
                 const retriedStream = streamResponse({
                   ...opts,
@@ -625,8 +904,16 @@ function wrapStreamWithErrorHandler(
                 }
 
                 const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(opts.model),
-                  maxOutputTokens: getMaxOutputTokens(opts.model),
+                  contextWindow: getContextWindow(
+                    opts.model,
+                    opts.authConfig?.customProviders,
+                    opts.authConfig?.hoonifyModels,
+                  ),
+                  maxOutputTokens: getMaxOutputTokens(
+                    opts.model,
+                    opts.authConfig?.customProviders,
+                    opts.authConfig?.hoonifyModels,
+                  ),
                   system: applySequentialToolCallPolicy(
                     opts.system,
                     opts.tools,
@@ -634,7 +921,17 @@ function wrapStreamWithErrorHandler(
                   ),
                   tools: opts.tools,
                   sessionPath: opts.sessionPath,
+                  telemetry: {
+                    trigger: "context_overflow",
+                    model: opts.model,
+                    sessionId: opts.sessionId,
+                    restartDepth: opts._restartDepth,
+                    previous: opts._compaction?.last,
+                  },
                 });
+
+                if (fitted.compaction && opts._compaction)
+                  opts._compaction.last = fitted.compaction;
 
                 messagesContainer.current = fitted.messages;
 
@@ -662,6 +959,7 @@ function wrapStreamWithErrorHandler(
                     // forever. Without this, only Layer-3 escalation
                     // increments depth and a drift-driven loop can burn
                     // arbitrarily many failed provider calls.
+                    await recordContextRestart(postReactiveDepth + 1, opts);
                     const retried = streamResponse({
                       ...opts,
                       messages: fitted.messages,
@@ -721,7 +1019,11 @@ function wrapStreamWithErrorHandler(
                 try {
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
-                    { ...opts, _restartDepth: postReactiveDepth },
+                    {
+                      ...opts,
+                      _restartDepth: postReactiveDepth,
+                      _compactionTrigger: "context_overflow",
+                    },
                     model,
                   );
                   for await (const chunk of summarizationStream.fullStream) {
@@ -759,6 +1061,39 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
+                  const reset = beginCompaction("reset", {
+                    trigger: "summary_overflow",
+                    model: opts.model,
+                    sessionId: opts.sessionId,
+                    restartDepth: postReactiveDepth,
+                    previous: opts._compaction?.last,
+                  });
+                  reset?.capture("before", () => ({
+                    messages: messagesForSummary,
+                    system: opts.system,
+                    prompt: opts.prompt,
+                  }));
+                  reset?.measure(
+                    "before",
+                    () => estimateMessageTokens(messagesForSummary),
+                    messagesForSummary.length,
+                  );
+                  reset?.measure(
+                    "after",
+                    () =>
+                      estimateMessageTokens([
+                        { role: "user", content: minimalPrompt },
+                      ]),
+                    1,
+                  );
+                  reset?.capture("after", () => ({
+                    messages: [{ role: "user", content: minimalPrompt }],
+                    system: opts.system,
+                  }));
+                  reset?.finish("completed");
+                  if (reset && opts._compaction)
+                    opts._compaction.last = reset.link;
+                  await recordContextRestart(postReactiveDepth + 1, opts);
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
@@ -801,6 +1136,10 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+export function modelRequiresThinking(modelId: string): boolean {
+  return getClaudeCapabilities(modelId)?.alwaysOnThinking ?? false;
+}
+
 /**
  * Check whether a model supports extended thinking based on its ID.
  *
@@ -809,6 +1148,7 @@ export interface ModelInfo {
  * Pensar provider IDs.
  */
 export function modelSupportsThinking(modelId: string): boolean {
+  if (getClaudeCapabilities(modelId)) return true;
   // Normalize: strip provider prefixes so we match the base Claude model ID
   const normalized = modelId
     .replace(/^pensar:/, "")
@@ -829,6 +1169,7 @@ export function modelSupportsThinking(modelId: string): boolean {
  * them at all.
  */
 export function modelSupportsAdaptiveThinking(modelId: string): boolean {
+  if (getClaudeCapabilities(modelId)) return true;
   const normalized = modelId
     .replace(/^pensar:/, "")
     .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
@@ -840,17 +1181,42 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 }
 
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
+  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
   const { provider } = getModelInfo(modelId);
-  if (provider !== "openai") return false;
+  if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
   return (
     OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
   );
+}
+
+export function modelRequiresReasoning(modelId: string): boolean {
+  return modelId === CONCENTRATE_GLM_5_3_MODEL_ID;
 }
 
 export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
+  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
+    return ["low", "high", "max"];
+  }
+  if (/^concentrate:gpt-5\.4-(?:mini|nano)$/.test(modelId)) {
+    return ["none", "low", "medium", "high"];
+  }
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
+  if (modelId === "gpt-6-sol" || modelId === "gpt-6-luna") {
+    return ["none", "low", "medium", "high", "xhigh", "max"];
+  }
+  if (/^gpt-6[.-]/.test(modelId)) {
+    return ["low", "medium", "high", "xhigh", "max"];
+  }
+  if (/^gpt-5\.5-pro(?:-|$)/.test(modelId)) {
+    return ["medium", "high", "xhigh"];
+  }
+  if (/^gpt-5\.4-(?:mini|nano)(?:-|$)/.test(modelId)) {
+    return ["none", "low", "medium", "high", "xhigh"];
+  }
   if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
     return ["low", "medium", "high", "xhigh", "max", "ultra"];
   }
@@ -864,6 +1230,22 @@ export function normalizeOpenAIReasoningEffort(
   modelId: string,
   effort?: OpenAIReasoningEffort | null,
 ): OpenAIReasoningEffort | undefined {
+  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
+    switch (effort) {
+      case "none":
+      case "low":
+        return "low";
+      case "medium":
+      case "high":
+        return "high";
+      case "xhigh":
+      case "max":
+      case "ultra":
+        return "max";
+      default:
+        return "high";
+    }
+  }
   const efforts = getOpenAIReasoningEfforts(modelId);
   if (efforts.length === 0) return undefined;
   if (effort && efforts.includes(effort)) {
@@ -885,8 +1267,13 @@ export function normalizeOpenAIReasoningEffort(
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
  */
 export type ReasoningProviderOptions = {
+  openrouter?: {
+    reasoning: { effort: OpenAIReasoningEffort; enabled?: boolean };
+  };
   anthropic?: {
-    thinking: { type: "adaptive" };
+    thinking:
+      | { type: "adaptive"; display?: "summarized" }
+      | { type: "disabled" };
     // Soft effort hint for adaptive thinking; omitted when no level requested
     // (model defaults to "high"). Sibling of `thinking` per the AI SDK.
     effort?: ThinkingEffort;
@@ -902,6 +1289,60 @@ export type ReasoningProviderOptions = {
   };
   openai?: OpenAIResponsesProviderOptions;
 };
+
+export type OpenRouterProviderOptions = {
+  openrouter?: {
+    provider:
+      | {
+          only: ["z-ai"];
+          allow_fallbacks: false;
+        }
+      | {
+          order: ["z-ai"];
+          allow_fallbacks: true;
+          require_parameters: true;
+        };
+  };
+};
+
+function isZaiPinnedModel(model: AIModel): boolean {
+  return model === "z-ai/glm-5.2" || model === "z-ai/glm-5.3";
+}
+
+export function buildOpenRouterProviderOptions(
+  model: AIModel,
+): OpenRouterProviderOptions | undefined {
+  if (!isZaiPinnedModel(model)) return undefined;
+  return {
+    openrouter: {
+      provider: {
+        only: ["z-ai"],
+        allow_fallbacks: false,
+      },
+    },
+  };
+}
+
+/**
+ * Z.AI's endpoint is the only `z-ai/*` provider that does not advertise
+ * `structured_outputs`, so under the hard pin above `response_format` is a soft
+ * preference and nothing enforces the schema. Prefer Z.AI, but require an
+ * endpoint that enforces it rather than silently returning unparseable output.
+ */
+export function buildOpenRouterStructuredProviderOptions(
+  model: AIModel,
+): OpenRouterProviderOptions | undefined {
+  if (!isZaiPinnedModel(model)) return undefined;
+  return {
+    openrouter: {
+      provider: {
+        order: ["z-ai"],
+        allow_fallbacks: true,
+        require_parameters: true,
+      },
+    },
+  };
+}
 
 /**
  * Build the `providerOptions` for a request based on the model and reasoning
@@ -926,6 +1367,39 @@ export function buildReasoningProviderOptions(
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
   },
 ): ReasoningProviderOptions | undefined {
+  const claude = getClaudeCapabilities(model);
+  if (claude) {
+    const provider = getModelInfo(model).provider;
+    const thinking = !!opts.enableThinking || claude.alwaysOnThinking;
+    if (provider === "openrouter") {
+      return {
+        openrouter: {
+          reasoning: {
+            effort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+            enabled: thinking,
+          },
+        },
+      };
+    }
+    if (provider === "concentrate") {
+      return {
+        openai: {
+          forceReasoning: true,
+          reasoningEffort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+          reasoningSummary: "auto",
+        },
+      };
+    }
+    return {
+      anthropic: {
+        thinking:
+          opts.enableThinking || claude.alwaysOnThinking
+            ? { type: "adaptive", display: "summarized" }
+            : { type: "disabled" },
+        ...(opts.thinkingEffort ? { effort: opts.thinkingEffort } : {}),
+      },
+    };
+  }
   const useThinking =
     !!opts.enableThinking &&
     isAnthropicProvider(model) &&
@@ -938,6 +1412,10 @@ export function buildReasoningProviderOptions(
   const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
 
   if (!useThinking && !normalizedOpenAIEffort) return undefined;
+
+  if (getModelInfo(model).provider === "openrouter" && normalizedOpenAIEffort) {
+    return { openrouter: { reasoning: { effort: normalizedOpenAIEffort } } };
+  }
 
   return {
     ...(useThinking
@@ -978,6 +1456,12 @@ export interface StreamResponseOpts {
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  /** Provider middleware applied only to this stream's model calls. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Explicit undefined clears an inherited recorder for an unrecorded child. */
+  inferenceRecorder?: InferenceRecorder;
+  /** Per-run usage recorder; when set it replaces the global usage callback for this stream. */
+  usageRecorder?: UsageRecorder;
   abortSignal?: AbortSignal;
   activeTools?: string[];
   silent?: boolean;
@@ -990,7 +1474,10 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
-  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  /**
+   * Deprecated host shim: fires only when a cache counter is `> 0`.
+   * Apex internals read cache from {@link normalizeStepUsage} on the step.
+   */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
@@ -1006,15 +1493,64 @@ export interface StreamResponseOpts {
   /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
   sessionId?: string;
   /**
+   * Opt-in durable context authority for recorded runs. Turn-0 base and each
+   * step's cumulative context are checkpointed before selection/dispatch;
+   * unset → legacy behavior, no persistence.
+   */
+  contextRecorder?: RunContextRecorder;
+  /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
   _restartDepth?: number;
+  /** Shared only by continuations of this stream, never across agents. */
+  _compaction?: { last?: CompactionLink };
+  _compactionTrigger?: CompactionTrigger;
 }
+
+const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
+
+interface NativeStreamRecovery {
+  model: LanguageModel;
+  run<T>(fn: () => T): T;
+}
+
+type InternalStreamResponseOpts = StreamResponseOpts & {
+  [NATIVE_STREAM_RECOVERY]?: NativeStreamRecovery;
+};
 
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
+  opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
+  return runWithInferenceRecorder(opts.inferenceRecorder, () => {
+    const recovery = (opts as InternalStreamResponseOpts)[
+      NATIVE_STREAM_RECOVERY
+    ];
+    if (recovery) {
+      return recovery.run(() => streamResponseWithinOperation(opts, recovery));
+    }
+    return streamResponseWithinOperation(opts);
+  });
+}
+
+function streamResponseWithinOperation(
+  opts: StreamResponseOpts,
+  nativeRecovery?: NativeStreamRecovery,
+): StreamTextResult<ToolSet, never> {
+  const compactionState = opts._compaction ?? {};
+  // One effective tool selection per stream, before any fitting: proactive
+  // fit, provider schemas, execution, repair, and every continuation path
+  // below spread this same opts object, so they must all see the filtered
+  // map. Re-entry is identity (`activeTools` already consumed).
+  opts = {
+    ...opts,
+    _compaction: compactionState,
+    // `activeTools` is authoritative for advertisement and execution: a tool
+    // (including `response`) is exposed only when the caller lists it, so the
+    // structured-output tool is included when listed and inert when omitted.
+    ...resolveEffectiveTools(opts.tools, opts.activeTools),
+  };
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
@@ -1033,6 +1569,8 @@ export function streamResponse(
     toolChoice,
     tools,
     onStepFinish: userOnStepFinish,
+    languageModelMiddleware,
+    usageRecorder,
     abortSignal,
     activeTools,
     silent,
@@ -1043,7 +1581,13 @@ export function streamResponse(
     thinkingEffort,
     openAIReasoningEffort,
     sessionId,
+    contextRecorder,
   } = opts;
+
+  // Recorded-run base, captured once at the first prepareStep of this
+  // streamText call; only used to reconstruct cumulative prefixes in
+  // onStepFinish (response.messages excludes the input base).
+  let recorderBase: ModelMessage[] | undefined;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1052,6 +1596,25 @@ export function streamResponse(
   // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     const stepUsage = normalizeStepUsage(step);
+    // Canonical commit precedes every downstream use; the recorder latches
+    // rejections (SDK notify() swallows them) until the next turn gate or
+    // agent-side flush turns the latch into a stream failure.
+    // Synthetic summarization/tool-repair events re-report context that
+    // already includes the base (messagesContainer.current) — committing
+    // them would duplicate the prefix.
+    if (
+      contextRecorder &&
+      step.response.id !== "summarization" &&
+      step.response.id !== "tool-repair"
+    ) {
+      if (!recorderBase) {
+        throw new Error("context recorder active without a committed base");
+      }
+      await contextRecorder.checkpoint({
+        messages: [...recorderBase, ...step.response.messages],
+        system: effectiveSystem ?? null,
+      });
+    }
     if (
       onCacheMetrics &&
       (stepUsage.cacheReadTokens > 0 || stepUsage.cacheWriteTokens > 0)
@@ -1062,24 +1625,26 @@ export function streamResponse(
       });
     }
     await userOnStepFinish?.(step);
-    if (_usageCallback) {
-      // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
-      const stepCtx = takeStepContext();
-      if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-        await _usageCallback(
-          model,
-          stepUsage.inputTokens,
-          stepUsage.outputTokens,
-          {
-            ...stepCtx,
-            cacheReadTokens: stepUsage.cacheReadTokens,
-            cacheWriteTokens: stepUsage.cacheWriteTokens,
-          },
-        );
-      }
-    }
+    await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
-  const providerModel = getProviderModel(model, authConfig);
+  const providerModel =
+    nativeRecovery?.model ??
+    (() => {
+      const baseProviderModel = withNativeRolloutEvidenceModel(
+        withModelCallDiagnostics(getProviderModel(model, authConfig)),
+        {
+          requestedModelId: model,
+          operationKind: "agent.stream",
+          sessionId,
+        },
+      );
+      return languageModelMiddleware
+        ? wrapLanguageModel({
+            model: baseProviderModel,
+            middleware: languageModelMiddleware,
+          })
+        : baseProviderModel;
+    })();
   // Undefined when the model has no cache breakpoint we can express (non-Claude
   // Bedrock models, OpenAI/Google/OpenRouter) — those run uncached.
   const cacheBreakpoint = cacheBreakpointFor(model);
@@ -1102,12 +1667,28 @@ export function streamResponse(
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(model),
-      maxOutputTokens: getMaxOutputTokens(model),
+      contextWindow: getContextWindow(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
+      maxOutputTokens: getMaxOutputTokens(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
+      telemetry: {
+        trigger: "proactive",
+        model,
+        sessionId,
+        restartDepth,
+        previous: opts._compaction?.last,
+      },
     });
+    if (fitted.compaction) compactionState.last = fitted.compaction;
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
     if (fitted.modified && !silent) {
@@ -1140,7 +1721,11 @@ export function streamResponse(
     // entry points (proactive, outer-catch, reactive Layer 3) consume
     // exactly one depth slot per summarization attempt — symmetric.
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(
+        fittedMessages,
+        { ...opts, _compactionTrigger: "proactive" },
+        providerModel,
+      ),
       messagesContainer,
       opts,
       providerModel,
@@ -1171,36 +1756,81 @@ export function streamResponse(
   // not top-level providerOptions, so there is no collision.
   // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it);
   // this path never sets temperature, so there is nothing to clear.
-  const providerOptions = buildReasoningProviderOptions(model, {
+  const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
   });
+  const openRouterProviderOptions = buildOpenRouterProviderOptions(model);
+  const providerOptions =
+    reasoningProviderOptions || openRouterProviderOptions
+      ? { ...reasoningProviderOptions, ...openRouterProviderOptions }
+      : undefined;
 
   let rateLimitRetryCount = 0;
 
+  // Make `activeTools` authoritative: advertise, execute, and enumerate only
+  // the allowlisted tools. A no-op when `activeTools` is empty/undefined.
+  // `resolveEffectiveTools` above already filtered the map and cleared
+  // `activeTools`, so this is a no-op on the normal path; kept for callers that
+  // reach streamText with an intact `activeTools` (identity when undefined).
+  const allowedTools = withResponseToolActive(tools, activeTools);
+  const effectiveTools = restrictToolsToActive(tools, allowedTools);
+
   try {
-    // Create the appropriate provider instance
-    const response = streamText({
+    // Create the appropriate provider instance. The span tracker captures
+    // the SDK's root generation span for error marking (see below).
+    const generationSpans = createGenerationSpanTracker();
+    const responseOptions: Parameters<typeof streamText>[0] = {
       model: providerModel,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
       toolChoice,
-      tools,
+      tools: effectiveTools,
       maxRetries: 3,
       providerOptions,
-      experimental_telemetry: createAiTelemetrySettings({
-        operation: "apex.agent.stream",
-        sessionId,
-      }),
+      // Step history would retain a serialized request body per step, and
+      // later steps re-send the whole conversation, so they accumulate.
+      // Native capture reads the provider stream result, not this filter.
+      experimental_include: { requestBody: false },
+      // The forwarding tracer keeps a handle on the SDK's root generation
+      // span: error-part runs complete normally in the SDK, so nothing
+      // marks the span failed — the wrapper's catch does.
+      experimental_telemetry: {
+        ...createAiTelemetrySettings({
+          operation: "apex.agent.stream",
+          sessionId,
+          compaction: opts._compaction?.last,
+        }),
+        tracer: generationSpans.tracer,
+      },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model),
-      prepareStep: (opts) => {
+      maxOutputTokens: getMaxOutputTokens(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
+      // Awaiting inside prepareStep keeps streamResponse synchronous; the
+      // SDK awaits it before provider dispatch, so every turn and every
+      // recovery re-entry commits before use.
+      prepareStep: async (opts) => {
+        if (contextRecorder) {
+          if (recorderBase === undefined) {
+            recorderBase = structuredClone(opts.messages);
+          }
+          // Full logical context each turn — accepted step outputs must
+          // survive into every later commit, and system is explicit (when
+          // cached into messages, effectiveSystem is undefined → null).
+          await contextRecorder.checkpoint({
+            messages: opts.messages,
+            system: effectiveSystem ?? null,
+          });
+        }
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
         // Mark the last message so the growing conversation caches incrementally
@@ -1212,6 +1842,12 @@ export function streamResponse(
         return undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
+        // Never throw here: the SDK calls this inside its stream pipeline,
+        // and a thrown callback kills the pipeline's terminal lifecycle —
+        // the root generation span never ends and nothing exports. Return
+        // normally instead; the error part continues downstream and the
+        // consumption wrapper converts it to a thrown error (after the
+        // tail drains), where the retry machinery takes over.
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         if (
@@ -1219,18 +1855,21 @@ export function streamResponse(
           errorMessage.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
-          if (rateLimitRetryCount < 20) {
-            return;
+          if (getInferenceRecorder(opts)) {
+            // This SDK callback must not throw, including when cancellation ends its wait.
+            await delay(1000 * rateLimitRetryCount, undefined, {
+              signal: abortSignal,
+            }).catch(() => {});
+          } else {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1000 * rateLimitRetryCount),
+            );
           }
         }
-        throw error;
       },
       onStepFinish,
       abortSignal,
-      activeTools,
+      activeTools: allowedTools,
       experimental_repairToolCall: async ({
         toolCall,
         inputSchema,
@@ -1305,61 +1944,93 @@ export function streamResponse(
             "schema",
           );
 
-          const { output: repairedArgs, usage: repairUsage } =
-            await generateText({
-              model: providerModel,
-              output: Output.object({
-                schema: tool.inputSchema, // Use the actual Zod schema from the tool
+          const {
+            output: repairedArgs,
+            usage: repairUsage,
+            providerMetadata: repairProviderMetadata,
+          } = await runWithNativeRolloutOperation(
+            { operationKind: "tool.repair", sessionId },
+            () =>
+              generateText({
+                model: providerModel,
+                providerOptions: {
+                  ...openRouterProviderOptions,
+                  // Durable runtime: tool-call repair fires only when a
+                  // replayed tool call fails validation — nondeterministically
+                  // vs the first run — so it must stay off the checkpoint
+                  // journal. The agent-runtime middleware reads this namespace
+                  // and runs the call without a durable step; the underlying
+                  // provider ignores it.
+                  pensarRuntime: { ephemeral: true },
+                },
+                output: Output.object({
+                  schema: tool.inputSchema, // Use the actual Zod schema from the tool
+                }),
+                prompt: [
+                  `The model tried to call the tool "${toolCall.toolName}"` +
+                    ` with the following inputs:`,
+                  boundedInput,
+                  `The tool accepts the following schema:`,
+                  boundedSchema,
+                  `Error encountered: ${error}`,
+                  "Please fix the inputs to match the schema.",
+                  "",
+                  "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+                  "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+                ].join("\n"),
+                abortSignal,
+                experimental_telemetry: createAiTelemetrySettings({
+                  operation: "apex.tool.repair",
+                  sessionId,
+                }),
               }),
-              prompt: [
-                `The model tried to call the tool "${toolCall.toolName}"` +
-                  ` with the following inputs:`,
-                boundedInput,
-                `The tool accepts the following schema:`,
-                boundedSchema,
-                `Error encountered: ${error}`,
-                "Please fix the inputs to match the schema.",
-                "",
-                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-                "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-              ].join("\n"),
-              abortSignal,
-              experimental_telemetry: createAiTelemetrySettings({
-                operation: "apex.tool.repair",
-                sessionId,
-              }),
-            });
+          );
 
-          // Report tool repair token usage if onStepFinish callback is provided
+          // Report tool repair token usage if onStepFinish callback is
+          // provided. Awaited: the callback persists messages and records
+          // usage — a detached invocation would leak unhandled rejections
+          // into the tool loop. Provider metadata and cache details flow
+          // through so repair usage stays attributable.
           if (onStepFinish && repairUsage) {
-            onStepFinish({
-              text: "",
-              reasoning: undefined,
-              reasoningDetails: [],
-              files: [],
-              sources: [],
-              toolCalls: [],
-              toolResults: [],
-              finishReason: "stop",
-              usage: {
-                inputTokens: repairUsage.inputTokens ?? 0,
-                outputTokens: repairUsage.outputTokens ?? 0,
-                totalTokens: repairUsage.totalTokens ?? 0,
-              },
-              warnings: [],
-              request: {},
-              response: {
-                id: "tool-repair",
-                timestamp: new Date(),
-                modelId: "",
-                messages: [],
-              },
-              providerMetadata: undefined,
-              stepType: "initial",
-              isContinued: false,
-            } as unknown as Parameters<
-              StreamTextOnStepFinishCallback<ToolSet>
-            >[0]);
+            try {
+              await onStepFinish({
+                text: "",
+                reasoning: undefined,
+                reasoningDetails: [],
+                files: [],
+                sources: [],
+                toolCalls: [],
+                toolResults: [],
+                finishReason: "stop",
+                usage: {
+                  inputTokens: repairUsage.inputTokens ?? 0,
+                  outputTokens: repairUsage.outputTokens ?? 0,
+                  totalTokens: repairUsage.totalTokens ?? 0,
+                  ...(repairUsage.inputTokenDetails
+                    ? { inputTokenDetails: repairUsage.inputTokenDetails }
+                    : {}),
+                },
+                warnings: [],
+                request: {},
+                response: {
+                  id: "tool-repair",
+                  timestamp: new Date(),
+                  modelId: "",
+                  messages: messagesContainer.current,
+                },
+                providerMetadata: repairProviderMetadata,
+                stepType: "initial",
+                isContinued: false,
+              } as unknown as Parameters<
+                StreamTextOnStepFinishCallback<ToolSet>
+              >[0]);
+            } catch (callbackError) {
+              if (!silent) {
+                log.warn("Error reporting tool repair usage", {
+                  error: String(callbackError),
+                });
+              }
+            }
           }
 
           if (repairedArgs === undefined || repairedArgs === null) {
@@ -1381,15 +2052,35 @@ export function streamResponse(
         }
       },
       onFinish,
-    });
+    };
+    let recovery = nativeRecovery;
+    const response = recovery
+      ? streamText(responseOptions)
+      : runWithNativeRolloutOperation(
+          { operationKind: "agent.stream", sessionId },
+          () => {
+            const operation = new AsyncResource("apex.native-stream-recovery");
+            recovery = {
+              model: providerModel,
+              run: (fn) => operation.runInAsyncScope(fn),
+            };
+            return streamText(responseOptions);
+          },
+        );
 
     // Wrap the stream to catch async errors during consumption
+    const recoveryOpts: InternalStreamResponseOpts = recovery
+      ? { ...opts, [NATIVE_STREAM_RECOVERY]: recovery }
+      : opts;
     return wrapStreamWithErrorHandler(
       response,
       messagesContainer,
-      opts,
+      recoveryOpts,
       providerModel,
       silent,
+      0,
+      0,
+      generationSpans,
     );
   } catch (error) {
     // Check if the error is related to context length
@@ -1417,7 +2108,7 @@ export function streamResponse(
       return wrapStreamWithErrorHandler(
         createSummarizationStream(
           messagesContainer.current,
-          opts,
+          { ...opts, _compactionTrigger: "context_overflow" },
           providerModel,
         ),
         messagesContainer,
@@ -1448,13 +2139,30 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Provider middleware applied only to this call's model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Explicit undefined clears an inherited recorder for an unrecorded child. */
+  inferenceRecorder?: InferenceRecorder;
+  /** Per-run usage recorder; when set it replaces the global usage callback. */
+  usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
+  /** Stable operation id; defaults to `apex.structured.generate`. */
+  operation?: AiTelemetryOperation;
 }
 
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
 
 export async function generateObjectResponse<T extends z.ZodType>(
+  opts: GenerateObjectOpts<T>,
+): Promise<z.infer<T>> {
+  opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
+  return runWithInferenceRecorder(opts.inferenceRecorder, () =>
+    generateObjectResponseWithinRecorder(opts),
+  );
+}
+
+async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>,
 ): Promise<z.infer<T>> {
   const {
@@ -1468,92 +2176,139 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    languageModelMiddleware,
+    usageRecorder,
     sessionId,
   } = opts;
 
-  const providerModel = getProviderModel(model, authConfig);
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
-    openAIReasoningEffort,
+  const baseProviderModel = withNativeRolloutEvidenceModel(
+    withModelCallDiagnostics(getProviderModel(model, authConfig)),
+    {
+      requestedModelId: model,
+      operationKind: nativeRolloutOperation(opts.operation),
+      sessionId,
+    },
   );
+  const providerModel = languageModelMiddleware
+    ? wrapLanguageModel({
+        model: baseProviderModel,
+        middleware: languageModelMiddleware,
+      })
+    : baseProviderModel;
+  const reasoningProviderOptions = buildReasoningProviderOptions(model, {
+    openAIReasoningEffort,
+  });
+  const openRouterProviderOptions =
+    buildOpenRouterStructuredProviderOptions(model);
 
-  let lastError: unknown;
+  return runWithNativeRolloutOperation(
+    {
+      operationKind: nativeRolloutOperation(opts.operation),
+      sessionId,
+    },
+    async () => {
+      let lastError: unknown;
 
-  for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
-    try {
-      const { output, usage, providerMetadata } = await generateText({
-        model: providerModel,
-        output: Output.object({
-          schema,
-        }),
-        prompt,
-        system,
-        maxOutputTokens: maxTokens,
-        temperature,
-        providerOptions: normalizedOpenAIEffort
-          ? {
-              openai: {
-                reasoningEffort: normalizedOpenAIEffort,
-              },
+      for (
+        let attempt = 0;
+        attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES;
+        attempt++
+      ) {
+        try {
+          const { output, usage, providerMetadata } = await generateText({
+            model: providerModel,
+            output: Output.object({
+              schema,
+            }),
+            prompt,
+            system,
+            maxOutputTokens: maxTokens,
+            temperature,
+            providerOptions:
+              reasoningProviderOptions || openRouterProviderOptions
+                ? {
+                    ...reasoningProviderOptions,
+                    ...(openRouterProviderOptions
+                      ? {
+                          openrouter: {
+                            ...reasoningProviderOptions?.openrouter,
+                            ...openRouterProviderOptions.openrouter,
+                          },
+                        }
+                      : {}),
+                  }
+                : undefined,
+            maxRetries: 0,
+            abortSignal,
+            experimental_telemetry: createAiTelemetrySettings({
+              operation: opts.operation ?? "apex.structured.generate",
+              sessionId,
+            }),
+          });
+
+          if (onTokenUsage && usage) {
+            onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+          }
+
+          if (usage) {
+            await emitUsage(
+              model,
+              normalizeStepUsage({ usage, providerMetadata }),
+              resolveUsageSink(usageRecorder),
+            );
+          }
+
+          // zod v4: the AI SDK's `Output.object` no longer carries the schema's
+          // inferred type through `output` (it widens to `unknown`), so restore it
+          // from the schema generic for callers.
+          return output as z.infer<T>;
+        } catch (error) {
+          // Surface latched persistence/limit failures before any retry
+          // classification — they are terminal, never delayed or retried.
+          await getInferenceRecorder(opts)?.flush();
+          if (
+            error instanceof RunPersistenceError ||
+            error instanceof RunLimitError ||
+            error instanceof RunControlInterruption
+          ) {
+            throw error;
+          }
+          lastError = error;
+
+          if (checkIfContextLengthError(error)) {
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new ContextLengthError(
+              `Prompt exceeds model context window: ${msg}`,
+            );
+          }
+
+          if (
+            checkIfRateLimitError(error) &&
+            attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
+          ) {
+            const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
+            const recorder = getInferenceRecorder(opts);
+            await recorder?.retry({
+              authority: "object-rate-limit",
+              count: attempt + 1,
+              maxRetries: MAX_OBJECT_RATE_LIMIT_RETRIES,
+              delayMs,
+            });
+            if (recorder) {
+              await delay(delayMs, undefined, { signal: abortSignal });
+            } else {
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
             }
-          : undefined,
-        maxRetries: 0,
-        abortSignal,
-        experimental_telemetry: createAiTelemetrySettings({
-          operation: "apex.structured.generate",
-          sessionId,
-        }),
-      });
+            continue;
+          }
 
-      if (onTokenUsage && usage) {
-        onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
-      }
-
-      if (_usageCallback && usage) {
-        const stepUsage = normalizeStepUsage({ usage, providerMetadata });
-        const stepCtx = takeStepContext();
-        if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-          await _usageCallback(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            {
-              ...stepCtx,
-              cacheReadTokens: stepUsage.cacheReadTokens,
-              cacheWriteTokens: stepUsage.cacheWriteTokens,
-            },
-          );
+          throw error;
         }
       }
 
-      // zod v4: the AI SDK's `Output.object` no longer carries the schema's
-      // inferred type through `output` (it widens to `unknown`), so restore it
-      // from the schema generic for callers.
-      return output as z.infer<T>;
-    } catch (error) {
-      lastError = error;
-
-      if (checkIfContextLengthError(error)) {
-        const msg = error instanceof Error ? error.message : String(error);
-        throw new ContextLengthError(
-          `Prompt exceeds model context window: ${msg}`,
-        );
-      }
-
-      if (
-        checkIfRateLimitError(error) &&
-        attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
-      ) {
-        const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  throw lastError;
+      throw lastError;
+    },
+  );
 }
 
 class ContextLengthError extends Error {
@@ -1587,6 +2342,7 @@ const MINIMAL_RESTART_PROMPT =
 export {
   applySequentialToolCallPolicy,
   createToolExecutionGate,
+  getStreamIdleTimeoutMs,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   StreamIdleTimeoutError,
   withIdleTimeout,

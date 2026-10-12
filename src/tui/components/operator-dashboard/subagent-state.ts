@@ -11,6 +11,8 @@ import {
 
 export type SubagentStatus = "running" | "completed" | "failed" | "cancelled";
 
+export type SubagentCounts = Readonly<Record<SubagentStatus | "total", number>>;
+
 export const SUBAGENT_STATUS_ORDER: Record<SubagentStatus, number> = {
   running: 0,
   completed: 1,
@@ -83,12 +85,22 @@ type SetState = Dispatch<SetStateAction<Map<string, SubagentSession>>>;
 export interface SubagentStore {
   getSnapshot: () => Map<string, SubagentSession>;
   subscribe: (listener: () => void) => () => void;
+  getCountsSnapshot: () => SubagentCounts;
+  subscribeCounts: (listener: () => void) => () => void;
   setState: SetState;
 }
 
 export function createSubagentStore(): SubagentStore {
   let snapshot: Map<string, SubagentSession> = new Map();
+  let counts: SubagentCounts = {
+    total: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+  };
   const listeners = new Set<() => void>();
+  const countListeners = new Set<() => void>();
   const setState: SetState = (action) => {
     const next =
       typeof action === "function"
@@ -99,14 +111,36 @@ export function createSubagentStore(): SubagentStore {
           )(snapshot)
         : action;
     if (next === snapshot) return;
+    const nextCounts = {
+      total: next.size,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+    for (const session of next.values()) nextCounts[session.status]++;
+    const countsChanged =
+      counts.total !== nextCounts.total ||
+      counts.running !== nextCounts.running ||
+      counts.completed !== nextCounts.completed ||
+      counts.failed !== nextCounts.failed ||
+      counts.cancelled !== nextCounts.cancelled;
+    // Both snapshots must be current before either subscription can read them.
     snapshot = next;
+    if (countsChanged) counts = nextCounts;
     for (const l of listeners) l();
+    if (countsChanged) for (const l of countListeners) l();
   };
   return {
     getSnapshot: () => snapshot,
     subscribe: (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
+    },
+    getCountsSnapshot: () => counts,
+    subscribeCounts: (l) => {
+      countListeners.add(l);
+      return () => countListeners.delete(l);
     },
     setState,
   };

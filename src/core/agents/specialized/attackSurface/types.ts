@@ -12,7 +12,7 @@ export interface AttackSurfaceAnalysisResults {
   keyFindings: string[];
 }
 
-interface AttackSurfaceSummary {
+export interface AttackSurfaceSummary {
   totalAssets: number;
   totalDomains: number;
   highValueTargets: number;

@@ -1,7 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../../tools/backends/resolve";
 import type { ToolContext } from "../types";
-import { createEmailAdapter } from "./adapters";
+import { resolveEmailAdapter } from "./adapters";
 
 /**
  * Tool: email_get_message
@@ -38,7 +39,10 @@ first to find the message ID.`,
       }
 
       try {
-        const adapter = createEmailAdapter(inbox);
+        const adapter = resolveEmailAdapter(
+          inbox,
+          resolveBackends(ctx).inbox.email,
+        );
         const message = await adapter.getMessage(messageId, folder);
         return { success: true, message };
       } catch (error: unknown) {

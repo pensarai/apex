@@ -1,13 +1,61 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createToolExecutionGate,
+  getStreamIdleTimeoutMs,
   StreamIdleTimeoutError,
   withIdleTimeout,
 } from "./ai";
 
 // Minimal chunk shape used by the gate — mirrors what the wrapper sees
 // from the AI SDK's `fullStream` (only the fields we actually inspect).
-type Chunk = { type: string; toolCallId?: string };
+type Chunk = { type: string; toolCallId?: string; toolName?: string };
+
+describe("non-streaming model timeout", () => {
+  it.each([
+    "openai/gpt-5.5-pro",
+    "gpt-5.5-pro",
+    "gpt-5.5-pro-2026-04-23",
+  ])("allows %s to complete after the normal streaming idle limit", async (model) => {
+    vi.useFakeTimers();
+    try {
+      async function* delayedResponse() {
+        await new Promise((resolve) => setTimeout(resolve, 6 * 60 * 1000));
+        yield "completed";
+      }
+      const stream = withIdleTimeout(
+        delayedResponse(),
+        getStreamIdleTimeoutMs(model),
+      );
+      const response = stream.next();
+      await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+      expect(await response).toEqual({ value: "completed", done: false });
+      await stream.return(undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["gpt-5.5-pro", 35],
+    ["openai/gpt-5.5-pro", 35],
+    ["gpt-5.4-mini", 5],
+  ] as const)("still bounds a stalled %s response", async (model, minutes) => {
+    vi.useFakeTimers();
+    try {
+      const stalled: AsyncIterable<string> = {
+        [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+      };
+      const stream = withIdleTimeout(stalled, getStreamIdleTimeoutMs(model));
+      const rejection = expect(stream.next()).rejects.toThrow(
+        StreamIdleTimeoutError,
+      );
+      await vi.advanceTimersByTimeAsync(minutes * 60 * 1000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("withIdleTimeout", () => {
   it("passes through chunks when stream is healthy", async () => {
@@ -184,6 +232,58 @@ describe("createToolExecutionGate", () => {
     gate.observe({ type: "tool-input-start", toolCallId: "tc_1" });
     gate.observe({ type: "tool-input-delta", toolCallId: "tc_1" });
     gate.observe({ type: "step-finish" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("closes on a tool-error for a matching open tool-call", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-call", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+    gate.observe({ type: "tool-error", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("releases parallel tool calls independently when each errors", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-call", toolCallId: "tc_a" });
+    gate.observe({ type: "tool-call", toolCallId: "tc_b" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+
+    gate.observe({ type: "tool-error", toolCallId: "tc_a" });
+    // tc_b is still executing — the idle timeout must stay suppressed.
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+
+    gate.observe({ type: "tool-error", toolCallId: "tc_b" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("ignores duplicate tool-error terminals for the same id", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-call", toolCallId: "tc_1" });
+    gate.observe({ type: "tool-error", toolCallId: "tc_1" });
+    gate.observe({ type: "tool-error", toolCallId: "tc_1" });
+    gate.observe({ type: "tool-result", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("ignores an unknown tool-error with no open call", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-error", toolCallId: "tc_orphan" });
+    gate.observe({ type: "tool-error", toolCallId: "tc_orphan" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+
+    gate.observe({ type: "tool-call", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+  });
+
+  it("does not release a gated slot for a non-gated tool-error", () => {
+    const gate = createToolExecutionGate();
+    // `response` is never gated — its errors must not decrement anything.
+    gate.observe({
+      type: "tool-error",
+      toolCallId: "tc_r",
+      toolName: "response",
+    });
     expect(gate.shouldEnforceIdleTimeout()).toBe(true);
   });
 });

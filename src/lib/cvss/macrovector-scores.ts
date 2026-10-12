@@ -317,10 +317,13 @@ export const METRIC_LEVELS: Record<string, Record<string, number>> = {
 /**
  * Maximum severity depth for each equivalence class
  */
-export const MAX_SEVERITY: Record<
-  string,
-  Record<number, number | Record<number, number>>
-> = {
+export const MAX_SEVERITY: {
+  eq1: Record<number, number>;
+  eq2: Record<number, number>;
+  eq3eq6: Record<number, Record<number, number>>;
+  eq4: Record<number, number>;
+  eq5: Record<number, number>;
+} = {
   eq1: { 0: 1, 1: 4, 2: 5 },
   eq2: { 0: 1, 1: 2 },
   eq3eq6: {
@@ -336,10 +339,13 @@ export const MAX_SEVERITY: Record<
  * Maximum severity metric combinations for each equivalence class
  * Used to construct the highest-severity vector for interpolation
  */
-const MAX_COMPOSED: Record<
-  string,
-  Record<number, string[] | Record<string, string[]>>
-> = {
+export const MAX_COMPOSED: {
+  eq1: Record<number, string[]>;
+  eq2: Record<number, string[]>;
+  eq3: Record<number, Record<number, string[]>>;
+  eq4: Record<number, string[]>;
+  eq5: Record<number, string[]>;
+} = {
   eq1: {
     0: ["AV:N/PR:N/UI:N/"],
     1: ["AV:A/PR:N/UI:N/", "AV:N/PR:L/UI:N/", "AV:N/PR:N/UI:P/"],
@@ -383,7 +389,7 @@ const MAX_COMPOSED: Record<
 /**
  * Impact metrics that determine if score is 0
  */
-const NO_IMPACT_METRICS = ["VC", "VI", "VA", "SC", "SI", "SA"] as const;
+export const NO_IMPACT_METRICS = ["VC", "VI", "VA", "SC", "SI", "SA"] as const;
 
 /**
  * Step value for severity distance calculation
@@ -393,4 +399,4 @@ export const STEP = 0.1;
 /**
  * Epsilon for floating point comparisons
  */
-const EPSILON = 10 ** -6;
+export const EPSILON = 10 ** -6;

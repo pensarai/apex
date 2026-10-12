@@ -14,35 +14,6 @@ export function createQueuedMessage(text: string): QueuedMessage {
   return { id: nextId++, text };
 }
 
-/** Add a message to the end of the queue. */
-export function queueAdd(
-  queue: QueuedMessage[],
-  message: string,
-): QueuedMessage[] {
-  return [...queue, createQueuedMessage(message)];
-}
-
-/** Remove the item at `index` and return the new queue. */
-export function queueRemove(
-  queue: QueuedMessage[],
-  index: number,
-): QueuedMessage[] {
-  return queue.filter((_, i) => i !== index);
-}
-
-/**
- * Clamp or reset `selectedIndex` after the queue changes size.
- * Returns -1 (deselected) when the queue is empty.
- */
-export function clampQueueSelection(
-  queueLength: number,
-  selectedIndex: number,
-): number {
-  if (queueLength === 0) return -1;
-  if (selectedIndex >= queueLength) return queueLength - 1;
-  return selectedIndex;
-}
-
 /**
  * Compute the next selectedIndex after deleting the item at `removedIndex`.
  */

@@ -7,6 +7,7 @@
 
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
+import { clientIdentityHeaders } from "./clientIdentity";
 import { getPensarApiUrl } from "./constants";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -27,6 +28,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${validToken.token}`,
+    ...clientIdentityHeaders(),
   };
 
   if (cfg.workspaceId) {

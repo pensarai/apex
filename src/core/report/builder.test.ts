@@ -20,6 +20,7 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
     endpoint: "/api/test",
     pocPath: "/pocs/test.py",
     remediation: "Fix the thing",
+    credentialIds: [],
     ...overrides,
   };
 }

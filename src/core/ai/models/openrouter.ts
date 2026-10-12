@@ -4,6 +4,84 @@
 import type { ModelInfo } from "../ai";
 export const OPENROUTER_MODELS: ModelInfo[] = [
   {
+    id: "anthropic/claude-sonnet-5.5",
+    name: "Claude Sonnet 5.5",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "anthropic/claude-opus-5.5",
+    name: "Claude Opus 5.5",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "anthropic/claude-fable-5.1",
+    name: "Claude Fable 5.1",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "anthropic/claude-opus-5",
+    name: "Claude Opus 5",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "anthropic/claude-sonnet-5",
+    name: "Claude Sonnet 5",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "anthropic/claude-fable-5",
+    name: "Claude Fable 5",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "openai/gpt-6.1-sol",
+    name: "GPT-6.1 Sol",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
+    id: "openai/gpt-6-luna",
+    name: "GPT-6 Luna",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
+    id: "openai/gpt-6-sol",
+    name: "GPT-6 Sol",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
+    id: "openai/gpt-6-astra",
+    name: "GPT-6 Astra",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
+    id: "openai/gpt-5.5-pro",
+    name: "GPT-5.5 Pro",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
+    id: "openai/gpt-5.4-nano",
+    name: "GPT-5.4 Nano",
+    provider: "openrouter",
+    contextLength: 400000,
+  },
+  {
+    id: "openai/gpt-5.4-mini",
+    name: "GPT-5.4 Mini",
+    provider: "openrouter",
+    contextLength: 400000,
+  },
+  {
     id: "anthropic/claude-haiku-4.5",
     name: "Claude Haiku 4.5",
     provider: "openrouter",
@@ -100,6 +178,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 128000,
   },
   {
+    id: "deepseek/deepseek-v4.1-flash",
+    name: "DeepSeek V4.1 Flash",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "deepseek/deepseek-chat",
     name: "DeepSeek Chat",
     provider: "openrouter",
@@ -160,6 +244,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 524288,
   },
   {
+    id: "poolside/laguna-s-2.1",
+    name: "Laguna S 2.1",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "qwen/qwen3-8b",
     name: "Qwen 3 8B Thinking",
     provider: "openrouter",
@@ -192,6 +282,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
   {
     id: "nvidia/nemotron-3-nano-30b-a3b",
     name: "Nemotron 3 Nano 30B A3B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "nvidia/nemotron-3-ultra-550b-a55b",
+    name: "Nemotron 3 Ultra 550B A55B",
     provider: "openrouter",
     contextLength: 262144,
   },
@@ -230,5 +326,11 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "GLM 5.2",
     provider: "openrouter",
     contextLength: 1000000,
+  },
+  {
+    id: "z-ai/glm-5.3",
+    name: "GLM 5.3",
+    provider: "openrouter",
+    contextLength: 1048576,
   },
 ];

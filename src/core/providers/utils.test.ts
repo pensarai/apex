@@ -1,10 +1,76 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../config/config";
-import { getAvailableModels, getDefaultModelForConfig } from "./utils";
+import {
+  getAvailableModels,
+  getDefaultModelForConfig,
+  getSavedModelForConfig,
+} from "./utils";
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
   return { responsibleUseAccepted: true, ...overrides };
 }
+
+describe("saved Hoonify selections", () => {
+  it("preserves the provider during catalog failure instead of switching to another key", () => {
+    const config = makeConfig({
+      selectedModelId: "hoonify:partner-model",
+      anthropicAPIKey: "other-key",
+      hoonifyAPIKey: "key",
+      hoonifyCatalogError: "Catalog unavailable",
+    });
+    const model = getSavedModelForConfig(config);
+    expect(model).toEqual({
+      id: "hoonify:partner-model",
+      name: "partner-model",
+      provider: "hoonify",
+    });
+    expect(getDefaultModelForConfig(config)?.provider).toBe("anthropic");
+  });
+
+  it.each([
+    undefined,
+    "",
+    "   ",
+  ])("falls back from a saved Hoonify selection without a configured key (%s)", (hoonifyAPIKey) => {
+    const config = makeConfig({
+      selectedModelId: "hoonify:partner-model",
+      anthropicAPIKey: "other-key",
+      hoonifyAPIKey,
+    });
+    expect(getSavedModelForConfig(config)).toBeNull();
+    expect(getDefaultModelForConfig(config)?.provider).toBe("anthropic");
+  });
+
+  it("does not preserve a model missing from a successfully loaded catalog", () => {
+    expect(
+      getSavedModelForConfig(
+        makeConfig({
+          selectedModelId: "hoonify:removed-model",
+          hoonifyAPIKey: "key",
+          hoonifyModels: [],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("uses the refreshed context window for an available saved model", () => {
+    expect(
+      getSavedModelForConfig(
+        makeConfig({
+          selectedModelId: "hoonify:partner-model",
+          hoonifyAPIKey: "key",
+          hoonifyModels: [
+            {
+              id: "partner-model",
+              contextLength: 32_768,
+              maxOutputTokens: 4096,
+            },
+          ],
+        }),
+      )?.contextLength,
+    ).toBe(32_768);
+  });
+});
 
 describe("getDefaultModelForConfig", () => {
   it("returns null when no providers are configured", () => {
@@ -82,7 +148,7 @@ describe("getDefaultModelForConfig", () => {
 
     expect(model).not.toBeNull();
     expect(model?.provider).toBe("concentrate");
-    expect(model?.id).toBe("concentrate:claude-opus-4-6");
+    expect(model?.id).toBe("concentrate:glm-5.3");
     expect(available.length).toBeGreaterThan(1);
     expect(available.every((item) => item.provider === "concentrate")).toBe(
       true,

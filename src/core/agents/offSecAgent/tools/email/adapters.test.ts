@@ -22,7 +22,11 @@ import {
   vi,
 } from "vitest";
 import type { EmailInboxConfig } from "../../../../session";
-import { createEmailAdapter, type EmailAdapter } from "./adapters";
+import {
+  createEmailAdapter,
+  type EmailAdapter,
+  resolveEmailAdapter,
+} from "./adapters";
 
 const REQUIRED_ENV = [
   "GMAIL_CLIENT_ID",
@@ -247,5 +251,29 @@ describe("HttpAdapter (unit)", () => {
 
     const adapter = createEmailAdapter(HTTP_INBOX);
     await expect(adapter.listMessages({})).rejects.toThrow(/401/);
+  });
+});
+
+describe("resolveEmailAdapter", () => {
+  const managed = {
+    provider: "pensar-managed" as const,
+    id: "inbox-managed",
+    name: "Managed",
+    emailAddress: "agent@pensar.dev",
+  };
+
+  it("prefers a host-supplied adapter", () => {
+    const supplied = {} as EmailAdapter;
+    const adapter = resolveEmailAdapter(managed, () => supplied);
+    expect(adapter).toBe(supplied);
+  });
+
+  it("falls through to the factory when the resolver declines", () => {
+    const adapter = resolveEmailAdapter(HTTP_INBOX, () => null);
+    expect(adapter).toBeDefined();
+  });
+
+  it("throws for a pensar-managed inbox with no resolver", () => {
+    expect(() => resolveEmailAdapter(managed)).toThrow("pensar-managed");
   });
 });

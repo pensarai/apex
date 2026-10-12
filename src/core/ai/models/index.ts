@@ -1,9 +1,19 @@
+import {
+  type CustomProviders,
+  parseCustomModelId,
+  resolveCustomModel,
+} from "../../config/customProviders";
+import { type HoonifyModel, resolveHoonifyModel } from "../../hoonify";
 import type { AIModel, ModelInfo } from "../ai";
 
 // Anthropic, OpenAI, Google, Bedrock — auto-generated from SDK type definitions.
 // Re-generate after bumping SDK packages: bun run generate:models
 import { ANTHROPIC_MODELS } from "./anthropic";
 import { BEDROCK_MODELS } from "./bedrock";
+import { getClaudeCapabilities } from "./claude-capabilities";
+
+export { getClaudeCapabilities } from "./claude-capabilities";
+
 import { CONCENTRATE_MODELS } from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
@@ -27,6 +37,14 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {
+  if (model.startsWith("hoonify:"))
+    return {
+      id: model,
+      name: model.slice("hoonify:".length),
+      provider: "hoonify",
+    };
+  const custom = parseCustomModelId(model);
+  if (custom) return { id: model, name: custom.modelId, provider: "custom" };
   return (
     AVAILABLE_MODELS.find((m) => m.id === model) ?? {
       id: model,
@@ -61,7 +79,15 @@ export function prefersSequentialToolCalls(model: AIModel): boolean {
  * Adding a Claude model? Add a pattern AND a regression row in
  * `models.test.ts:"recognizes Claude tier-specific budgets"`.
  */
-export function getMaxOutputTokens(modelId: string): number {
+export function getMaxOutputTokens(
+  modelId: string,
+  customProviders?: CustomProviders,
+  hoonifyModels?: HoonifyModel[],
+): number {
+  if (modelId.startsWith("hoonify:"))
+    return resolveHoonifyModel(modelId, hoonifyModels).maxOutputTokens;
+  if (parseCustomModelId(modelId))
+    return resolveCustomModel(modelId, customProviders).model.maxOutputTokens;
   const fromPattern = lookupOutputBudgetByPattern(modelId);
   const ctx = AVAILABLE_MODELS.find((m) => m.id === modelId)?.contextLength;
   // Reserve ≥25% of the window for input on tiny-context legacy models.
@@ -72,6 +98,8 @@ export function getMaxOutputTokens(modelId: string): number {
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  if (modelId === "chat-latest") return 128_000;
+  if (getClaudeCapabilities(modelId)) return 128_000;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
   // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
   // digit.digit sequences to dashes so all Claude patterns match both forms.
@@ -128,7 +156,10 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // overflow class this PR closes. Defaults below come from each family's
   // documented max output; the per-model `contextLength` clamp in
   // `getMaxOutputTokens` handles legacy small-window variants.
-  if (modelId.includes("gpt-5")) {
+  if (
+    modelId.includes("gpt-5") ||
+    /^(?:openai\/|concentrate:)?gpt-6[.-]/.test(modelId)
+  ) {
     return 128_000;
   }
   if (modelId.includes("gpt-4.1")) {
@@ -184,15 +215,22 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 128_000;
   }
 
-  // GLM 5 / 5.2 ship a ~131K (128Ki) max-output window. Matching both keeps the
-  // Bedrock `zai.glm-5` id and OpenRouter `z-ai/glm-5.2` on the same budget.
+  if (modelId.includes("laguna-s-2.1")) {
+    return 131_072;
+  }
+
+  // GLM 5 models ship a ~131K (128Ki) max-output window. Matching the family
+  // keeps Bedrock and OpenRouter model IDs on the same budget.
   if (modelId.includes("glm-5")) {
     return 131_072;
   }
 
-  // DeepSeek (V3.1, R1, chat). Bedrock documents an 8K output window for
-  // DeepSeek V3.1; the rest of the family is no larger, so this is a safe floor
-  // that keeps new `deepseek.*` ids off the 4,096 catch-all.
+  // V4.1 Flash's larger output window must precede the legacy DeepSeek fallback.
+  if (modelId.includes("deepseek-v4.1-flash")) {
+    return 384_000;
+  }
+
+  // Keep the conservative 8K floor used by Bedrock's legacy DeepSeek models.
   if (modelId.includes("deepseek")) {
     return 8_192;
   }
@@ -202,6 +240,10 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // inherit the 4,096 default.
   if (modelId.includes("qwen")) {
     return 16_000;
+  }
+
+  if (modelId.includes("nemotron-3-ultra")) {
+    return 16_384;
   }
 
   return 4_096;

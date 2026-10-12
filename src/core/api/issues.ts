@@ -28,6 +28,20 @@ export interface ScanDetail extends ScanSummary {
   reportReady: boolean;
 }
 
+/**
+ * Close dispositions the API accepts. Mirrors the server's public vocabulary;
+ * `other` is deliberately absent — the server rejects it.
+ */
+export const CLOSED_DISPOSITIONS = [
+  "resolved",
+  "duplicate",
+  "wont-fix",
+  "out-of-scope",
+  "risk-accepted",
+] as const;
+
+export type ClosedDisposition = (typeof CLOSED_DISPOSITIONS)[number];
+
 export interface IssueSummary {
   id: string;
   /** Human-facing label, e.g. `VULN-000123`. Null for issues created before labels existed. */
@@ -50,6 +64,45 @@ export interface IssueDetail extends IssueSummary {
   workspaceId: string;
   workspaceName: string;
   createdAt: string;
+  /** Close metadata. Absent when talking to a console that predates it. */
+  closedAt?: string | null;
+  closedMethod?: string | null;
+  closedReason?: string | null;
+  closedComments?: string | null;
+  closedDisposition?: ClosedDisposition | null;
+  /** UUID of the original issue when closed as a duplicate. */
+  duplicateOf?: string | null;
+}
+
+/** Who wrote a comment. Null when the author's user record is gone. */
+export interface CommentAuthor {
+  id: string;
+  name: string | null;
+  email: string;
+  type: "user";
+}
+
+export interface IssueCommentSummary {
+  id: string;
+  issueId: string;
+  /** Comment text as written; `@handle` mentions are left in place. */
+  body: string;
+  author: CommentAuthor | null;
+  createdAt: string;
+  /** Null if the comment has never been edited. */
+  editedAt: string | null;
+  /** Console deep link to the comment. */
+  url: string;
+}
+
+export interface IssueCommentPage {
+  comments: IssueCommentSummary[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    totalPages: number;
+  };
 }
 
 export interface UpdateIssueResult {
@@ -62,6 +115,10 @@ export interface UpdateIssueResult {
     userFlaggedFalsePositive: boolean;
     closedAt: string | null;
     closedReason: string | null;
+    closedMethod?: string | null;
+    closedComments?: string | null;
+    closedDisposition?: ClosedDisposition | null;
+    duplicateOf?: string | null;
   };
 }
 
@@ -196,10 +253,15 @@ export async function listPentestTargets(
   );
 }
 
-export async function dispatchPentest(opts?: {
+export interface DispatchPentestInput {
   branch?: string;
   scanLevel?: "priority" | "full";
-}): Promise<DispatchPentestResult> {
+  endpointIds?: string[];
+}
+
+export async function dispatchPentest(
+  opts?: DispatchPentestInput,
+): Promise<DispatchPentestResult> {
   return apiRequest<DispatchPentestResult>("POST", "/pentests", opts);
 }
 
@@ -232,9 +294,42 @@ export async function updateIssue(
     userFlaggedFalsePositiveReason?: string;
     closedReason?: string;
     closedComments?: string;
+    closedDisposition?: ClosedDisposition;
+    /** UUID or label of the original; sent only with the `duplicate` disposition. */
+    duplicateOf?: string;
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
+}
+
+/**
+ * The review thread on an issue, oldest first. Posting requires a user
+ * credential — a workspace API key has no author to attribute a comment to.
+ */
+export async function listIssueComments(
+  issueId: string,
+  options?: { page?: number; pageSize?: number },
+): Promise<IssueCommentPage> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set("page", String(options.page));
+  if (options?.pageSize) params.set("pageSize", String(options.pageSize));
+
+  const qs = params.toString();
+  return apiRequest<IssueCommentPage>(
+    "GET",
+    `/issues/${issueId}/comments${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export async function createIssueComment(
+  issueId: string,
+  body: string,
+): Promise<IssueCommentSummary> {
+  return apiRequest<IssueCommentSummary>(
+    "POST",
+    `/issues/${issueId}/comments`,
+    { body },
+  );
 }
 
 export async function retestIssue(issueId: string): Promise<RetestIssueResult> {

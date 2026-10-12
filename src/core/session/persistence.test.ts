@@ -1098,6 +1098,21 @@ describe("swarm manifest — stable ses_ ids", () => {
     expect(entries[1].name).toBe("Pentest Agent 2");
   });
 
+  it("buildManifestEntries routes id minting through an injected mintId(name, ordinal), in target order", () => {
+    const calls: Array<{ name: string; ordinal: number }> = [];
+    const entries = buildManifestEntries(targets, (name, ordinal) => {
+      calls.push({ name, ordinal });
+      return `mint-${ordinal}`;
+    });
+
+    expect(calls).toEqual([
+      { name: "Login", ordinal: 0 },
+      { name: "API", ordinal: 1 },
+    ]);
+    expect(entries.map((e) => e.id)).toEqual(["mint-0", "mint-1"]);
+    expect(entries.map((e) => e.sessionId)).toEqual(["mint-0", "mint-1"]);
+  });
+
   it("reconcileManifestOnResume REUSES the persisted ses_ id rather than minting a new one", () => {
     const first = buildManifestEntries(targets);
     const persisted: AgentManifestEntry[] = [

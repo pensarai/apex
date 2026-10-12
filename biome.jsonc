@@ -92,6 +92,13 @@
               },
               {
                 "group": [
+                  "**/core/ai/inference-attempt/*",
+                  "!**/core/ai/inference-attempt/index"
+                ],
+                "message": "Import from the core/ai barrel (index), not inference-attempt internals."
+              },
+              {
+                "group": [
                   "**/core/agents/offSecAgent/*",
                   "!**/core/agents/offSecAgent/index"
                 ],

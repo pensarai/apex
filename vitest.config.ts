@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Load environment variables from .env file
 config();
@@ -7,6 +7,7 @@ config();
 export default defineConfig({
   test: {
     globals: true,
+    exclude: [...configDefaults.exclude, "**/*.bun.test.tsx"],
     environment: "node",
     testTimeout: 120000, // 2 minutes for API calls
     hookTimeout: 120000,

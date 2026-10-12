@@ -1,4 +1,5 @@
 import type {
+  LanguageModelMiddleware,
   ModelMessage,
   StopCondition,
   StreamTextOnFinishCallback,
@@ -18,8 +19,10 @@ import type {
   AIAuthConfig,
   AIModel,
   CacheMetrics,
+  InferenceRecorder,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
@@ -27,10 +30,21 @@ import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry
 import type { FindingsRegistry } from "../../findings/registry";
 import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
+import type { RunContextRecorder } from "../../runtime/runContext";
+import type { ToolExecutionRecorder } from "../../runtime/runToolStore";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { ToolBackends } from "../../tools/backends/types";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
-import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
+import type { SubagentSpawner } from "./subagentSpawner";
+import type {
+  BrowserEngine,
+  PlaywrightMcpSession,
+  ToolName,
+  UnifiedSandbox,
+} from "./tools";
+import type { EmailAdapterResolver } from "./tools/email/adapters";
+import type { SmsInbox } from "./tools/smsInbox";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -63,9 +77,24 @@ export const ApexFindingObject = z.object({
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
   attackPath: AttackPathSchema.optional(),
+  /**
+   * Session credential IDs used to prove the finding. Empty means the POC
+   * was unauthenticated. Defaults to [] so findings documented before
+   * provenance still parse. New writes always include the field.
+   */
+  credentialIds: z.array(z.string()).default([]),
 });
 
-export type Finding = z.infer<typeof ApexFindingObject>;
+// Parse output always has credentialIds ([] default). The TS type keeps the
+// field optional so Console can still construct prior-finding objects until
+// it persists provenance — otherwise Apex console-typecheck fails against
+// current Console.
+export type Finding = Omit<
+  z.infer<typeof ApexFindingObject>,
+  "credentialIds"
+> & {
+  credentialIds?: string[];
+};
 
 /**
  * Input for the general-purpose OffensiveSecurityAgent harness.
@@ -84,7 +113,73 @@ export type SystemPentestScope = {
   memberHosts: string[];
 };
 
-export type OffensiveSecurityAgentInput<TResult = void> = {
+/** Identifies which streamed event a {@link StreamIdFactory} is minting an id for. */
+export type StreamIdFactoryContext =
+  | { kind: "message"; stepIndex: number }
+  | { kind: "text-part"; stepIndex: number; textPartIndex: number }
+  | { kind: "tool-part"; toolCallId: string };
+
+/**
+ * Mints message/part ids for streamed events. Defaults to random ULIDs
+ * ({@link newMessageId}/{@link newPartId}) when unset; a durable runtime injects
+ * a factory that derives deterministic, replay-stable ids from the context.
+ */
+export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
+
+/**
+ * The hooks a host injects to control agent execution: tool
+ * backends, the sub-agent fan-out seam, model-call middleware/telemetry, the
+ * inbound-message transports, and the abort/extra-tools/sandbox escape
+ * hatches. Every specialized agent input extends this ONE type instead of
+ * re-declaring the fields, so a specialized agent can no longer drop a hook
+ * by forgetting to list it in a hand-written constructor.
+ */
+export interface AgentHooks {
+  /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
+  attackSurfaceArtifactsPath?: string;
+
+  /** Execution backends for fs / command / http / browser / inbox. Unset means local execution. */
+  backends?: ToolBackends;
+
+  /** Seam through which orchestration tools spawn sub-agents. Unset → the in-process spawner. */
+  subagentSpawner?: SubagentSpawner;
+
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Records physical model attempts for this agent; never inherited by spawned agents. */
+  inferenceRecorder?: InferenceRecorder;
+
+  /** Recorded-run durable context authority. Unset → no canonical persistence. */
+  contextRecorder?: RunContextRecorder;
+
+  /** Recorded-run tool journal. Unset → tool executes are never wrapped. */
+  toolExecutionRecorder?: ToolExecutionRecorder;
+
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
+
+  /** Transport for inbound SMS reads. Unset → the Console agent API over HTTP. */
+  smsInbox?: SmsInbox;
+
+  /** Supplies an adapter for a `pensar-managed` inbox. Unset → the config-driven factory. */
+  emailAdapterFor?: EmailAdapterResolver;
+
+  /** AbortSignal to cancel the agent mid-run. */
+  abortSignal?: AbortSignal;
+
+  /** Additional tools merged on top of the built-in toolset. */
+  extraTools?: ToolSet;
+
+  /** When set, tools route execution through this sandbox instead of running locally. */
+  sandbox?: UnifiedSandbox;
+}
+
+export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
+  attackSurfaceArtifactsPath?: string;
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
 
@@ -112,6 +207,21 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
+
+  /**
+   * Explicit working directory for this agent instance. Overrides
+   * `session.config.agentCwd`; defaults to `session.rootPath`. Drives command
+   * cwd and relative-path resolution for tools that have no
+   * {@link OffensiveSecurityAgentInput.fileWorkspaceRoot}.
+   */
+  agentCwd?: string;
+
+  /**
+   * Root that scopes this agent's native file tools when resolving relative
+   * paths and enforcing confinement. File-tool scoping only — command cwd and
+   * shell/OS permissions are not restricted by this value.
+   */
+  fileWorkspaceRoot?: string;
 
   /** The target URL / host — passed to browser tools for context */
   target?: string;
@@ -158,6 +268,15 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Callback fired after each agent step completes */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
+
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
 
@@ -181,6 +300,31 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
+
+  /**
+   * Execution backends for fs / command / http / browser / inbox, forwarded into the
+   * {@link ToolContext}. Unset means local execution; a durable runtime injects
+   * sandbox-backed implementations.
+   */
+  backends?: ToolBackends;
+
+  /**
+   * Seam through which orchestration tools spawn sub-agents. Forwarded into the
+   * {@link ToolContext}; unset → tools use the in-process spawner.
+   */
+  subagentSpawner?: SubagentSpawner;
+
+  /**
+   * Transport for inbound SMS reads. Forwarded into the {@link ToolContext};
+   * unset → the Console agent API over HTTP, which needs sandbox dispatch.
+   */
+  smsInbox?: SmsInbox;
+
+  /**
+   * Supplies an adapter for a `pensar-managed` inbox, forwarded into the
+   * ToolContext. Unset → the config-driven factory, which rejects that provider.
+   */
+  emailAdapterFor?: EmailAdapterResolver;
 
   /**
    * Shared findings registry for cross-agent dedup.
@@ -301,11 +445,10 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   commandCancelHandle?: CommandCancelHandle;
 
   /**
-   * Environment variables to inject into the agent's persistent shell.
-   * Each key-value pair is set in the shell's process environment at
-   * spawn time, so they're available to every `execute_command` call.
-   * Scoped to this agent instance — other agents on the same machine
-   * never see them.
+   * Environment variables to inject into the agent's per-command executor.
+   * Each key-value pair is set in every invocation's process environment,
+   * so they're available to every `execute_command` call. Scoped to this
+   * agent instance — other agents on the same machine never see them.
    */
   environmentVariables?: Record<string, string>;
 
@@ -362,6 +505,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * process-wide `DISPLAY`.
    */
   display?: string;
+
+  /**
+   * Browser engine for the session this agent constructs. Chrome is required
+   * for Sign in with Google; Camoufox is the default. Ignored when
+   * `browserSession` is supplied.
+   */
+  browserEngine?: BrowserEngine;
 };
 
 /**
@@ -377,8 +527,15 @@ export type CommandCancelHandle = {
  *
  * Specialized agent input interfaces should extend this to inherit
  * the common harness fields, then add only their agent-specific ones.
+ *
+ * Extends {@link AgentHooks} rather than re-declaring `backends` /
+ * `subagentSpawner` / `languageModelMiddleware` / `usageRecorder` /
+ * `streamIdFactory` / `smsInbox` / `emailAdapterFor` / `abortSignal` /
+ * `extraTools` / `sandbox` — that was the drop bug: a
+ * hand-rolled copy of this list silently omitted a field, and every hook
+ * lived past the constructor that forgot to forward it.
  */
-export interface SpecializedAgentInput {
+export interface SpecializedAgentInput extends AgentHooks {
   /** AI model to drive the agent */
   model: AIModel;
 
@@ -396,9 +553,6 @@ export interface SpecializedAgentInput {
 
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
-
-  /** AbortSignal to cancel the agent mid-run */
-  abortSignal?: AbortSignal;
 
   /** Event bus for streaming agent output */
   eventBus?: AgentEventBus;
@@ -425,7 +579,7 @@ export interface SpecializedAgentInput {
   stopWhen?: StopCondition<ToolSet>;
 
   /**
-   * Environment variables to inject into the agent's persistent shell.
+   * Environment variables to inject into the agent's per-command executor.
    * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
    */
   environmentVariables?: Record<string, string>;
@@ -471,6 +625,30 @@ export interface SpecializedAgentInput {
    * pentests can each run headed on their own virtual desktop.
    */
   display?: string;
+
+  /**
+   * Browser engine forwarded to {@link OffensiveSecurityAgentInput}. Chrome
+   * when any session credential is Sign in with Google; Camoufox otherwise.
+   */
+  browserEngine?: BrowserEngine;
+
+  /** Target URL/host forwarded to {@link OffensiveSecurityAgentInput}. */
+  target?: string;
+
+  /** gRPC context forwarded to {@link OffensiveSecurityAgentInput}. */
+  grpc?: GrpcPentestContext;
+
+  /** Explicit working directory forwarded to {@link OffensiveSecurityAgentInput}. */
+  agentCwd?: string;
+
+  /** File-tool workspace root forwarded to {@link OffensiveSecurityAgentInput}. */
+  fileWorkspaceRoot?: string;
+
+  /** Structured multi-application scope forwarded to {@link OffensiveSecurityAgentInput}. */
+  systemScope?: SystemPentestScope;
+
+  /** Harness operating mode forwarded to {@link OffensiveSecurityAgentInput}. */
+  mode?: AgentMode;
 }
 
 /**

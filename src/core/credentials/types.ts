@@ -19,6 +19,9 @@ export type CredentialType =
   | "cookies"
   | "composite";
 
+/** Safe Mobile OTP flow metadata surfaced to prompts. */
+export type MobileOtpAuthMethod = "sms-passwordless" | "sms-mfa";
+
 /**
  * Full credential record stored in the manager.
  * Contains the actual secrets — never exposed to the agent.
@@ -61,6 +64,9 @@ export interface StoredCredential {
   /** Extra form fields (e.g. CSRF tokens, account IDs) */
   additionalFields?: Record<string, string>;
 
+  /** Target uses Sign in with Google (Chrome + accounts.google.com). */
+  googleSignIn?: boolean;
+
   /** Arbitrary metadata consumers can attach */
   metadata?: Record<string, unknown>;
 }
@@ -95,6 +101,12 @@ export interface CredentialReference {
   /** Names of operator-defined extra secret fields (values redacted) */
   additionalFieldKeys?: string[];
 
+  /** Mobile OTP flow metadata (safe to expose to prompts) */
+  authMethod?: MobileOtpAuthMethod;
+
   /** Usage context / notes about when and how to use this credential */
   context?: string;
+
+  /** Target uses Sign in with Google — fill Google, not the native form. */
+  googleSignIn?: boolean;
 }

@@ -9,8 +9,6 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { formatParseError, parseHeaderLine } from "../../core/http/parse";
 import type { OperatorMode } from "../../core/operator";
-import type { SessionConfig } from "../../core/session";
-import { createToolsetState } from "../../core/toolset";
 import { createThreatModelPrompt } from "../../core/utils/prompt";
 import { parseTargetUrl } from "../../util/url";
 
@@ -316,10 +314,12 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
     for (const h of raw.header) {
       const parsed = parseHeaderLine(h);
       if (!parsed.ok) {
-        console.error(
+        // Throw instead of exiting: the TUI's exit handler still runs
+        // (renderer teardown + bounded trace flush) before the process
+        // exits — a direct exit would discard both.
+        throw new Error(
           `--header "${h}" rejected:\n${formatParseError(parsed.error)}`,
         );
-        process.exit(1);
       }
       flags.customHeaders[parsed.value.name] = parsed.value.value;
     }
@@ -374,118 +374,4 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
 
   // For swarm mode, just need target
   return true;
-}
-
-export interface SessionCreateParams {
-  targets: string[];
-  name?: string;
-  config: SessionConfig;
-}
-
-/**
- * Build operator session config from CLI flags (no session creation).
- */
-export function buildOperatorSessionConfig(
-  flags: WebCommandFlags,
-): SessionCreateParams {
-  const sessionConfig: SessionConfig = {
-    sessionType: "web-app",
-    mode: "operator",
-    operatorSettings: {
-      initialMode: flags.mode || "manual",
-      requireApproval: flags.requireApproval ?? true,
-      enableSuggestions: true,
-    },
-    toolsetState: createToolsetState("web-pentest"),
-  };
-
-  if (flags.authInstructions || flags.authUser) {
-    sessionConfig.authenticationInstructions = flags.authInstructions;
-    if (flags.authUser) {
-      sessionConfig.authCredentials = {
-        username: flags.authUser,
-        password: flags.authPass || "",
-        loginUrl: flags.authUrl,
-      };
-    }
-  }
-
-  if (flags.hosts?.length || flags.ports?.length || flags.strict) {
-    sessionConfig.scopeConstraints = {
-      allowedHosts: flags.hosts,
-      allowedPorts: flags.ports,
-      strictScope: flags.strict,
-    };
-  }
-
-  if (flags.headersMode === "none") {
-    sessionConfig.headers = {};
-  } else if (flags.headersMode === "custom") {
-    sessionConfig.headers = { ...(flags.customHeaders ?? {}) };
-  }
-
-  sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
-  if (flags.taskDriven) sessionConfig.taskDriven = true;
-
-  // Combine threat model and prompt into a single prompt field
-  const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);
-  if (combinedPrompt) {
-    sessionConfig.prompt = combinedPrompt;
-  }
-
-  return {
-    targets: flags.target ? [flags.target] : [],
-    name: flags.name || undefined,
-    config: sessionConfig,
-  };
-}
-
-/**
- * Build swarm session config from CLI flags (no session creation).
- */
-export function buildSwarmSessionConfig(
-  flags: WebCommandFlags,
-): SessionCreateParams {
-  const sessionConfig: SessionConfig = {
-    sessionType: "web-app",
-    mode: "auto",
-    toolsetState: createToolsetState("web-pentest"),
-  };
-
-  if (flags.authInstructions || flags.authUser) {
-    sessionConfig.authenticationInstructions = flags.authInstructions;
-    if (flags.authUser) {
-      sessionConfig.authCredentials = {
-        username: flags.authUser,
-        password: flags.authPass || "",
-        loginUrl: flags.authUrl,
-      };
-    }
-  }
-
-  if (flags.hosts?.length || flags.ports?.length || flags.strict) {
-    sessionConfig.scopeConstraints = {
-      allowedHosts: flags.hosts,
-      allowedPorts: flags.ports,
-      strictScope: flags.strict,
-    };
-  }
-
-  if (flags.headersMode === "none") {
-    sessionConfig.headers = {};
-  } else if (flags.headersMode === "custom") {
-    sessionConfig.headers = { ...(flags.customHeaders ?? {}) };
-  }
-
-  // Combine threat model and prompt into a single prompt field
-  const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);
-  if (combinedPrompt) {
-    sessionConfig.prompt = combinedPrompt;
-  }
-
-  return {
-    targets: [flags.target!],
-    name: flags.name || undefined,
-    config: sessionConfig,
-  };
 }

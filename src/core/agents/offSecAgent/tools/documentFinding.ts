@@ -1,37 +1,44 @@
-import { spawn } from "node:child_process";
-import {
-  appendFileSync,
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
+import path, { join, posix, win32 } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
-import { AgentEventBus } from "../../../eventBus";
-import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
+import { collectCommand } from "../../../tools/backends/collectCommand";
+import {
+  appendArtifactSummary,
+  resolveArtifactFs,
+  resolveBackends,
+  resolveScriptRunner,
+  SANDBOX_ARTIFACTS_ROOT,
+} from "../../../tools/backends/resolve";
+import type { WriteOpts, WriteResult } from "../../../tools/backends/types";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type CVSSScorerInput,
   type CVSSScorerResult,
   scoreFindingWithCVSS,
 } from "../../specialized/cvssScorer";
-import {
-  type FindingJudgeInput,
-  type FindingJudgeResult,
-  judgeFinding,
+import type {
+  FindingJudgeInput,
+  FindingJudgeResult,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
 import {
+  assertCommandActionAllowed,
+  DestructiveActionError,
+} from "./destructiveGuard";
+import {
+  assertCommandInScope,
   assertFindingEndpointInScope,
   ScopeViolationError,
 } from "./scopeGuard";
+import {
+  checkScriptSyntax,
+  SCRIPT_SYNTAX_CHECK_MAX_BYTES,
+  type ScriptSyntaxResult,
+} from "./scriptSyntaxCheck";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("document-finding"));
@@ -81,9 +88,33 @@ export const documentVulnerabilityInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
+  generatedExecutableArtifacts: z
+    .array(
+      z.object({
+        path: z
+          .string()
+          .min(1)
+          .describe(
+            "Path of an executable artifact this POC emits and runs. Relative paths resolve from the POC's execution working directory (where the POC runs) and the resolved path must stay inside your file workspace; absolute paths must land inside it",
+          ),
+        language: z
+          .enum(["bash", "python", "javascript"])
+          .describe("Native language of the emitted executable"),
+      }),
+    )
+    .max(8)
+    .optional()
+    .describe(
+      "Opt-in declaration of executable files this POC generates and executes (max 8). Each is syntax-checked with its own runtime against the bytes the POC actually emitted, after the run and before judging. Declare only executables the POC runs — never data files.",
+    ),
   attackPath: AttackPathSchema.optional().describe(
     "Required ordered member-to-member hop chain when the finding spans multiple System members; do not leave this chain only in narrative fields",
   ),
+  credentialIds: z
+    .array(z.string().min(1))
+    .describe(
+      "IDs of the session credentials used by the successful POC. Empty means the proof was unauthenticated. Non-empty IDs must exist in Available Credentials.",
+    ),
 });
 
 export type DocumentVulnerabilityInput = z.infer<
@@ -102,6 +133,39 @@ function formatMateriality(input: DocumentVulnerabilityInput): string {
   ].join("\n");
 }
 
+/**
+ * Empty `credentialIds` means the POC was unauthenticated. Any non-empty ID
+ * must already exist in the session credential manager — never invent one.
+ */
+function assertKnownCredentialIds(
+  credentialIds: string[],
+  ctx: ToolContext,
+): { ok: true; credentialIds: string[] } | { ok: false; message: string } {
+  const unique = [...new Set(credentialIds)];
+  if (unique.length === 0) {
+    return { ok: true, credentialIds: [] };
+  }
+
+  const manager = ctx.credentialManager ?? ctx.session.credentialManager;
+  if (!manager) {
+    return {
+      ok: false,
+      message:
+        "credentialIds were provided but this session has no credentials. Use [] if the proof was unauthenticated.",
+    };
+  }
+
+  const unknown = unique.filter((id) => !manager.resolve(id));
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      message: `Unknown credentialIds: ${unknown.join(", ")}. Use IDs from Available Credentials, or [] if the proof was unauthenticated.`,
+    };
+  }
+
+  return { ok: true, credentialIds: unique };
+}
+
 type PocType = "bash" | "python" | "javascript";
 
 const POC_RUNNERS: Record<PocType, string> = {
@@ -117,7 +181,69 @@ const POC_EXTENSIONS: Record<PocType, string> = {
 };
 
 const EVIDENCE_FILE_THRESHOLD = 20_000;
-const MAX_OUTPUT_BYTES = 1_024 * 1_024; // 1 MB cap for stdout/stderr
+
+function isRealSandbox(ctx: ToolContext): boolean {
+  return ctx.backends?.sandboxed === true;
+}
+
+async function writeArtifact(
+  ctx: ToolContext,
+  path: string,
+  content: string,
+  options: WriteOpts,
+): Promise<WriteResult> {
+  return resolveArtifactFs(ctx).write(path, content, options);
+}
+
+function artifactPath(ctx: ToolContext, ...parts: string[]): string {
+  return isRealSandbox(ctx) ? posix.join(...parts) : join(...parts);
+}
+
+function artifactsRoot(ctx: ToolContext): string {
+  return isRealSandbox(ctx) ? SANDBOX_ARTIFACTS_ROOT : ctx.session.rootPath;
+}
+
+function pocsRoot(ctx: ToolContext): string {
+  return isRealSandbox(ctx)
+    ? `${SANDBOX_ARTIFACTS_ROOT}/pocs`
+    : ctx.session.pocsPath;
+}
+
+function findingsRoot(ctx: ToolContext): string {
+  return isRealSandbox(ctx)
+    ? `${SANDBOX_ARTIFACTS_ROOT}/findings`
+    : ctx.session.findingsPath;
+}
+
+/** Best-effort cleanup through the resolved artifact capability. */
+async function deleteArtifact(ctx: ToolContext, path: string): Promise<void> {
+  try {
+    await resolveArtifactFs(ctx).delete(path);
+  } catch {
+    /* best-effort */
+  }
+}
+
+const summaryUpdates = new Map<string, Promise<void>>();
+
+async function updateSummary(
+  path: string,
+  update: () => Promise<void>,
+): Promise<void> {
+  const previous = summaryUpdates.get(path) ?? Promise.resolve();
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  summaryUpdates.set(path, pending);
+  await previous;
+  try {
+    await update();
+  } finally {
+    release();
+    if (summaryUpdates.get(path) === pending) summaryUpdates.delete(path);
+  }
+}
 
 const FALLBACK_CVSS: CVSSScorerResult = {
   score: 5.0,
@@ -159,7 +285,7 @@ export function documentVulnerability(ctx: ToolContext) {
 
 This tool handles the full vulnerability documentation lifecycle:
 1. Creates and executes your POC script (bash, python, or javascript)
-2. If the POC fails (exit != 0), returns the failure output so you can revise pocContent and retry
+2. If the POC is syntactically invalid or fails (exit != 0), returns the failure output so you can revise pocContent and retry
 3. Validates the finding with an automated judge to ensure the POC genuinely demonstrates the claimed vulnerability
 4. If the judge rejects, returns rejection reasoning so you can address concerns and retry
 5. Scores the finding with CVSS 4.0 (severity is determined automatically)
@@ -172,11 +298,13 @@ CRITICAL RULES — READ BEFORE CALLING:
 - POC must print clear evidence of exploitation to stdout
 - Fill the materiality checklist with the concrete exploit path, material security impact, affected non-public asset or abuse path, and why common false-positive traps do not apply
 - When a finding spans multiple System members, populate attackPath with every hop in order; do not leave the chain only in the description or evidence
+- credentialIds must list the exact session credential IDs used by the successful POC. Use an empty array when the proof was unauthenticated. Do not guess IDs.
 - If the tool returns a POC failure or judge rejection, revise your approach and call again
+- The pre-run syntax check covers only the submitted POC script itself. If your POC generates and runs other executables, declare them via generatedExecutableArtifacts so their emitted bytes are checked too; data files are never checked
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
     inputSchema: documentVulnerabilityInputSchema,
-    execute: async (input) => {
+    execute: async (input, { toolCallId }) => {
       // Defense in depth: reject findings whose endpoint host is outside the
       // immutable engagement scope so a routing error can't write
       // infrastructure findings into the shared customer registry.
@@ -191,6 +319,61 @@ CRITICAL RULES — READ BEFORE CALLING:
           };
         }
         throw error;
+      }
+
+      const credentialIdsCheck = assertKnownCredentialIds(
+        input.credentialIds,
+        ctx,
+      );
+      if (!credentialIdsCheck.ok) {
+        return {
+          success: false,
+          error: credentialIdsCheck.message,
+          message: `Finding credential provenance rejected: ${credentialIdsCheck.message}`,
+        };
+      }
+      const credentialIds = credentialIdsCheck.credentialIds;
+
+      try {
+        assertCommandInScope(input.pocContent, ctx);
+        assertCommandActionAllowed(input.pocContent, ctx);
+      } catch (error) {
+        if (
+          error instanceof ScopeViolationError ||
+          error instanceof DestructiveActionError
+        ) {
+          return {
+            success: false,
+            error: error.message,
+            message: `Finding PoC rejected: ${error.message}`,
+          };
+        }
+        throw error;
+      }
+
+      // Resolve declared paths upfront so a bad declaration fails before
+      // the POC runs; the checks themselves run post-execution on emitted bytes.
+      let declaredArtifacts:
+        | Array<{ path: string; language: PocType; scriptPath: string }>
+        | undefined;
+      if (input.generatedExecutableArtifacts) {
+        try {
+          declaredArtifacts = input.generatedExecutableArtifacts.map(
+            (declared) => ({
+              path: declared.path,
+              language: declared.language,
+              scriptPath: resolveDeclaredArtifactPath(ctx, declared.path),
+            }),
+          );
+        } catch (error: unknown) {
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
+          return {
+            success: false,
+            error: errorMsg,
+            message: `Generated executable declaration rejected: ${errorMsg}`,
+          };
+        }
       }
 
       try {
@@ -211,6 +394,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             ...(input.vulnerabilityClass && {
               vulnerabilityClass: input.vulnerabilityClass,
             }),
+            credentialIds,
           });
           if (quickCheck.duplicate) {
             const matchTitle = quickCheck.matchedFinding?.title ?? "unknown";
@@ -225,23 +409,61 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         // Phase 1: Write & execute POC
-        const pocResult = ctx.sandbox
-          ? await executeSandboxPoc(ctx, input)
-          : await executeLocalPoc(ctx, input);
+        const pocResult = await executePoc(ctx, input);
 
         if (!pocResult.success) {
+          if (pocResult.syntaxCheck?.status === "invalid") {
+            return {
+              success: false,
+              syntaxFailed: true,
+              syntaxCheck: pocResult.syntaxCheck,
+              message: `POC failed the native ${input.pocType} syntax check before execution (${pocResult.syntaxCheck.detail}). Revise pocContent.`,
+            };
+          }
           return {
             success: false,
             pocFailed: true,
             stdout: pocResult.stdout,
             stderr: pocResult.stderr,
             exitCode: pocResult.exitCode,
+            syntaxCheck: pocResult.syntaxCheck,
             message: `POC exited with code ${pocResult.exitCode ?? "unknown"}. Review the output and revise pocContent.`,
           };
         }
 
         const { filename, stdout, stderr, exitCode } = pocResult;
         const pocPath = `pocs/${filename}`;
+
+        // Declared executables are checked against the emitted bytes before
+        // the judge spends an LLM call; the wrapper's verdict never covers them.
+        const generatedArtifactChecks: GeneratedArtifactCheck[] = [];
+        if (declaredArtifacts) {
+          for (const declared of declaredArtifacts) {
+            generatedArtifactChecks.push({
+              path: declared.path,
+              language: declared.language,
+              ...(await checkScriptSyntax(ctx, {
+                language: declared.language,
+                runner: POC_RUNNERS[declared.language],
+                scriptPath: declared.scriptPath,
+                abortSignal: ctx.abortSignal,
+              })),
+            });
+          }
+          const invalid = generatedArtifactChecks.find(
+            (check) => check.status === "invalid",
+          );
+          if (invalid) {
+            await cleanupPocFiles(ctx, filename);
+            return {
+              success: false,
+              syntaxFailed: true,
+              syntaxCheck: pocResult.syntaxCheck,
+              generatedArtifactChecks,
+              message: `Generated executable ${invalid.path} failed its native ${invalid.language} syntax check (${invalid.detail}). Revise the POC to emit valid ${invalid.language} or fix the declaration.`,
+            };
+          }
+        }
 
         // Phase 2: LLM Finding Judge
         const judgeInput: FindingJudgeInput = {
@@ -264,59 +486,39 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        // Run the judge as a proper nested subagent: explicit lifecycle
-        // events (with parentSubagentId) plus a child bus, mirroring
-        // spawn_pentest_agent / spawn_coding_agent. Without this the judge's
-        // stream renders as a top-level sibling instead of nested under the
-        // worker that invoked document_vulnerability.
-        const judgeSubagentId = newSessionId();
-        const judgeSubagentName = "Finding Judge";
-
-        ctx.eventBus?.emit("subagent-spawn", {
-          subagentId: judgeSubagentId,
-          name: judgeSubagentName,
-          input: { title: input.title, endpoint: input.endpoint },
-          parentSubagentId: ctx.subagentId,
-        });
-
-        const judgeBus = new AgentEventBus();
-        AgentEventBus.attachChild(judgeBus, ctx.eventBus, judgeSubagentId);
-
-        let judgeResult: FindingJudgeResult;
-        try {
-          judgeResult = await judgeFinding(judgeInput, {
-            model: ctx.model!,
-            session: ctx.session,
-            authConfig: ctx.authConfig,
-            abortSignal: ctx.abortSignal,
-            eventBus: judgeBus,
-            subagentId: judgeSubagentId,
-            subagentName: judgeSubagentName,
-            sandbox: ctx.sandbox,
-            target: ctx.target,
-            enableThinking: ctx.enableThinking,
-            thinkingEffort: ctx.thinkingEffort,
-            openAIReasoningEffort: ctx.openAIReasoningEffort,
-          });
-        } catch (error) {
-          ctx.eventBus?.emit("subagent-complete", {
-            subagentId: judgeSubagentId,
-            status: "failed",
+        // Run the judge as a proper nested subagent through the spawner —
+        // child bus + explicit lifecycle so its stream nests under the worker
+        // that invoked document_vulnerability. `error` is only set by the
+        // infrastructure-failure fallback, so a judge that completed and
+        // rejected the finding still counts as "completed".
+        const spawner = ctx.subagentSpawner;
+        const judgeResult: FindingJudgeResult =
+          await spawner.spawn<FindingJudgeResult>({
+            spec: { type: "finding-judge", judgeInput, target: ctx.target },
+            runtime: {
+              session: ctx.session,
+              model: ctx.model!,
+              authConfig: ctx.authConfig,
+              abortSignal: ctx.abortSignal,
+              sandbox: ctx.sandbox,
+              backends: ctx.backends,
+              enableThinking: ctx.enableThinking,
+              thinkingEffort: ctx.thinkingEffort,
+              openAIReasoningEffort: ctx.openAIReasoningEffort,
+              languageModelMiddleware: ctx.languageModelMiddleware,
+              usageRecorder: ctx.usageRecorder,
+              streamIdFactory: ctx.streamIdFactory,
+            },
+            parentBus: ctx.eventBus,
+            subagentName: "Finding Judge",
+            lifecycleInput: { title: input.title, endpoint: input.endpoint },
             parentSubagentId: ctx.subagentId,
+            parentToolCallId: toolCallId,
+            resolveStatus: (r) => (r.error ? "failed" : "completed"),
           });
-          throw error;
-        }
-
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId: judgeSubagentId,
-          // `error` is only set by the infrastructure-failure fallback —
-          // a judge that completed and rejected the finding still "completed".
-          status: judgeResult.error ? "failed" : "completed",
-          parentSubagentId: ctx.subagentId,
-        });
 
         if (!judgeResult.valid) {
-          cleanupPocFiles(ctx, filename);
+          await cleanupPocFiles(ctx, filename);
           return {
             success: false,
             judgeRejected: true,
@@ -330,8 +532,8 @@ CRITICAL RULES — READ BEFORE CALLING:
         const isVulnerability = judgeResult.findingType === "vulnerability";
 
         // Write sidecar only after judge acceptance (avoid wasted I/O on rejection)
-        writePocOutputSidecar(
-          ctx.session.pocsPath,
+        await writePocOutputSidecar(
+          ctx,
           filename,
           stdout || "",
           stderr || "",
@@ -352,19 +554,29 @@ CRITICAL RULES — READ BEFORE CALLING:
         const timestamp = new Date().toISOString();
 
         const outputDir = isVulnerability
-          ? session.findingsPath
-          : join(session.rootPath, "informational");
-
-        if (!isVulnerability) {
-          mkdirSync(outputDir, { recursive: true });
-        }
+          ? findingsRoot(ctx)
+          : artifactPath(ctx, artifactsRoot(ctx), "informational");
 
         let evidenceForPrompt = materializedEvidence;
 
         if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
-          const evidenceFilePath = join(outputDir, evidenceFilename);
-          writeFileSync(evidenceFilePath, materializedEvidence);
+          const evidenceFilePath = artifactPath(
+            ctx,
+            outputDir,
+            evidenceFilename,
+          );
+          const evidenceWrite = await writeArtifact(
+            ctx,
+            evidenceFilePath,
+            materializedEvidence,
+            { mode: "overwrite" },
+          );
+          if (!evidenceWrite.success) {
+            throw new Error(
+              evidenceWrite.error || `Failed to write ${evidenceFilePath}`,
+            );
+          }
           evidenceForPrompt =
             materializedEvidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
@@ -404,52 +616,36 @@ CRITICAL RULES — READ BEFORE CALLING:
             agentMessages: [],
           };
 
-          const MAX_CVSS_ATTEMPTS = 2;
-          for (let attempt = 0; attempt < MAX_CVSS_ATTEMPTS; attempt++) {
-            try {
-              cvssResult = await scoreFindingWithCVSS(
-                cvssInput,
-                ctx.model!,
-                ctx.authConfig,
-                ctx.abortSignal,
-              );
-              break;
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
+          // Deliberately no retry: an identical re-prompt seconds later has
+          // never recovered a scorer failure.
+          try {
+            cvssResult = await scoreFindingWithCVSS(
+              cvssInput,
+              ctx.model!,
+              ctx.authConfig,
+              ctx.abortSignal,
+              ctx.session.id,
+              {
+                languageModelMiddleware: ctx.languageModelMiddleware,
+                usageRecorder: ctx.usageRecorder,
+              },
+            );
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const cancelled = ctx.abortSignal?.aborted === true;
 
-              if (
-                attempt >= MAX_CVSS_ATTEMPTS - 1 ||
-                ctx.abortSignal?.aborted
-              ) {
-                cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
-                cvssResult = FALLBACK_CVSS;
-                break;
-              }
+            cvssWarning = cancelled
+              ? `CVSS scoring cancelled, using estimated MEDIUM severity.`
+              : `CVSS scoring failed (${msg}), using estimated MEDIUM severity.`;
+            cvssResult = FALLBACK_CVSS;
 
-              await new Promise<void>((resolve) => {
-                const timer = setTimeout(resolve, 2_000);
-                if (ctx.abortSignal) {
-                  const onAbort = () => {
-                    clearTimeout(timer);
-                    resolve();
-                  };
-                  if (ctx.abortSignal.aborted) {
-                    clearTimeout(timer);
-                    resolve();
-                  } else {
-                    ctx.abortSignal.addEventListener("abort", onAbort, {
-                      once: true,
-                    });
-                  }
-                }
-              });
-
-              if (ctx.abortSignal?.aborted) {
-                cvssWarning = `CVSS scoring cancelled, using estimated MEDIUM severity.`;
-                cvssResult = FALLBACK_CVSS;
-                break;
-              }
-            }
+            log.warn("CVSS scoring fell back to estimated MEDIUM severity", {
+              error: msg,
+              cancelled,
+              model: ctx.model,
+              sessionId: session.id,
+              finding: input.title,
+            });
           }
         }
 
@@ -473,12 +669,13 @@ CRITICAL RULES — READ BEFORE CALLING:
           ...(evidenceFiles.length > 0 && { evidenceFiles }),
           ...(input.attackPath &&
             input.attackPath.length > 0 && { attackPath: input.attackPath }),
+          credentialIds,
         };
 
         if (isVulnerability && ctx.findingsRegistry) {
           const check = await ctx.findingsRegistry.register(finding);
           if (check.duplicate) {
-            cleanupPocFiles(ctx, filename);
+            await cleanupPocFiles(ctx, filename);
             const matchTitle = check.matchedFinding?.title ?? "unknown";
             return {
               success: false,
@@ -530,11 +727,19 @@ CRITICAL RULES — READ BEFORE CALLING:
         const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}`;
         const jsonFilename = `${findingId}.json`;
         const mdFilename = `${findingId}.md`;
-        const jsonPath = join(outputDir, jsonFilename);
-        const mdPath = join(outputDir, mdFilename);
+        const jsonPath = artifactPath(ctx, outputDir, jsonFilename);
+        const mdPath = artifactPath(ctx, outputDir, mdFilename);
 
         try {
-          writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
+          const jsonWrite = await writeArtifact(
+            ctx,
+            jsonPath,
+            JSON.stringify(findingWithMeta, null, 2),
+            { mode: "overwrite" },
+          );
+          if (!jsonWrite.success) {
+            throw new Error(jsonWrite.error || `Failed to write ${jsonPath}`);
+          }
 
           const cvssSection = cvssWarning
             ? `## CVSS 4.0 Assessment
@@ -623,10 +828,19 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 *This finding was automatically documented by the Pensar penetration testing agent.*
 `;
 
-          writeFileSync(mdPath, markdown);
+          const mdWrite = await writeArtifact(ctx, mdPath, markdown, {
+            mode: "overwrite",
+          });
+          if (!mdWrite.success) {
+            throw new Error(mdWrite.error || `Failed to write ${mdPath}`);
+          }
 
           if (isVulnerability) {
-            const summaryPath = join(session.rootPath, "findings-summary.md");
+            const summaryPath = artifactPath(
+              ctx,
+              artifactsRoot(ctx),
+              "findings-summary.md",
+            );
             const cweTag = cvssResult.cwes?.length
               ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
               : "";
@@ -635,12 +849,21 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
               : `(CVSS ${cvssResult.score})`;
             const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
-            try {
-              appendFileSync(summaryPath, summaryEntry);
-            } catch {
+            await updateSummary(summaryPath, async () => {
               const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
-              writeFileSync(summaryPath, header + summaryEntry);
-            }
+              const summaryWrite = await appendArtifactSummary(
+                ctx,
+                summaryPath,
+                header,
+                summaryEntry,
+              );
+              if (!summaryWrite.success) {
+                log.warn("Failed to update findings-summary.md", {
+                  error: summaryWrite.error,
+                  sessionId: session.id,
+                });
+              }
+            });
           }
         } catch (writeError: unknown) {
           if (isVulnerability && ctx.findingsRegistry) {
@@ -661,6 +884,10 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           finding: findingWithMeta,
           filepath: mdPath,
           message: resultMessage,
+          syntaxCheck: pocResult.syntaxCheck,
+          ...(generatedArtifactChecks.length > 0
+            ? { generatedArtifactChecks }
+            : {}),
         };
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -684,112 +911,152 @@ interface PocExecResult {
   stdout?: string;
   stderr?: string;
   exitCode?: number;
+  /** Parse-only verdict for the staged executable; separate from write receipts. */
+  syntaxCheck?: ScriptSyntaxResult;
 }
 
-async function executeLocalPoc(
+type GeneratedArtifactCheck = ScriptSyntaxResult & {
+  path: string;
+  language: PocType;
+};
+
+/**
+ * Resolves a declared generated-artifact path from the PoC's execution cwd
+ * (ctx.agentCwd, where the PoC actually runs and emits), then confines it to
+ * the agent's file workspace — escapes fail clearly so a declaration can
+ * never silently inspect a file outside it. Symlink escapes are additionally
+ * caught by the read-back's canonical containment check.
+ */
+function resolveDeclaredArtifactPath(
+  ctx: ToolContext,
+  declared: string,
+): string {
+  const api = declaredPathApi(ctx);
+  // Both execution cwd and workspace boundary per the platform the selected
+  // backend commands run on; they legitimately differ for helper agents.
+  const executionCwd = ctx.agentCwd;
+  const workspaceRoot = ctx.fileWorkspaceRoot ?? ctx.agentCwd;
+  const resolved = api.isAbsolute(declared)
+    ? declared
+    : api.resolve(executionCwd, declared);
+  const rel = api.relative(workspaceRoot, resolved);
+  // Exact parent or separator-anchored escape only: `..hidden` and
+  // `...emit.js` are in-workspace names, `..` and `../…` (platform
+  // separator) escape.
+  if (rel === ".." || rel.startsWith(`..${api.sep}`) || api.isAbsolute(rel)) {
+    throw new Error(
+      `Path escapes the file workspace: ${declared.slice(0, 200)}`,
+    );
+  }
+  return resolved;
+}
+
+// Injected backends own their path dialect (command.platform, defaulting to
+// POSIX per the transport contract); the classic sandbox follows its type;
+// local execution follows the host.
+function declaredPathApi(ctx: ToolContext) {
+  if (ctx.backends)
+    return resolveBackends(ctx).command.platform === "windows" ? win32 : posix;
+  if (ctx.sandbox) return ctx.sandbox.type === "windows" ? win32 : posix;
+  return path;
+}
+
+function stagedPocPath(ctx: ToolContext, filename: string): string {
+  const paths = ctx.sandbox?.type === "windows" ? win32 : posix;
+  return paths.join(
+    ctx.fileWorkspaceRoot ?? ctx.agentCwd,
+    ".pensar",
+    "pocs",
+    filename,
+  );
+}
+
+/**
+ * Writes the POC through the backend, then executes it through
+ * the resolved command backend, preserving the owned execution location.
+ */
+async function executePoc(
   ctx: ToolContext,
   input: DocumentVulnerabilityInput,
 ): Promise<PocExecResult> {
-  const pocsPath = ctx.session.pocsPath;
-  if (!existsSync(pocsPath)) {
-    mkdirSync(pocsPath, { recursive: true });
+  const { filename, pocContent } = preparePoc(input);
+  const pocPath = artifactPath(ctx, pocsRoot(ctx), filename);
+
+  const written = await writeArtifact(ctx, pocPath, pocContent, {
+    mode: "overwrite",
+    ...(!isRealSandbox(ctx) ? { permissions: 0o755 } : {}),
+  });
+  if (!written.success) {
+    throw new Error(written.error || `Failed to write PoC ${pocPath}`);
+  }
+  let executionPath = pocPath;
+  if (!ctx.backends && ctx.sandbox) {
+    executionPath = stagedPocPath(ctx, filename);
+    const staged = await resolveBackends(ctx).fs.write(
+      executionPath,
+      pocContent,
+      { mode: "overwrite" },
+    );
+    if (!staged.success)
+      throw new Error(staged.error || `Failed to stage PoC ${executionPath}`);
   }
 
-  const { filename, pocContent } = preparePoc(input);
-  const pocPath = join(pocsPath, filename);
+  // Check the executable's own staged bytes (the remote staged copy, not the
+  // retained artifact, when execution is remote); invalid skips the run since
+  // the same runner and dialect would fail identically. The retained local
+  // PoC is read through the byte-capped artifact owner because it may live
+  // outside a confined helper workspace; staged copies and declared artifacts
+  // use the workspace backend that owns them.
+  const syntaxCheck = await checkScriptSyntax(ctx, {
+    language: input.pocType,
+    runner: POC_RUNNERS[input.pocType],
+    scriptPath: executionPath,
+    abortSignal: ctx.abortSignal,
+    fs:
+      executionPath === pocPath
+        ? resolveArtifactFs(ctx, {
+            maxTextFileBytes: SCRIPT_SYNTAX_CHECK_MAX_BYTES,
+          })
+        : undefined,
+  });
+  if (syntaxCheck.status === "invalid") {
+    await deleteArtifact(ctx, pocPath);
+    if (executionPath !== pocPath)
+      await resolveBackends(ctx).fs.delete(executionPath);
+    return { success: false, filename, syntaxCheck };
+  }
 
-  writeFileSync(pocPath, pocContent);
-  chmodSync(pocPath, 0o755);
-
-  const { stdout, stderr, exitCode } = await runScript(
+  const { stdout, stderr, exitCode } = await runPocScript(
+    ctx,
     POC_RUNNERS[input.pocType],
-    pocPath,
-    60_000,
-    ctx.abortSignal,
+    executionPath,
+    60,
   );
 
   if (exitCode !== 0) {
-    try {
-      unlinkSync(pocPath);
-    } catch {
-      /* cleanup best-effort */
-    }
-    return { success: false, filename, stdout, stderr, exitCode };
+    await deleteArtifact(ctx, pocPath);
+    if (executionPath !== pocPath)
+      await resolveBackends(ctx).fs.delete(executionPath);
+    return { success: false, filename, stdout, stderr, exitCode, syntaxCheck };
   }
 
-  return { success: true, filename, stdout, stderr, exitCode };
-}
-
-async function executeSandboxPoc(
-  ctx: ToolContext,
-  input: DocumentVulnerabilityInput,
-): Promise<PocExecResult> {
-  const { filename, pocContent } = preparePoc(input);
-
-  const localPocsPath = ctx.session.pocsPath;
-  if (!existsSync(localPocsPath)) {
-    mkdirSync(localPocsPath, { recursive: true });
-  }
-  const localPocPath = join(localPocsPath, filename);
-
-  writeFileSync(localPocPath, pocContent);
-
-  // Pipeline sandbox setup into a single command to reduce round-trips
-  const sandboxPocPath = `/tmp/pocs/${filename}`;
-  const base64Content = Buffer.from(pocContent).toString("base64");
-  await ctx.sandbox!.execute(
-    `mkdir -p /tmp/pocs && echo "${base64Content}" | base64 -d > ${sandboxPocPath} && chmod +x ${sandboxPocPath}`,
-  );
-
-  const runner = POC_RUNNERS[input.pocType];
-  const result = await ctx.sandbox!.execute(
-    `cd /tmp && ${runner} ${sandboxPocPath}`,
-    { timeout: 60 },
-  );
-
-  const executionSuccess = result.success || result.exitCode === 0;
-
-  if (!executionSuccess) {
-    await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
-    try {
-      unlinkSync(localPocPath);
-    } catch {
-      /* cleanup best-effort */
-    }
-    return {
-      success: false,
-      filename,
-      stdout: result.stdout || "(no output)",
-      stderr:
-        (result.stderr || "POC execution failed") +
-        "\n\nPOC file has been deleted.",
-      exitCode: result.exitCode,
-    };
-  }
-
-  return {
-    success: true,
-    filename,
-    stdout: result.stdout || "(no output)",
-    stderr: result.stderr || "(no errors)",
-    exitCode: result.exitCode,
-  };
+  return { success: true, filename, stdout, stderr, exitCode, syntaxCheck };
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function cleanupPocFiles(ctx: ToolContext, filename: string): void {
-  try {
-    unlinkSync(join(ctx.session.pocsPath, filename));
-  } catch {
-    /* best-effort */
-  }
-  try {
-    unlinkSync(join(ctx.session.pocsPath, `${filename}.output.json`));
-  } catch {
-    /* best-effort */
+async function cleanupPocFiles(
+  ctx: ToolContext,
+  filename: string,
+): Promise<void> {
+  const dir = pocsRoot(ctx);
+  await deleteArtifact(ctx, artifactPath(ctx, dir, filename));
+  await deleteArtifact(ctx, artifactPath(ctx, dir, `${filename}.output.json`));
+  if (!ctx.backends && ctx.sandbox) {
+    const path = stagedPocPath(ctx, filename);
+    await resolveBackends(ctx).fs.delete(path);
   }
 }
 
@@ -896,133 +1163,78 @@ function preparePoc(input: {
   }
 
   const commentChar = input.pocType === "javascript" ? "//" : "#";
-  const header = `${commentChar} POC: ${input.pocDescription}\n${commentChar} Created: ${new Date().toISOString()}\n\n`;
+  const commentedDescription = input.pocDescription
+    .split(/\r\n?|\n/)
+    .join(`\n${commentChar} `);
+  const header = `${commentChar} POC: ${commentedDescription}\n${commentChar} Created: ${new Date().toISOString()}\n\n`;
   pocContent = pocContent.replace(/^#!.*\n/, (match) => match + header);
 
   return { filename, pocContent };
 }
 
-function writePocOutputSidecar(
-  pocsPath: string,
+async function writePocOutputSidecar(
+  ctx: ToolContext,
   filename: string,
   stdout: string,
   stderr: string,
   exitCode: number,
   description: string,
-): void {
-  try {
-    const outputPath = join(pocsPath, `${filename}.output.json`);
-    writeFileSync(
-      outputPath,
-      JSON.stringify(
-        {
-          stdout,
-          stderr,
-          exitCode,
-          executedAt: new Date().toISOString(),
-          pocFile: filename,
-          description,
-        },
-        null,
-        2,
-      ),
-    );
-  } catch {
-    /* non-critical */
+): Promise<void> {
+  const outputPath = artifactPath(
+    ctx,
+    pocsRoot(ctx),
+    `${filename}.output.json`,
+  );
+
+  const result = await writeArtifact(
+    ctx,
+    outputPath,
+    JSON.stringify(
+      {
+        stdout,
+        stderr,
+        exitCode,
+        executedAt: new Date().toISOString(),
+        pocFile: filename,
+        description,
+      },
+      null,
+      2,
+    ),
+    { mode: "overwrite" },
+  );
+  if (!result.success) {
+    log.warn("Failed to write PoC output sidecar", {
+      error: result.error,
+      filename,
+    });
   }
 }
 
-function runScript(
+/** Executes the prepared PoC through the resolved command transport. */
+async function runPocScript(
+  ctx: ToolContext,
   runner: string,
   scriptPath: string,
-  timeout: number,
-  abortSignal?: AbortSignal,
+  timeoutSeconds: number,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve) => {
-    const child = spawn(runner, [scriptPath], {
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32",
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    let killed = false;
-    let resolved = false;
-
-    let abortCleanup: (() => void) | undefined;
-    if (abortSignal) {
-      const handler = () => killProcess();
-      abortSignal.addEventListener("abort", handler, { once: true });
-      abortCleanup = () => abortSignal.removeEventListener("abort", handler);
-    }
-
-    const safeResolve = (result: {
-      stdout: string;
-      stderr: string;
-      exitCode: number;
-    }) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeoutTimer);
-        abortCleanup?.();
-        resolve(result);
-      }
-    };
-
-    const killProcess = () => {
-      if (killed) return;
-      killed = true;
-
-      try {
-        if (child.pid && process.platform !== "win32") {
-          process.kill(-child.pid, "SIGTERM");
-        } else {
-          child.kill("SIGTERM");
-        }
-      } catch {
-        /* process may have already exited */
-      }
-
-      setTimeout(() => {
-        try {
-          if (child.pid && process.platform !== "win32") {
-            process.kill(-child.pid, "SIGKILL");
-          } else {
-            child.kill("SIGKILL");
-          }
-        } catch {
-          /* process may have already exited */
-        }
-
-        safeResolve({ stdout, stderr, exitCode: 1 });
-      }, 5000);
-    };
-
-    const timeoutTimer = setTimeout(killProcess, timeout);
-
-    child.stdout.on("data", (data: Buffer) => {
-      if (stdoutBytes < MAX_OUTPUT_BYTES) {
-        const chunk = data.toString();
-        stdout += chunk;
-        stdoutBytes += data.length;
-      }
-    });
-    child.stderr.on("data", (data: Buffer) => {
-      if (stderrBytes < MAX_OUTPUT_BYTES) {
-        const chunk = data.toString();
-        stderr += chunk;
-        stderrBytes += data.length;
-      }
-    });
-
-    child.on("close", (code) => {
-      safeResolve({ stdout, stderr, exitCode: code ?? 1 });
-    });
-
-    child.on("error", () => {
-      safeResolve({ stdout, stderr, exitCode: 1 });
-    });
-  });
+  const result = await collectCommand(
+    resolveScriptRunner(ctx)(runner, scriptPath, {
+      timeoutSeconds,
+      abortSignal: ctx.abortSignal,
+    }),
+  );
+  return {
+    ...result,
+    stdout:
+      result.stdout +
+      (result.stdoutTruncated
+        ? "\n\n(INCOMPLETE — stdout capture truncated at the byte limit)"
+        : ""),
+    stderr:
+      result.stderr +
+      (result.stderrTruncated
+        ? "\n\n(INCOMPLETE — stderr capture truncated at the byte limit)"
+        : ""),
+  };
 }
