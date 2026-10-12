@@ -20,6 +20,7 @@ function makeInput(
   appType:
     | "web_application"
     | "api"
+    | "full_stack"
     | "database"
     | "cloud_resource"
     | "storage",
@@ -43,7 +44,11 @@ describe("documentApp domain handling", () => {
     rmSync(rootPath, { recursive: true, force: true });
   });
 
-  it("defaults a primary web app domain to the blackbox target origin", async () => {
+  it.each([
+    "web_application",
+    "api",
+    "full_stack",
+  ] as const)("requires a discovered host for live recon %s apps", async (appType) => {
     const tool = documentApp(
       makeContext(
         rootPath,
@@ -51,15 +56,17 @@ describe("documentApp domain handling", () => {
         "https://example.com/recon/start?source=test",
       ),
     );
-    const result = (await tool.execute?.(makeInput("web_application"), {
+    const result = (await tool.execute?.(makeInput(appType), {
       toolCallId: "tool-1",
       messages: [],
-    })) as { success: boolean; domain?: string; filepath: string };
+    })) as { success: boolean; error?: string; message?: string };
 
-    expect(result.success).toBe(true);
-    expect(result.domain).toBe("https://example.com");
-    expect(JSON.parse(readFileSync(result.filepath, "utf8")).domain).toBe(
-      "https://example.com",
+    expect(result).toMatchObject({ success: false, error: "missing_domain" });
+    expect(result.message).toContain(
+      'Use "https://example.com" if this is the primary target app',
+    );
+    expect(result.message).toContain(
+      "otherwise the subdomain/host URL you found it on.",
     );
   });
 
