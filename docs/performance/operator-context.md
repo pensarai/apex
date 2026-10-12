@@ -66,3 +66,18 @@ fixture while retaining the conversation structure and the persisted tool-result
 references. This measures transcript size, not provider billing. The earlier
 writer could restore a fitted-away prefix at the end of a stream and force the
 next stream to compact it again.
+
+## Memory listing output
+
+`list_memories` now returns at most 20 summaries per call with a 12K-character
+page budget. The response retains the total match count and supplies
+`nextOffset` until every summary has been listed. Long titles and tags are
+marked as abbreviated; their full values remain available through
+`get_memory` by category and id.
+
+In a network-free fixture with 200 memories, the previous single result was
+122,432 characters. The first page is 6,018 characters, 95.1% smaller. Ten
+pages recover all 200 ids, and the oldest memory remains retrievable. This
+measures one tool response, not total cost if the agent chooses to read every
+page. The improvement comes from letting the agent stop after the relevant
+page or use category/tag filters.
