@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveArtifactFs } from "../../../tools/backends/resolve";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 import {
   EndpointTransportEnum,
@@ -119,7 +120,10 @@ type DocumentEndpointInput = z.infer<typeof documentEndpointInputSchema>;
  * is designed for incremental creation via the agent log persister in Console.
  */
 export function documentEndpoint(ctx: ToolContext) {
-  const baseAssetsPath = join(ctx.session.rootPath, "assets");
+  if (ctx.attackSurfaceArtifactsPath && !ctx.backends)
+    throw new Error("Recon artifacts require explicit backends");
+  const baseAssetsPath =
+    ctx.attackSurfaceArtifactsPath ?? join(ctx.session.rootPath, "assets");
 
   return tool({
     description: `Document a discovered endpoint during attack surface analysis.
@@ -176,9 +180,15 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         };
       }
 
-      const targetDir = join(baseAssetsPath, sanitizeName(input.appName));
+      const appDirectory = sanitizeName(input.appName);
+      if (
+        ctx.attackSurfaceArtifactsPath &&
+        (!appDirectory || appDirectory === "." || appDirectory === "..")
+      )
+        throw new Error("Invalid recon application artifact name");
+      const targetDir = join(baseAssetsPath, appDirectory);
 
-      if (!existsSync(targetDir)) {
+      if (!ctx.attackSurfaceArtifactsPath && !existsSync(targetDir)) {
         mkdirSync(targetDir, { recursive: true });
       }
 
@@ -237,7 +247,17 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
       };
 
       try {
-        writeFileSync(filepath, JSON.stringify(endpointRecord, null, 2));
+        if (ctx.attackSurfaceArtifactsPath) {
+          const result = await resolveArtifactFs(ctx).write(
+            filepath,
+            JSON.stringify(endpointRecord, null, 2),
+            { mode: "overwrite" },
+          );
+          if (!result.success)
+            throw new Error(`Endpoint artifact write failed: ${result.error}`);
+        } else {
+          writeFileSync(filepath, JSON.stringify(endpointRecord, null, 2));
+        }
       } catch (writeError: unknown) {
         if (ctx.attackSurfaceRegistry) {
           await ctx.attackSurfaceRegistry.unregister({

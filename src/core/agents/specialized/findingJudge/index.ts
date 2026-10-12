@@ -32,10 +32,14 @@ export type FindingJudgeRuntimeContext = Pick<
   | "abortSignal"
   | "eventBus"
   | "sandbox"
+  | "backends"
   | "target"
   | "enableThinking"
   | "thinkingEffort"
   | "openAIReasoningEffort"
+  | "languageModelMiddleware"
+  | "usageRecorder"
+  | "streamIdFactory"
 > & {
   model: AIModel;
   /**
@@ -73,10 +77,14 @@ export async function judgeFinding(
       subagentId: ctx.subagentId,
       subagentName: ctx.subagentName,
       sandbox: ctx.sandbox,
+      backends: ctx.backends,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
+      languageModelMiddleware: ctx.languageModelMiddleware,
+      usageRecorder: ctx.usageRecorder,
+      streamIdFactory: ctx.streamIdFactory,
     });
 
     const result = await agent.consume();

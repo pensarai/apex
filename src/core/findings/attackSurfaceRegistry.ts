@@ -101,6 +101,20 @@ export interface AssetDuplicateCheckResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * Public surface {@link AttackSurfaceRegistry} exposes to workflows.
+ * Extracted so a DB-backed registry (atomic upsert-by-fingerprint) can stand
+ * in for the in-memory implementation behind {@link WorkflowSeams}
+ * `registries` — see `../workflows/seams.ts`.
+ */
+export interface AttackSurfaceRegistryOps {
+  readonly size: number;
+  getAssets(): readonly AssetRecord[];
+  isDuplicate(asset: AssetRecord): AssetDuplicateCheckResult;
+  register(asset: AssetRecord): Promise<AssetDuplicateCheckResult>;
+  unregister(asset: AssetRecord): Promise<void>;
+}
+
+/**
  * Thread-safe, in-memory registry of known attack surface assets.
  *
  * Supports two dedup tiers:
@@ -110,7 +124,7 @@ export interface AssetDuplicateCheckResult {
  * The registry is designed to be created once per session and shared
  * across concurrent attack surface agents via `ToolContext`.
  */
-export class AttackSurfaceRegistry {
+export class AttackSurfaceRegistry implements AttackSurfaceRegistryOps {
   private urlKeys = new Map<string, AssetRecord>();
   private nameKeys = new Map<string, AssetRecord>();
   private assets: AssetRecord[] = [];

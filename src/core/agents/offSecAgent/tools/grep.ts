@@ -1,7 +1,13 @@
-import { spawn } from "node:child_process";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
+import type { GrepResult } from "./grepImpl";
+import { grepImpl, MAX_OUTPUT_CHARS } from "./grepImpl";
+import { toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
+
+export type { GrepFlagValidation, GrepResult } from "./grepImpl";
+export { validateGrepFlags } from "./grepImpl";
 
 const grepInputSchema = z.object({
   pattern: z.string().describe("The pattern to search for"),
@@ -15,7 +21,7 @@ const grepInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Additional grep flags (e.g. "-rn", "-i", "-l", "-E"). -r (recursive) is added by default when searching a directory.',
+      'Additional grep flags from the supported subset (e.g. "-rn", "-i", "-l", "-E", "-C 3", \'--include="*.js"\'). -r (recursive) is added by default when searching a directory. Alternate-pattern flags (-e, --regexp), file-reading flags (-f, --file, --exclude-from), bare "--", and stray tokens are rejected.',
     ),
   toolCallDescription: z
     .string()
@@ -24,25 +30,17 @@ const grepInputSchema = z.object({
     ),
 });
 
-type GrepInput = z.infer<typeof grepInputSchema>;
-
-export type GrepResult = {
-  success: boolean;
-  error: string;
-  output: string;
-  matchCount: number;
-  command: string;
-};
-
 export function grep(ctx: ToolContext) {
   return tool({
     description: `Search file contents using grep.
 
-Runs grep with the given pattern and optional flags. When searching a
+Runs grep with the given pattern and optional flags. The directory parameter
+also accepts this agent's tool-output: references, which search retained output
+on the Apex host even when command execution uses a remote sandbox. When searching a
 directory, -r (recursive) is included automatically unless you explicitly
 provide flags that already contain it.
 
-USEFUL FLAG COMBOS:
+USEFUL FLAG COMBINATIONS:
   -rn           recursive + line numbers (default for dirs)
   -rni          recursive + line numbers + case-insensitive
   -rl           recursive, file names only
@@ -51,103 +49,25 @@ USEFUL FLAG COMBOS:
   -C 3          show 3 lines of context around matches
   --include="*.js"  restrict to certain file types
 
-Output is capped at 50 000 characters to avoid context overflow — narrow your
-search with flags or a more specific directory if results are truncated.`,
+Flags are limited to a safe subset: alternate-pattern flags (-e, --regexp),
+file-reading flags (-f, --file, --exclude-from), a bare "--", and stray
+tokens are rejected — any of these could turn the caller's pattern into a
+file operand and search files outside the intended scope.
+-R/--dereference-recursive is rejected while a file workspace scope is
+active, because following symlinks can read files outside the scope.
+
+Output is capped at ${MAX_OUTPUT_CHARS} characters at the producer — a search
+that exceeds it reports truncated=true and an approximate window instead of a
+match count. Narrow the search with flags or a more specific directory.
+${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, and -P; regex patterns use .NET syntax. Use read_file line windows for surrounding context." : ""}`,
     inputSchema: grepInputSchema,
+    toModelOutput: ({ output }) =>
+      toolOutputForModel(ctx, output as GrepResult),
     execute: async ({ pattern, directory, flags }): Promise<GrepResult> => {
-      if (ctx.abortSignal?.aborted) {
-        return {
-          success: false,
-          error: "Grep aborted by user",
-          output: "",
-          matchCount: 0,
-          command: "",
-        };
-      }
-
-      const dir = directory || ".";
-      const cwd = ctx.agentCwd;
-      const userFlags = flags ? flags.trim().split(/\s+/) : [];
-
-      // Add -r by default when the user hasn't specified it and we're targeting a directory
-      const hasRecursive = userFlags.some(
-        (f) => /^-[a-zA-Z]*r[a-zA-Z]*$/.test(f) || f === "--recursive",
-      );
-      const defaultFlags = hasRecursive ? [] : ["-r"];
-
-      const args = [...defaultFlags, ...userFlags, "--", pattern, dir];
-      const command = `grep ${args.join(" ")}`;
-
-      return new Promise((resolve) => {
-        const child = spawn("grep", args, {
-          cwd,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-
-        let stdout = "";
-        let stderr = "";
-        let resolved = false;
-
-        // Wire up abort signal — clean up in safeResolve to cover all exit paths
-        let abortCleanup: (() => void) | undefined;
-        if (ctx.abortSignal) {
-          const abortHandler = () => child.kill("SIGTERM");
-          ctx.abortSignal.addEventListener("abort", abortHandler, {
-            once: true,
-          });
-          abortCleanup = () =>
-            ctx.abortSignal?.removeEventListener("abort", abortHandler);
-        }
-
-        const safeResolve = (result: GrepResult) => {
-          if (resolved) return;
-          resolved = true;
-          clearTimeout(timeout);
-          abortCleanup?.();
-          resolve(result);
-        };
-
-        const timeout = setTimeout(() => {
-          child.kill("SIGTERM");
-        }, 30_000);
-
-        child.stdout.on("data", (data) => {
-          stdout += data.toString();
-        });
-
-        child.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        child.on("close", (code) => {
-          // grep exits 1 when no matches — that's not an error
-          const noMatch = code === 1 && stderr === "";
-          const matchCount = stdout ? stdout.trimEnd().split("\n").length : 0;
-
-          const truncated = stdout.length > 50_000;
-          const output = truncated
-            ? `${stdout.substring(0, 50_000)}\n\n(truncated — narrow your search)`
-            : stdout || "(no matches)";
-
-          safeResolve({
-            success: code === 0 || noMatch,
-            error: noMatch || code === 0 ? "" : stderr || `Exit code: ${code}`,
-            output,
-            matchCount,
-            command,
-          });
-        });
-
-        child.on("error", (err) => {
-          safeResolve({
-            success: false,
-            error: err.message,
-            output: "",
-            matchCount: 0,
-            command,
-          });
-        });
-      });
+      const { fs } = resolveBackends(ctx);
+      return directory?.startsWith("tool-output:")
+        ? grepImpl(ctx, { pattern, directory, flags })
+        : fs.grep({ pattern, directory, flags });
     },
   });
 }

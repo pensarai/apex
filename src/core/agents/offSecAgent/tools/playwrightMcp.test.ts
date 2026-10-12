@@ -174,6 +174,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     userAgent: string | undefined;
     viewportSize: string | undefined;
     display: string | undefined;
+    engine: string;
   };
 
   it("defaults to headless + desktop UA + 1920x1080 when constructed with no args and no display (regression: don't fall back to Chromium's tiny default viewport)", () => {
@@ -187,6 +188,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
       expect(session.headless).toBe(true);
       expect(session.viewportSize).toBe("1920,1080");
       expect(session.userAgent).toContain("Chrome/");
+      expect(session.engine).toBe("camoufox");
     } finally {
       if (originalDisplay === undefined) delete process.env.DISPLAY;
       else process.env.DISPLAY = originalDisplay;
@@ -198,10 +200,67 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
       headless: false,
       userAgent: "MyAgent/1.0",
       viewportSize: "800,600",
+      engine: "chrome",
     }) as unknown as InternalShape;
     expect(session.headless).toBe(false);
     expect(session.userAgent).toBe("MyAgent/1.0");
     expect(session.viewportSize).toBe("800,600");
+    expect(session.engine).toBe("chrome");
+  });
+
+  it("launches Chrome without the Chromium sandbox so it starts as root", async () => {
+    const session = new PlaywrightMcpSession({
+      headless: true,
+      engine: "chrome",
+    }) as unknown as {
+      buildMcpLaunch(id: string): Promise<{
+        cfg: { browser: { launchOptions: Record<string, unknown> } };
+      }>;
+    };
+    const { cfg } = await session.buildMcpLaunch("test");
+    expect(cfg.browser.launchOptions.channel).toBe("chrome");
+    expect(cfg.browser.launchOptions.chromiumSandbox).toBe(false);
+  });
+
+  it("keeps scoped credentials out of global context options", async () => {
+    const session = new PlaywrightMcpSession({
+      engine: "chrome",
+      headerPolicy: {
+        allowedHosts: ["example.com"],
+        headers: { "X-Scoped-Secret": "secret" },
+      },
+    }) as unknown as {
+      buildMcpLaunch(id: string): Promise<{ cfg: unknown }>;
+    };
+
+    const { cfg } = await session.buildMcpLaunch("test");
+    expect(JSON.stringify(cfg)).not.toContain("extraHTTPHeaders");
+    expect(JSON.stringify(cfg)).not.toContain("X-Scoped-Secret");
+  });
+
+  it("installs scoped header routing through browser_run_code", async () => {
+    const session = new PlaywrightMcpSession({
+      headerPolicy: {
+        allowedHosts: ["example.com"],
+        headers: { "X-Scoped-Secret": "secret" },
+      },
+    });
+    const callTool = vi.fn(async (_request: unknown) => ({}));
+    const internal = session as unknown as {
+      installHeaderRoute(client: { callTool: typeof callTool }): Promise<void>;
+    };
+
+    await internal.installHeaderRoute({ callTool });
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    const request = callTool.mock.calls[0]?.[0] as unknown as {
+      name: string;
+      arguments: { code: string };
+    };
+    expect(request.name).toBe("browser_run_code");
+    expect(request.arguments.code).toContain("context.route('**/*'");
+    expect(request.arguments.code).toContain("X-Scoped-Secret");
+    expect(request.arguments.code).not.toContain("extraHTTPHeaders");
   });
 
   it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {

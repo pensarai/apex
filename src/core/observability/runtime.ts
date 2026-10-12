@@ -19,7 +19,9 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { version as apexVersion } from "../../../package.json";
+import { createLogger } from "../logger/structured";
 import { endAllActiveRootSpans } from "./active-root-spans";
+import { ActiveSpanProcessor } from "./active-spans";
 
 /**
  * Optional standalone OTLP/HTTP trace runtime. Apex keeps OTel disabled
@@ -33,7 +35,7 @@ export type ObservabilityShutdownResult = "completed" | "timed-out";
 
 export interface ObservabilityRuntime {
   forceFlush(): Promise<void>;
-  /** Idempotent and bounded: ends active root spans, flushes, shuts down. */
+  /** Idempotent and bounded: ends active spans, flushes, shuts down. */
   shutdown(): Promise<ObservabilityShutdownResult>;
 }
 
@@ -66,6 +68,8 @@ function withTimeout(
     );
   });
 }
+
+const log = createLogger("observability");
 
 const NOOP_RUNTIME: ObservabilityRuntime = {
   async forceFlush() {},
@@ -177,15 +181,45 @@ export function startObservabilityRuntime(
   const shutdownTimeoutMs =
     opts?.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const exporter = createTraceExporter(resolveTracesProtocol(env));
+  const activeSpans = new ActiveSpanProcessor();
   const provider = new BasicTracerProvider({
     resource: buildResource(env),
-    spanProcessors: opts?.spanProcessors ?? [new BatchSpanProcessor(exporter)],
+    spanProcessors: [
+      activeSpans,
+      ...(opts?.spanProcessors ?? [new BatchSpanProcessor(exporter)]),
+    ],
   });
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
 
-  trace.setGlobalTracerProvider(provider);
-  context.setGlobalContextManager(contextManager);
+  // Ownership check: registration fails (returns false) when a host already
+  // owns the global. Apex must never disrupt host-owned state — only disable
+  // globals it registered itself.
+  const ownsTracerGlobal = trace.setGlobalTracerProvider(provider);
+
+  if (!ownsTracerGlobal) {
+    // A host owns the tracer provider: our provider would never receive
+    // spans. Clean up our own components, leave the host untouched, and do
+    // NOT mark an Apex runtime active (embedded mode). The context global
+    // was never touched — it is only registered after tracer ownership is
+    // confirmed.
+    log.warn(
+      "OTel tracer provider already registered by the host — Apex stays embedded and will not register its own",
+    );
+    contextManager.disable();
+    void provider
+      .shutdown()
+      .catch((error) =>
+        log.warn("Orphaned provider shutdown failed", { error: String(error) }),
+      );
+    return NOOP_RUNTIME;
+  }
+  const ownsContextGlobal = context.setGlobalContextManager(contextManager);
+  if (!ownsContextGlobal) {
+    log.warn(
+      "OTel context manager already registered by the host — Apex reuses it and will not disable it",
+    );
+  }
 
   let shutdownPromise: Promise<ObservabilityShutdownResult> | null = null;
   const runtime: ObservabilityRuntime = {
@@ -195,22 +229,33 @@ export function startObservabilityRuntime(
     shutdown() {
       // Idempotent: every caller awaits the same bounded shutdown.
       if (!shutdownPromise) {
-        const shutdownWork = (async () => {
-          // End in-flight root runs first so their spans still export…
+        const shutdownWork = async () => {
+          // OpenTelemetry only queues spans for export from onEnd(). Close all
+          // still-recording spans, deepest-first, before the final flush.
+          activeSpans.endAll();
+          // Clear stale references from the legacy root registry too. Its
+          // recording spans were already ended by the general tracker.
           endAllActiveRootSpans();
-          // …then flush explicitly before processor/exporter teardown.
           try {
             await provider.forceFlush();
           } finally {
-            await provider.shutdown();
+            // Async work can start spans while forceFlush yields. End that
+            // final window explicitly before downstream processors shut down.
+            activeSpans.endAll();
+            await provider.shutdown().catch((error) => {
+              log.warn("OTLP export/shutdown failed", { error: String(error) });
+            });
           }
-        })();
-        shutdownPromise = withTimeout(shutdownWork, shutdownTimeoutMs)
+        };
+        shutdownPromise = withTimeout(shutdownWork(), shutdownTimeoutMs)
           .then((result) => {
             contextManager.disable();
-            // Reset globals so a later start (or the host's own SDK) begins clean.
+            if (ownsContextGlobal) {
+              context.disable();
+            }
+            // Only reset globals Apex owns. The tracer is ours by
+            // construction here; the context global may belong to the host.
             trace.disable();
-            context.disable();
             return result;
           })
           .finally(() => {
@@ -312,7 +357,10 @@ export function installObservabilityExitHandlers(
   return exitWith;
 }
 
-/** Test/teardown hook: stop any active runtime and reset the singleton. */
+/** Test/teardown hook: stop any active runtime and reset the singleton.
+ *
+ * @knipignore test hook for resetting module-level runtime state.
+ */
 export async function resetObservabilityRuntime(): Promise<void> {
   if (activeRuntime) {
     await activeRuntime.shutdown();

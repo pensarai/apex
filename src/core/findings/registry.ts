@@ -1,8 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { LanguageModelMiddleware } from "ai";
 import { z } from "zod";
 import type { Finding } from "../agents/offSecAgent";
-import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";
+import {
+  type AIAuthConfig,
+  type AIModel,
+  generateObjectResponse,
+  type UsageRecorder,
+} from "../ai";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
 
@@ -326,11 +332,32 @@ export interface FindingsRegistryOptions {
   authConfig?: AIAuthConfig;
   /** Signal to cancel in-flight LLM calls (Tier 3 semantic dedup). */
   abortSignal?: AbortSignal;
+  /** Session id — stamps the registry's LLM calls with session attribution. */
+  sessionId?: string;
+  /** Provider middleware applied to the registry's LLM calls. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Per-run usage recorder for the registry's LLM calls. */
+  usageRecorder?: UsageRecorder;
 }
 
 // ---------------------------------------------------------------------------
 // FindingsRegistry
 // ---------------------------------------------------------------------------
+
+/**
+ * Public surface {@link FindingsRegistry} exposes to workflows. Extracted so
+ * a DB-backed registry (atomic upsert-by-fingerprint) can stand in for the
+ * in-memory implementation behind {@link WorkflowSeams} `registries` —
+ * see `../workflows/seams.ts`.
+ */
+export interface FindingsRegistryOps {
+  readonly size: number;
+  getFindings(): readonly Finding[];
+  isDuplicate(finding: Finding): DuplicateCheckResult;
+  register(finding: Finding): Promise<DuplicateCheckResult>;
+  unregister(finding: Finding): Promise<void>;
+  groupByRootCause(): Promise<RootCauseGroup[]>;
+}
 
 /**
  * Thread-safe, in-memory registry of known findings.
@@ -345,7 +372,7 @@ export interface FindingsRegistryOptions {
  * The registry is designed to be created once per session and shared
  * across all concurrent pentest agents via `ToolContext`.
  */
-export class FindingsRegistry {
+export class FindingsRegistry implements FindingsRegistryOps {
   private exactKeys = new Map<string, Finding>();
   private appWideKeys = new Map<string, Finding>();
   private findings: Finding[] = [];
@@ -353,6 +380,11 @@ export class FindingsRegistry {
   private model?: AIModel;
   private authConfig?: AIAuthConfig;
   private abortSignal?: AbortSignal;
+  private sessionId?: string;
+  private languageModelMiddleware?:
+    | LanguageModelMiddleware
+    | LanguageModelMiddleware[];
+  private usageRecorder?: UsageRecorder;
 
   // Simple async mutex: a chain of promises. Each register() call
   // appends to the chain so concurrent callers serialise naturally.
@@ -362,6 +394,9 @@ export class FindingsRegistry {
     this.model = opts?.model;
     this.authConfig = opts?.authConfig;
     this.abortSignal = opts?.abortSignal;
+    this.sessionId = opts?.sessionId;
+    this.languageModelMiddleware = opts?.languageModelMiddleware;
+    this.usageRecorder = opts?.usageRecorder;
   }
 
   /** How many findings are tracked. */
@@ -580,6 +615,10 @@ export class FindingsRegistry {
       system: SEMANTIC_DEDUP_SYSTEM,
       authConfig: this.authConfig,
       abortSignal: this.abortSignal,
+      sessionId: this.sessionId,
+      languageModelMiddleware: this.languageModelMiddleware,
+      usageRecorder: this.usageRecorder,
+      operation: "apex.finding.deduplicate",
     });
 
     if (result.isDuplicate && result.matchedIndex != null) {
@@ -649,6 +688,10 @@ export class FindingsRegistry {
         system: ROOT_CAUSE_GROUPING_SYSTEM,
         authConfig: this.authConfig,
         abortSignal: this.abortSignal,
+        sessionId: this.sessionId,
+        languageModelMiddleware: this.languageModelMiddleware,
+        usageRecorder: this.usageRecorder,
+        operation: "apex.finding.root-cause",
       });
     } catch {
       log.warn("groupByRootCause: LLM error — skipping root-cause grouping");

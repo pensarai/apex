@@ -2,9 +2,13 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/cli.ts",
+    "src/core/runtime/testfixtures/recoveryChild.ts",
+    "src/core/runtime/testfixtures/localWorkerChild.ts",
+    "src/core/runtime/testfixtures/localWorkerLauncher.ts",
     "loader-demo.tsx",
     "src/core/api/index.ts",
     "src/core/ai/index.ts",
+    "src/core/tools/backends/index.ts",
     "scripts/**/*.ts",
     "src/core/benchmark/**/*.ts",
     "src/core/agents/specialized/benchmark/**/*.{ts,tsx}",
@@ -19,13 +23,28 @@
     "src/lib/cvss/index.ts",
     "src/core/ai/index.ts",
     "src/core/ai/ai.ts",
+    "src/core/ai/inference-attempt/index.ts",
     "src/core/prompt-injections/index.ts",
     "src/core/session/index.ts",
     "src/core/workflows/whiteboxAttackSurface.ts"
   ],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
-  "ignoreDependencies": ["@playwright/mcp"],
-  "ignoreExportsUsedInFile": { "type": true },
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "loader-demo.tsx"],
+  "ignoreDependencies": [
+    "@aws-sdk/client-s3",
+    "@aws-sdk/lib-storage",
+    "@playwright/mcp"
+  ],
+  "ignore": [
+    "src/core/atif/test-fixtures.ts",
+    "**/*.test.{ts,tsx,js,jsx,mts,cts}",
+    "**/*.spec.{ts,tsx,js,jsx,mts,cts}",
+    "**/__tests__/**",
+    "**/__mocks__/**",
+    "**/testkit.ts"
+  ],
+  "vitest": false,
+  "tags": ["-knipignore", "-public"],
+  "ignoreExportsUsedInFile": true,
   "include": [
     "files",
     "dependencies",

@@ -616,19 +616,6 @@ export function obfuscate(
 }
 
 /**
- * Generate a stable placeholder for a known sensitive value.
- * Use when the value is already isolated (e.g. a credential field) and
- * you don't need pattern detection.
- */
-export function obfuscateValue(
-  value: string,
-  category: ObfuscationCategory = "USER",
-): string {
-  if (!STATE.enabled || !value) return value;
-  return placeholderFor(value, category);
-}
-
-/**
  * Reverse `obfuscate()`/`obfuscateValue()` — replace every known
  * `[CATEGORY_N]` placeholder with the original value it was generated
  * from. Unknown placeholders are left intact.

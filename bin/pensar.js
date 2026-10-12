@@ -7,14 +7,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const cliPath = join(__dirname, "..", "build", "cli.js");
 
-// Under Node, try to re-exec under Bun if no subcommand given (TUI needs Bun)
+// TUI launches, including Herdr restores, need Bun even through the npm shim.
 if (typeof globalThis.Bun === "undefined") {
   const args = process.argv.slice(2);
-  if (args.length === 0) {
-    // No subcommand = TUI mode — try re-exec under Bun
+  const commandArgs = args.filter(
+    (arg) => !["--obfuscate", "--redact", "-O", "--verbose", "--quiet"].includes(arg),
+  );
+  for (let i = commandArgs.length - 1; i >= 0; i--) {
+    if (commandArgs[i] === "--log-level") {
+      const next = commandArgs[i + 1];
+      commandArgs.splice(i, next !== undefined && !next.startsWith("-") ? 2 : 1);
+    }
+  }
+  if (commandArgs.length === 0 || commandArgs[0] === "--resume") {
     const { execFileSync } = await import("child_process");
     try {
-      execFileSync("bun", [__filename], { stdio: "inherit" });
+      execFileSync("bun", [__filename, ...args], { stdio: "inherit" });
       process.exit(0);
     } catch (err) {
       if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {

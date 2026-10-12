@@ -259,14 +259,19 @@ export interface SwarmTarget {
 /**
  * Build initial manifest entries for a swarm of pentest agents.
  * All entries start with status "running".
+ *
+ * @param mintId Session id factory, `(name, ordinal) => id`. Defaults to a
+ * fresh random `ses_` id (ignoring both args) — see
+ * `WorkflowSeams.ids` in `../workflows/seams.ts`.
  */
 export function buildManifestEntries(
   targets: SwarmTarget[],
+  mintId: (name: string, ordinal: number) => string = () => newSessionId(),
 ): AgentManifestEntry[] {
   return targets.map((t, i) => {
     // Stable id, minted once and persisted; the swarm reuses it on resume so the
     // worker's on-disk dir/messages and `pensar.session.id` stay put.
-    const sessionId = newSessionId();
+    const sessionId = mintId(t.name ?? "pentest-worker", i);
     return {
       id: sessionId,
       sessionId,
@@ -824,9 +829,6 @@ export interface ConsoleSessionTree extends ConsoleSessionNode {
   descendants: ConsoleSessionNode[];
 }
 
-/** Injected fetcher — resolves a Console session tree by session id. */
-export type FetchConsoleTree = (id: string) => Promise<ConsoleSessionTree>;
-
 /** Result of rehydration: the on-disk root plus in-memory model messages. */
 export interface RehydrateResult {
   rootPath: string;
@@ -1030,6 +1032,9 @@ function atomicWriteJson(filePath: string, value: unknown): void {
  * already-fetched Console session tree, and return the same messages
  * in-memory for the agent constructor. Prefer over {@link rehydrateFromConsole}
  * when the caller already holds the tree.
+ *
+ * @knipignore Console imports this from `@pensar/apex/src/core/session/persistence`;
+ * nothing in this repo calls it, so knip would otherwise report it as dead.
  */
 export function rehydrateFromConsoleTree(
   sessionId: SessionID,
@@ -1068,16 +1073,4 @@ export function rehydrateFromConsoleTree(
   }
 
   return { rootPath, messages: rootMessages, subagentMessages };
-}
-
-/**
- * Fetch a Console session tree (via the injected `fetchTree`) and rebuild the
- * session's on-disk state from it. See {@link rehydrateFromConsoleTree}.
- */
-export async function rehydrateFromConsole(
-  sessionId: SessionID,
-  fetchTree: FetchConsoleTree,
-): Promise<RehydrateResult> {
-  const tree = await fetchTree(sessionId);
-  return rehydrateFromConsoleTree(sessionId, tree);
 }

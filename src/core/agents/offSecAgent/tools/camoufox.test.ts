@@ -1,15 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CAMOUFOX_OPTIONS,
-  COMPUTER_USE_VIEWPORT_SIZE,
   camoufoxWindowOptions,
-  ENDPOINT_DISPLAY_BASE,
-  ENDPOINT_VIEWPORT_SIZE,
   MEMORY_FIREFOX_PREFS,
   parseDisplayNumber,
   parseViewportSize,
   resolveCamoufoxLaunchOptions,
-  viewportSizeForDisplay,
 } from "./camoufox";
 
 const launchOptionsMock = vi.fn();
@@ -36,15 +32,6 @@ describe("display-tier viewport helpers", () => {
     expect(parseDisplayNumber(":10.0")).toBe(10);
     expect(parseDisplayNumber(undefined)).toBeUndefined();
     expect(parseDisplayNumber("DISPLAY")).toBeUndefined();
-  });
-
-  it("maps endpoint-tier displays to 720p and everything else to 1080p", () => {
-    expect(ENDPOINT_DISPLAY_BASE).toBe(10);
-    expect(viewportSizeForDisplay(":11")).toBe(ENDPOINT_VIEWPORT_SIZE);
-    expect(viewportSizeForDisplay(":10")).toBe(ENDPOINT_VIEWPORT_SIZE);
-    expect(viewportSizeForDisplay(":0")).toBe(COMPUTER_USE_VIEWPORT_SIZE);
-    expect(viewportSizeForDisplay(":9")).toBe(COMPUTER_USE_VIEWPORT_SIZE);
-    expect(viewportSizeForDisplay(undefined)).toBe(COMPUTER_USE_VIEWPORT_SIZE);
   });
 
   it("floors the screen at the window without an exact pin", () => {

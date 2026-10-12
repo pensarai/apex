@@ -46,6 +46,13 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
 // ---------------------------------------------------------------------------
 
 const CONTEXT_LENGTHS: Record<string, number> = {
+  "chat-latest": 400000,
+  "claude-sonnet-5-5": 1000000,
+  "claude-opus-5-5": 1000000,
+  "claude-fable-5-1": 1000000,
+  "claude-opus-5": 1000000,
+  "claude-sonnet-5": 1000000,
+  "claude-fable-5": 1000000,
   // Anthropic – all Claude 3+ have 200k, older have 100k
   "claude-3": 200000,
   "claude-haiku-4": 200000,
@@ -57,6 +64,10 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "claude-instant": 100000,
 
   // OpenAI
+  "gpt-6.1": 1050000,
+  "gpt-6": 1050000,
+  "gpt-5.4-nano": 400000,
+  "gpt-5.4-mini": 400000,
   "gpt-5.6": 1050000,
   "gpt-5.5": 1050000,
   "gpt-5": 200000,
@@ -600,7 +611,16 @@ function main() {
   );
 
   // Models available on the Anthropic API but not yet in the AI SDK type definitions
-  appendMissing(anthropicIds, ["claude-opus-4-7", "claude-opus-4-8"]);
+  appendMissing(anthropicIds, [
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-fable-5",
+  ]);
 
   const anthropicModels: ModelEntry[] = anthropicIds.map((id) => ({
     id,
@@ -621,6 +641,17 @@ function main() {
 
   // Models available on the OpenAI API but not yet in the AI SDK type definitions
   appendMissing(openaiIds, [
+    "chat-latest",
+    "gpt-6.1-sol",
+    "gpt-6-luna",
+    "gpt-6-sol",
+    "gpt-6-astra",
+    "gpt-5.5-pro",
+    "gpt-5.5-pro-2026-04-23",
+    "gpt-5.4-nano",
+    "gpt-5.4-nano-2026-03-17",
+    "gpt-5.4-mini",
+    "gpt-5.4-mini-2026-03-17",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",

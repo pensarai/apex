@@ -91,13 +91,13 @@ const ctx = createContext<RouteContext | null>(null);
 
 type RouteProviderProps = {
   children: ReactNode;
+  initialRoute?: Route;
 };
 
-export function RouteProvider({ children }: RouteProviderProps) {
-  const [route, setRoute] = useState<Route>({
-    type: "base",
-    path: "home",
-  });
+export function RouteProvider({ children, initialRoute }: RouteProviderProps) {
+  const [route, setRoute] = useState<Route>(
+    initialRoute ?? { type: "base", path: "home" },
+  );
 
   const value = useMemo(
     () => ({

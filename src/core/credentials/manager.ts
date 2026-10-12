@@ -11,6 +11,7 @@ import type { AuthCredentials } from "../session";
 import type {
   CredentialReference,
   CredentialType,
+  MobileOtpAuthMethod,
   StoredCredential,
 } from "./types";
 
@@ -62,12 +63,25 @@ function toReference(stored: StoredCredential): CredentialReference {
     ref.customHeaderKeys = Object.keys(stored.tokens.customHeaders);
   }
   if (stored.additionalFields) {
-    const keys = Object.keys(stored.additionalFields);
+    const authMethod = stored.additionalFields.authMethod;
+    const recognized = isMobileOtpAuthMethod(authMethod);
+    if (recognized) ref.authMethod = authMethod;
+
+    const keys = Object.keys(stored.additionalFields).filter(
+      (key) => !(key === "authMethod" && recognized),
+    );
     if (keys.length > 0) ref.additionalFieldKeys = keys;
   }
   const ctx = stored.metadata?.context;
   if (typeof ctx === "string" && ctx) ref.context = ctx;
+  if (stored.googleSignIn) ref.googleSignIn = true;
   return ref;
+}
+
+function isMobileOtpAuthMethod(
+  value: string | undefined,
+): value is MobileOtpAuthMethod {
+  return value === "sms-passwordless" || value === "sms-mfa";
 }
 
 // ---------------------------------------------------------------------------
@@ -142,10 +156,18 @@ export class CredentialManager {
       loginUrl: creds.loginUrl,
       additionalFields: creds.additionalFields,
       tokens: creds.tokens,
+      googleSignIn: creds.googleSignIn,
       label: extra?.label,
       role: extra?.role ?? creds.role,
       metadata: creds.context ? { context: creds.context } : undefined,
     };
+
+    // A caller-supplied id is the durable identity (Console UUID). Keep it
+    // even when secret fields match another row — collapsing would lose
+    // provenance the caller needs to round-trip.
+    if (creds.id) {
+      return this.add({ ...candidate, id: creds.id });
+    }
 
     const existingId = this.findDuplicate(candidate);
     if (existingId) return existingId;
@@ -178,6 +200,11 @@ export class CredentialManager {
    */
   listReferences(): CredentialReference[] {
     return Array.from(this.store.values()).map(toReference);
+  }
+
+  /** True when any stored credential is Sign in with Google. */
+  hasGoogleSignIn(): boolean {
+    return Array.from(this.store.values()).some((s) => s.googleSignIn === true);
   }
 
   /**
@@ -226,6 +253,7 @@ export class CredentialManager {
     if (!stored) return undefined;
 
     const result: AuthCredentials = {};
+    if (stored.id) result.id = stored.id;
     if (stored.username) result.username = stored.username;
     if (stored.password) result.password = stored.password;
     if (stored.apiKey) result.apiKey = stored.apiKey;
@@ -233,6 +261,7 @@ export class CredentialManager {
     if (stored.additionalFields)
       result.additionalFields = stored.additionalFields;
     if (stored.tokens) result.tokens = { ...stored.tokens };
+    if (stored.googleSignIn) result.googleSignIn = true;
     return result;
   }
 
@@ -257,6 +286,14 @@ export class CredentialManager {
       if (ref.additionalFieldKeys?.length) {
         parts.push(
           `  Additional secret fields: ${ref.additionalFieldKeys.join(", ")}`,
+        );
+      }
+      if (ref.authMethod) {
+        parts.push(`  Authentication method: ${ref.authMethod}`);
+      }
+      if (ref.googleSignIn) {
+        parts.push(
+          "  Sign-in: Google — click the target's Google button; fill identifier, password, and Google employee ID on accounts.google.com via browser_fill + credentialId/credentialField. Do not fill the target's native username/password form.",
         );
       }
       if (ref.context) parts.push(`  Context: ${ref.context}`);

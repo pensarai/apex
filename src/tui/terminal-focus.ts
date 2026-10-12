@@ -20,6 +20,43 @@ export interface TerminalFocusOptions {
 }
 
 /**
+ * Last reported focus state per renderer. Keyed by renderer instance so
+ * lifetimes never cross and a fresh renderer starts unknown.
+ */
+const terminalFocusStates = new WeakMap<CliRenderer, boolean>();
+
+/**
+ * The renderer's last reported focus state, or null before it has reported
+ * anything (bracketed focus reporting only sends on transitions).
+ */
+export function getTerminalFocusState(renderer: CliRenderer): boolean | null {
+  return terminalFocusStates.get(renderer) ?? null;
+}
+
+/**
+ * Track whether the terminal window is focused or blurred.
+ *
+ * The renderer emits "focus"/"blur" on the bracketed-paste focus escapes it
+ * parses itself, so subscribing to those events (rather than re-parsing
+ * stdin here) keeps this state aligned with the renderer — including under
+ * the test renderer, whose stdin is faked.
+ */
+const trackRendererFocus = (renderer: CliRenderer): (() => void) => {
+  const onFocus = () => {
+    terminalFocusStates.set(renderer, true);
+  };
+  const onBlur = () => {
+    terminalFocusStates.set(renderer, false);
+  };
+  renderer.on("focus", onFocus);
+  renderer.on("blur", onBlur);
+  return () => {
+    renderer.off("focus", onFocus);
+    renderer.off("blur", onBlur);
+  };
+};
+
+/**
  * Track whether bracketed focus mode is currently enabled.
  * This is used to ensure we only disable it if we enabled it.
  */
@@ -126,6 +163,9 @@ export function setupTerminalFocusHandling(
     // Show cursor initially
     showCursor();
 
+    // Track the renderer's reported focus state for getTerminalFocusState
+    untrackRendererFocus = trackRendererFocus(renderer);
+
     // Listen for SIGCONT (resume after suspend)
     process.on("SIGCONT", handleSigCont);
 
@@ -139,12 +179,16 @@ export function setupTerminalFocusHandling(
     }
   };
 
+  let untrackRendererFocus: () => void = () => {};
+
   // Clean up function
   const cleanup = () => {
     log("Cleaning up terminal focus handling");
 
     // Disable bracketed focus mode
     disableBracketedFocus();
+
+    untrackRendererFocus();
 
     // Remove listeners
     process.off("SIGCONT", handleSigCont);

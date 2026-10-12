@@ -2,7 +2,6 @@ import {
   type AgentMode,
   buildBaseSystemPrompt,
 } from "../../../core/agents/offSecAgent";
-import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
 import type {
   OperatorMode,
   OperatorSessionState,
@@ -332,7 +331,10 @@ ${opts.approvedPlanContent}
     }
   }
 
-  let prompt = `${detectOSAndEnhancePrompt(buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode }))}
+  // Runtime execution facts and bundled assets are appended by the agent
+  // harness after this persona (OffensiveSecurityAgent assembles the final
+  // system prompt) — embedding them here would duplicate the blocks.
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
 
 # Operator Mode
 
@@ -447,12 +449,15 @@ ${refinementBlock}`;
 // Input focus resolution
 // ---------------------------------------------------------------------------
 
+/** Dialogs always win focus; queue selection only overrides the running input. */
 export function resolveInputFocused(
   status: DashboardStatus,
   dialogStackLength: number,
   externalDialogOpen: boolean,
+  selectedQueueIndex: number,
 ): boolean {
-  return status !== "running" && dialogStackLength === 0 && !externalDialogOpen;
+  if (dialogStackLength > 0 || externalDialogOpen) return false;
+  return status !== "running" || selectedQueueIndex < 0;
 }
 
 // ---------------------------------------------------------------------------

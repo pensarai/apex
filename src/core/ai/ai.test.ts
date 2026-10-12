@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   applySequentialToolCallPolicy,
+  buildOpenRouterProviderOptions,
+  buildOpenRouterStructuredProviderOptions,
   buildReasoningProviderOptions,
+  getOpenAIReasoningEfforts,
   isRepairFailClosedTool,
+  modelSupportsOpenAIReasoning,
+  normalizeOpenAIReasoningEffort,
+  restrictToolsToActive,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
+  withResponseToolActive,
 } from "./ai";
 import { consumeStream } from "./utils";
 
@@ -54,6 +61,81 @@ describe("applySequentialToolCallPolicy", () => {
   });
 });
 
+describe("restrictToolsToActive", () => {
+  const tools = {
+    read_file: {
+      description: "read",
+      inputSchema: z.object({ p: z.string() }),
+    },
+    execute_command: {
+      description: "exec",
+      inputSchema: z.object({ c: z.string() }),
+    },
+    delete_file: {
+      description: "delete",
+      inputSchema: z.object({ p: z.string() }),
+    },
+  };
+
+  it("filters the tools map down to the activeTools allowlist", () => {
+    const result = restrictToolsToActive(tools, ["read_file", "delete_file"]);
+    expect(Object.keys(result ?? {}).sort()).toEqual([
+      "delete_file",
+      "read_file",
+    ]);
+    // execute_command must not be advertised, executable, or enumerable.
+    expect(result).not.toHaveProperty("execute_command");
+    // Retained tools keep their original definition (same reference).
+    expect(result?.read_file).toBe(tools.read_file);
+  });
+
+  it("is a no-op when activeTools is empty (means: all tools)", () => {
+    expect(restrictToolsToActive(tools, [])).toBe(tools);
+  });
+
+  it("is a no-op when activeTools is undefined", () => {
+    expect(restrictToolsToActive(tools, undefined)).toBe(tools);
+  });
+
+  it("returns tools unchanged when tools is undefined", () => {
+    expect(restrictToolsToActive(undefined, ["read_file"])).toBeUndefined();
+  });
+
+  it("ignores allowlist entries that are not present in the tools map", () => {
+    const result = restrictToolsToActive(tools, ["read_file", "no_such_tool"]);
+    expect(Object.keys(result ?? {})).toEqual(["read_file"]);
+  });
+});
+
+describe("withResponseToolActive", () => {
+  const tool = { description: "t", inputSchema: z.object({}) };
+  const withResponse = { read_file: tool, response: tool };
+
+  it("keeps an injected response tool reachable through a curated allowlist", () => {
+    const allowed = withResponseToolActive(withResponse, ["read_file"]);
+    expect(allowed).toEqual(["read_file", "response"]);
+    expect(
+      Object.keys(restrictToolsToActive(withResponse, allowed) ?? {}).sort(),
+    ).toEqual(["read_file", "response"]);
+  });
+
+  it("does not add response when the caller did not inject it", () => {
+    expect(withResponseToolActive({ read_file: tool }, ["read_file"])).toEqual([
+      "read_file",
+    ]);
+  });
+
+  it("leaves an allowlist that already names response untouched", () => {
+    const active = ["response", "read_file"];
+    expect(withResponseToolActive(withResponse, active)).toBe(active);
+  });
+
+  it("is a no-op when activeTools is empty or undefined", () => {
+    expect(withResponseToolActive(withResponse, [])).toEqual([]);
+    expect(withResponseToolActive(withResponse, undefined)).toBeUndefined();
+  });
+});
+
 describe("isRepairFailClosedTool", () => {
   it("fails closed for spawn_pentest_agent so repair cannot fabricate a target", () => {
     expect(isRepairFailClosedTool("spawn_pentest_agent")).toBe(true);
@@ -61,8 +143,14 @@ describe("isRepairFailClosedTool", () => {
 
   it("leaves ordinary tools eligible for repair", () => {
     expect(isRepairFailClosedTool("response")).toBe(false);
-    expect(isRepairFailClosedTool("document_vulnerability")).toBe(false);
     expect(isRepairFailClosedTool("http_request")).toBe(false);
+  });
+
+  it("keeps result-submission tools eligible for repair so a bad field is fixed, not dropped", () => {
+    // These carry no authorization boundary; repair re-prompts the model to fix
+    // a mis-shaped field instead of discarding a completed recon or finding.
+    expect(isRepairFailClosedTool("submit_results")).toBe(false);
+    expect(isRepairFailClosedTool("document_vulnerability")).toBe(false);
   });
 });
 
@@ -148,6 +236,22 @@ describe("buildReasoningProviderOptions", () => {
     ).toEqual({ openai: { reasoningEffort: "max" } });
   });
 
+  it("maps GLM 5.3 onto its always-on Concentrate effort levels", () => {
+    const model = "concentrate:glm-5.3";
+
+    expect(modelSupportsOpenAIReasoning(model)).toBe(true);
+    expect(getOpenAIReasoningEfforts(model)).toEqual(["low", "high", "max"]);
+    expect(normalizeOpenAIReasoningEffort(model, "none")).toBe("low");
+    expect(normalizeOpenAIReasoningEffort(model, "medium")).toBe("high");
+    expect(normalizeOpenAIReasoningEffort(model, "xhigh")).toBe("max");
+    expect(normalizeOpenAIReasoningEffort(model)).toBe("high");
+    expect(
+      buildReasoningProviderOptions(model, {
+        openAIReasoningEffort: "medium",
+      }),
+    ).toEqual({ openai: { reasoningEffort: "high" } });
+  });
+
   it("carries the adaptive-thinking effort hint on both anthropic and bedrock for a 4.6 model", () => {
     const result = buildReasoningProviderOptions(
       "global.anthropic.claude-opus-4-6-v1",
@@ -199,6 +303,49 @@ describe("buildReasoningProviderOptions", () => {
         thinkingEffort: "high",
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("buildOpenRouterProviderOptions", () => {
+  it("pins GLM 5.2 and 5.3 to Z.ai without provider fallbacks", () => {
+    for (const model of ["z-ai/glm-5.2", "z-ai/glm-5.3"]) {
+      expect(buildOpenRouterProviderOptions(model)).toEqual({
+        openrouter: {
+          provider: {
+            only: ["z-ai"],
+            allow_fallbacks: false,
+          },
+        },
+      });
+    }
+  });
+
+  it("leaves other OpenRouter models unchanged", () => {
+    expect(buildOpenRouterProviderOptions("anthropic/claude-opus-4-6")).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("buildOpenRouterStructuredProviderOptions", () => {
+  it("prefers Z.ai but requires an endpoint that enforces the schema", () => {
+    for (const model of ["z-ai/glm-5.2", "z-ai/glm-5.3"]) {
+      expect(buildOpenRouterStructuredProviderOptions(model)).toEqual({
+        openrouter: {
+          provider: {
+            order: ["z-ai"],
+            allow_fallbacks: true,
+            require_parameters: true,
+          },
+        },
+      });
+    }
+  });
+
+  it("leaves other OpenRouter models unchanged", () => {
+    expect(
+      buildOpenRouterStructuredProviderOptions("anthropic/claude-opus-4-6"),
+    ).toBe(undefined);
   });
 });
 

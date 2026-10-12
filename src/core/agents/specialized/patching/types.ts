@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SpecializedAgentInput, UnifiedSandbox } from "../../offSecAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
 
 /**
  * Structured result returned by the patching agent via the `response` tool.
@@ -46,16 +46,4 @@ export interface PatchingAgentInput extends SpecializedAgentInput {
 
   /** Vulnerability details to patch */
   vulnerability: VulnerabilityDetails;
-
-  /**
-   * Optional pre-configured sandbox for isolated code execution.
-   *
-   * When provided, tools like `execute_command`, `create_file`, and
-   * `update_file` automatically route operations through the sandbox
-   * instead of the local filesystem.
-   *
-   * The sandbox should be fully set up before passing it in (repo cloned,
-   * dev environment started, etc.).
-   */
-  sandbox?: UnifiedSandbox;
 }

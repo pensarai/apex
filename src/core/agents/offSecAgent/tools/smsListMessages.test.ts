@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
-import { PLAN_MODE_TOOL_NAMES } from "./index";
+import type { ToolBackends } from "../../../tools/backends/types";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { ALL_TOOL_NAMES, PLAN_MODE_TOOL_NAMES } from "./index";
+import type { SmsInbox } from "./smsInbox";
 import {
   SMS_LIST_MESSAGES_TOOL_NAME,
   sessionHasSmsPasswordless,
@@ -11,12 +14,14 @@ import type { ToolContext } from "./types";
 
 const executeOpts = { toolCallId: "call_1", messages: [] };
 
-function makeCtx(cm?: CredentialManager): ToolContext {
+function makeCtx(cm?: CredentialManager, smsInbox?: SmsInbox): ToolContext {
   const credentialManager = cm ?? new CredentialManager();
   return {
     session: { credentialManager } as SessionInfo,
     agentCwd: "/tmp",
     credentialManager,
+    subagentSpawner: inProcessSubagentSpawner,
+    ...(smsInbox ? { smsInbox } : {}),
   };
 }
 
@@ -38,6 +43,14 @@ function listedResponse() {
       ],
       claimed: null,
     }),
+  };
+}
+
+function reservedResponse() {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ messages: [], claimed: null, reserved: true }),
   };
 }
 
@@ -82,12 +95,29 @@ describe("sessionHasSmsPasswordless", () => {
     ).toBe(true);
   });
 
-  it("detects a phoneNumber on session authCredentials", () => {
+  it("detects a phoneNumber on internally injected session credentials", () => {
     expect(
       sessionHasSmsPasswordless({
         config: {
           authCredentials: {
             additionalFields: { phoneNumber: "test-phone-number" },
+          },
+        },
+      } as unknown as SessionInfo),
+    ).toBe(true);
+  });
+
+  it("enables the SMS tool for sms-mfa credentials", () => {
+    expect(
+      sessionHasSmsPasswordless({
+        config: {
+          authCredentials: {
+            username: "tester",
+            password: "secret",
+            additionalFields: {
+              authMethod: "sms-mfa",
+              phoneNumber: "stage-managed-number",
+            },
           },
         },
       } as unknown as SessionInfo),
@@ -125,6 +155,10 @@ describe("smsListMessages", () => {
     expect(PLAN_MODE_TOOL_NAMES).toContain(SMS_LIST_MESSAGES_TOOL_NAME);
   });
 
+  it("is registered with all agent tools", () => {
+    expect(ALL_TOOL_NAMES).toContain(SMS_LIST_MESSAGES_TOOL_NAME);
+  });
+
   it("fails loud when AGENT_API_URL is unset", async () => {
     vi.stubEnv("AGENT_API_URL", "");
     vi.stubEnv("AGENT_API_TOKEN", "token");
@@ -133,7 +167,6 @@ describe("smsListMessages", () => {
       tool.execute?.(
         {
           sinceMs: 1,
-          phoneNumber: "+15551234567",
           toolCallDescription: "list",
         },
         executeOpts,
@@ -141,23 +174,161 @@ describe("smsListMessages", () => {
     ).rejects.toThrow("AGENT_API_URL");
   });
 
+  it("uses an injected inbox instead of the agent API", async () => {
+    // No AGENT_API_URL: an injected inbox must make the HTTP path irrelevant.
+    vi.stubEnv("AGENT_API_URL", "");
+    vi.stubEnv("AGENT_API_TOKEN", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const message = {
+      id: "msg-9",
+      body: "Your code is 991122",
+      code: "991122",
+      fromPhoneNumber: "+15550001111",
+      toPhoneNumber: "+15551234567",
+      receivedAt: "2026-04-10T12:00:00.000Z",
+      consumedAt: "2026-04-10T12:00:01.000Z",
+    };
+    const inbox: SmsInbox = {
+      reserve: vi.fn(async () => ({ ok: true as const })),
+      list: vi.fn(async () => ({
+        ok: true as const,
+        messages: [message],
+        claimed: message,
+      })),
+    };
+
+    const tool = smsListMessages(makeCtx(undefined, inbox));
+    const result = await tool.execute?.(
+      { toolCallDescription: "test", sinceMs: 1_760_000_000_000, claim: true },
+      executeOpts,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      messages: [message],
+      claimed: message,
+    });
+    expect(inbox.list).toHaveBeenCalledWith(
+      { sinceMs: 1_760_000_000_000, claim: true },
+      undefined,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("prefers ctx.backends.inbox.sms over ctx.smsInbox", async () => {
+    vi.stubEnv("AGENT_API_URL", "");
+    vi.stubEnv("AGENT_API_TOKEN", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const staleInbox: SmsInbox = {
+      reserve: vi.fn(),
+      list: vi.fn(),
+    };
+    const backendInbox: SmsInbox = {
+      reserve: vi.fn(async () => ({ ok: true as const })),
+      list: vi.fn(async () => ({
+        ok: true as const,
+        messages: [],
+        claimed: null,
+      })),
+    };
+
+    const ctx = {
+      ...makeCtx(undefined, staleInbox),
+      backends: {
+        inbox: { email: () => null, sms: backendInbox },
+      } as never as ToolBackends,
+    };
+
+    const tool = smsListMessages(ctx);
+    await tool.execute?.(
+      { toolCallDescription: "test", sinceMs: 1 },
+      executeOpts,
+    );
+
+    expect(backendInbox.list).toHaveBeenCalled();
+    expect(staleInbox.list).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an injected inbox refusal as a tool-level error", async () => {
+    const inbox: SmsInbox = {
+      reserve: vi.fn(async () => ({
+        ok: false as const,
+        reason: "lease-held" as const,
+      })),
+      list: vi.fn(),
+    };
+
+    const tool = smsListMessages(makeCtx(undefined, inbox));
+    const result = await tool.execute?.(
+      { toolCallDescription: "test", reserve: true },
+      executeOpts,
+    );
+
+    expect(result).toMatchObject({ success: false });
+    expect((result as { error: string }).error).toContain("busy");
+  });
+
+  it("rejects agent-supplied phone number overrides", () => {
+    const tool = smsListMessages(makeCtx());
+    const schema = tool.inputSchema as unknown as {
+      safeParse: (input: unknown) => { success: boolean };
+    };
+
+    expect(
+      schema.safeParse({
+        phoneNumber: "+15551234567",
+        sinceMs: 1,
+        toolCallDescription: "list inbound SMS",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("reserves the session-bound number without sending it to the API", async () => {
+    vi.stubEnv("AGENT_API_URL", "https://api.example.com");
+    vi.stubEnv("AGENT_API_TOKEN", "token");
+
+    // A reserve takes the lease without reading; the API returns no messages.
+    const fetchMock = vi.fn().mockResolvedValue(reservedResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = smsListMessages(makeCtx());
+    const result = await tool.execute?.(
+      {
+        reserve: true,
+        toolCallDescription: "reserve shared number",
+      },
+      executeOpts,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      messages: [],
+      claimed: null,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain("/agent/sms/messages?");
+    expect(url).toContain("reserve=1");
+    expect(url).not.toContain("toPhoneNumber");
+    expect(url).not.toContain("since=");
+    expect(url).not.toContain("claim=");
+  });
+
   it("lists inbound SMS without claiming", async () => {
     vi.stubEnv("AGENT_API_URL", "https://api.example.com");
     vi.stubEnv("AGENT_API_TOKEN", "token");
-    const cm = new CredentialManager();
-    cm.add({
-      id: "cred-1",
-      additionalFields: { phoneNumber: "+15551234567" },
-      loginUrl: "https://app.example.com/login",
-    });
 
     const fetchMock = vi.fn().mockResolvedValue(listedResponse());
     vi.stubGlobal("fetch", fetchMock);
 
-    const tool = smsListMessages(makeCtx(cm));
+    const tool = smsListMessages(makeCtx());
     const result = await tool.execute?.(
       {
-        credentialId: "cred-1",
         sinceMs: 1_700_000_000_000,
         toolCallDescription: "list inbound SMS",
       },
@@ -179,10 +350,11 @@ describe("smsListMessages", () => {
       ],
       claimed: null,
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = String(fetchMock.mock.calls[0]?.[0]);
-    expect(url).toContain("/agent/sms/messages?");
-    expect(url).toContain("toPhoneNumber=%2B15551234567");
+    expect(new URL(url).searchParams.get("since")).toBe(
+      "2023-11-14T22:13:20.000Z",
+    );
+    expect(url).not.toContain("toPhoneNumber");
     expect(url).not.toContain("claim=");
   });
 
@@ -196,7 +368,6 @@ describe("smsListMessages", () => {
     const tool = smsListMessages(makeCtx());
     const result = await tool.execute?.(
       {
-        phoneNumber: "+15551234567",
         sinceMs: 1,
         claim: true,
         toolCallDescription: "claim login code",
@@ -210,9 +381,10 @@ describe("smsListMessages", () => {
     });
     const url = String(fetchMock.mock.calls[0]?.[0]);
     expect(url).toContain("claim=1");
+    expect(url).not.toContain("toPhoneNumber");
   });
 
-  it("returns a lease conflict without retrying", async () => {
+  it("returns a busy reservation without retrying", async () => {
     vi.stubEnv("AGENT_API_URL", "https://api.example.com");
     vi.stubEnv("AGENT_API_TOKEN", "token");
 
@@ -226,9 +398,8 @@ describe("smsListMessages", () => {
     const tool = smsListMessages(makeCtx());
     const result = await tool.execute?.(
       {
-        phoneNumber: "+15551234567",
-        sinceMs: 1,
-        toolCallDescription: "list",
+        reserve: true,
+        toolCallDescription: "reserve",
       },
       executeOpts,
     );
@@ -236,61 +407,9 @@ describe("smsListMessages", () => {
     expect(result).toEqual({
       success: false,
       error:
-        "Another agent run holds the exclusive lease on this phone number. Wait and retry, or use a different Mobile OTP number.",
+        "The shared Mobile OTP number is busy. Retry the reservation later; this tool does not wait.",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("lists from session authCredentials when no credential manager phone is present", async () => {
-    vi.stubEnv("AGENT_API_URL", "https://api.example.com");
-    vi.stubEnv("AGENT_API_TOKEN", "token");
-
-    const fetchMock = vi.fn().mockResolvedValue(listedResponse());
-    vi.stubGlobal("fetch", fetchMock);
-
-    const tool = smsListMessages({
-      session: {
-        config: {
-          authCredentials: {
-            additionalFields: { phoneNumber: "+15551234567" },
-          },
-        },
-      } as unknown as SessionInfo,
-      agentCwd: "/tmp",
-    });
-    const result = await tool.execute?.(
-      {
-        sinceMs: 1,
-        toolCallDescription: "list",
-      },
-      executeOpts,
-    );
-
-    expect(result).toMatchObject({ success: true });
-    const url = String(fetchMock.mock.calls[0]?.[0]);
-    expect(url).toContain("toPhoneNumber=%2B15551234567");
-  });
-
-  it("fails the credentialId path when the stored credential has no phoneNumber", async () => {
-    vi.stubEnv("AGENT_API_URL", "https://api.example.com");
-    vi.stubEnv("AGENT_API_TOKEN", "token");
-    const cm = new CredentialManager();
-    cm.add({
-      id: "cred-1",
-      additionalFields: { authMethod: "sms-passwordless" },
-      loginUrl: "https://app.example.com/login",
-    });
-    const tool = smsListMessages(makeCtx(cm));
-    await expect(
-      tool.execute?.(
-        {
-          credentialId: "cred-1",
-          sinceMs: 1,
-          toolCallDescription: "list",
-        },
-        executeOpts,
-      ),
-    ).rejects.toThrow("has no phoneNumber additional field");
   });
 
   it("returns already-consumed without polling", async () => {
@@ -307,7 +426,6 @@ describe("smsListMessages", () => {
     const tool = smsListMessages(makeCtx());
     const result = await tool.execute?.(
       {
-        phoneNumber: "+15551234567",
         sinceMs: 1,
         claim: true,
         toolCallDescription: "claim",

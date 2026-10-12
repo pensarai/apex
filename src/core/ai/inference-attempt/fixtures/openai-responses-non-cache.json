@@ -1,0 +1,23 @@
+{
+  "transport": "openai-responses",
+  "usage": {
+    "input_tokens": 900,
+    "output_tokens": 33,
+    "input_tokens_details": { "cached_tokens": 0 }
+  },
+  "providerMetadata": {
+    "openai": { "responseId": "resp_noncache" }
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 900,
+      "uncachedInput": 900,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "output": 33
+    },
+    "evidence": {
+      "providerRequestId": "resp_noncache"
+    }
+  }
+}

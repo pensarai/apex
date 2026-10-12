@@ -6,6 +6,7 @@ export type ProviderType =
   | "openrouter"
   | "concentrate"
   | "inception"
+  | "hoonify"
   | "pensar"
   | "local";
 
@@ -57,6 +58,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "inception",
     name: "Inception",
     description: "Mercury and other Inception models",
+    requiresAPIKey: true,
+  },
+  {
+    id: "hoonify",
+    name: "Hoonify",
+    description: "Open models via Hoonify inference",
     requiresAPIKey: true,
   },
   {

@@ -20,8 +20,18 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { tool } from "ai";
-import { z } from "zod";
+import type { BrowserBackend } from "../../../tools/backends/types";
+import {
+  type BrowserHeaderPolicy,
+  browserHeaderRouteFunction,
+} from "./browserHeaderRouting";
+import {
+  type BrowserToolMode,
+  createBackendBrowserToolFactories,
+} from "./browserToolFactories";
+
+export type { BrowserToolMode } from "./browserToolFactories";
+
 import type { Logger } from "../../../logger";
 import {
   type CamoufoxLaunchOptions,
@@ -99,87 +109,6 @@ export interface BrowserConsoleResult {
   result?: unknown;
   error?: string;
 }
-
-// Input schemas for browser tools
-const BrowserNavigateInput = z.object({
-  url: z.string().describe("Full URL to navigate to"),
-  toolCallDescription: z
-    .string()
-    .describe("Why you are navigating to this URL"),
-});
-
-const BrowserScreenshotInput = z.object({
-  filename: z
-    .string()
-    .describe("Descriptive filename for screenshot (without extension)"),
-  toolCallDescription: z
-    .string()
-    .describe("What evidence this screenshot captures"),
-});
-
-const BrowserClickInput = z.object({
-  element: z
-    .string()
-    .describe(
-      "Description of element to click, e.g., 'Submit button' or 'Login link'",
-    ),
-  ref: z
-    .string()
-    .optional()
-    .describe(
-      "Element reference from browser_snapshot (e.g., 'e5'). If provided, uses exact element reference for precise clicking.",
-    ),
-  toolCallDescription: z.string().describe("Why you are clicking this element"),
-});
-
-const BrowserFillInput = z.object({
-  element: z
-    .string()
-    .describe(
-      "Description of form field, e.g., 'Username field' or 'Search input'",
-    ),
-  ref: z
-    .string()
-    .optional()
-    .describe(
-      "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling.",
-    ),
-  value: z.string().describe("Value to fill into the field"),
-  toolCallDescription: z
-    .string()
-    .describe("Why you are filling this field with this value"),
-});
-
-const BrowserSnapshotInput = z.object({
-  toolCallDescription: z
-    .string()
-    .describe("Why you need to get the page snapshot"),
-});
-
-const BrowserEvaluateInput = z.object({
-  script: z.string().describe("JavaScript code to execute in browser"),
-  toolCallDescription: z
-    .string()
-    .describe("What you are testing with this script"),
-});
-
-const BrowserConsoleInput = z.object({
-  toolCallDescription: z
-    .string()
-    .describe("Why you need to check console messages"),
-});
-
-const BrowserGetCookiesInput = z.object({
-  urls: z
-    .array(z.string())
-    .optional()
-    .describe(
-      "Optional list of URLs to get cookies for. If not provided, gets all cookies.",
-    ),
-  toolCallDescription: z
-    .string()
-    .describe("Why you need to extract cookies from the browser"),
-});
 
 const MCP_CONNECT_TIMEOUT_MS = 30_000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
@@ -461,11 +390,18 @@ export function setViewportSize(viewportSize: string | undefined): void {
   defaultViewportSize = viewportSize;
 }
 
+export type BrowserEngine = "camoufox" | "chrome";
+
 export interface PlaywrightMcpSessionOptions {
   readonly headless?: boolean;
   readonly userAgent?: string | null;
   readonly viewportSize?: string | null;
-  readonly extraHttpHeaders?: Record<string, string> | null;
+  readonly headerPolicy?: BrowserHeaderPolicy;
+  /**
+   * Browser to launch. Camoufox (Firefox) is the default for pentest traffic.
+   * Chrome is required for Sign in with Google — Google blocks Camoufox.
+   */
+  readonly engine?: BrowserEngine;
   /**
    * X display for this session's spawned browser (e.g. `":11"`). Overrides
    * `process.env.DISPLAY` for THIS session only. Required for per-agent display
@@ -496,9 +432,10 @@ export class PlaywrightMcpSession {
   private readonly headless: boolean;
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
-  private readonly extraHttpHeaders: Record<string, string> | undefined;
+  private readonly headerPolicy: BrowserHeaderPolicy | undefined;
   /** X display for the spawned browser; overrides `process.env.DISPLAY`. */
   private readonly display: string | undefined;
+  readonly engine: BrowserEngine;
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
   /** Cached Camoufox launch options — resolved once, reused on reconnect. */
@@ -515,8 +452,9 @@ export class PlaywrightMcpSession {
    * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
   constructor(options: PlaywrightMcpSessionOptions = {}) {
-    const { headless, userAgent, viewportSize, extraHttpHeaders, display } =
+    const { headless, userAgent, viewportSize, headerPolicy, display, engine } =
       options;
+    this.engine = engine ?? "camoufox";
 
     // An explicit `display` option wins over the process-wide env (needed when
     // concurrent headed sessions each need their own display); fall back to
@@ -551,12 +489,14 @@ export class PlaywrightMcpSession {
           : (defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
     }
 
-    // Snapshot headers so post-construction mutations don't leak in.
-    const headerSource =
-      extraHttpHeaders === null ? undefined : extraHttpHeaders;
-    this.extraHttpHeaders =
-      headerSource && Object.keys(headerSource).length > 0
-        ? { ...headerSource }
+    this.headerPolicy =
+      headerPolicy &&
+      headerPolicy.allowedHosts.length > 0 &&
+      Object.keys(headerPolicy.headers).length > 0
+        ? {
+            allowedHosts: [...headerPolicy.allowedHosts],
+            headers: { ...headerPolicy.headers },
+          }
         : undefined;
   }
 
@@ -660,6 +600,94 @@ export class PlaywrightMcpSession {
     }
   }
 
+  private async buildMcpLaunch(launchId: string): Promise<{
+    cfg: unknown;
+    env: Record<string, string>;
+  }> {
+    const env: Record<string, string> = { [BROWSER_LAUNCH_ENV]: launchId };
+    if (this.display) env.DISPLAY = this.display;
+
+    if (this.engine === "chrome") {
+      const parsed = this.viewportSize
+        ? parseViewportSize(this.viewportSize)
+        : undefined;
+      const viewport = parsed
+        ? { width: parsed[0], height: parsed[1] }
+        : undefined;
+      return {
+        cfg: {
+          browser: {
+            browserName: "chromium",
+            launchOptions: {
+              channel: "chrome",
+              headless: this.headless,
+              // Sandbox images run as root, where Chrome refuses to start sandboxed.
+              chromiumSandbox: false,
+              args: ["--disable-dev-shm-usage"],
+            },
+            contextOptions: {
+              ...(viewport ? { viewport } : {}),
+            },
+          },
+        },
+        env,
+      };
+    }
+
+    // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
+    // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
+    // that carry the fingerprint; MCP drives that browser through the same
+    // tool API. We pass these via a temp config file rather than CLI flags.
+    // Resolve once per session lifetime so reconnects keep the same fingerprint.
+    await ensureCamoufox();
+    if (!this.cachedCamouOptions) {
+      // Apply viewportSize as Camoufox `window` so the headed browser fills
+      // the bound Xvfb desktop (previously stored but never forwarded —
+      // Camoufox randomised the window and overflowed 720p endpoint streams).
+      const window = this.viewportSize
+        ? parseViewportSize(this.viewportSize)
+        : undefined;
+      this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
+        this.headless,
+        window ? { window } : undefined,
+      );
+    }
+    const camou = this.cachedCamouOptions;
+    return {
+      cfg: {
+        browser: {
+          browserName: "firefox",
+          launchOptions: {
+            executablePath: camou.executablePath,
+            args: camou.args,
+            firefoxUserPrefs: camou.firefoxUserPrefs,
+            headless: camou.headless,
+          },
+        },
+      },
+      env: {
+        ...Object.fromEntries(
+          Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
+        ),
+        ...env,
+      },
+    };
+  }
+
+  private async installHeaderRoute(client: Client): Promise<void> {
+    if (!this.headerPolicy) return;
+    await withTimeout(
+      client.callTool({
+        name: "browser_run_code",
+        arguments: {
+          code: browserHeaderRouteFunction(this.headerPolicy),
+        },
+      }),
+      MCP_TOOL_CALL_TIMEOUT_MS,
+      "Browser header route installation timed out",
+    );
+  }
+
   /**
    * Initialize or return existing MCP client connection for this session.
    * Handles race conditions when multiple tools within the same agent
@@ -687,42 +715,12 @@ export class PlaywrightMcpSession {
 
         const args = [cliPath, "--isolated"];
 
-        // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
-        // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
-        // that carry the fingerprint; MCP drives that browser through the same
-        // tool API. We pass these via a temp config file rather than CLI flags.
-        // Resolve once per session lifetime so reconnects keep the same fingerprint.
-        await ensureCamoufox();
-        if (!this.cachedCamouOptions) {
-          // Apply viewportSize as Camoufox `window` so the headed browser fills
-          // the bound Xvfb desktop (previously stored but never forwarded —
-          // Camoufox randomised the window and overflowed 720p endpoint streams).
-          const window = this.viewportSize
-            ? parseViewportSize(this.viewportSize)
-            : undefined;
-          this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
-            this.headless,
-            window ? { window } : undefined,
-          );
-        }
-        const camou = this.cachedCamouOptions;
-
         const os = await import("node:os");
         const fsp = await import("node:fs/promises");
-        const cfg = {
-          browser: {
-            browserName: "firefox",
-            launchOptions: {
-              executablePath: camou.executablePath,
-              args: camou.args,
-              firefoxUserPrefs: camou.firefoxUserPrefs,
-              headless: camou.headless,
-            },
-            ...(this.extraHttpHeaders
-              ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
-              : {}),
-          },
-        };
+        const launchId = randomUUID();
+        this.currentLaunchId = launchId;
+
+        const { cfg, env } = await this.buildMcpLaunch(launchId);
         this.mcpConfigPath = join(
           os.tmpdir(),
           `pensar-mcp-${process.pid}-${Date.now()}.json`,
@@ -733,35 +731,11 @@ export class PlaywrightMcpSession {
         });
         args.push("--config", this.mcpConfigPath);
 
-        // NB: no --no-sandbox / --user-agent / --viewport-size. Those are
-        // Chromium-only flags (invalid for Firefox), and Camoufox owns the
-        // UA / viewport / fingerprint — a hand-set Chrome UA on Firefox would
-        // itself be a detection tell.
-
-        // Stamped before the process exists so a failure inside connect() can
-        // still sweep the tree.
-        const launchId = randomUUID();
-        this.currentLaunchId = launchId;
-
         const transport = new StdioClientTransport({
           command: "node",
           args,
           stderr: "pipe",
-          // CAMOU_CONFIG_* fingerprint chunks must reach the actual browser
-          // process. The MCP node child inherits them (the transport merges
-          // these over getDefaultEnvironment) and Firefox inherits in turn.
-          // `DISPLAY` is NOT in the transport's default-inherited set, so a
-          // headful launch on a virtual display needs it threaded explicitly
-          // — without it Firefox can't find the X server and headed mode
-          // fails to start. Use this session's `display` (an explicit
-          // per-session display wins over the process-wide env).
-          env: {
-            ...Object.fromEntries(
-              Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
-            ),
-            ...(this.display ? { DISPLAY: this.display } : {}),
-            [BROWSER_LAUNCH_ENV]: launchId,
-          },
+          env,
         });
 
         const client = new Client({
@@ -786,6 +760,7 @@ export class PlaywrightMcpSession {
           MCP_CONNECT_TIMEOUT_MS,
           "MCP client connection timed out",
         );
+        await this.installHeaderRoute(client);
 
         this.mcpClient = client;
         this.mcpTransport = transport;
@@ -1054,223 +1029,16 @@ export class PlaywrightMcpSession {
   }
 }
 
-// Mode-specific descriptions
-const PENTEST_DESCRIPTIONS = {
-  navigate: `Navigate the browser to a URL.
-
-Use this to load pages for XSS testing, form interaction, or authentication flows.
-
-Example use cases:
-- Navigate to login page before testing auth bypass
-- Load a page with reflected parameters for XSS testing
-- Visit a page to capture its current state`,
-
-  screenshot: `Take a screenshot of the current browser page for evidence collection.
-
-Use this to document:
-- Successful XSS execution (alert boxes, DOM changes)
-- Authentication bypass results
-- Error messages revealing sensitive info
-- Any visual proof of vulnerability
-
-Screenshots are saved to the evidence directory with the filename you specify.`,
-
-  click: `Click on an element in the browser.
-
-Use element descriptions or accessibility labels to identify what to click.
-Examples: "Submit button", "Login link", "Close dialog"
-
-Use this for:
-- Submitting forms with payloads
-- Navigating through multi-step flows
-- Triggering JavaScript event handlers`,
-
-  fill: `Fill a form field with a value.
-
-Use this for:
-- Injecting XSS payloads into input fields
-- Testing SQL injection in form inputs
-- Entering credentials for auth testing
-- Filling search boxes with test payloads
-
-The element should be described by its label or placeholder text.
-Examples: "Username field", "Search input", "Email address"`,
-
-  evaluate: `Execute JavaScript in the browser context.
-
-WARNING: This is an intrusive action - scripts will execute in the page context.
-
-Use this for:
-- Validating XSS execution (check if injected script ran)
-- Extracting DOM data (document.cookie, localStorage)
-- Testing for DOM-based vulnerabilities
-- Checking JavaScript variable values
-- Verifying CSP bypass
-
-Examples:
-- "document.cookie" - Extract cookies
-- "localStorage.getItem('token')" - Check for stored tokens
-- "window.xssExecuted" - Check if XSS payload set a marker`,
-
-  console: `Get browser console messages.
-
-Essential for XSS detection:
-- Check for JavaScript errors from injected payloads
-- Detect console.log outputs from XSS execution
-- Identify CSP violations
-- See warnings about blocked content
-
-Look for:
-- Your XSS payload's console output
-- "Content Security Policy" violations
-- JavaScript errors indicating payload parsing`,
-};
-
-const OPERATOR_DESCRIPTIONS = {
-  navigate: `Navigate the browser to a URL to load and render a page.
-
-Use this to load SPAs, JavaScript-heavy pages, or any page that requires full browser rendering.
-The page will be fully loaded and JavaScript executed before returning.`,
-
-  screenshot: `Take a screenshot of the current page for evidence/documentation.
-
-Use this to document:
-- Exposed admin panels or sensitive pages
-- Interesting error pages or debug information
-- Visual proof of discovered vulnerabilities
-- Login pages and authentication flows`,
-
-  click: `Click on an element in the page by describing it.
-
-Use this to:
-- Navigate through multi-step flows
-- Expand collapsed menus or sections
-- Click buttons, links, or interactive elements
-- Submit forms
-
-The element is identified by a natural language description.`,
-
-  fill: `Fill a form field with a value.
-
-Use this to:
-- Enter credentials for authenticated reconnaissance
-- Fill search boxes or input fields
-- Enter test data into forms
-
-The field is identified by a natural language description.`,
-
-  evaluate: `Execute JavaScript in the browser context to extract information.
-
-CRITICAL for SPA reconnaissance - use this to extract:
-- React Router routes: window.__REACT_ROUTER_VERSION__
-- Next.js data: window.__NEXT_DATA__ (reveals all page routes and API endpoints)
-- Vue Router routes: window.__VUE_ROUTER__?.options?.routes
-- API configuration: window.API_URL, window.API_BASE_URL, window.config
-- Application state: window.__REDUX_STATE__, window.__INITIAL_STATE__
-- All links on page: Array.from(document.querySelectorAll('a')).map(a => a.href)
-- Service worker routes: navigator.serviceWorker?.controller
-
-The JavaScript is executed in the page context and the result is returned.`,
-
-  console: `Get console messages from the browser.
-
-Use this to check for:
-- Leaked API keys or secrets in console output
-- Debug messages revealing internal URLs or endpoints
-- Error messages exposing application structure
-- Warnings about deprecated endpoints
-- Network request failures revealing API patterns`,
-};
-
-export type BrowserToolMode = "pentest" | "operator" | "auth";
-
-// Auth mode descriptions - focused on authentication flows
-const AUTH_DESCRIPTIONS = {
-  navigate: `Navigate the browser to a login page or auth endpoint.
-
-Use this to load login forms, OAuth authorization pages, or SPA apps that require browser rendering.
-The page will be fully loaded and JavaScript executed before returning.`,
-
-  screenshot: `Take a screenshot of the current page for evidence of authentication state.
-
-Use this to document:
-- Successful login confirmation
-- Error messages or failed auth attempts
-- Multi-factor authentication prompts`,
-
-  click: `Click on an element in the page by describing it.
-
-Use this to:
-- Submit login forms
-- Click "Sign in" or "Login" buttons
-- Navigate through OAuth consent flows
-- Click "Remember me" checkboxes`,
-
-  fill: `Fill a form field with a value.
-
-Use this to:
-- Enter username/email in login forms
-- Enter password in password fields
-- Fill OTP/verification codes (if provided)`,
-
-  evaluate: `Execute JavaScript in the browser context to extract auth tokens.
-
-CRITICAL for SPA authentication - use this to extract:
-- localStorage tokens: localStorage.getItem('token')
-- sessionStorage tokens: sessionStorage.getItem('access_token')
-- Cookies: document.cookie
-- Application state: window.__INITIAL_STATE__?.auth
-
-Returns the result of the JavaScript execution.`,
-
-  console: `Get console messages from the browser.
-
-Use this to check for:
-- Authentication errors logged to console
-- Token validation messages
-- API response logging`,
-};
-
-/**
- * Create browser automation tools backed by a **dedicated** Playwright MCP
- * session. Every invocation spins up its own MCP child-process / browser so
- * that concurrent agents never share a browser context.
- *
- * @param targetUrl - Base target URL for context in descriptions
- * @param evidenceDir - Directory to save screenshots
- * @param mode - "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows
- * @param logger - Optional logger for error reporting
- * @param abortSignal - Optional abort signal for cleanup
- * @param headless - Override headless mode for this session (defaults to the
- *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
- * @param userAgent - Override User-Agent for this session (defaults to the
- *   value set by {@link setUserAgent}). Passing `null` forces Chromium's
- *   built-in UA (useful if the default anti-bot UA is counter-productive).
- * @param viewportSize - Override viewport size (format `"WIDTH,HEIGHT"`) for
- *   this session (defaults to the value set by {@link setViewportSize}).
- *   Passing `null` forces Chromium's default viewport.
- * @param existingSession - When provided, browser tools reuse this
- *   already-constructed session instead of creating a new MCP child-process
- *   / Chromium instance. Used by sub-agents (e.g. workers spawned via
- *   `spawn_pentest_agent`) to inherit a parent's authenticated browser
- *   context. Headless / userAgent / viewportSize are ignored when an
- *   existing session is passed — those are baked into the session at
- *   construction time. Lifecycle: the caller that originally constructed
- *   the session owns disconnect, so `abortSignal` is NOT wired to disconnect
- *   when reusing a session.
- */
-export function createBrowserTools(
-  targetUrl: string,
+export function createPlaywrightBrowserBackend(
   evidenceDir: string,
-  mode: BrowserToolMode = "pentest",
   logger?: Logger,
   abortSignal?: AbortSignal,
   headless?: boolean,
   userAgent?: string | null,
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
-  extraHttpHeaders?: Record<string, string> | null,
-) {
+  headerPolicy?: BrowserHeaderPolicy,
+): BrowserBackend {
   let session: PlaywrightMcpSession;
 
   if (existingSession) {
@@ -1286,7 +1054,7 @@ export function createBrowserTools(
       headless,
       userAgent,
       viewportSize,
-      extraHttpHeaders,
+      headerPolicy,
     });
 
     if (abortSignal) {
@@ -1300,20 +1068,8 @@ export function createBrowserTools(
     mkdirSync(evidenceDir, { recursive: true });
   }
 
-  const descriptions =
-    mode === "pentest"
-      ? PENTEST_DESCRIPTIONS
-      : mode === "auth"
-        ? AUTH_DESCRIPTIONS
-        : OPERATOR_DESCRIPTIONS;
-
-  const browser_navigate = tool({
-    description: `${descriptions.navigate}\n\nTarget base URL: ${targetUrl}`,
-    inputSchema: BrowserNavigateInput,
-    execute: async ({
-      url,
-      toolCallDescription,
-    }): Promise<BrowserNavigateResult> => {
+  return {
+    navigate: async (url) => {
       try {
         const result = await session.callTool(
           "browser_navigate",
@@ -1331,15 +1087,7 @@ export function createBrowserTools(
         return { success: false, url, error: message };
       }
     },
-  });
-
-  const browser_screenshot = tool({
-    description: descriptions.screenshot,
-    inputSchema: BrowserScreenshotInput,
-    execute: async ({
-      filename,
-      toolCallDescription,
-    }): Promise<BrowserScreenshotResult> => {
+    screenshot: async ({ filename }) => {
       try {
         const result = await session.callTool(
           "browser_take_screenshot",
@@ -1404,23 +1152,7 @@ export function createBrowserTools(
         return { success: false, error: message };
       }
     },
-  });
-
-  const browser_snapshot = tool({
-    description: `Get the accessibility snapshot of the current page.
-
-IMPORTANT: Call this BEFORE using browser_click or browser_fill to get element references (refs).
-The snapshot returns an accessibility tree with elements marked like [ref=e5].
-Use these refs in browser_click and browser_fill for precise element targeting.
-
-Example workflow:
-1. Call browser_snapshot to get the page structure
-2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
-3. Call browser_fill with ref="e3" to fill that specific element`,
-    inputSchema: BrowserSnapshotInput,
-    execute: async ({
-      toolCallDescription,
-    }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
+    snapshot: async () => {
       try {
         const result = await session.callTool(
           "browser_snapshot",
@@ -1440,18 +1172,7 @@ Example workflow:
         return { success: false, error: message };
       }
     },
-  });
-
-  const browser_click = tool({
-    description:
-      descriptions.click +
-      `\n\nIMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
-    inputSchema: BrowserClickInput,
-    execute: async ({
-      element,
-      ref,
-      toolCallDescription,
-    }): Promise<BrowserClickResult> => {
+    click: async ({ element, ref }) => {
       try {
         const args: Record<string, unknown> = { element };
         if (ref) {
@@ -1469,19 +1190,7 @@ Example workflow:
         return { success: false, error: message };
       }
     },
-  });
-
-  const browser_fill = tool({
-    description:
-      descriptions.fill +
-      `\n\nIMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
-    inputSchema: BrowserFillInput,
-    execute: async ({
-      element,
-      ref,
-      value,
-      toolCallDescription,
-    }): Promise<BrowserFillResult> => {
+    fill: async ({ element, ref, value }) => {
       try {
         // Note: Playwright MCP uses "browser_type" for filling fields
         const args: Record<string, unknown> = { element, text: value };
@@ -1500,15 +1209,7 @@ Example workflow:
         return { success: false, error: message };
       }
     },
-  });
-
-  const browser_evaluate = tool({
-    description: descriptions.evaluate,
-    inputSchema: BrowserEvaluateInput,
-    execute: async ({
-      script,
-      toolCallDescription,
-    }): Promise<BrowserEvaluateResult> => {
+    evaluate: async ({ script }) => {
       try {
         const fnScript = transformScriptToFunction(script);
 
@@ -1524,12 +1225,7 @@ Example workflow:
         return { success: false, error: message };
       }
     },
-  });
-
-  const browser_console = tool({
-    description: descriptions.console,
-    inputSchema: BrowserConsoleInput,
-    execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
+    console: async () => {
       try {
         const result = await session.callTool(
           "browser_console_messages",
@@ -1556,36 +1252,7 @@ Example workflow:
         return { success: false, error: message };
       }
     },
-  });
-
-  const browser_get_cookies = tool({
-    description: `Extract cookies from the browser context, including httpOnly cookies.
-
-CRITICAL: Use this after successful browser authentication to get session cookies that can be used in HTTP requests.
-
-Returns all cookies including:
-- Session cookies (often httpOnly, not accessible via document.cookie)
-- Authentication tokens
-- CSRF tokens
-
-The returned cookies can be formatted as a Cookie header for use with http_request tool.`,
-    inputSchema: BrowserGetCookiesInput,
-    execute: async ({
-      urls,
-      toolCallDescription,
-    }): Promise<{
-      success: boolean;
-      cookies?: Array<{
-        name: string;
-        value: string;
-        domain: string;
-        path: string;
-        httpOnly: boolean;
-        secure: boolean;
-      }>;
-      cookieHeader?: string;
-      error?: string;
-    }> => {
+    getCookies: async ({ urls } = {}) => {
       try {
         // Playwright MCP doesn't expose a dedicated cookie tool, so we use
         // browser_run_code to call the Playwright context API directly.
@@ -1658,16 +1325,102 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
         return { success: false, error: message };
       }
     },
-  });
+  };
+}
 
+/**
+ * Create browser automation tools backed by a **dedicated** Playwright MCP
+ * session. Every invocation spins up its own MCP child-process / browser so
+ * that concurrent agents never share a browser context.
+ *
+ * @param targetUrl - Base target URL for context in descriptions
+ * @param evidenceDir - Directory to save screenshots
+ * @param mode - "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows
+ * @param logger - Optional logger for error reporting
+ * @param abortSignal - Optional abort signal for cleanup
+ * @param headless - Override headless mode for this session (defaults to the
+ *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
+ * @param userAgent - Override User-Agent for this session (defaults to the
+ *   value set by {@link setUserAgent}). Passing `null` forces Chromium's
+ *   built-in UA (useful if the default anti-bot UA is counter-productive).
+ * @param viewportSize - Override viewport size (format `"WIDTH,HEIGHT"`) for
+ *   this session (defaults to the value set by {@link setViewportSize}).
+ *   Passing `null` forces Chromium's default viewport.
+ * @param existingSession - When provided, browser tools reuse this
+ *   already-constructed session instead of creating a new MCP child-process
+ *   / Chromium instance. Used by sub-agents (e.g. workers spawned via
+ *   `spawn_pentest_agent`) to inherit a parent's authenticated browser
+ *   context. Headless / userAgent / viewportSize are ignored when an
+ *   existing session is passed — those are baked into the session at
+ *   construction time. Lifecycle: the caller that originally constructed
+ *   the session owns disconnect, so `abortSignal` is NOT wired to disconnect
+ *   when reusing a session.
+ */
+/**
+ * Lazy per-member browser tool factories. Shared state (the MCP session,
+ * evidence dir, mode descriptions) is built once per call; each member's
+ * tool object is constructed only when its factory is invoked, so a
+ * selection of one member never allocates sibling tool schemas.
+ */
+export function createBrowserToolFactories(
+  targetUrl: string,
+  evidenceDir: string,
+  mode: BrowserToolMode = "pentest",
+  logger?: Logger,
+  abortSignal?: AbortSignal,
+  headless?: boolean,
+  userAgent?: string | null,
+  viewportSize?: string | null,
+  existingSession?: PlaywrightMcpSession,
+  headerPolicy?: BrowserHeaderPolicy,
+) {
+  return createBackendBrowserToolFactories(
+    createPlaywrightBrowserBackend(
+      evidenceDir,
+      logger,
+      abortSignal,
+      headless,
+      userAgent,
+      viewportSize,
+      existingSession,
+      headerPolicy,
+    ),
+    { targetUrl, mode },
+  );
+}
+
+export function createBrowserTools(
+  targetUrl: string,
+  evidenceDir: string,
+  mode: BrowserToolMode = "pentest",
+  logger?: Logger,
+  abortSignal?: AbortSignal,
+  headless?: boolean,
+  userAgent?: string | null,
+  viewportSize?: string | null,
+  existingSession?: PlaywrightMcpSession,
+  headerPolicy?: BrowserHeaderPolicy,
+) {
+  const factories = createBrowserToolFactories(
+    targetUrl,
+    evidenceDir,
+    mode,
+    logger,
+    abortSignal,
+    headless,
+    userAgent,
+    viewportSize,
+    existingSession,
+    headerPolicy,
+  );
   return {
-    browser_navigate,
-    browser_snapshot,
-    browser_screenshot,
-    browser_click,
-    browser_fill,
-    browser_evaluate,
-    browser_console,
-    browser_get_cookies,
+    browser_navigate: factories.browser_navigate(),
+    browser_snapshot: factories.browser_snapshot(),
+    browser_screenshot: factories.browser_screenshot(),
+    browser_click: factories.browser_click(),
+    browser_fill: factories.browser_fill(),
+    browser_evaluate: factories.browser_evaluate(),
+    browser_console: factories.browser_console(),
+    browser_get_cookies: factories.browser_get_cookies(),
   };
 }

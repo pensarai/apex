@@ -15,6 +15,7 @@ export type {
   WhiteboxAttackSurfaceResult,
 } from "./types";
 export {
+  AppInfoSchema,
   AppsDiscoveryResultSchema,
   DiscoverySummarySchema,
   EndpointSchema,

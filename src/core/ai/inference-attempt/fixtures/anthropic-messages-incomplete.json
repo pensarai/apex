@@ -1,0 +1,16 @@
+{
+  "transport": "anthropic-messages",
+  "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 50
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": null,
+      "uncachedInput": 1000,
+      "cacheRead": null,
+      "cacheWrite": null,
+      "output": 50
+    }
+  }
+}

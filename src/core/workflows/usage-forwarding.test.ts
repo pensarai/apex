@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     groupByRootCause: vi.fn(async () => {}),
     getFindings: vi.fn(() => []),
   },
+  registryOptions: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("../agents/specialized/pentest/agent", () => ({
@@ -38,6 +39,8 @@ vi.mock("../agents/specialized/pentest/agent", () => ({
 
 vi.mock("../agents/offSecAgent", () => ({
   PLAN_MODE_TOOL_NAMES: [],
+  defineAgent: (def: unknown) => def,
+  AgentRuntime: class {},
   OffensiveSecurityAgent: class {
     constructor(private readonly input: Record<string, unknown>) {
       mocks.fastStrikeInputs.push(input);
@@ -59,12 +62,30 @@ vi.mock("../agents/offSecAgent", () => ({
 
 vi.mock("../findings/registry", () => ({
   FindingsRegistry: {
-    fromDirectory: () => mocks.registry,
+    fromDirectory: (_path: string, options: Record<string, unknown>) => {
+      mocks.registryOptions.push(options);
+      return mocks.registry;
+    },
   },
 }));
 
+vi.mock("../session/loader", () => ({
+  loadAttackSurfaceResults: () => ({
+    targets: [
+      {
+        target: "https://example.com/api",
+        objective: "Test the target",
+      },
+    ],
+  }),
+}));
+
 import { runFastStrike } from "./fastStrike";
-import { type PentestWorkflowInput, runPentestSwarm } from "./pentest";
+import {
+  type PentestWorkflowInput,
+  runPentestSwarm,
+  runPentestWorkflow,
+} from "./pentest";
 
 let rootPath: string;
 let session: SessionInfo;
@@ -87,6 +108,7 @@ beforeEach(() => {
 afterEach(() => {
   mocks.targetedInputs.length = 0;
   mocks.fastStrikeInputs.length = 0;
+  mocks.registryOptions.length = 0;
   vi.clearAllMocks();
   rmSync(rootPath, { recursive: true, force: true });
 });
@@ -117,6 +139,35 @@ describe("pentest usage callback forwarding", () => {
     );
   });
 
+  it("forwards durable AI hooks through the pentest swarm", async () => {
+    const languageModelMiddleware = {
+      __sentinel: "mw",
+    } as unknown as PentestWorkflowInput["languageModelMiddleware"];
+    const usageRecorder = {
+      __sentinel: "usage",
+    } as unknown as PentestWorkflowInput["usageRecorder"];
+    const streamIdFactory = (() =>
+      "sid") as unknown as PentestWorkflowInput["streamIdFactory"];
+
+    await runPentestSwarm({
+      targets: [
+        { target: "https://example.com", objectives: ["Test the target"] },
+      ],
+      model: {} as PentestWorkflowInput["model"],
+      session,
+      findingsRegistry: mocks.registry as never,
+      languageModelMiddleware,
+      usageRecorder,
+      streamIdFactory,
+    });
+
+    expect(mocks.targetedInputs[0]?.languageModelMiddleware).toBe(
+      languageModelMiddleware,
+    );
+    expect(mocks.targetedInputs[0]?.usageRecorder).toBe(usageRecorder);
+    expect(mocks.targetedInputs[0]?.streamIdFactory).toBe(streamIdFactory);
+  });
+
   it("forwards step and cache usage through fast strike", async () => {
     const onStepFinish = vi.fn();
     const onCacheMetrics = vi.fn();
@@ -134,5 +185,19 @@ describe("pentest usage callback forwarding", () => {
       cacheReadInputTokens: 8,
       cacheCreationInputTokens: 2,
     });
+  });
+});
+
+describe("pentest findings session attribution", () => {
+  it("attributes the workflow registry to the root session", async () => {
+    await runPentestWorkflow({
+      target: "https://example.com",
+      model: {} as PentestWorkflowInput["model"],
+      session,
+    });
+
+    expect(mocks.registryOptions).toContainEqual(
+      expect.objectContaining({ sessionId: session.id }),
+    );
   });
 });

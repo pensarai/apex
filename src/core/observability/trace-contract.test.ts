@@ -5,15 +5,17 @@
 // registered per test; the provider model is a deterministic mock so no API
 // keys are needed and spans are reproducible.
 
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
-import { SpanStatusCode } from "@opentelemetry/api";
+import { APICallError, type LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { simulateReadableStream, stepCountIs } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 // getProviderModel is patched so the mock model serves the provider call —
-// no provider keys, deterministic protocol parts.
+// no provider keys, deterministic protocol parts. Production wraps the
+// resolved model with the passive diagnostics wrapper at its call sites, so
+// the mock returns the bare model.
 const mockState: { model: MockLanguageModelV3 | null } = { model: null };
 vi.mock("../ai/utils", async () => {
   const actual =
@@ -30,10 +32,13 @@ vi.mock("../ai/utils", async () => {
 import type { OtelTestHarness } from "./testkit";
 
 // Imported AFTER vi.mock so streamResponse's closure picks up the stub.
-const { streamResponse } = await import("../ai");
-const { getApexTracer, withSubagentSessionBaggage } = await import(
-  "../observability"
-);
+const { generateObjectResponse, streamResponse } = await import("../ai");
+const {
+  createGenerationSpanTracker,
+  getApexTracer,
+  withModelCallDiagnostics,
+  withSubagentSessionBaggage,
+} = await import("../observability");
 const { parentOf, requireSpan, spansNamed, startOtelTestHarness } =
   await import("./testkit");
 
@@ -42,6 +47,7 @@ const { parentOf, requireSpan, spansNamed, startOtelTestHarness } =
 // ---------------------------------------------------------------------------
 
 const MODEL = "claude-haiku-4-5";
+const ROOT_SESSION_ID = "ses_root";
 
 const NESTED_USAGE = {
   inputTokens: { total: 1000, noCache: 100, cacheRead: 900, cacheWrite: 0 },
@@ -136,6 +142,23 @@ function probeTool() {
   };
 }
 
+/** A helper-path (generateText) model that returns one JSON object. */
+function objectResultModel(): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    provider: "mock-anthropic",
+    modelId: MODEL,
+    doGenerate: async () => ({
+      content: [{ type: "text", text: '{"answer": 42}' }],
+      finishReason: { unified: "stop", raw: "stop" },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 5, text: 5, reasoning: undefined },
+      },
+      warnings: [],
+    }),
+  });
+}
+
 async function drain(stream: { fullStream: AsyncIterable<unknown> }) {
   for await (const _part of stream.fullStream) {
     // drain
@@ -158,7 +181,12 @@ async function subagentInvoke(
       {
         attributes: {
           "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.id": subagentId,
           "gen_ai.agent.name": label,
+          "gen_ai.conversation.id": ROOT_SESSION_ID,
+          "session.id": ROOT_SESSION_ID,
+          "pensar.session.id": subagentId,
+          "pensar.root_session.id": ROOT_SESSION_ID,
         },
       },
       async (span) => {
@@ -289,13 +317,17 @@ describe("existing trace contract: model spans", () => {
         name,
       ).toBe(true);
     }
+    // The wrapper decorates the provider span with the genuinely known type
+    // name; a plain Error carries no numeric status, so none is invented.
+    const doStream = requireSpan(spans, "ai.streamText.doStream");
+    expect(doStream.attributes["error.type"]).toBe("Error");
+    expect(doStream.attributes["http.response.status_code"]).toBeUndefined();
   });
 
-  it("an in-stream error part currently leaks the root span (known limitation)", async () => {
-    // Contract finding: when the model emits an error PART (instead of
-    // throwing), the ai.streamText root span (endWhenDone: false) is never
-    // ended — no spans export. Pinned as-is; Stack D's O3 root-run spans
-    // own their end() on every path instead.
+  it("an in-stream error part exports a complete tree with error status", async () => {
+    // The wrapper drains the post-error tail (the SDK's terminal lifecycle
+    // only runs when the stream completes), awaits the terminal response,
+    // and marks the root generation span failed before propagating.
     mockState.model = new MockLanguageModelV3({
       provider: "mock-anthropic",
       modelId: MODEL,
@@ -309,12 +341,387 @@ describe("existing trace contract: model spans", () => {
       }),
     });
 
+    // The original provider error is preserved.
     await expect(
       drain(streamResponse({ prompt: "hi", model: MODEL, silent: true })),
     ).rejects.toThrow("model exploded");
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(otel.getFinishedSpans()).toHaveLength(0);
+    // Both generation spans export — deterministic, no sleeps — with the
+    // root marked error (the provider-call span completes normally in the
+    // SDK and stays unset).
+    const spans = otel.getFinishedSpans();
+    const streamText = requireSpan(spans, "ai.streamText");
+    const doStream = requireSpan(spans, "ai.streamText.doStream");
+    expect(streamText.status.code).toBe(SpanStatusCode.ERROR);
+    expect(
+      streamText.events.some(
+        (e) =>
+          e.name === "exception" &&
+          (e.attributes?.["exception.message"] as string) === "model exploded",
+      ),
+    ).toBe(true);
+    expect(doStream.spanContext().traceId).toBe(
+      streamText.spanContext().traceId,
+    );
+  });
+
+  it("preserves an in-stream error when its tail drain times out", async () => {
+    vi.useFakeTimers();
+    const providerError = new Error("model exploded before stalled tail");
+    let calls = 0;
+    let tailWaitStartedResolve!: () => void;
+    const tailWaitStarted = new Promise<void>((resolve) => {
+      tailWaitStartedResolve = resolve;
+    });
+
+    try {
+      mockState.model = new MockLanguageModelV3({
+        provider: "mock-anthropic",
+        modelId: MODEL,
+        doStream: async () => {
+          calls += 1;
+          if (calls > 1) {
+            return {
+              stream: simulateReadableStream({
+                chunks:
+                  textStepChunks() as unknown as Array<LanguageModelV3StreamPart>,
+              }),
+            };
+          }
+
+          let emittedError = false;
+          return {
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              pull(controller) {
+                if (!emittedError) {
+                  emittedError = true;
+                  controller.enqueue({ type: "stream-start", warnings: [] });
+                  controller.enqueue({ type: "error", error: providerError });
+                  return;
+                }
+                tailWaitStartedResolve();
+                return new Promise<void>(() => {});
+              },
+            }),
+          };
+        },
+      });
+
+      const consumption = drain(
+        streamResponse({
+          prompt: "hi",
+          messages: [{ role: "user", content: "hi" }],
+          model: MODEL,
+          silent: true,
+        }),
+      );
+      const rejection = expect(consumption).rejects.toBe(providerError);
+
+      await tailWaitStarted;
+      await vi.advanceTimersByTimeAsync(300_000);
+      await rejection;
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("records details for non-Error provider failures", () => {
+    const tracker = createGenerationSpanTracker();
+    tracker.tracer.startActiveSpan("ai.streamText", (span) => {
+      tracker.markFailed({
+        name: "BedrockServiceError",
+        message: "throttled",
+      });
+      span.end();
+    });
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: '{"name":"BedrockServiceError","message":"throttled"}',
+    });
+    expect(
+      span.events.some(
+        (event) =>
+          event.name === "exception" &&
+          event.attributes?.["exception.message"] ===
+            '{"name":"BedrockServiceError","message":"throttled"}',
+      ),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper generateText path (structured generate, summarize, tool repair)
+// ---------------------------------------------------------------------------
+
+describe("existing trace contract: helper generateText path", () => {
+  it("structured helper calls emit a correlated wrapper/provider span pair", async () => {
+    mockState.model = objectResultModel();
+
+    const result = await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ answer: z.number() }),
+      prompt: "hi",
+    });
+
+    expect(result).toEqual({ answer: 42 });
+    const spans = otel.getFinishedSpans();
+    const wrapper = requireSpan(spans, "ai.generateText");
+    const provider = requireSpan(spans, "ai.generateText.doGenerate");
+    // Same correlation contract as the streaming path: the provider call is
+    // a child of the operation span, one trace, model attribution preserved.
+    expect(parentOf(spans, provider)?.spanContext().spanId).toBe(
+      wrapper.spanContext().spanId,
+    );
+    expect(provider.spanContext().traceId).toBe(wrapper.spanContext().traceId);
+    expect(provider.attributes["gen_ai.request.model"]).toBe(MODEL);
+    expect(provider.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.structured.generate",
+    );
+    expect(provider.attributes["gen_ai.usage.input_tokens"]).toBe(10);
+    expect(wrapper.status.code).not.toBe(SpanStatusCode.ERROR);
+  });
+
+  it("a rejected helper call marks both spans failed without inventing usage or status facts", async () => {
+    // The production rejection shape: the provider call throws an APICallError
+    // whose numeric status is known only to the thrown error object.
+    const rejection = new APICallError({
+      message: "Request rejected: invalid request",
+      url: "https://api.example.com/v1/responses",
+      requestBodyValues: {},
+      statusCode: 400,
+      isRetryable: false,
+    });
+    let calls = 0;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        throw rejection;
+      },
+    });
+
+    const thrown = await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ answer: z.number() }),
+      prompt: "hi",
+    }).catch((error: unknown) => error);
+
+    // Passive diagnostics: the original error identity and the single
+    // physical provider call are preserved.
+    expect(thrown).toBe(rejection);
+    expect(calls).toBe(1);
+
+    const spans = otel.getFinishedSpans();
+    for (const name of ["ai.generateText", "ai.generateText.doGenerate"]) {
+      const span = requireSpan(spans, name);
+      expect(span.status.code, name).toBe(SpanStatusCode.ERROR);
+      expect(
+        span.events.some(
+          (event) =>
+            event.name === "exception" &&
+            event.attributes?.["exception.type"] === "AI_APICallError",
+        ),
+        name,
+      ).toBe(true);
+    }
+
+    const provider = requireSpan(spans, "ai.generateText.doGenerate");
+    // A rejected request never generated: usage stays absent, not zero.
+    expect(provider.attributes["gen_ai.usage.input_tokens"]).toBeUndefined();
+    expect(provider.attributes["ai.usage.inputTokens"]).toBeUndefined();
+    // Known failure facts reach the provider span as bounded attributes:
+    // the recognized error type and the numeric status the error carries.
+    expect(provider.attributes["error.type"]).toBe("AI_APICallError");
+    expect(provider.attributes["http.response.status_code"]).toBe(400);
+    // Only those bounded facts — no message or body text is copied.
+    expect(provider.attributes["error.message"]).toBeUndefined();
+    // Decoration lands on the provider span, not the enclosing wrapper; the
+    // wrapper still carries the SDK's exception event.
+    const wrapper = requireSpan(spans, "ai.generateText");
+    expect(wrapper.attributes["error.type"]).toBeUndefined();
+    expect(wrapper.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it.each([
+    99,
+    600,
+    400.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])("invalid HTTP status %s is not recorded", async (statusCode) => {
+    const rejection = new APICallError({
+      message: "Request rejected",
+      url: "https://api.example.com/v1/responses",
+      requestBodyValues: {},
+      statusCode,
+      isRetryable: false,
+    });
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        throw rejection;
+      },
+    });
+
+    await expect(
+      generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }),
+    ).rejects.toBe(rejection);
+
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(provider.attributes["error.type"]).toBe("AI_APICallError");
+    expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it.each([
+    "",
+    "Error private-sentinel",
+    "Error\nprivate-sentinel",
+    "E".repeat(65),
+  ])("does not project invalid error name %j", async (name) => {
+    const rejection = new Error("synthetic provider failure");
+    rejection.name = name;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        throw rejection;
+      },
+    });
+
+    await expect(
+      generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }),
+    ).rejects.toBe(rejection);
+
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(provider.status.code).toBe(SpanStatusCode.ERROR);
+    expect(provider.attributes["error.type"]).toBeUndefined();
+    expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it("a throwing telemetry hook never replaces the original provider error", async () => {
+    // Decoration is best-effort: if the telemetry backend explodes while the
+    // failure is being recorded, the provider's own error must still surface.
+    const hostileSpan = {
+      isRecording: () => true,
+      setAttribute: () => {
+        throw new Error("telemetry backend exploded");
+      },
+    };
+    const originalActiveSpan = trace.getActiveSpan;
+    trace.getActiveSpan = () => hostileSpan as never;
+    const rejection = new APICallError({
+      message: "Request rejected: invalid request",
+      url: "https://api.example.com/v1/responses",
+      requestBodyValues: {},
+      statusCode: 400,
+      isRetryable: false,
+    });
+    let calls = 0;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        throw rejection;
+      },
+    });
+    try {
+      const thrown = await generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }).catch((error: unknown) => error);
+      expect(thrown).toBe(rejection);
+      expect(calls).toBe(1);
+    } finally {
+      trace.getActiveSpan = originalActiveSpan;
+    }
+  });
+
+  it("a non-Error provider failure stays unattributed — unknown remains unknown", async () => {
+    let calls = 0;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        throw "opaque provider failure";
+      },
+    });
+
+    const thrown = await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ answer: z.number() }),
+      prompt: "hi",
+    }).catch((error: unknown) => error);
+
+    expect(thrown).toBe("opaque provider failure");
+    expect(calls).toBe(1);
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    // The SDK still records the failure itself; the wrapper adds nothing it
+    // cannot genuinely know.
+    expect(provider.status.code).toBe(SpanStatusCode.ERROR);
+    expect(provider.attributes["error.type"]).toBeUndefined();
+    expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it("the diagnostic wrapper is inert outside an active span", async () => {
+    // No startActiveSpan here: there is no active span, so decoration is a
+    // no-op and the pass-through behavior is all that remains.
+    const rejection = new Error("no active span");
+    let calls = 0;
+    const inner = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            content: [{ type: "text", text: '{"answer": 42}' }],
+            finishReason: { unified: "stop", raw: "stop" },
+            usage: {
+              inputTokens: {
+                total: 10,
+                noCache: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 5, text: 5, reasoning: undefined },
+            },
+            warnings: [],
+          };
+        }
+        throw rejection;
+      },
+    });
+    const wrapped = withModelCallDiagnostics(inner);
+
+    const result = await wrapped.doGenerate({} as never);
+    expect(result.content).toEqual([{ type: "text", text: '{"answer": 42}' }]);
+    await expect(wrapped.doGenerate({} as never)).rejects.toBe(rejection);
+    expect(calls).toBe(2);
   });
 });
 
@@ -334,6 +741,35 @@ describe("existing trace contract: payload policy", () => {
     const streamText = requireSpan(otel.getFinishedSpans(), "ai.streamText");
     expect(streamText.attributes["ai.prompt"]).toBeUndefined();
     expect(streamText.attributes["ai.response.text"]).toBeUndefined();
+  });
+
+  it.each([
+    false,
+    true,
+  ])("helper payload capture follows AI_TRACE_RECORD_PAYLOADS=%s", async (enabled) => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = String(enabled);
+    mockState.model = objectResultModel();
+
+    await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ answer: z.number() }),
+      prompt: "secret prompt",
+    });
+
+    const spans = otel.getFinishedSpans();
+    const provider = requireSpan(spans, "ai.generateText.doGenerate");
+    if (enabled) {
+      expect(provider.attributes["ai.prompt.messages"]).toContain(
+        "secret prompt",
+      );
+      expect(provider.attributes["ai.response.text"]).toBe('{"answer": 42}');
+    } else {
+      expect(provider.attributes["ai.prompt.messages"]).toBeUndefined();
+      expect(provider.attributes["ai.response.text"]).toBeUndefined();
+      const wrapper = requireSpan(spans, "ai.generateText");
+      expect(wrapper.attributes["ai.prompt"]).toBeUndefined();
+      expect(wrapper.attributes["ai.response.text"]).toBeUndefined();
+    }
   });
 
   it("AI_TRACE_RECORD_PAYLOADS=true includes prompts, responses, reasoning, tool arguments, and tool results", async () => {
@@ -468,10 +904,12 @@ describe("root agent-run tree", () => {
     // Root span with the agent's production attribute shape.
     const rootAttributes = {
       "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.id": ROOT_SESSION_ID,
       "gen_ai.agent.name": "default",
-      "gen_ai.conversation.id": "ses_root",
-      "pensar.session.id": "ses_root",
-      "pensar.run.id": "run_test123",
+      "gen_ai.conversation.id": ROOT_SESSION_ID,
+      "session.id": ROOT_SESSION_ID,
+      "pensar.session.id": ROOT_SESSION_ID,
+      "pensar.root_session.id": ROOT_SESSION_ID,
       "pensar.agent.mode": "default",
     };
 
@@ -518,9 +956,21 @@ describe("root agent-run tree", () => {
     expect(parentOf(spans, subInvoke)?.spanContext().spanId).toBe(
       toolSpan.spanContext().spanId,
     );
-    // Root attributes survive.
-    expect(root.attributes["pensar.run.id"]).toBe("run_test123");
+    // Root and current-agent identity survive without redundant run ids.
+    expect(root.attributes["gen_ai.agent.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["gen_ai.conversation.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["pensar.session.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["pensar.root_session.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["pensar.run.id"]).toBeUndefined();
     expect(root.attributes["pensar.agent.mode"]).toBe("default");
+    expect(subInvoke.attributes["gen_ai.agent.id"]).toBe("ses_tree_sub");
+    expect(subInvoke.attributes["gen_ai.conversation.id"]).toBe(
+      ROOT_SESSION_ID,
+    );
+    expect(subInvoke.attributes["pensar.session.id"]).toBe("ses_tree_sub");
+    expect(subInvoke.attributes["pensar.root_session.id"]).toBe(
+      ROOT_SESSION_ID,
+    );
   });
 
   it("concurrent subagents under one root keep their own parents and trace", async () => {
@@ -531,10 +981,12 @@ describe("root agent-run tree", () => {
       {
         attributes: {
           "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.id": ROOT_SESSION_ID,
           "gen_ai.agent.name": "default",
-          "gen_ai.conversation.id": "ses_root",
-          "pensar.session.id": "ses_root",
-          "pensar.run.id": "run_conc",
+          "gen_ai.conversation.id": ROOT_SESSION_ID,
+          "session.id": ROOT_SESSION_ID,
+          "pensar.session.id": ROOT_SESSION_ID,
+          "pensar.root_session.id": ROOT_SESSION_ID,
           "pensar.agent.mode": "default",
         },
       },

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SpecializedAgentInput, UnifiedSandbox } from "../../offSecAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
 
 /**
  * Structured result returned by the environment agent via the `response` tool.
@@ -45,13 +45,4 @@ export interface EnvironmentAgentInput extends SpecializedAgentInput {
 
   /** Optional dev environment configuration hints */
   config?: DevEnvironmentConfig;
-
-  /**
-   * Optional pre-configured sandbox for isolated code execution.
-   *
-   * When provided, tools like `execute_command`, `create_file`, and
-   * `update_file` automatically route operations through the sandbox
-   * instead of the local filesystem.
-   */
-  sandbox?: UnifiedSandbox;
 }

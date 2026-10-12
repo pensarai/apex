@@ -1,3 +1,4 @@
+import { useRenderer } from "@opentui/react";
 import {
   createContext,
   type ReactNode,
@@ -6,12 +7,12 @@ import {
   useRef,
 } from "react";
 import type { PromptInputRef } from "../components/shared";
+import { shouldRefocusPrompt } from "./focus-ownership";
 
 interface FocusContextType {
   promptRef: React.MutableRefObject<PromptInputRef | null>;
-  // Existing
   refocusPrompt: () => void;
-  // Ref control methods
+  refocusPromptIfNoActiveEditor: () => void;
   focusPrompt: () => void;
   blurPrompt: () => void;
   resetPrompt: () => void;
@@ -24,12 +25,23 @@ const FocusContext = createContext<FocusContextType | undefined>(undefined);
 
 export function FocusProvider({ children }: { children: ReactNode }) {
   const promptRef = useRef<PromptInputRef | null>(null);
+  const renderer = useRenderer();
 
   const refocusPrompt = useCallback(() => {
     setTimeout(() => {
       promptRef.current?.focus();
     }, 1);
   }, []);
+
+  const refocusPromptIfNoActiveEditor = useCallback(() => {
+    setTimeout(() => {
+      const prompt = promptRef.current?.getTextareaRef() ?? null;
+      if (!shouldRefocusPrompt(renderer.currentFocusedEditor, prompt)) {
+        return;
+      }
+      promptRef.current?.focus();
+    }, 1);
+  }, [renderer]);
 
   const focusPrompt = useCallback(() => promptRef.current?.focus(), []);
   const blurPrompt = useCallback(() => promptRef.current?.blur(), []);
@@ -51,6 +63,7 @@ export function FocusProvider({ children }: { children: ReactNode }) {
       value={{
         promptRef,
         refocusPrompt,
+        refocusPromptIfNoActiveEditor,
         focusPrompt,
         blurPrompt,
         resetPrompt,

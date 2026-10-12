@@ -84,7 +84,8 @@ pensar issues update <issueId> [options]
 | Option                      | Description                                                             |
 | --------------------------- | ----------------------------------------------------------------------- |
 | `--status <status>`         | New status                                                              |
-| `--disposition <value>`     | Why the issue is closed: `resolved`, `wont-fix`, `out-of-scope`, `risk-accepted` |
+| `--disposition <value>`     | Why the issue is closed: `resolved`, `duplicate`, `wont-fix`, `out-of-scope`, `risk-accepted` |
+| `--duplicate-of <issueId>`  | The issue this one duplicates, by UUID or label. Required with `--disposition duplicate`, rejected with any other |
 | `--closed-reason <reason>`  | Reason for closing                                                      |
 | `--closed-comments <text>`  | Additional comments when closing                                        |
 | `--false-positive`          | Flag the issue as a false positive                                      |
@@ -92,7 +93,12 @@ pensar issues update <issueId> [options]
 
 `--disposition` records *why* an issue is closed as a structured value, so it can
 be filtered and counted. Without it a close reads as a plain resolution whatever
-the reason was. The four values above are the full accepted set.
+the reason was. The five values above are the full accepted set.
+
+A `duplicate` close links to the original issue, which must be in the same
+workspace, must not be the issue itself, and must not itself be closed as a
+duplicate. Issue responses carry the link as `duplicateOf`, the original's UUID
+(`null` otherwise).
 
 ### Retest an Issue
 
@@ -189,6 +195,9 @@ pensar issues get VULN-000123
 
 # Close an issue with a reason
 pensar issues update VULN-000123 --status closed --disposition resolved --closed-reason "Patched in v2.1"
+
+# Close an issue as a duplicate of another
+pensar issues update VULN-000124 --status closed --disposition duplicate --duplicate-of VULN-000123
 
 # Flag as false positive
 pensar issues update VULN-000123 --false-positive --fp-reason "Test environment only"

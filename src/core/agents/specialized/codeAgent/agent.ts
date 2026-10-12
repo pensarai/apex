@@ -1,10 +1,33 @@
 import { stepCountIs } from "ai";
 import type { z } from "zod";
-import {
-  OffensiveSecurityAgent,
-  type SpecializedAgentInput,
-} from "../../offSecAgent";
+import { AgentRuntime } from "../../agentRuntime";
+import { type AgentDefinition, defineAgent } from "../../defineAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
+
+const CODE_AGENT_TOOLS: string[] = [
+  "read_file",
+  "list_files",
+  "grep",
+  "execute_command",
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "run_whitebox_scan",
+  "create_whitebox_candidate",
+  "update_whitebox_candidate",
+  "list_whitebox_candidates",
+  "start_whitebox_job",
+  "poll_whitebox_job",
+  "stop_whitebox_job",
+  "read_whitebox_artifact",
+  "http_request",
+  "document_app",
+  "document_endpoint",
+  // Web search tools — research vulnerable library versions, look up API docs
+  "web_search",
+  "get_page",
+];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,84 +84,37 @@ export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
  * });
  * ```
  */
-export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
+export function codeAgentDefinition<TResult = void>(): AgentDefinition<
+  CodeAgentInput<TResult>,
+  TResult
+> {
+  return defineAgent<CodeAgentInput<TResult>, TResult>({
+    name: "code-agent",
+    role: "worker",
+    system: (opts) => opts.system ?? CODE_AGENT_SYSTEM_PROMPT,
+    activeTools: (opts) => {
+      let activeTools = [...CODE_AGENT_TOOLS];
+      if (opts.excludeTools?.length) {
+        const excluded = new Set(opts.excludeTools);
+        activeTools = activeTools.filter((t) => !excluded.has(t));
+      }
+      if (opts.responseSchema) {
+        activeTools.push("response");
+      }
+      return activeTools;
+    },
+    responseSchema: (opts) => opts.responseSchema,
+    stopWhen: (opts) => opts.stopWhen ?? stepCountIs(10000),
+    prompt: (opts) => buildPrompt(opts.codebasePath, opts.objective),
+  });
+}
+
+export class CodeAgent<TResult = void> extends AgentRuntime<
+  CodeAgentInput<TResult>,
+  TResult
+> {
   constructor(opts: CodeAgentInput<TResult>) {
-    const {
-      model,
-      codebasePath,
-      objective,
-      session,
-      authConfig,
-      onStepFinish,
-      onCacheMetrics,
-      abortSignal,
-      eventBus,
-      subagentId,
-      stopWhen,
-      responseSchema,
-      system,
-      attackSurfaceRegistry,
-      excludeTools,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      projectThreatModel,
-    } = opts;
-
-    let activeTools: string[] = [
-      "read_file",
-      "list_files",
-      "grep",
-      "execute_command",
-      "profile_codebase",
-      "query_whitebox_catalog",
-      "run_code_query",
-      "run_whitebox_scan",
-      "create_whitebox_candidate",
-      "update_whitebox_candidate",
-      "list_whitebox_candidates",
-      "start_whitebox_job",
-      "poll_whitebox_job",
-      "stop_whitebox_job",
-      "read_whitebox_artifact",
-      "http_request",
-      "document_app",
-      "document_endpoint",
-      // Web search tools — research vulnerable library versions, look up API docs
-      "web_search",
-      "get_page",
-    ];
-
-    if (excludeTools?.length) {
-      const excluded = new Set(excludeTools);
-      activeTools = activeTools.filter((t) => !excluded.has(t));
-    }
-
-    if (responseSchema) {
-      activeTools.push("response");
-    }
-
-    super({
-      system: system ?? CODE_AGENT_SYSTEM_PROMPT,
-      prompt: buildPrompt(codebasePath, objective),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      onCacheMetrics,
-      abortSignal,
-      eventBus,
-      subagentId,
-      subagentName: opts.subagentName,
-      attackSurfaceRegistry,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      projectThreatModel,
-      stopWhen: stopWhen ?? stepCountIs(10000),
-      activeTools,
-      responseSchema,
-    });
+    super(codeAgentDefinition<TResult>(), opts);
   }
 }
 

@@ -1,15 +1,7 @@
 import { stepCountIs } from "ai";
-import type {
-  AIModel,
-  OpenAIReasoningEffort,
-  ThinkingEffort,
-} from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
-import type { AgentEventBus } from "../../../eventBus";
-import type { SessionInfo } from "../../../session";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { UnifiedSandbox } from "../../offSecAgent/tools";
-import { detectOSAndEnhancePrompt } from "../utils";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
+import type { SpecializedAgentInput } from "../../offSecAgent";
 import {
   buildFindingJudgePrompt,
   FINDING_JUDGE_SYSTEM_PROMPT,
@@ -20,22 +12,9 @@ import {
   FindingJudgeOutputSchema,
 } from "./types";
 
-export interface FindingJudgeAgentInput {
+export interface FindingJudgeAgentInput extends SpecializedAgentInput {
   finding: FindingJudgeInput;
-  model: AIModel;
-  session: SessionInfo;
-  authConfig?: AIAuthConfig;
-  abortSignal?: AbortSignal;
-  eventBus?: AgentEventBus;
-  /** Id used to tag the judge's stream events. Defaults to "finding-judge". */
-  subagentId?: string;
-  /** Human-readable label for readable OTel span names. Defaults to "Finding Judge". */
-  subagentName?: string;
-  sandbox?: UnifiedSandbox;
   target?: string;
-  enableThinking?: boolean;
-  thinkingEffort?: ThinkingEffort | null;
-  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
 const FINDING_JUDGE_ACTIVE_TOOLS = [
@@ -49,29 +28,32 @@ const FINDING_JUDGE_ACTIVE_TOOLS = [
   "response",
 ] as const;
 
-export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentOutput> {
-  constructor(opts: FindingJudgeAgentInput) {
-    const target =
-      opts.finding.target ?? opts.target ?? opts.session.targets[0];
+function resolveTarget(opts: FindingJudgeAgentInput): string | undefined {
+  return opts.finding.target ?? opts.target ?? opts.session.targets[0];
+}
 
-    super({
-      system: detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
-      prompt: buildFindingJudgePrompt({ ...opts.finding, target }),
-      model: opts.model,
-      session: opts.session,
-      target,
-      authConfig: opts.authConfig,
-      abortSignal: opts.abortSignal,
-      eventBus: opts.eventBus,
-      sandbox: opts.sandbox,
-      enableThinking: opts.enableThinking,
-      thinkingEffort: opts.thinkingEffort,
-      openAIReasoningEffort: opts.openAIReasoningEffort,
-      subagentId: opts.subagentId ?? "finding-judge",
-      subagentName: opts.subagentName ?? "Finding Judge",
-      activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
-      responseSchema: FindingJudgeOutputSchema,
-      stopWhen: stepCountIs(60),
-    });
+export const findingJudgeDefinition = defineAgent<
+  FindingJudgeAgentInput,
+  FindingJudgeAgentOutput
+>({
+  name: "finding-judge",
+  role: "judge",
+  system: () => FINDING_JUDGE_SYSTEM_PROMPT,
+  activeTools: () => [...FINDING_JUDGE_ACTIVE_TOOLS],
+  responseSchema: () => FindingJudgeOutputSchema,
+  stopWhen: () => stepCountIs(60),
+  target: resolveTarget,
+  prompt: (opts) =>
+    buildFindingJudgePrompt({ ...opts.finding, target: resolveTarget(opts) }),
+  subagentId: (opts) => opts.subagentId ?? "finding-judge",
+  subagentName: (opts) => opts.subagentName ?? "Finding Judge",
+});
+
+export class FindingJudgeAgent extends AgentRuntime<
+  FindingJudgeAgentInput,
+  FindingJudgeAgentOutput
+> {
+  constructor(opts: FindingJudgeAgentInput) {
+    super(findingJudgeDefinition, opts);
   }
 }

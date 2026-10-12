@@ -185,7 +185,9 @@ export function buildEnvironmentPrompt(
 
   sections.push(
     "",
-    "IMPORTANT: If environment variables are provided above, make sure to set them in the shell environment before running commands. You can use 'export VAR_NAME=value' or create a .env file as appropriate for the application.",
+    "IMPORTANT: Each execute_command call runs in a fresh shell — 'export' in one call does NOT carry to later calls. Set environment variables in the SAME command that uses them (e.g. 'VAR_NAME=value npm start' or 'export VAR_NAME=value && npm start'), or write them into a .env file the application loads. Variables configured in the session environment are already injected into every command automatically.",
+    "",
+    "LOCAL SERVICES: to start a long-running service, background it WITH redirected stdio so the call returns immediately and the service keeps running as a plain process (e.g. 'nohup npm start > scratchpad/server.log 2>&1 & echo $! > scratchpad/server.pid'). Wait for a readiness signal (a health check or a log line in scratchpad/server.log) before using the service, and stop it with 'kill $(cat scratchpad/server.pid)'. There is no shell job table across calls — recorded PIDs/files plus explicit lifecycle are how you manage services.",
   );
 
   return sections.join("\n");

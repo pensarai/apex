@@ -7,7 +7,8 @@ const prefixes = {
   permission: "per",
   user: "usr",
   part: "prt",
-  run: "run",
+  attempt: "atm",
+  idempotency: "idem",
 } as const;
 
 export type IdentifierPrefix = keyof typeof prefixes;
@@ -67,8 +68,10 @@ export type SessionID = string & { readonly __brand: "SessionID" };
 export type MessageID = string & { readonly __brand: "MessageID" };
 /** A part identifier: `prt_<time><random>`. */
 export type PartID = string & { readonly __brand: "PartID" };
-/** An agent-run identifier: `run_<time><random>`. */
-export type RunID = string & { readonly __brand: "RunID" };
+/** A physical inference-attempt identifier: `atm_<time><random>`. */
+export type AttemptID = string & { readonly __brand: "AttemptID" };
+/** An attempt idempotency key: `idem_<time><random>`. */
+export type IdempotencyKey = string & { readonly __brand: "IdempotencyKey" };
 
 /** Mint a fresh, time-descending session id. */
 export const newSessionId = (): SessionID => descending("session") as SessionID;
@@ -76,18 +79,33 @@ export const newSessionId = (): SessionID => descending("session") as SessionID;
 export const newMessageId = (): MessageID => descending("message") as MessageID;
 /** Mint a fresh, time-descending part id. */
 export const newPartId = (): PartID => descending("part") as PartID;
-/** Mint a fresh, time-descending agent-run id. */
-export const newRunId = (): RunID => descending("run") as RunID;
+/** Mint a fresh, time-descending inference-attempt id. */
+export const newAttemptId = (): AttemptID => descending("attempt") as AttemptID;
+/** Mint a fresh, time-descending attempt idempotency key. */
+export const newIdempotencyKey = (): IdempotencyKey =>
+  descending("idempotency") as IdempotencyKey;
 
 /** Runtime guard: is this string a session id? */
 export const isSessionId = (s: string): s is SessionID =>
   s.startsWith(`${prefixes.session}_`);
-/** Runtime guard: is this string a message id? */
+/**
+ * @knipignore completes the guard set alongside isSessionId; used by tests of
+ * other modules to assert the id shapes they emit.
+ */
 export const isMessageId = (s: string): s is MessageID =>
   s.startsWith(`${prefixes.message}_`);
-/** Runtime guard: is this string a part id? */
+/**
+ * @knipignore completes the guard set alongside isSessionId; used by tests of
+ * other modules to assert the id shapes they emit.
+ */
 export const isPartId = (s: string): s is PartID =>
   s.startsWith(`${prefixes.part}_`);
+/** Runtime guard: is this string an attempt id? */
+export const isAttemptId = (s: string): s is AttemptID =>
+  s.startsWith(`${prefixes.attempt}_`);
+/** Runtime guard: is this string an idempotency key? */
+export const isIdempotencyKey = (s: string): s is IdempotencyKey =>
+  s.startsWith(`${prefixes.idempotency}_`);
 
 function create(
   prefix: IdentifierPrefix,

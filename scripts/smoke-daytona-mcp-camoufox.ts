@@ -24,7 +24,7 @@
 
 import { execSync } from "node:child_process";
 import path from "node:path";
-import { Daytona, Image } from "@daytonaio/sdk";
+import { Daytona, Image } from "@daytona/sdk";
 
 const BRANCH = "enhancement/camoufox-support";
 

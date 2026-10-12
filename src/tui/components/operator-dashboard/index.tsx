@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import type { BoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
 import {
@@ -33,14 +34,14 @@ import {
 } from "../../../core/agents/offSecAgent";
 import {
   buildAuthConfig,
-  type CacheMetrics,
   getContextWindow,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
+  normalizeStepUsage,
 } from "../../../core/ai";
 import {
+  createOffensiveSecurityAgentClient,
   type RunAgentResult,
-  runOffensiveSecurityAgent,
 } from "../../../core/api";
 import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
 import {
@@ -82,6 +83,8 @@ import { useCommand } from "../../context/command";
 import { useConfig } from "../../context/config";
 import { useDialog } from "../../context/dialog";
 import { useFocus } from "../../context/focus";
+import { useHerdr } from "../../context/herdr";
+import { useObfuscation } from "../../context/obfuscation";
 import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
 import { openFileInDefaultApp } from "../../utils/open-file.js";
@@ -95,7 +98,11 @@ import {
   recoverAbortedTranscript,
   rewriteToolResultOutput,
 } from "./conversation";
-import { markInFlightToolsErrored } from "./display-state";
+import {
+  createDisplayMessageUpdater,
+  markInFlightToolsErrored,
+} from "./display-state";
+import { buildHerdrSnapshot, buildHomeHerdrReport } from "./herdr-state";
 import {
   buildOperatorSystemPrompt,
   type DashboardStatus,
@@ -130,6 +137,11 @@ import {
   markSubagentsInterrupted,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
+import {
+  WELCOME_LOGO_HEIGHT,
+  WELCOME_LOGO_WIDTH,
+  WelcomeLogo,
+} from "./welcome-logo";
 import { updateWorkflowDataMessage } from "./workflow-data";
 
 /**
@@ -183,7 +195,9 @@ export default function OperatorDashboard({
     replace: replaceDialog,
     clear: clearDialog,
   } = useDialog();
-  const { refocusPrompt } = useFocus();
+  const { refocusPromptIfNoActiveEditor } = useFocus();
+  const herdr = useHerdr();
+  const { enabled: obfuscateEnabled } = useObfuscation();
   const initialStrikeModeRef = useRef(
     resolveOperatorStrikeMode({
       resuming: !!sessionId,
@@ -237,7 +251,9 @@ export default function OperatorDashboard({
 
   // Agent/status state
   const [status, setStatus] = useState<DashboardStatus>("idle");
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const agentClientRef = useRef<ReturnType<
+    typeof createOffensiveSecurityAgentClient
+  > | null>(null);
   const generationRef = useRef(0);
 
   // Two-stage abort: first Ctrl+C cancels the running command, second kills the agent.
@@ -248,9 +264,9 @@ export default function OperatorDashboard({
   const commandCancelledRef = useRef(false);
 
   const subagentStore = useMemo(() => createSubagentStore(), []);
-  const subagentSessions = useSyncExternalStore(
-    subagentStore.subscribe,
-    subagentStore.getSnapshot,
+  const subagentCounts = useSyncExternalStore(
+    subagentStore.subscribeCounts,
+    subagentStore.getCountsSnapshot,
   );
   const subagentHelpers = useMemo(
     () => createSubagentSessionHelpers(subagentStore.setState),
@@ -260,13 +276,9 @@ export default function OperatorDashboard({
   // Track the message count when subagents last finished so the status bar
   // knows whether the main agent has produced new output since then.
   const messageCountAtSubagentDoneRef = useRef<number | null>(null);
-  const hasRunningSubagent = useMemo(
-    () =>
-      Array.from(subagentSessions.values()).some((s) => s.status === "running"),
-    [subagentSessions],
-  );
+  const hasRunningSubagent = subagentCounts.running > 0;
   useEffect(() => {
-    if (subagentSessions.size > 0 && !hasRunningSubagent) {
+    if (subagentCounts.total > 0 && !hasRunningSubagent) {
       if (messageCountAtSubagentDoneRef.current === null) {
         messageCountAtSubagentDoneRef.current =
           displayMessagesRef.current.length;
@@ -274,7 +286,7 @@ export default function OperatorDashboard({
     } else if (hasRunningSubagent) {
       messageCountAtSubagentDoneRef.current = null;
     }
-  }, [subagentSessions, hasRunningSubagent]);
+  }, [subagentCounts, hasRunningSubagent]);
 
   const openSubagentDialog = useCallback(() => {
     replaceDialog(<SubagentDialog store={subagentStore} />, {
@@ -284,16 +296,26 @@ export default function OperatorDashboard({
   }, [replaceDialog, subagentStore]);
 
   // Messages — same pattern as pentest component
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  // Mirror of `messages` as a ref so handleAbort can read the current display
-  // messages synchronously (React state isn't accessible inside event handlers
-  // without a ref).
-  const displayMessagesRef = useRef<DisplayMessage[]>([]);
-  displayMessagesRef.current = messages;
+  const [messages, setRenderedMessages] = useState<DisplayMessage[]>([]);
+  const displayMessagesRef = useRef<DisplayMessage[]>(messages);
+  const setMessages = useMemo(
+    () => createDisplayMessageUpdater(displayMessagesRef, setRenderedMessages),
+    [],
+  );
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
+  const [welcomeLogoTop, setWelcomeLogoTop] = useState(0);
+  const [messageAreaSize, setMessageAreaSize] = useState({
+    width: 0,
+    height: 0,
+  });
+  const handleMessageAreaSizeChange = useCallback(function (
+    this: BoxRenderable,
+  ) {
+    setMessageAreaSize({ width: this.width, height: this.height });
+  }, []);
 
   // Queued follow-up messages
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
@@ -513,6 +535,7 @@ export default function OperatorDashboard({
     subagentStore.setState,
     initialConfig?.operatorMode,
     setSessionCwd,
+    setMessages,
   ]);
 
   useEffect(() => {
@@ -522,9 +545,9 @@ export default function OperatorDashboard({
   // Auto-focus the input when the operator dashboard finishes loading
   useEffect(() => {
     if (!loading) {
-      refocusPrompt();
+      refocusPromptIfNoActiveEditor();
     }
-  }, [loading, refocusPrompt]);
+  }, [loading, refocusPromptIfNoActiveEditor]);
 
   useEffect(() => {
     if (sessionId === undefined) usageStore.beginNewSession();
@@ -545,6 +568,50 @@ export default function OperatorDashboard({
     });
   }, [session, sessionId, usageStore]);
 
+  // The unmount cleanup closes over redaction state once, so it reads the
+  // latest value through a ref.
+  const obfuscateRef = useRef(obfuscateEnabled);
+  obfuscateRef.current = obfuscateEnabled;
+
+  const herdrSessionId = session?.id ?? sessionId ?? null;
+  const herdrApprovalCount = pendingApprovals.length;
+  const herdrHasQuestions = pendingQuestions !== null;
+
+  // One report per lifecycle change; primitive deps keep streaming renders
+  // (text deltas, tool args) from re-sending.
+  useEffect(() => {
+    herdr.report(
+      buildHerdrSnapshot({
+        status,
+        loading,
+        pendingApprovalCount: herdrApprovalCount,
+        hasPendingQuestions: herdrHasQuestions,
+        planReviewPending: showPlanReview,
+        sessionId: herdrSessionId,
+        modelId: model.id,
+        obfuscateEnabled,
+      }),
+    );
+  }, [
+    herdr,
+    status,
+    loading,
+    herdrApprovalCount,
+    herdrHasQuestions,
+    showPlanReview,
+    herdrSessionId,
+    model.id,
+    obfuscateEnabled,
+  ]);
+
+  // Leaving the dashboard returns the user to home: reset the resume argv
+  // instead of releasing — the process still owns the pane.
+  useEffect(() => {
+    return () => {
+      herdr.report(buildHomeHerdrReport(obfuscateRef.current));
+    };
+  }, [herdr]);
+
   // ---------------------------------------------------------------------------
   // Display event adapter — root display projections (partial text, tool-arg
   // deltas, throttled command output) behind the run-event binding. React
@@ -563,15 +630,18 @@ export default function OperatorDashboard({
         setThinking,
         setError,
       }),
-    [setThinking],
+    [setThinking, setMessages],
   );
 
-  // Clean up the command-output flush timer when the component unmounts
   useEffect(() => {
     return () => {
+      // Invalidate ingress before disposal so late events cannot rearm UI timers.
+      generationRef.current++;
       displayEvents.dispose();
+      setThinking(false);
+      setIsExecuting(false);
     };
-  }, [displayEvents]);
+  }, [displayEvents, setThinking, setIsExecuting]);
 
   // ---------------------------------------------------------------------------
   // Run event projections — subagent routing, questions interception, and
@@ -583,7 +653,7 @@ export default function OperatorDashboard({
     (updater: (wd: WorkflowData) => WorkflowData) => {
       setMessages((prev) => updateWorkflowDataMessage(prev, updater));
     },
-    [],
+    [setMessages],
   );
 
   const runEventProjections = useMemo(
@@ -648,13 +718,14 @@ export default function OperatorDashboard({
 
   const runAgent = useCallback(
     async (prompt: string | null) => {
+      const gen = ++generationRef.current;
+      displayEvents.finish();
       // Abort any previous run before starting a new one
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
+      if (agentClientRef.current) {
+        agentClientRef.current.abort();
+        agentClientRef.current = null;
       }
 
-      const gen = ++generationRef.current;
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
@@ -663,8 +734,8 @@ export default function OperatorDashboard({
       setError(null);
       displayEvents.resetPartialText();
 
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
+      const agentClient = createOffensiveSecurityAgentClient();
+      agentClientRef.current = agentClient;
 
       const prevMessages = conversationRef.current;
 
@@ -731,25 +802,41 @@ export default function OperatorDashboard({
       // whole conversation as the model saw it, and the denominator comes
       // from the model this run actually used.
       const runModelId = model.id;
-      const recordRootStepUsage = (usage: {
-        inputTokens?: number;
-        outputTokens?: number;
+      const recordRootStepUsage = (event: {
+        usage?: {
+          inputTokens?: number;
+          outputTokens?: number;
+          inputTokenDetails?: {
+            cacheReadTokens?: number;
+            cacheWriteTokens?: number;
+          };
+        };
+        providerMetadata?: unknown;
       }) => {
-        const inputTokens = usage.inputTokens ?? 0;
-        if (inputTokens > 0) {
+        const stepUsage = normalizeStepUsage(event);
+        if (stepUsage.inputTokens > 0) {
           usageStore.setRootContext(runSessionIdRef.current, {
-            usedTokens: inputTokens,
-            contextLimit: getContextWindow(runModelId),
+            usedTokens: stepUsage.inputTokens,
+            contextLimit: getContextWindow(
+              runModelId,
+              config.data.customProviders,
+              config.data.hoonifyModels,
+            ),
             modelId: runModelId,
           });
         }
-        recordTokenUsage(inputTokens, usage.outputTokens ?? 0);
+        recordTokenUsage(
+          stepUsage.inputTokens,
+          stepUsage.outputTokens,
+          stepUsage.cacheReadTokens,
+          stepUsage.cacheWriteTokens,
+        );
       };
 
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        recordRootStepUsage(event.usage ?? {});
+        recordRootStepUsage(event);
       };
 
       const eventBus = new AgentEventBus();
@@ -784,7 +871,6 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
-        abortSignal: controller.signal,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
@@ -800,12 +886,6 @@ export default function OperatorDashboard({
             ? route.data.initialSkill?.args?.library
             : undefined),
         onStepFinish,
-        onCacheMetrics: (metrics: CacheMetrics) => {
-          usageStore.addSessionTokens(runSessionIdRef.current, {
-            cacheReadTokens: metrics.cacheReadInputTokens,
-            cacheWriteTokens: metrics.cacheCreationInputTokens,
-          });
-        },
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
@@ -850,7 +930,7 @@ export default function OperatorDashboard({
         );
 
         if (session) {
-          agentResult = await runOffensiveSecurityAgent({
+          agentResult = await agentClient.run({
             ...commonInput,
             system: systemPrompt,
             session,
@@ -878,7 +958,7 @@ export default function OperatorDashboard({
                 ? route.data.initialSkill?.args?.library
                 : undefined),
           };
-          agentResult = await runOffensiveSecurityAgent({
+          agentResult = await agentClient.run({
             ...commonInput,
             system: systemPrompt,
             sessionConfig,
@@ -930,6 +1010,7 @@ export default function OperatorDashboard({
         }
       } catch (e) {
         if (gen !== generationRef.current) return;
+        displayEvents.finish();
         if ((e as Error).name !== "AbortError") {
           // Roll back the eagerly-appended user message so the conversation
           // state stays clean.  Without this, a schema validation failure
@@ -965,6 +1046,7 @@ export default function OperatorDashboard({
         // Detach run-event listeners on all paths (abort, error, success) —
         // post-run stragglers must not mutate display state.
         unbindRunEvents();
+        if (gen === generationRef.current) displayEvents.finish();
         // Detach trace listeners and flush the uploader on all paths
         // (abort, error, success).
         await runTrace.cleanupRun();
@@ -972,7 +1054,7 @@ export default function OperatorDashboard({
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
-          abortControllerRef.current = null;
+          agentClientRef.current = null;
 
           // Show plan review after the full response is rendered
           if (planSubmittedRef.current) {
@@ -991,6 +1073,7 @@ export default function OperatorDashboard({
       agentMode,
       displayEvents,
       runEventProjections,
+      setMessages,
       setThinking,
       setIsExecuting,
       initialConfig?.sandbox,
@@ -1172,12 +1255,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     runAgentRef.current("Proceed with the approved plan.");
   }, [operatorMode]);
 
-  const addSystemMessage = useCallback((content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { role: "system" as const, content, createdAt: new Date() },
-    ]);
-  }, []);
+  const addSystemMessage = useCallback(
+    (content: string) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "system" as const, content, createdAt: new Date() },
+      ]);
+    },
+    [setMessages],
+  );
 
   const showModelPicker = useCallback(() => {
     executeCommand("/models");
@@ -1367,7 +1453,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   );
 
   const handleAbort = useCallback(() => {
-    if (!abortControllerRef.current) return;
+    if (!agentClientRef.current) return;
 
     const action = resolveAbortAction(commandCancelledRef.current, () =>
       cancelHandleRef.current.cancel(),
@@ -1389,8 +1475,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
     // Kill the agent
     generationRef.current++;
-    abortControllerRef.current.abort();
-    abortControllerRef.current = null;
+    displayEvents.finish();
+    const recoveryMessages = displayMessagesRef.current;
+    agentClientRef.current.abort();
+    agentClientRef.current = null;
     commandCancelledRef.current = false;
 
     // Clear queued messages before setting idle to prevent auto-send
@@ -1423,7 +1511,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         rootPath: activeSession.rootPath,
         conversation: conversationRef.current,
         partialText: displayEvents.getPartialText(),
-        displayMessages: displayMessagesRef.current,
+        displayMessages: recoveryMessages,
       });
     }
 
@@ -1442,7 +1530,13 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting, subagentStore.setState, displayEvents]);
+  }, [
+    setThinking,
+    setIsExecuting,
+    subagentStore.setState,
+    displayEvents,
+    setMessages,
+  ]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
@@ -1578,8 +1672,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
           setSelectedQueueIndex(-1);
 
-          displayEvents.flushCommandOutput();
-          displayEvents.stopCommandOutputFlush();
+          displayEvents.finish();
           setMessages((prev) =>
             prev.map((m) =>
               isToolMessage(m) && m.status === "pending"
@@ -1634,7 +1727,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     }
 
     // Ctrl+C while questions are pending — abort without resuming the agent.
-    // The abort controller is null at this point (runAgent's finally block
+    // The agent client is null at this point (runAgent's finally block
     // already cleared it), so handleAbort() would early-return. Handle it
     // explicitly: overwrite the sentinel tool-result so the next run doesn't
     // see stale "questions answered" data, then dismiss the form and go idle.
@@ -1679,7 +1772,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (
       key.ctrl &&
       key.name === "a" &&
-      subagentSessions.size > 0 &&
+      subagentCounts.total > 0 &&
       !dialogOpen
     ) {
       key.preventDefault?.();
@@ -1763,7 +1856,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         planContent,
       },
     ]);
-  }, [showPlanReview]);
+  }, [showPlanReview, setMessages]);
 
   // Loading state
   if (loading) {
@@ -1800,6 +1893,17 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   // Determine the current pending approval for the input area
   const currentPending =
     pendingApprovals.length > 0 ? pendingApprovals[0] : undefined;
+
+  const showWelcomeLogo =
+    welcomeLogoTop > 0 &&
+    messageAreaSize.width >= WELCOME_LOGO_WIDTH + 8 &&
+    messageAreaSize.height >= welcomeLogoTop + WELCOME_LOGO_HEIGHT + 2 &&
+    messages.length === 0 &&
+    inputValue.length === 0 &&
+    status === "idle" &&
+    !initialMessage &&
+    !(route.data.type === "operator" && route.data.initialSkill) &&
+    !error;
 
   return (
     <box
@@ -1841,21 +1945,31 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       )}
 
       {/* Message display */}
-      <MessageList
-        messages={messages}
-        isRunning={
-          (status === "running" || status === "waiting") && !pendingQuestions
-        }
-        variant="operator"
-        focused={true}
-        verbose={verboseMode}
-        expandedLogs={expandedLogs}
-        pendingApprovals={pendingApprovals}
-        lastApprovedAction={lastApprovedAction}
-      />
+      <box
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        overflow="hidden"
+        onSizeChange={handleMessageAreaSizeChange}
+      >
+        <MessageList
+          messages={messages}
+          isRunning={
+            (status === "running" || status === "waiting") && !pendingQuestions
+          }
+          variant="operator"
+          focused={true}
+          verbose={verboseMode}
+          expandedLogs={expandedLogs}
+          pendingApprovals={pendingApprovals}
+          lastApprovedAction={lastApprovedAction}
+          onOperatorWelcomeHeightChange={setWelcomeLogoTop}
+        />
+        {showWelcomeLogo && <WelcomeLogo top={welcomeLogoTop} />}
+      </box>
 
       <SubagentStatusBar
-        sessions={subagentSessions}
+        counts={subagentCounts}
         agentMovedOn={
           messageCountAtSubagentDoneRef.current !== null &&
           messages.length > messageCountAtSubagentDoneRef.current
@@ -1899,11 +2013,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
                     ? "Type to redirect agent, or Y/A to approve..."
                     : "Enter directive or / for commands & skills..."
             }
-            focused={
-              status === "running"
-                ? selectedQueueIndex < 0
-                : resolveInputFocused(status, stack.length, externalDialogOpen)
-            }
+            focused={resolveInputFocused(
+              status,
+              stack.length,
+              externalDialogOpen,
+              selectedQueueIndex,
+            )}
             status={status === "waiting" ? "running" : status}
             mode="operator"
             operatorMode={operatorMode}

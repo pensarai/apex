@@ -54,6 +54,29 @@ Open the Apex TUI:
 pensar
 ```
 
+### Herdr
+
+Apex automatically reports its state when launched inside
+[Herdr](https://herdr.dev/docs/add-herdr-support/). The sidebar shows `working`
+during a turn, `blocked` when approval, plan review, or answers are needed, and
+`idle` when Apex is ready for input. Terminal-attached CLI agent commands also
+report their activity. No plugin or additional Apex configuration is required.
+
+Herdr 0.9.2 or later can restore the current conversation after a server restart.
+Keep `pensar` on your `PATH`; Apex supplies a resume command with the session ID,
+active model, and obfuscation setting. The saved session restores its operator
+mode and approval settings. Restored sessions wait for your next prompt.
+
+You can also reopen a session directly:
+
+```bash
+pensar --resume <session-id>
+pensar --resume <session-id> --model <model-id>
+```
+
+State reporting and release also work with older Herdr versions. Reports run in
+the background with a short timeout, and Herdr failures do not interrupt Apex.
+
 ### Headless CLI
 
 Run pentests without the TUI for scripting, CI, or evalgate integration:
@@ -83,6 +106,21 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 | `--prompt <text\|@file>`       | pentest                   | Custom guidance for the agent                  |
 | `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
 | `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
+
+### Hoonify inference
+
+Connect **Hoonify** in `/providers` or set `HOONIFY_API_KEY`, then select a
+discovered model in `/models`. Headless commands accept
+`--model-provider hoonify --model <catalog-model-id>`. See
+[Hoonify setup](docs/hoonify.md) for model discovery, token budgets, and live checks.
+
+### Custom inference endpoints
+
+Bring an OpenAI-compatible endpoint and bearer token through `customProviders`
+configuration or the `APEX_CUSTOM_PROVIDERS` worker environment variable. Select
+it with `--model-provider <id> --model <model>`, or choose its declared models in
+the operator's `/models` picker. See [custom inference setup](docs/custom-inference.md)
+for GLM settings, headless job configuration, and a live connection test.
 
 ### Logging
 

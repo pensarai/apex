@@ -1,17 +1,31 @@
 /**
  * Unit tests for OffensiveSecurityAgent.consume().
  *
- * Verifies that persistentShell.dispose() is called even when the
+ * Verifies that the command shell's dispose() is called even when the
  * fullStream throws — the shell-leak bug described in the PR.
  *
  * Heavy transitive dependencies (tools, AI SDK, zod) are stubbed so
  * the test loads cleanly without external provider keys.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+// Direct file import: the barrel "./tools" is mocked below, and this test
+// needs the real registry to exercise its retained-handle retry semantics.
+import { CallbackListenerRegistry } from "./tools/callbackListener";
 
 const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+const streamResponseCalls = vi.hoisted(
+  () => [] as Array<Record<string, unknown>>,
+);
+const traceRecordStepCalls = vi.hoisted(() => [] as unknown[][]);
 
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
@@ -34,6 +48,17 @@ vi.mock("zod", () => {
 });
 
 vi.mock("./tools", () => ({
+  // The agent constructs via the selective entrypoint; record the tool
+  // context there (createAllTools kept for any direct legacy callers).
+  createToolsForNames: (
+    ctx: Record<string, unknown>,
+    requested: readonly string[] | undefined,
+  ) => {
+    toolContexts.push(ctx);
+    void requested;
+    return {};
+  },
+  listToolRegistryNames: () => [],
   createAllTools: (ctx: Record<string, unknown>) => {
     toolContexts.push(ctx);
     return {};
@@ -43,6 +68,7 @@ vi.mock("./tools", () => ({
   SMS_TOOL_NAMES_ACTIVE: [],
   sessionHasSmsPasswordless: () => false,
   PLAN_MODE_TOOL_NAMES: [],
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
@@ -63,21 +89,70 @@ vi.mock("./tools", () => ({
     "create_workspace_endpoint",
     "update_workspace_endpoint",
   ],
-  PersistentShell: class {},
+  // Minimal registry stub: the agent constructs one per instance and
+  // finalization drains it; these tests never start listeners.
+  CallbackListenerRegistry: class {
+    register() {}
+    get() {
+      return undefined;
+    }
+    remove() {}
+    async stopAll() {
+      return [];
+    }
+  },
+  PerCommandShell: class {},
+  PlaywrightMcpSession: class {},
+  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
 }));
-vi.mock("../../ai", () => ({ streamResponse: () => {} }));
+vi.mock("../../ai", () => ({
+  streamResponse: (opts: Record<string, unknown>) => {
+    streamResponseCalls.push(opts);
+    return { fullStream: (async function* () {})() };
+  },
+  normalizeStepUsage: (step: {
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      inputTokenDetails?: {
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+      };
+    };
+    providerMetadata?: {
+      anthropic?: {
+        cacheReadInputTokens?: number;
+        cacheCreationInputTokens?: number;
+      };
+    };
+  }) => {
+    const meta = step.providerMetadata?.anthropic;
+    const details = step.usage?.inputTokenDetails;
+    return {
+      inputTokens: step.usage?.inputTokens ?? 0,
+      outputTokens: step.usage?.outputTokens ?? 0,
+      cacheReadTokens:
+        meta?.cacheReadInputTokens ?? details?.cacheReadTokens ?? 0,
+      cacheWriteTokens:
+        meta?.cacheCreationInputTokens ?? details?.cacheWriteTokens ?? 0,
+    };
+  },
+}));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
 }));
-vi.mock("./prompt", () => ({
+vi.mock("./prompt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./prompt")>()),
   buildBaseSystemPrompt: () => "system",
-  buildSessionWorkspaceSection: () => "",
 }));
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
     writeInit() {}
-    onStepFinish() {}
+    recordStep(...args: unknown[]) {
+      traceRecordStepCalls.push(args);
+    }
+    markSummarized() {}
   },
 }));
 vi.mock("../../operator", () => ({
@@ -85,13 +160,177 @@ vi.mock("../../operator", () => ({
 }));
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
+import type { InferenceRecorder } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
+import type { RunContextRecorder } from "../../runtime/runContext";
 import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
+
+describe("assembled file-workspace instructions", () => {
+  it("does not treat Fast Strike helper tools as permission to edit target source", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-fast-strike-scope-"));
+    const helperRoot = join(rootPath, "subagents", "worker", "helpers");
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        mode: "fast-strike",
+        session: {
+          id: "ses_fast_strike_scope",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { codebasePath: join(rootPath, "target-repo") },
+        },
+        fileWorkspaceRoot: helperRoot,
+        activeTools: [],
+        extraTools: { profile_codebase: {}, create_file: {} },
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const request = streamResponseCalls[0];
+      expect(request.activeTools).toContain("profile_codebase");
+      expect(request.activeTools).toContain("create_file");
+      const assessment = (request.system as string).split(
+        "# Source Code Assessment",
+      )[1];
+      expect(assessment).toBeDefined();
+      expect(assessment).toContain("Source access is read-only");
+      expect(assessment).toContain(helperRoot);
+      expect(assessment).toContain(
+        "Do not use shell commands to edit target source",
+      );
+      expect(assessment).not.toContain(
+        "Limit repo edits to the change you were dispatched to make",
+      );
+      expect(assessment).not.toContain(join(rootPath, "scratchpad"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "spawned",
+    "root",
+    "custom-cwd",
+  ])("keeps %s worker file paths separate from shell and provided-file paths", (kind) => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-workspace-prompt-"));
+    const scratchpadPath = join(rootPath, "scratchpad");
+    const fileWorkspaceRoot =
+      kind === "root"
+        ? scratchpadPath
+        : join(rootPath, "subagents", "worker", "helpers");
+    const agentCwd =
+      kind === "custom-cwd" ? join(rootPath, "commands") : rootPath;
+    const providedPath = join(rootPath, "provided_files");
+    mkdirSync(providedPath);
+    writeFileSync(join(providedPath, "sample.txt"), "user-supplied input");
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: { id: "ses_workspace", rootPath, scratchpadPath },
+        agentCwd,
+        fileWorkspaceRoot,
+        activeTools: [
+          "read_file",
+          "list_files",
+          "create_file",
+          "execute_command",
+        ],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(`Your shell starts in ${agentCwd}`);
+      expect(system).toContain(
+        `Native file tools are confined to ${fileWorkspaceRoot}`,
+      );
+      expect(system).toContain(
+        "Use absolute helper paths with `execute_command`",
+      );
+      expect(system).toContain(providedPath);
+      expect(system).toContain("sample.txt");
+      expect(system).toContain("copy inputs into the file workspace");
+      expect(system).not.toContain("Use relative paths for everything");
+      expect(system).not.toContain("temporary scripts");
+      expect(system).not.toContain("`list_files provided_files/`");
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the session's remote file workspace for the real tool context and prompt", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-remote-ws-"));
+    const agentCwd = join(rootPath, "agent-cwd");
+    const remoteRoot = join(rootPath, "remote-workspace");
+    toolContexts.length = 0;
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: {
+          id: "ses_remote_ws",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { agentCwd, remoteFileWorkspaceRoot: remoteRoot },
+        },
+        activeTools: ["create_file", "read_file"],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      expect(toolContexts[0].fileWorkspaceRoot).toBe(remoteRoot);
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(
+        `Native file tools are confined to ${remoteRoot}`,
+      );
+      expect(system).not.toContain(join(rootPath, "scratchpad"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("lets an explicit child helper root win over the session's remote workspace", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-remote-ws-explicit-"));
+    const remoteRoot = join(rootPath, "remote-workspace");
+    const childRoot = join(remoteRoot, "subagents", "sub_1", "helpers");
+    toolContexts.length = 0;
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: {
+          id: "ses_remote_ws_explicit",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { remoteFileWorkspaceRoot: remoteRoot },
+        },
+        fileWorkspaceRoot: childRoot,
+        activeTools: ["create_file"],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      expect(toolContexts[0].fileWorkspaceRoot).toBe(childRoot);
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(
+        `Native file tools are confined to ${childRoot}`,
+      );
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("spawned-agent usage callbacks", () => {
   it("requires explicit forwarding when trace events own subagent accounting", () => {
@@ -118,6 +357,121 @@ describe("spawned-agent usage callbacks", () => {
     expect(toolContexts[0]?.onCacheMetrics).toBeUndefined();
     expect(toolContexts[1]?.onStepFinish).toBe(onStepFinish);
     expect(toolContexts[1]?.onCacheMetrics).toBe(onCacheMetrics);
+  });
+});
+
+describe("auxiliary model events", () => {
+  it("keeps the last complete message snapshot while forwarding usage", async () => {
+    streamResponseCalls.length = 0;
+    traceRecordStepCalls.length = 0;
+    const rootPath = join(
+      "/tmp",
+      `apex-auxiliary-model-event-${Date.now()}-${Math.random()}`,
+    );
+    const initialMessages = [
+      { role: "user" as const, content: "original request" },
+    ];
+    const completedMessages = [
+      { role: "assistant" as const, content: "completed step" },
+    ];
+    const onStepFinish = vi.fn();
+
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        messages: initialMessages,
+        session: { id: "ses_auxiliary", rootPath },
+        activeTools: [],
+        sandbox: {},
+        onStepFinish,
+      } as never);
+
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      await call.onStepFinish({
+        response: { id: "step-1", messages: completedMessages },
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      expect(writer.latest).toEqual([...initialMessages, ...completedMessages]);
+
+      await call.onStepFinish({
+        response: { id: "summarization", messages: [] },
+        usage: {
+          inputTokens: 5,
+          outputTokens: 1,
+          inputTokenDetails: { cacheReadTokens: 4, cacheWriteTokens: 1 },
+        },
+      });
+
+      expect(writer.latest).toEqual([...initialMessages, ...completedMessages]);
+      expect(onStepFinish).toHaveBeenCalledTimes(2);
+      expect(traceRecordStepCalls.at(-1)?.[1]).toEqual({
+        inputTokens: 5,
+        outputTokens: 1,
+        cacheReadTokens: 4,
+        cacheWriteTokens: 1,
+      });
+      expect(traceRecordStepCalls.at(-1)?.[2]).toEqual({ usageOnly: true });
+      writer.cancelTimer();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("records cache from the step event without onCacheMetrics", async () => {
+    streamResponseCalls.length = 0;
+    traceRecordStepCalls.length = 0;
+    const rootPath = join(
+      "/tmp",
+      `apex-step-cache-${Date.now()}-${Math.random()}`,
+    );
+
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: { id: "ses_step_cache", rootPath },
+        activeTools: [],
+        sandbox: {},
+      } as never);
+
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onStepFinish: (event: unknown) => Promise<void>;
+        onCacheMetrics?: unknown;
+      };
+      expect(call.onCacheMetrics).toBeUndefined();
+
+      await call.onStepFinish({
+        response: {
+          id: "step-1",
+          messages: [{ role: "assistant", content: "ok" }],
+        },
+        usage: {
+          inputTokens: 40,
+          outputTokens: 6,
+          inputTokenDetails: { cacheReadTokens: 30, cacheWriteTokens: 2 },
+        },
+      });
+
+      expect(traceRecordStepCalls.at(-1)?.[1]).toEqual({
+        inputTokens: 40,
+        outputTokens: 6,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 2,
+      });
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      writer.cancelTimer();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
   });
 });
 
@@ -154,18 +508,23 @@ describe("tool context forwarding", () => {
  */
 function buildStubAgent(overrides: {
   fullStream: AsyncIterable<unknown>;
-  persistentShell?: { dispose: () => void };
+  commandShell?: { dispose: () => Promise<void> };
   abortSignal?: AbortSignal;
   resolveResult?: (sr: unknown) => unknown;
   browserSession?: { disconnect: () => Promise<void> };
   ownsBrowserSession?: boolean;
+  /** Overrides the default listener-registry stub (real registry in the finalization test). */
+  callbackListeners?: unknown;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
+  responseToolResult?: unknown;
   subagentId?: string;
   subagentName?: string;
   agentMode?: "default" | "plan" | "fast-strike";
+  streamIdFactory?: (context: unknown) => string;
+  contextRecorder?: RunContextRecorder;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -177,6 +536,11 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "eventBus", { value: bus });
   Object.defineProperty(agent, "streamResult", {
     value: { fullStream: overrides.fullStream },
+  });
+  // Stub bypasses the constructor, so pre-settle the initialization seam —
+  // consume() awaits streamReady before touching the (stubbed) streamResult.
+  Object.defineProperty(agent, "streamInit", {
+    value: Promise.resolve(),
   });
   Object.defineProperty(agent, "subagentId", {
     value: overrides.subagentId,
@@ -191,6 +555,9 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "responseCaptured", {
     value: overrides.responseCaptured ?? new Promise(() => {}),
   });
+  Object.defineProperty(agent, "_responseToolResult", {
+    value: overrides.responseToolResult,
+  });
   // Stub bypasses the constructor, so provide a minimal session for busSessionId.
   Object.defineProperty(agent, "_session", {
     value: { id: "ses_stub" },
@@ -199,8 +566,8 @@ function buildStubAgent(overrides: {
     value: null,
     writable: true,
   });
-  Object.defineProperty(agent, "persistentShell", {
-    value: overrides.persistentShell,
+  Object.defineProperty(agent, "commandShell", {
+    value: overrides.commandShell,
   });
   Object.defineProperty(agent, "abortSignal", {
     value: overrides.abortSignal,
@@ -213,6 +580,22 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "ownsBrowserSession", {
     value: overrides.ownsBrowserSession ?? false,
+  });
+  // The constructor is bypassed, so provide the listener registry that
+  // finalizeRun drains; these tests never start listeners.
+  Object.defineProperty(agent, "callbackListeners", {
+    value:
+      overrides.callbackListeners ??
+      ({
+        register() {},
+        get() {
+          return undefined;
+        },
+        remove() {},
+        async stopAll() {
+          return [];
+        },
+      } as object),
   });
   Object.defineProperty(agent, "messagesPath", {
     value: overrides.messagesPath ?? null,
@@ -233,6 +616,12 @@ function buildStubAgent(overrides: {
       responseToolName: "response",
       responseToolFired: () => false,
     }),
+  });
+  Object.defineProperty(agent, "streamIdFactory", {
+    value: overrides.streamIdFactory,
+  });
+  Object.defineProperty(agent, "contextRecorder", {
+    value: overrides.contextRecorder,
   });
 
   return agent;
@@ -583,12 +972,12 @@ describe("workspace tool access", () => {
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };
 
-  describe("persistentShell disposal on stream error (leak fix)", () => {
+  describe("command shell disposal on stream error (leak fix)", () => {
     it("disposes shell after a successful stream", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       await agent.consume();
@@ -596,10 +985,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("disposes shell when the stream throws mid-iteration", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([textDelta], new Error("stream exploded")),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       await expect(agent.consume()).rejects.toThrow("stream exploded");
@@ -607,21 +996,57 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("disposes shell when the stream throws immediately (no chunks)", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([], new Error("instant failure")),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       await expect(agent.consume()).rejects.toThrow("instant failure");
       expect(dispose).toHaveBeenCalledOnce();
     });
 
+    it("drain does not settle before the shell's kill barrier resolves", async () => {
+      // Stream error while a command is still active: dispose() returns a
+      // pending barrier (bounded in production by the runner's kill
+      // protocol). Hosts rely on drained before closeout, so consume() must
+      // not settle while that barrier is pending.
+      let releaseBarrier: (() => void) | undefined;
+      const barrier = new Promise<void>((res) => {
+        releaseBarrier = res;
+      });
+      const dispose = vi.fn(() => barrier);
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([textDelta], new Error("stream exploded")),
+        commandShell: { dispose },
+      });
+
+      let consumeSettled = false;
+      const consumeDone = agent.consume().then(
+        () => {
+          consumeSettled = true;
+        },
+        () => {
+          consumeSettled = true;
+        },
+      );
+
+      // finalizeRun has called dispose, but its barrier is pending — the
+      // drain must still be unsettled.
+      await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+      await new Promise((r) => setTimeout(r, 50));
+      expect(consumeSettled).toBe(false);
+
+      releaseBarrier?.();
+      await consumeDone;
+      expect(consumeSettled).toBe(true);
+    });
+
     it("disposes shell when emitStreamPart throws", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(() => {
@@ -688,7 +1113,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
     it("succeeds without shell when stream completes normally", async () => {
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: undefined,
+        commandShell: undefined,
       });
 
       await expect(agent.consume()).resolves.toBeUndefined();
@@ -697,7 +1122,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
     it("propagates stream error without shell (no dispose to call)", async () => {
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([], new Error("sandbox boom")),
-        persistentShell: undefined,
+        commandShell: undefined,
       });
 
       await expect(agent.consume()).rejects.toThrow("sandbox boom");
@@ -708,7 +1133,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
     it("disposes shell before resolveResult runs", async () => {
       const callOrder: string[] = [];
 
-      const dispose = vi.fn(() => callOrder.push("dispose"));
+      const dispose = vi.fn(() => {
+        callOrder.push("dispose");
+        return Promise.resolve();
+      });
       const resolveResult = vi.fn(() => {
         callOrder.push("resolveResult");
         return "result";
@@ -716,7 +1144,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
         resolveResult,
       });
 
@@ -729,14 +1157,191 @@ describe("OffensiveSecurityAgent.consume()", () => {
   });
 
   describe("abort signal", () => {
+    it.each([
+      new Error("Execution broker receipt unavailable"),
+      new DOMException("Recorded run deadline expired", "AbortError"),
+      new DOMException("Attempt deadline expired", "TimeoutError"),
+      Object.assign(
+        new Error("Aborted", { cause: new Error("Backend unavailable") }),
+        { name: "AbortError" },
+      ),
+      "host shutdown",
+      0,
+      null,
+    ])("preserves an explicit abort reason: %s", async (reason) => {
+      const controller = new AbortController();
+      controller.abort(reason);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(reason);
+    });
+
+    it("uses the originating reason when the SDK echoes a generic abort", async () => {
+      const controller = new AbortController();
+      const cause = new Error("Execution outcome could not be confirmed");
+      controller.abort(cause);
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [],
+          new DOMException("Aborted", "AbortError"),
+        ),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+    });
+
+    it("preserves the runtime's AbortSignal.timeout reason", async () => {
+      const signal = AbortSignal.timeout(1);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(signal.aborted).toBe(true);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([]),
+        abortSignal: signal,
+      });
+      await expect(agent.consume()).rejects.toBe(signal.reason);
+      expect(signal.reason.name).toBe("TimeoutError");
+    });
+
+    it("keeps a generic stream abort when the caller signal was not aborted", async () => {
+      const cause = new DOMException("Aborted", "AbortError");
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], cause),
+        abortSignal: new AbortController().signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+    });
+
+    it("preserves a stream abort carrying its own cause even after a user abort", async () => {
+      const cause = Object.assign(
+        new Error("Aborted", { cause: new Error("Backend unavailable") }),
+        { name: "AbortError" },
+      );
+      const controller = new AbortController();
+      controller.abort();
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], cause),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+    });
+
+    it("keeps user-abort wording for a generic SDK echo", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [],
+          new DOMException("Aborted", "AbortError"),
+        ),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toMatchObject({
+        name: "AbortError",
+        message: "Agent aborted by user",
+      });
+    });
+
+    it("keeps a prior abort cause when later cleanup fails", async () => {
+      const controller = new AbortController();
+      const cause = new Error("Target session disconnected");
+      controller.abort(cause);
+      const dispose = vi.fn().mockRejectedValue(new Error("Cleanup failed"));
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+        commandShell: { dispose },
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+      expect(dispose).toHaveBeenCalledOnce();
+    });
+
+    it("waits for owned cleanup before rejecting with the abort cause", async () => {
+      const controller = new AbortController();
+      const cause = new Error("Execution infrastructure failed");
+      controller.abort(cause);
+      let release!: () => void;
+      const disposal = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const dispose = vi.fn(() => disposal);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+        commandShell: { dispose },
+      });
+      let settled = false;
+      const result = agent.consume().catch((error) => {
+        settled = true;
+        return error;
+      });
+      try {
+        await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+        expect(settled).toBe(false);
+      } finally {
+        release();
+      }
+      expect(await result).toBe(cause);
+    });
+
+    it.each([
+      "abort",
+      "provider",
+      "cleanup",
+    ])("saves the primary cause in interrupted tool evidence (%s)", async (source) => {
+      const directory = mkdtempSync(join(tmpdir(), "apex-abort-cause-"));
+      const controller = new AbortController();
+      const infrastructure = new Error("Execution infrastructure failed");
+      const provider = new Error("Provider stream failed first");
+      const cause = source === "provider" ? provider : infrastructure;
+      async function* stream() {
+        yield {
+          type: "tool-call",
+          toolCallId: "pending",
+          toolName: "run_command",
+          input: { command: "fixture" },
+        };
+        if (source === "provider") throw provider;
+        if (source === "abort") controller.abort(infrastructure);
+      }
+      const agent = buildStubAgent({
+        fullStream: stream(),
+        abortSignal: controller.signal,
+        commandShell: {
+          dispose: async () => {
+            controller.abort(infrastructure);
+          },
+        },
+        messagesPath: join(directory, "messages.json"),
+        latestMessages: [{ role: "user", content: "fixture" }],
+      });
+      const results: unknown[] = [];
+      agent.eventBus.on("tool-result", (event) => results.push(event.result));
+      try {
+        await expect(agent.consume()).rejects.toBe(cause);
+        expect(results).toContainEqual({
+          type: "error-text",
+          value: expect.stringContaining(cause.message),
+        });
+        const saved = readFileSync(join(directory, "messages.json"), "utf8");
+        expect(saved).toContain(cause.message);
+        expect(saved).not.toContain("Agent aborted by user");
+        if (source === "provider")
+          expect(saved).not.toContain(infrastructure.message);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
     it("disposes shell even when abort signal causes throw", async () => {
       const controller = new AbortController();
       controller.abort();
 
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
         abortSignal: controller.signal,
       });
 
@@ -943,6 +1548,54 @@ describe("OffensiveSecurityAgent.consume()", () => {
       });
 
       await expect(agent.consume()).resolves.toBe("captured");
+    });
+  });
+
+  describe("callback listener finalization (owned-resource drain)", () => {
+    it("consume() drains listeners; one failed stop never blocks another, and abortAndDrain retries", async () => {
+      const registry = new CallbackListenerRegistry();
+      const stopped: string[] = [];
+      registry.register({
+        jobId: "wjob_77777_fail01",
+        nonce: "a".repeat(32),
+        scriptPath: "/a.cjs",
+        bindAddress: "0.0.0.0",
+        port: 1,
+        selfTestConfirmed: false,
+        stop: async () => {
+          throw new Error("stop a failed");
+        },
+      });
+      registry.register({
+        jobId: "wjob_77777_pass01",
+        nonce: "b".repeat(32),
+        scriptPath: "/b.cjs",
+        bindAddress: "0.0.0.0",
+        port: 2,
+        selfTestConfirmed: false,
+        stop: async () => {
+          stopped.push("b");
+          return undefined;
+        },
+      });
+
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], new Error("stream boom")),
+        messagesPath: null,
+        callbackListeners: registry,
+      });
+
+      // The stream error stays primary; listener cleanup still ran.
+      await expect(agent.consume()).rejects.toThrow("stream boom");
+      expect(stopped).toEqual(["b"]);
+      expect(registry.get("wjob_77777_fail01")).toBeDefined();
+      expect(registry.get("wjob_77777_pass01")).toBeUndefined();
+
+      // Host teardown path: best-effort retry, never throws, keeps the
+      // failed owner registered for a later cleanup path.
+      await expect(agent.abortAndDrain()).resolves.toBeUndefined();
+      expect(stopped).toEqual(["b"]);
+      expect(registry.get("wjob_77777_fail01")).toBeDefined();
     });
   });
 
@@ -1345,10 +1998,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("still disposes shell when emitSyntheticToolResults throws", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       agent.eventBus.on("tool-result", () => {
@@ -1369,7 +2022,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
       writeFileSync(messagesPath, JSON.stringify(existingMessages));
 
       const streamError = new Error("original stream error");
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const disconnect = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow(
@@ -1383,7 +2036,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
           ],
           streamError,
         ),
-        persistentShell: { dispose },
+        commandShell: { dispose },
         browserSession: { disconnect },
         ownsBrowserSession: true,
         messagesPath,
@@ -1424,17 +2077,20 @@ describe("owned-resource disposal", () => {
     toolName: "execute_command",
   };
 
-  it("disposeOwnedShell is idempotent across repeated calls", () => {
-    const dispose = vi.fn();
+  it("disposeOwnedShell is idempotent and returns the same cached barrier", async () => {
+    const dispose = vi.fn().mockResolvedValue(undefined);
     const agent = buildStubAgent({
       fullStream: yieldChunks([]),
-      persistentShell: { dispose },
+      commandShell: { dispose },
     });
 
-    agent.disposeOwnedShell();
-    agent.disposeOwnedShell();
-    agent.disposeOwnedShell();
+    const first = agent.disposeOwnedShell();
+    const second = agent.disposeOwnedShell();
+    const third = agent.disposeOwnedShell();
+    expect(second).toBe(first);
+    expect(third).toBe(first);
 
+    await first;
     expect(dispose).toHaveBeenCalledOnce();
   });
 
@@ -1561,7 +2217,7 @@ describe("root agent-run spans", () => {
     };
   }
 
-  it("one root span per top-level run, with full run attribution", async () => {
+  it("one root span per top-level run, with canonical identity", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({ fullStream: singleStepStream() });
@@ -1574,11 +2230,15 @@ describe("root agent-run spans", () => {
       expect(invokeSpans).toHaveLength(1);
       const attrs = invokeSpans[0]?.attributes as Record<string, string>;
       expect(attrs["gen_ai.operation.name"]).toBe("invoke_agent");
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_stub");
       expect(attrs["gen_ai.agent.name"]).toBe("default");
       expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
       expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
       expect(attrs["pensar.agent.mode"]).toBe("default");
-      expect(attrs["pensar.run.id"]).toMatch(/^run_/);
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
     } finally {
       await otel.teardown();
     }
@@ -1631,6 +2291,36 @@ describe("root agent-run spans", () => {
     }
   });
 
+  it("records the originating infrastructure cause on the root span", async () => {
+    const otel = setupOtel();
+    const controller = new AbortController();
+    const cause = new Error("Execution receipt unavailable");
+    cause.name = "ExecutionInfrastructureError";
+    controller.abort(cause);
+    try {
+      const agent = buildStubAgent({
+        fullStream: singleStepStream(),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+      const span = otel
+        .spans()
+        .find((entry) => entry.name === "invoke_agent default");
+      expect(span?.status.code).toBe(2);
+      expect(span?.attributes["error.type"]).toBe(cause.name);
+      expect(
+        span?.events.some(
+          (event) =>
+            event.name === "exception" &&
+            event.attributes?.["exception.message"] === cause.message,
+        ),
+      ).toBe(true);
+      expect(span?.ended).toBe(true);
+    } finally {
+      await otel.teardown();
+    }
+  });
+
   it("aborted runs end every span", async () => {
     const otel = setupOtel();
     try {
@@ -1668,10 +2358,13 @@ describe("root agent-run spans", () => {
       // span proves the span ended — and consume() resolving proves disposal
       // completed first (both are awaited in order inside runInSpan).
       const ordering: string[] = [];
-      const dispose = vi.fn(() => ordering.push("shell-disposed"));
+      const dispose = vi.fn(() => {
+        ordering.push("shell-disposed");
+        return Promise.resolve();
+      });
       const agent = buildStubAgent({
         fullStream: singleStepStream(),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
       await agent.consume();
 
@@ -1688,7 +2381,7 @@ describe("root agent-run spans", () => {
     }
   });
 
-  it("subagent runs keep their span but carry no run id", async () => {
+  it("subagent runs keep current and root identity distinct", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({
@@ -1703,13 +2396,504 @@ describe("root agent-run spans", () => {
         .find((s) => s.name === "invoke_agent recon-sub");
       expect(span).toBeDefined();
       const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_sub_1");
       expect(attrs["gen_ai.agent.name"]).toBe("recon-sub");
-      expect(attrs["gen_ai.conversation.id"]).toBe("ses_sub_1");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
       expect(attrs["pensar.session.id"]).toBe("ses_sub_1");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
       expect(attrs["pensar.run.id"]).toBeUndefined();
       expect(attrs["pensar.agent.mode"]).toBeUndefined();
     } finally {
       await otel.teardown();
     }
+  });
+});
+
+describe("OffensiveSecurityAgent.consume() streamIdFactory", () => {
+  const startStep = { type: "start-step" };
+  const textStart = { type: "text-start", id: "t0" };
+  const textDelta = { type: "text-delta", id: "t0", text: "hi" };
+
+  it("mints message and text-part ids from the factory with positional context", async () => {
+    const streamIdFactory = vi.fn((context: unknown) => {
+      const ctx = context as {
+        kind: string;
+        stepIndex?: number;
+        textPartIndex?: number;
+      };
+      if (ctx.kind === "message") return `msg-${ctx.stepIndex}`;
+      if (ctx.kind === "text-part")
+        return `part-${ctx.stepIndex}-${ctx.textPartIndex}`;
+      return "tool";
+    });
+    const agent = buildStubAgent({
+      fullStream: yieldChunks([startStep, textStart, textDelta]),
+      streamIdFactory,
+    });
+    const emitted: Array<{ messageId?: string; textPartId?: string }> = [];
+    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(((
+      _chunk: unknown,
+      ids: { messageId?: string; textPartId?: string },
+    ) => {
+      emitted.push({ messageId: ids.messageId, textPartId: ids.textPartId });
+    }) as unknown as AgentEventBus["emitStreamPart"]);
+
+    await agent.consume();
+
+    expect(streamIdFactory).toHaveBeenCalledWith({
+      kind: "message",
+      stepIndex: 0,
+    });
+    expect(streamIdFactory).toHaveBeenCalledWith({
+      kind: "text-part",
+      stepIndex: 0,
+      textPartIndex: 0,
+    });
+    const deltaEmit = emitted.at(-1);
+    expect(deltaEmit?.messageId).toBe("msg-0");
+    expect(deltaEmit?.textPartId).toBe("part-0-0");
+  });
+
+  it("falls back to random ids when no factory is provided", async () => {
+    const agent = buildStubAgent({
+      fullStream: yieldChunks([startStep, textStart, textDelta]),
+    });
+    const emitted: Array<{ messageId?: string }> = [];
+    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(((
+      _chunk: unknown,
+      ids: { messageId?: string },
+    ) => {
+      emitted.push({ messageId: ids.messageId });
+    }) as unknown as AgentEventBus["emitStreamPart"]);
+
+    await agent.consume();
+
+    const deltaEmit = emitted.at(-1);
+    expect(typeof deltaEmit?.messageId).toBe("string");
+    expect(deltaEmit?.messageId).not.toBe("msg-0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O3/PR3: in-stream error parts complete every span (agent + generation)
+// ---------------------------------------------------------------------------
+
+describe("error-part span completion", () => {
+  it("an error-part run exports the agent span with error status", async () => {
+    // Local in-memory harness (inlined per this file's rule).
+    const { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } =
+      require("@opentelemetry/sdk-trace-base") as typeof import("@opentelemetry/sdk-trace-base");
+    const { AsyncLocalStorageContextManager } =
+      require("@opentelemetry/context-async-hooks") as typeof import("@opentelemetry/context-async-hooks");
+    const api =
+      require("@opentelemetry/api") as typeof import("@opentelemetry/api");
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const contextManager = new AsyncLocalStorageContextManager();
+    contextManager.enable();
+    api.trace.setGlobalTracerProvider(provider);
+    api.context.setGlobalContextManager(contextManager);
+
+    try {
+      // The stream yields a chunk then an error — the raw generator mimics
+      // the AI SDK's error part (consume() sees it as a thrown error after
+      // the drain in the real pipeline).
+      async function* errorPartStream(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield { type: "text-delta", id: "t1", delta: "partial" };
+        throw new Error("model exploded mid-stream");
+      }
+      const agent = buildStubAgent({ fullStream: errorPartStream() });
+      await expect(agent.consume()).rejects.toThrow("model exploded");
+
+      const span = exporter
+        .getFinishedSpans()
+        .find((s) => s.name === "invoke_agent default");
+      expect(span).toBeDefined();
+      expect(span?.status.code).toBe(api.SpanStatusCode.ERROR);
+      expect(span?.attributes["error.type"]).toBe("Error");
+      expect(span?.ended).toBe(true);
+    } finally {
+      await provider.shutdown();
+      contextManager.disable();
+      api.trace.disable();
+      api.context.disable();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR4: root IO + consistent trace identity
+// ---------------------------------------------------------------------------
+
+describe("trace identity and root IO", () => {
+  const textChunk = { type: "text-delta", id: "t1", delta: "hi" };
+  async function* oneStep(): AsyncGenerator<unknown, void, undefined> {
+    yield textChunk;
+  }
+
+  function setupOtel() {
+    const { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } =
+      require("@opentelemetry/sdk-trace-base") as typeof import("@opentelemetry/sdk-trace-base");
+    const { AsyncLocalStorageContextManager } =
+      require("@opentelemetry/context-async-hooks") as typeof import("@opentelemetry/context-async-hooks");
+    const api =
+      require("@opentelemetry/api") as typeof import("@opentelemetry/api");
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const contextManager = new AsyncLocalStorageContextManager();
+    contextManager.enable();
+    api.trace.setGlobalTracerProvider(provider);
+    api.context.setGlobalContextManager(contextManager);
+    return {
+      spans: () => exporter.getFinishedSpans(),
+      async teardown() {
+        await provider.shutdown();
+        contextManager.disable();
+        api.trace.disable();
+        api.context.disable();
+      },
+    };
+  }
+
+  it("root spans carry canonical conversation and agent identity", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_stub");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("subagent spans separate agent identity from the root conversation", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        subagentId: "ses_exec_1",
+        subagentName: "recon-sub",
+      });
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((s) => s.name === "invoke_agent recon-sub");
+      const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_exec_1");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_exec_1");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("root span IO appears only under full payload capture", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "pentest the acme api",
+      });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.attributes["gen_ai.prompt"]).toBe("pentest the acme api");
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+
+    // Default mode: metadata only — no prompt or result payload.
+    const otel2 = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "pentest the acme api",
+      });
+      await agent.consume();
+      const span = otel2.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.attributes["gen_ai.prompt"]).toBeUndefined();
+      expect(span?.attributes["gen_ai.completion"]).toBeUndefined();
+    } finally {
+      await otel2.teardown();
+    }
+  });
+
+  it("records root IO for the primary Fast Strike run", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        resolveResult: () => ({ summary: "strike complete" }),
+        subagentId: "fast-strike",
+        agentMode: "fast-strike",
+      });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "strike the acme api",
+      });
+
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((candidate) => candidate.name === "invoke_agent fast-strike");
+      expect(span?.attributes["gen_ai.prompt"]).toBe("strike the acme api");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"strike complete"',
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("records the captured response tool result as root output", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        responseCaptured: Promise.resolve({ summary: "scan complete" }),
+        responseToolResult: { summary: "scan complete" },
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      await agent.consume();
+      await agent.drained;
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"scan complete"',
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("does not wait on response resolution before ending a response-tool run", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    let resolveCaptured!: (value: unknown) => void;
+    const responseCaptured = new Promise<unknown>((resolve) => {
+      resolveCaptured = resolve;
+    });
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        responseCaptured,
+        responseToolResult: { summary: "submitted" },
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      const consume = agent.consume();
+      const drainRejection = Reflect.get(
+        agent,
+        "_drainRejection",
+      ) as Promise<never>;
+      void drainRejection.catch(() => {
+        resolveCaptured({ summary: "resolved" });
+      });
+
+      const result = await Promise.race([
+        consume,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("response resolution stalled")),
+            1000,
+          ),
+        ),
+      ]);
+      await agent.drained;
+
+      expect(result).toEqual({ summary: "resolved" });
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.ended).toBe(true);
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"submitted"',
+      );
+    } finally {
+      resolveCaptured(undefined);
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("preserves captured output when the background drain later fails", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    const captured = { summary: "scan complete" };
+    try {
+      async function* failingAfterResponse(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield textChunk;
+        throw new Error("late drain failure");
+      }
+      const agent = buildStubAgent({
+        fullStream: failingAfterResponse(),
+        responseCaptured: Promise.resolve(captured),
+        responseToolResult: captured,
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      await expect(agent.consume()).resolves.toEqual(captured);
+      await agent.drained;
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"scan complete"',
+      );
+      expect(String(span?.attributes["gen_ai.completion"])).not.toContain(
+        "Failure: late drain failure",
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("failed runs record the failure as root output under full capture", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      async function* failing(): AsyncGenerator<unknown, void, undefined> {
+        yield textChunk;
+        throw new Error("final failure");
+      }
+      const agent = buildStubAgent({ fullStream: failing() });
+      await expect(agent.consume()).rejects.toThrow("final failure");
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        "Failure: final failure",
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+});
+
+describe("contextRecorder integration", () => {
+  const streamTextChunk = { type: "text-delta", id: "t1", delta: "hi" };
+  const CANONICAL = [
+    { role: "user", content: "recorded prompt" },
+    { role: "assistant", content: "recorded answer" },
+  ] as never[];
+
+  it("flush failure in finalization fails the run after the stream completed", async () => {
+    // Stream completes normally, but the last step's commit failed and the
+    // recorder latched it — finalizeRun's flush must surface it (the SDK
+    // swallows onStepFinish errors, so nothing else would).
+    const flushError = new Error("latched persistence failure");
+    const recorder: RunContextRecorder = {
+      checkpoint: vi.fn(async () => {}),
+      flush: vi.fn(async () => {
+        throw flushError;
+      }),
+      latest: vi.fn(() => undefined),
+    };
+
+    async function* complete(): AsyncGenerator<unknown, void, undefined> {
+      yield streamTextChunk;
+    }
+    const agent = buildStubAgent({
+      fullStream: complete(),
+      contextRecorder: recorder,
+    });
+
+    await expect(agent.consume()).rejects.toBe(flushError);
+  });
+
+  it("canonical latest drives the projection on steps and finish; no duplicated prefix", async () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-recorder-projection-"));
+    streamResponseCalls.length = 0;
+    const recorder: RunContextRecorder = {
+      checkpoint: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+      latest: vi.fn(() => structuredClone(CANONICAL)),
+    };
+    const inferenceRecorder: InferenceRecorder = {
+      runId: "run_recorder_projection",
+      beforeDispatch: vi.fn(async () => {}),
+      beforeToolCall: vi.fn(async () => {}),
+      settle: vi.fn(),
+      retry: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+    };
+    const agent = new OffensiveSecurityAgent({
+      prompt: "recorded prompt",
+      model: "test-model",
+      session: {
+        id: "ses_recorder_projection",
+        rootPath,
+        scratchpadPath: join(rootPath, "scratchpad"),
+      },
+      activeTools: [],
+      contextRecorder: recorder,
+      inferenceRecorder,
+    } as never);
+    void agent.streamResult; // createStream is lazy — force construction
+
+    const streamOpts = streamResponseCalls[0] as {
+      onStepFinish: (event: unknown) => Promise<void>;
+      onFinish: (event: unknown) => Promise<void>;
+    };
+    expect(
+      (streamResponseCalls[0] as { contextRecorder: unknown }).contextRecorder,
+    ).toBe(recorder);
+    expect(streamResponseCalls[0]?.inferenceRecorder).toBe(inferenceRecorder);
+
+    const stepEvent = {
+      response: { id: "resp_1", messages: CANONICAL.slice(1) },
+      usage: {},
+    };
+    await streamOpts.onStepFinish(stepEvent);
+
+    // Writer snapshot equals canonical latest() exactly — the step's
+    // response.messages are already part of the committed context, so the
+    // projection must not re-prepend a base or duplicate them.
+    const writer = agent["writer" as keyof typeof agent] as unknown as {
+      waitForPendingWrites: () => Promise<void>;
+      latest: unknown[] | null;
+    };
+    await writer.waitForPendingWrites().catch(() => {});
+    const captured = writer.latest;
+
+    // onFinish falls back to canonical latest when the writer has nothing.
+    const finishEvent = { response: { messages: [] } };
+    await streamOpts.onFinish(finishEvent);
+
+    expect(recorder.latest).toHaveBeenCalled();
+    expect((captured as unknown[]).length).toBe(CANONICAL.length);
   });
 });

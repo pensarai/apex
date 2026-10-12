@@ -103,6 +103,8 @@ export function getBundledWordlists(): BundledWordlists | null {
 /**
  * Reset the in-memory cache. Test-only — production code should never need
  * to re-resolve paths within a single process lifetime.
+ *
+ * @knipignore test hook for resetting the module-level cache.
  */
 export function _resetBundledWordlistsCacheForTests(): void {
   cached = undefined;

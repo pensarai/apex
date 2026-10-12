@@ -2,10 +2,15 @@
  * JavaScript endpoint extraction utilities
  */
 
+import { resolveBackends } from "../../../tools/backends";
+import type { ToolContext } from "../../offSecAgent/tools/types";
+
 export interface ExtractJavascriptEndpointsParams {
   url: string;
   sessionCookie?: string;
   includeExternalJS?: boolean;
+  /** Routes the page fetch through the caller's tool backend — no bare `fetch`. */
+  ctx: ToolContext;
 }
 
 export interface EndpointInfo {
@@ -39,104 +44,24 @@ export async function extractJavascriptEndpoints(
   params: ExtractJavascriptEndpointsParams,
 ): Promise<ExtractJavascriptEndpointsResult> {
   try {
-    const { url, sessionCookie, includeExternalJS = true } = params;
+    const { url, sessionCookie, includeExternalJS = true, ctx } = params;
 
     // Fetch the page
-    const fetchRequest: RequestInit = { method: "GET" };
-    if (sessionCookie) {
-      fetchRequest.headers = { Cookie: sessionCookie };
-    }
-
-    const pageResult = await fetch(url, fetchRequest);
-    const html = await pageResult.text();
-
-    // Regex patterns to extract endpoints
-    const endpointPatterns = [
-      // jQuery AJAX
-      /\$\.ajax\s*\(\s*\{\s*url\s*:\s*['"]([^'"]+)['"]/g,
-      /\$\.get\s*\(\s*['"]([^'"]+)['"]/g,
-      /\$\.post\s*\(\s*['"]([^'"]+)['"]/g,
-      /\$\.getJSON\s*\(\s*['"]([^'"]+)['"]/g,
-      // Fetch API
-      /fetch\s*\(\s*['"]([^'"]+)['"]/g,
-      /fetch\s*\(\s*`([^`]+)`/g,
-      // Axios
-      /axios\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g,
-      // XMLHttpRequest
-      /\.open\s*\(\s*['"](?:GET|POST|PUT|DELETE|PATCH)['"]\s*,\s*['"]([^'"]+)['"]/gi,
-      // URL construction
-      /url\s*[:=]\s*['"]([^'"]+)['"]/gi,
-      /href\s*[:=]\s*['"]([^'"]+)['"]/gi,
-      /action\s*[:=]\s*['"]([^'"]+)['"]/gi,
-    ];
-
-    const endpoints: EndpointInfo[] = [];
-    const jsFiles: string[] = [];
-
-    // Extract inline script content
-    const scriptTagRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-    for (
-      let scriptMatch = scriptTagRegex.exec(html);
-      scriptMatch !== null;
-      scriptMatch = scriptTagRegex.exec(html)
-    ) {
-      const scriptContent = scriptMatch[1];
-
-      // Apply all patterns to script content
-      for (const pattern of endpointPatterns) {
-        const patternCopy = new RegExp(pattern.source, pattern.flags);
-        for (
-          let match = patternCopy.exec(scriptContent);
-          match !== null;
-          match = patternCopy.exec(scriptContent)
-        ) {
-          const endpoint = match[1] || match[2];
-          if (endpoint?.startsWith("/")) {
-            endpoints.push({
-              endpoint,
-              pattern: `${pattern.source.substring(0, 30)}...`,
-              source: "inline-script",
-            });
-          }
-        }
-      }
-    }
-
-    // Extract external JS file URLs
-    if (includeExternalJS) {
-      const scriptSrcRegex = /<script[^>]+src=['"]([^'"]+)['"]/gi;
-      for (
-        let srcMatch = scriptSrcRegex.exec(html);
-        srcMatch !== null;
-        srcMatch = scriptSrcRegex.exec(html)
-      ) {
-        jsFiles.push(srcMatch[1]);
-      }
-    }
-
-    // Deduplicate endpoints
-    const uniqueEndpoints = Array.from(
-      new Set(endpoints.map((e) => e.endpoint)),
-    ).map((ep) => endpoints.find((e) => e.endpoint === ep)!);
-
-    // Parameterize endpoints (replace numeric IDs with {id})
-    const parameterizedEndpoints = uniqueEndpoints.map((e) => ({
-      ...e,
-      pattern: e.endpoint.replace(/\/\d+/g, "/{id}"),
-    }));
-
-    return {
-      success: true,
+    const pageResult = await resolveBackends(ctx).http.request({
       url,
-      endpoints: uniqueEndpoints,
-      parameterizedPatterns: Array.from(
-        new Set(parameterizedEndpoints.map((e) => e.pattern)),
-      ),
-      totalAjaxCalls: endpoints.length,
-      externalJSFiles: jsFiles,
-      filesAnalyzed: 1 + jsFiles.length,
-      message: `Found ${uniqueEndpoints.length} unique endpoints in JavaScript (${endpoints.length} total calls).`,
-    };
+      method: "GET",
+      followRedirects: true,
+      headers: sessionCookie ? { Cookie: sessionCookie } : undefined,
+    });
+    if (!pageResult.success) {
+      return {
+        success: false,
+        message: `JavaScript extraction error: ${pageResult.error ?? "request failed"}`,
+      };
+    }
+    const html = pageResult.body;
+
+    return extractJavascriptEndpointsFromHtml(html, url, includeExternalJS);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -144,4 +69,106 @@ export async function extractJavascriptEndpoints(
       message: `JavaScript extraction error: ${message}`,
     };
   }
+}
+
+/**
+ * Pure HTML variant of {@link extractJavascriptEndpoints} for callers that
+ * already hold the page body — no second fetch of the page.
+ */
+export function extractJavascriptEndpointsFromHtml(
+  html: string,
+  url: string,
+  includeExternalJS = true,
+): ExtractJavascriptEndpointsResult {
+  // Regex patterns to extract endpoints
+  const endpointPatterns = [
+    // jQuery AJAX
+    /\$\.ajax\s*\(\s*\{\s*url\s*:\s*['"]([^'"]+)['"]/g,
+    /\$\.get\s*\(\s*['"]([^'"]+)['"]/g,
+    /\$\.post\s*\(\s*['"]([^'"]+)['"]/g,
+    /\$\.getJSON\s*\(\s*['"]([^'"]+)['"]/g,
+    // Fetch API
+    /fetch\s*\(\s*['"]([^'"]+)['"]/g,
+    /fetch\s*\(\s*`([^`]+)`/g,
+    // Axios
+    /axios\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g,
+    // XMLHttpRequest
+    /\.open\s*\(\s*['"](?:GET|POST|PUT|DELETE|PATCH)['"]\s*,\s*['"]([^'"]+)['"]/gi,
+    // URL construction
+    /url\s*[:=]\s*['"]([^'"]+)['"]/gi,
+    /href\s*[:=]\s*['"]([^'"]+)['"]/gi,
+    /action\s*[:=]\s*['"]([^'"]+)['"]/gi,
+  ];
+
+  const endpoints: EndpointInfo[] = [];
+  const jsFiles: string[] = [];
+
+  // Extract inline script content
+  const scriptTagRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  for (
+    let scriptMatch = scriptTagRegex.exec(html);
+    scriptMatch !== null;
+    scriptMatch = scriptTagRegex.exec(html)
+  ) {
+    const scriptContent = scriptMatch[1];
+
+    // Apply all patterns to script content
+    for (const pattern of endpointPatterns) {
+      const patternCopy = new RegExp(pattern.source, pattern.flags);
+      for (
+        let match = patternCopy.exec(scriptContent);
+        match !== null;
+        match = patternCopy.exec(scriptContent)
+      ) {
+        const endpoint = match[1] || match[2];
+        if (endpoint?.startsWith("/")) {
+          endpoints.push({
+            endpoint,
+            pattern: `${pattern.source.substring(0, 30)}...`,
+            source: "inline-script",
+          });
+        }
+      }
+    }
+  }
+
+  // Extract external JS file URLs
+  if (includeExternalJS) {
+    const scriptSrcRegex = /<script[^>]+src=['"]([^'"]+)['"]/gi;
+    for (
+      let srcMatch = scriptSrcRegex.exec(html);
+      srcMatch !== null;
+      srcMatch = scriptSrcRegex.exec(html)
+    ) {
+      jsFiles.push(srcMatch[1]);
+    }
+  }
+
+  // Deduplicate, keeping the first record and first-seen order (O(n))
+  const byEndpoint = new Map<string, EndpointInfo>();
+  for (const record of endpoints) {
+    if (!byEndpoint.has(record.endpoint)) {
+      byEndpoint.set(record.endpoint, record);
+    }
+  }
+  const uniqueEndpoints = Array.from(byEndpoint.values());
+
+  // Parameterize endpoints (replace numeric IDs with {id})
+  const parameterizedEndpoints = uniqueEndpoints.map((e) => ({
+    ...e,
+    pattern: e.endpoint.replace(/\/\d+/g, "/{id}"),
+  }));
+
+  return {
+    success: true,
+    url,
+    endpoints: uniqueEndpoints,
+    parameterizedPatterns: Array.from(
+      new Set(parameterizedEndpoints.map((e) => e.pattern)),
+    ),
+    totalAjaxCalls: endpoints.length,
+    externalJSFiles: jsFiles,
+    filesAnalyzed: 1 + jsFiles.length,
+    message: `Found ${uniqueEndpoints.length} unique endpoints in JavaScript (${endpoints.length} total calls).`,
+  };
 }

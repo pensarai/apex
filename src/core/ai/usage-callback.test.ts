@@ -419,6 +419,36 @@ describe("usage callback cache breakdown (generateObjectResponse)", () => {
     expect(calls[0]?.context.cacheReadTokens).toBe(0);
     expect(calls[0]?.context.cacheWriteTokens).toBe(0);
   });
+
+  it("routes usage to usageRecorder and skips the global callback", async () => {
+    mockState.model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: '{"result":"ok"}' }],
+        finishReason: { unified: "stop", raw: "stop" },
+        warnings: [],
+        usage: {
+          inputTokens: { total: 50, noCache: 50, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 5, text: undefined, reasoning: undefined },
+        },
+      }),
+    });
+    const globalCalls = setupUsageCallback();
+    const usageRecorder = vi.fn();
+
+    await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ result: z.string() }),
+      prompt: "hi",
+      usageRecorder,
+    });
+
+    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(MODEL, 50, 5, {
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    expect(globalCalls).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

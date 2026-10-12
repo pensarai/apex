@@ -1,18 +1,8 @@
-import { execFile } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, extname, join, relative, resolve } from "node:path";
-import { promisify } from "node:util";
+import { basename, extname } from "node:path";
+import type { CommandBackend } from "../tools/backends/types";
 import { DEFAULT_WHITEBOX_EXCLUDED_DIRS } from "./profiles";
-import type {
-  LanguageId,
-  PackageManagerId,
-  RepoProfile,
-  ToolAvailability,
-} from "./types";
-
-const execFileAsync = promisify(execFile);
-const MAX_PROFILE_FILES = 5_000;
+import { createRepoProfileIO, type RepoProfileIO } from "./profileTransport";
+import type { LanguageId, PackageManagerId, RepoProfile } from "./types";
 
 const LANGUAGE_BY_EXTENSION: Record<string, LanguageId> = {
   ".ts": "typescript",
@@ -96,51 +86,6 @@ const TOOL_NAMES = [
   "spotbugs",
   "jazzer",
 ];
-
-function shouldSkipDir(name: string): boolean {
-  return DEFAULT_WHITEBOX_EXCLUDED_DIRS.includes(name);
-}
-
-async function walkFiles(rootPath: string): Promise<string[]> {
-  const files: string[] = [];
-  const absRoot = resolve(rootPath);
-
-  function isWithinRoot(path: string): boolean {
-    try {
-      const real = realpathSync(path);
-      return real === absRoot || real.startsWith(`${absRoot}/`);
-    } catch {
-      return false;
-    }
-  }
-
-  async function walk(current: string): Promise<void> {
-    if (files.length >= MAX_PROFILE_FILES) return;
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (files.length >= MAX_PROFILE_FILES) return;
-      const fullPath = join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (shouldSkipDir(entry.name)) continue;
-        if (entry.isSymbolicLink() && !isWithinRoot(fullPath)) continue;
-        await walk(fullPath);
-        continue;
-      }
-      if (entry.isFile()) {
-        files.push(relative(rootPath, fullPath));
-      }
-    }
-  }
-
-  await walk(rootPath);
-  return files;
-}
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
@@ -227,18 +172,19 @@ function detectEntryHints(files: string[]): string[] {
   return hints.slice(0, 100);
 }
 
-async function readPackageScripts(rootPath: string): Promise<{
+async function readPackageScripts(
+  rootPath: string,
+  io: RepoProfileIO,
+): Promise<{
   buildCommands: string[];
   testCommands: string[];
   runCommands: string[];
 }> {
-  const packageJsonPath = join(rootPath, "package.json");
-  if (!existsSync(packageJsonPath)) {
-    return { buildCommands: [], testCommands: [], runCommands: [] };
-  }
+  const raw = await io.readPackageJson(rootPath);
+  if (!raw) return { buildCommands: [], testCommands: [], runCommands: [] };
 
   try {
-    const parsed = JSON.parse(await readFile(packageJsonPath, "utf-8")) as {
+    const parsed = JSON.parse(raw) as {
       scripts?: Record<string, string>;
       packageManager?: string;
     };
@@ -262,45 +208,18 @@ async function readPackageScripts(rootPath: string): Promise<{
   }
 }
 
-async function runGit(
+export async function profileCodebase(
   rootPath: string,
-  args: string[],
-): Promise<string | undefined> {
-  try {
-    const { stdout } = await execFileAsync("git", args, {
-      cwd: rootPath,
-      timeout: 5_000,
-      maxBuffer: 1024 * 1024,
-    });
-    return String(stdout).trim();
-  } catch {
-    return undefined;
-  }
-}
+  command?: CommandBackend | RepoProfileIO,
+): Promise<RepoProfile> {
+  const io =
+    command && "walkFiles" in command ? command : createRepoProfileIO(command);
+  await io.assertDirectory(rootPath);
 
-async function detectTool(name: string): Promise<ToolAvailability> {
-  const cmd = process.platform === "win32" ? "where" : "which";
-  try {
-    const { stdout } = await execFileAsync(cmd, [name], {
-      timeout: 2_000,
-      maxBuffer: 1024 * 64,
-    });
-    return { name, available: true, path: String(stdout).trim() };
-  } catch {
-    return { name, available: false };
-  }
-}
-
-export async function profileCodebase(rootPath: string): Promise<RepoProfile> {
-  const rootStat = await stat(rootPath);
-  if (!rootStat.isDirectory()) {
-    throw new Error(`${rootPath} is not a directory`);
-  }
-
-  const files = await walkFiles(rootPath);
-  const packageScripts = await readPackageScripts(rootPath);
-  const currentCommit = await runGit(rootPath, ["rev-parse", "HEAD"]);
-  const submodulesRaw = await runGit(rootPath, ["submodule", "status"]);
+  const files = await io.walkFiles(rootPath);
+  const packageScripts = await readPackageScripts(rootPath, io);
+  const currentCommit = await io.runGit(rootPath, ["rev-parse", "HEAD"]);
+  const submodulesRaw = await io.runGit(rootPath, ["submodule", "status"]);
   const submodules = submodulesRaw
     ? submodulesRaw
         .split("\n")
@@ -310,7 +229,9 @@ export async function profileCodebase(rootPath: string): Promise<RepoProfile> {
 
   const languages = detectLanguages(files);
   const packageManagers = detectPackageManagers(files);
-  const toolAvailability = await Promise.all(TOOL_NAMES.map(detectTool));
+  const toolAvailability = await Promise.all(
+    TOOL_NAMES.map((name) => io.detectTool(name, rootPath)),
+  );
 
   return {
     rootPath,

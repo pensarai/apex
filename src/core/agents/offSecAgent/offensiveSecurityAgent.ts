@@ -9,55 +9,86 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { streamResponse } from "../../ai";
+import { normalizeStepUsage, streamResponse } from "../../ai";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
-import {
-  resolveEffectiveHeaders,
-  stripBrowserManagedHeaders,
-} from "../../http/targetHeaders";
-import { newMessageId, newPartId, newRunId } from "../../id/id";
+import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
 import {
   getApexTracer,
   registerActiveRootSpan,
+  shouldRecordAiPayloads,
   unregisterActiveRootSpan,
   withSubagentSessionBaggage,
 } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import type { RunContextRecorder } from "../../runtime/runContext";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
-import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
   createInterruptedStepFinalizer,
   type FinalizeInterruptedStepInput,
 } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { wrapRecordedTools } from "./recordedTools";
+import {
+  buildBundledAssetsSection,
+  buildRuntimeContextSection,
+  peekSettledRuntimeFacts,
+  probeRuntimeFacts,
+  type RuntimeExecutionFacts,
+  resolveCommandPlatform,
+  UNKNOWN_FACTS,
+} from "./runtimeContext";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
+import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
-  createAllTools,
+  CallbackListenerRegistry,
   createResponseTool,
+  createToolsForNames,
   EMAIL_TOOL_NAMES_ACTIVE,
   FAST_STRIKE_EXCLUDED_TOOL_NAMES,
-  PersistentShell,
+  listToolRegistryNames,
+  PerCommandShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
+  resolveBrowserHeaderPolicy,
   SEND_EMAIL_TOOL_NAME,
   SMS_TOOL_NAMES_ACTIVE,
   sessionHasSmsPasswordless,
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
+import type { ToolContext } from "./tools/types";
 import { StepTraceWriter } from "./trace";
 import type {
   AgentMode,
   CreateAgentInput,
   OffensiveSecurityAgentInput,
+  StreamIdFactory,
 } from "./types";
+
+function isGenericAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === "AbortError" &&
+    error.cause === undefined &&
+    /^(?:Aborted|Agent aborted by user|(?:This|The) operation was aborted|The user aborted a request)\.?$/.test(
+      error.message,
+    )
+  );
+}
+
+function agentAbortReason(signal: AbortSignal): unknown {
+  const reason: unknown = signal.reason;
+  return reason === undefined || isGenericAbortError(reason)
+    ? new DOMException("Agent aborted by user", "AbortError")
+    : reason;
+}
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
@@ -70,6 +101,22 @@ const WORKSPACE_TOOL_NAME_SET = new Set<string>(WORKSPACE_TOOL_NAMES);
 const WORKSPACE_WRITE_TOOL_NAME_SET = new Set<string>(
   WORKSPACE_WRITE_TOOL_NAMES,
 );
+
+// Tools whose presence means backend-probed execution facts can change what
+// the agent should attempt: command execution, native file tools, and PoC
+// runs. Agents holding none of these skip the runtime probe entirely.
+const RUNTIME_CAPABLE_TOOL_NAMES = new Set<string>([
+  "execute_command",
+  "read_file",
+  "list_files",
+  "glob",
+  "grep",
+  "create_file",
+  "update_file",
+  "delete_file",
+  "apply_patch",
+  "document_vulnerability",
+]);
 
 const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
 const WORKSPACE_NOUN_RE =
@@ -196,7 +243,8 @@ export function filterWorkspaceToolsForRun(
  * the session context, and specific agents select which ones to activate
  * via the `activeTools` array (passed through to the AI SDK).
  *
- * The stream is created lazily on first consumption (see {@link streamResult}),
+ * The stream is created lazily on first consumption (see {@link streamReady}
+ * and {@link streamResult}) — after backend-probed runtime facts settle —
  * so the AI SDK telemetry nests under this agent's span — no separate `.run()`.
  *
  * @typeParam TResult - The type returned by {@link consume}. When the input
@@ -225,11 +273,25 @@ export function filterWorkspaceToolsForRun(
  * ```
  */
 export class OffensiveSecurityAgent<TResult = void> {
-  /** Cached stream result, populated on first {@link streamResult} access. */
+  /** The real SDK stream result — created exactly once, with backend-probed facts via {@link streamReady} or settled-or-unknown facts via the sync escape hatch. */
   private _streamResult: StreamTextResult<ToolSet, never> | null = null;
 
-  /** Builds the underlying stream; invoked lazily by {@link streamResult}. */
-  private readonly createStream: () => StreamTextResult<ToolSet, never>;
+  /** Composes the final system prompt, writes the trace init record, and calls `streamResponse`. Invoked at most once; both creation paths guard on `_streamResult`. */
+  private readonly createStream: (
+    facts: RuntimeExecutionFacts | null,
+  ) => StreamTextResult<ToolSet, never>;
+
+  /** Lazy runtime probe, then `createStream`; memoized by {@link streamInit}. */
+  private readonly initializeStreamOnce: () => Promise<void>;
+
+  /** Memoized {@link streamReady} promise; initialization runs at most once. */
+  private streamInit: Promise<void> | null = null;
+
+  /** True when this agent's tool selection can use backend-probed execution facts. */
+  private readonly probesRuntime: boolean;
+
+  /** The tool context whose runtime scope keys fact discovery and the sync fallback. */
+  private readonly toolCtx: ToolContext;
 
   /** The event bus for this agent's streaming output. */
   public readonly eventBus: AgentEventBus;
@@ -243,6 +305,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Set synchronously when `response` fires, ahead of any async `resolveResult`, to distinguish a clean finish from an abort. */
   private _responseToolFired = false;
+
+  /** Raw structured result submitted to the response tool, retained for root-span output. */
+  private _responseToolResult: unknown;
 
   /** Resolves the instant `response` captures the result, so {@link consume} can return early and drain in the background. */
   private _resolveResponseCaptured!: (result: TResult) => void;
@@ -267,12 +332,16 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
-
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
-  /** Persistent shell for local-mode command execution; disposed on consume() completion. */
-  private readonly persistentShell?: PersistentShell;
+  /** Per-run stream counters for deterministic id derivation via {@link streamIdFactory}. */
+  private streamStepIndex = -1;
+
+  private streamTextPartIndex = 0;
+
+  /** Per-command executor for local-mode command execution; disposed on consume() completion. */
+  private readonly commandShell?: PerCommandShell;
 
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
@@ -310,7 +379,18 @@ export class OffensiveSecurityAgent<TResult = void> {
   private browserDisconnected = false;
   private shellDisposed = false;
 
+  /** Listeners started by this agent's callback helper tools; drained on finalization. */
+  private readonly callbackListeners = new CallbackListenerRegistry();
+  // Cached dispose barrier — repeat disposeOwnedShell() calls return the
+  // same settlement wait instead of a fire-and-forget.
+  private shellDisposeBarrier: Promise<void> | null = null;
+
   private readonly abortSignal?: AbortSignal;
+
+  private readonly streamIdFactory?: StreamIdFactory;
+
+  /** Recorded-run durable context authority; flushed (and failing) in finalizeRun. */
+  private readonly contextRecorder?: RunContextRecorder;
 
   /** The user-facing prompt passed to the model. */
   public readonly userPrompt: string;
@@ -370,22 +450,33 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentName = input.subagentName;
     this.agentMode = input.mode ?? "default";
     this.abortSignal = input.abortSignal;
+    this.streamIdFactory = input.streamIdFactory;
+    this.contextRecorder = input.contextRecorder;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
     // -- Resolve agent working directory ----------------------------------------
-    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    // Explicit input wins over session config; command cwd and file-tool
+    // scoping (fileWorkspaceRoot) are independent and resolved separately.
+    const agentCwd =
+      input.agentCwd ??
+      input.session.config?.agentCwd ??
+      input.session.rootPath;
+    // Same precedence for the file-tool workspace: an explicit root (e.g. a
+    // child agent's helper directory) wins over the session's remote root.
+    const fileWorkspaceRoot =
+      input.fileWorkspaceRoot ?? input.session.config?.remoteFileWorkspaceRoot;
 
-    // -- Persistent shell (local mode only) -----------------------------------
+    // -- Per-command executor (local mode only) -------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
-      this.persistentShell = new PersistentShell({
+      this.commandShell = new PerCommandShell({
         cwd: agentCwd,
         env: input.environmentVariables,
       });
       if (input.commandCancelHandle) {
-        const shell = this.persistentShell;
+        const shell = this.commandShell;
         input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
       }
     }
@@ -399,17 +490,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
-      // Snapshot resolved headers into the browser session. Later mutations
-      // require a browser restart to take effect.
-      const sessionHeaders = input.target
-        ? resolveEffectiveHeaders(input.session, input.target)
-        : input.session.config?.headers;
       this.ownsBrowserSession = !input.browserSession;
       this.browserSession =
         input.browserSession ??
         new PlaywrightMcpSession({
-          extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
+          headerPolicy: resolveBrowserHeaderPolicy(input.session, input.target),
           display: input.display,
+          engine: input.browserEngine,
         });
       // Owned sessions aren't wired through createBrowserTools' abort path
       // (existingSession skips that listener). Disconnect on abort so timeout/
@@ -464,9 +551,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const builtinTools = createAllTools({
+    const toolCtx = {
+      ...(input.attackSurfaceArtifactsPath
+        ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
+        : {}),
       session: input.session,
       agentCwd,
+      fileWorkspaceRoot,
       target: input.target,
       grpc: input.grpc,
       systemScope: input.systemScope,
@@ -481,12 +572,13 @@ export class OffensiveSecurityAgent<TResult = void> {
         ? input.onCacheMetrics
         : undefined,
       sandbox: input.sandbox,
+      backends: input.backends,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       secretValues: input.secretValues,
       environmentVariables: input.environmentVariables,
-      persistentShell: this.persistentShell,
+      commandShell: this.commandShell,
       skillsRegistry: input.skillsRegistry,
       promptInjectionLibrary: input.promptInjectionLibrary,
       promptInjectionLibrarySource:
@@ -506,11 +598,82 @@ export class OffensiveSecurityAgent<TResult = void> {
       // virtual desktop (their browsers belong to the same endpoint's stream),
       // rather than falling back to the process-wide DISPLAY (:0).
       display: input.display,
-    });
+      // Spawn seam + durable hooks inherited by any sub-agent this agent spawns.
+      // Resolve the default once here so every tool sees a guaranteed spawner.
+      subagentSpawner: input.subagentSpawner ?? inProcessSubagentSpawner,
+      // Owned-listener cleanup seam: drained by finalizeRun/abortAndDrain.
+      callbackListeners: this.callbackListeners,
+      smsInbox: input.smsInbox,
+      emailAdapterFor: input.emailAdapterFor,
+      languageModelMiddleware: input.languageModelMiddleware,
+      usageRecorder: input.usageRecorder,
+      streamIdFactory: input.streamIdFactory,
+    };
+
+    // -- Effective tool selection (names only — factories run below) ---------
+    // Resolved BEFORE construction so inactive factories never run. Fast
+    // strike enumerates the live registry (conditional availability plus
+    // any extra tools) exactly as Object.keys on the merged map did.
+    const hasEmail =
+      (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
+    const hasSmtp = !!input.session.config?.smtpConfig;
+    const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
+    const smsToolSet = new Set<string>(SMS_TOOL_NAMES_ACTIVE);
+    const hasSms = sessionHasSmsPasswordless(input.session);
+    const passesEmailSmsGates = (t: string): boolean => {
+      if (smsToolSet.has(t)) return hasSms;
+      if (!emailToolSet.has(t)) return true;
+      if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
+      return hasEmail;
+    };
+
+    let activeTools = (input.activeTools as string[]).filter(
+      passesEmailSmsGates,
+    );
+    if (input.mode === "plan") {
+      const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
+      activeTools = activeTools.filter((t) => planSet.has(t));
+    } else if (input.mode === "fast-strike") {
+      const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
+      // Mirror Object.keys({...builtins, ...extras}): an own extra replaces
+      // the builtin's value but keeps its insertion position; new extras
+      // append. Object.keys already yields own enumerable keys only.
+      const mergedNames = input.extraTools
+        ? Object.keys({
+            ...Object.fromEntries(
+              listToolRegistryNames(toolCtx).map((n) => [n, null]),
+            ),
+            ...input.extraTools,
+          })
+        : listToolRegistryNames(toolCtx);
+      activeTools = mergedNames.filter((t) => {
+        if (excluded.has(t)) return false;
+        return passesEmailSmsGates(t);
+      });
+      // Baseline enumerated Object.keys(tools) AFTER response injection, so
+      // fast-strike + responseSchema activates the injected response tool
+      // even when the input list omits it. Default mode stays caller-explicit.
+      if (input.responseSchema && !activeTools.includes(RESPONSE_TOOL_NAME)) {
+        activeTools = [...activeTools, RESPONSE_TOOL_NAME];
+      }
+    }
+
+    activeTools = filterWorkspaceToolsForRun(
+      activeTools,
+      input.prompt,
+      input.approvalGate !== undefined,
+    );
+
+    const builtinTools = createToolsForNames(toolCtx, activeTools);
 
     let tools: ToolSet = input.extraTools
       ? { ...builtinTools, ...input.extraTools }
       : { ...builtinTools };
+
+    // Only approved calls may reach the execution journal.
+    if (input.toolExecutionRecorder) {
+      tools = wrapRecordedTools(tools, input.toolExecutionRecorder);
+    }
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {
@@ -529,6 +692,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.responseSchema,
           (result) => {
             this._responseToolFired = true;
+            this._responseToolResult = result;
             if (RESPONSE_DEBUG) {
               rlog.warn(
                 `[response-debug] response tool EXECUTED (captured) session=${this.busSessionId} ` +
@@ -589,43 +753,6 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // -- Filter email tools when no inboxes / SMTP are configured -----------
-    const hasEmail =
-      (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
-    const hasSmtp = !!input.session.config?.smtpConfig;
-
-    const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
-    const smsToolSet = new Set<string>(SMS_TOOL_NAMES_ACTIVE);
-    const hasSms = sessionHasSmsPasswordless(input.session);
-    let activeTools = (input.activeTools as string[]).filter((t) => {
-      if (smsToolSet.has(t)) return hasSms;
-      if (!emailToolSet.has(t)) return true;
-      if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
-      return hasEmail;
-    });
-
-    // -- Plan mode: restrict to read-only tools -----------------------------
-    if (input.mode === "plan") {
-      const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
-      activeTools = activeTools.filter((t) => planSet.has(t));
-    } else if (input.mode === "fast-strike") {
-      // Registry minus orchestration tools; email gating matches default mode.
-      const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
-      activeTools = Object.keys(tools).filter((t) => {
-        if (excluded.has(t)) return false;
-        if (smsToolSet.has(t)) return hasSms;
-        if (!emailToolSet.has(t)) return true;
-        if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
-        return hasEmail;
-      });
-    }
-
-    activeTools = filterWorkspaceToolsForRun(
-      activeTools,
-      input.prompt,
-      input.approvalGate !== undefined,
-    );
-
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
@@ -660,48 +787,80 @@ export class OffensiveSecurityAgent<TResult = void> {
     });
     const schedulePersist = () => this.writer.schedulePersist();
 
-    // -- Init record (trace.jsonl first line) ---------------------------------
-    // Hash only the base system prompt (excluding session workspace paths)
-    // so the hash is stable across runs with identical prompt versions.
+    // -- System prompt ---------------------------------------------------------
+    // Persona first; execution facts and the workspace section are appended by
+    // the harness for every persona, so custom prompts no longer bypass them.
+    // Facts are probed through the agent's actual command backend (see
+    // ./runtimeContext) — asynchronous, so the stream is created once they settle.
     const baseSystemPrompt =
       input.system ??
-      detectOSAndEnhancePrompt(
-        buildBaseSystemPrompt({
-          sandboxMode: agentCwd === input.session.rootPath,
-        }),
-      );
-    const systemPrompt =
-      baseSystemPrompt +
-      buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
-
-    traceWriter.writeInit({
-      model: input.model,
-      systemPrompt: baseSystemPrompt,
+      buildBaseSystemPrompt({
+        sandboxMode: agentCwd === input.session.rootPath,
+      });
+    const commandPlatform = resolveCommandPlatform(toolCtx);
+    const workspaceSection = buildSessionWorkspaceSection(
+      input.session,
+      agentCwd,
       activeTools,
-      sessionId: input.session.id,
-      target: input.target,
-    });
+      fileWorkspaceRoot,
+    );
+    // Bundled wordlist paths are host-local: advertise them only when
+    // commands execute locally.
+    const bundledAssets =
+      input.backends || input.sandbox ? null : buildBundledAssetsSection();
+    const assembleBaseSystemPrompt = (
+      facts: RuntimeExecutionFacts | null,
+    ): string => {
+      const sections: string[] = [baseSystemPrompt];
+      if (facts) {
+        sections.push(
+          buildRuntimeContextSection(facts, { platform: commandPlatform }),
+        );
+      }
+      if (bundledAssets) sections.push(bundledAssets);
+      return sections.join("\n\n");
+    };
+    this.toolCtx = toolCtx;
+    // Only agents whose tools can execute commands, touch files, or run
+    // PoCs get a runtime probe — for anyone else the facts are noise and the
+    // probe is a wasted subprocess.
+    this.probesRuntime = activeTools.some((name) =>
+      RUNTIME_CAPABLE_TOOL_NAMES.has(name),
+    );
 
-    // -- Stream ---------------------------------------------------------------
-    // Mutable ref for cache metrics — onCacheMetrics fires synchronously
-    // before onStepFinish within the same step (see ai.ts:367-391).
-    let lastCacheMetrics: {
-      cacheReadTokens: number;
-      cacheWriteTokens: number;
-    } | null = null;
-
-    // Deferred so the AI SDK telemetry binds to this agent's span (entered in
-    // consume()) rather than the construction-time context. See `streamResult`.
-    this.createStream = () =>
-      streamResponse({
+    // -- Init record + stream --------------------------------------------------
+    // Created by async initialization (streamReady) so the AI SDK telemetry
+    // binds to the span active at first consumption (this agent's
+    // invoke_agent span in consume()) and the system prompt can embed
+    // backend-probed facts. The synchronous escape hatch calls the same
+    // factory with settled-or-unknown facts — never host facts — guarded so
+    // exactly one model stream exists either way.
+    this.createStream = (facts) => {
+      // Hash only the base system prompt (excluding session workspace paths)
+      // so the hash is stable across runs with identical prompt versions. No
+      // step record can precede this init line: steps only originate from the
+      // stream created below.
+      const baseWithFacts = assembleBaseSystemPrompt(facts);
+      traceWriter.writeInit({
+        model: input.model,
+        systemPrompt: baseWithFacts,
+        activeTools,
+        sessionId: input.session.id,
+        target: input.target,
+      });
+      return streamResponse({
         prompt: input.prompt,
-        system: systemPrompt,
+        system: baseWithFacts + workspaceSection,
         model: input.model,
         messages: input.messages,
         tools,
         activeTools,
         stopWhen,
         toolChoice: "auto",
+        languageModelMiddleware: input.languageModelMiddleware,
+        usageRecorder: input.usageRecorder,
+        contextRecorder: input.contextRecorder,
+        inferenceRecorder: input.inferenceRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -710,17 +869,32 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
-          this.writer.setLatest([
+          const auxiliaryModelEvent =
+            event.response.id === "summarization" ||
+            event.response.id === "tool-repair";
+          const stepUsage = normalizeStepUsage(event);
+
+          if (auxiliaryModelEvent) {
+            traceWriter.recordStep([], stepUsage, { usageOnly: true });
+            await input.onStepFinish?.(event);
+            return;
+          }
+
+          // Recorded runs project the canonical committed context; the
+          // legacy path reconstructs from the (possibly stale after a fit)
+          // initial prefix. Canonical latest() already includes this step's
+          // messages — committing happens upstream in the ai layer's
+          // onStepFinish wrapper, before this user callback runs.
+          const canonical = input.contextRecorder?.latest() ?? [
             ...initialMessagesRef.current,
             ...event.response.messages,
-          ]);
+          ];
+          this.writer.setLatest(canonical);
           schedulePersist();
-          traceWriter.recordStep(event.response.messages as ModelMessage[], {
-            inputTokens: event.usage.inputTokens ?? 0,
-            outputTokens: event.usage.outputTokens ?? 0,
-            ...lastCacheMetrics,
-          });
-          lastCacheMetrics = null;
+          traceWriter.recordStep(
+            event.response.messages as ModelMessage[],
+            stepUsage,
+          );
           this.eventBus.emit("step-finish", {
             messages: event.response.messages,
             subagentId: this.subagentId,
@@ -741,10 +915,11 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.writer.cancelTimer();
           // Skip if the interrupted-step finalizer already wrote the abort snapshot.
           if (!this.writer.syntheticsPersisted) {
-            const finalMessages = this.writer.latest ?? [
-              ...initialMessagesRef.current,
-              ...event.response.messages,
-            ];
+            const finalMessages = input.contextRecorder?.latest() ??
+              this.writer.latest ?? [
+                ...initialMessagesRef.current,
+                ...event.response.messages,
+              ];
             this.writer.setLatest(finalMessages);
             await this.writer.enqueueWrite(finalMessages).catch(() => {});
           }
@@ -752,18 +927,30 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
         abortSignal: input.abortSignal,
         authConfig: input.authConfig,
-        onCacheMetrics: (metrics) => {
-          lastCacheMetrics = {
-            cacheReadTokens: metrics.cacheReadInputTokens,
-            cacheWriteTokens: metrics.cacheCreationInputTokens,
-          };
-          input.onCacheMetrics?.(metrics);
-        },
+        onCacheMetrics: input.onCacheMetrics,
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
         silent: true,
       });
+    };
+    this.initializeStreamOnce = async () => {
+      // The sync escape hatch may have created the stream while discovery was
+      // pending — never a second model stream.
+      if (this._streamResult !== null) return;
+      // Abort-before-start skips the probe but still creates the stream so the
+      // SDK surfaces the abort normally; a probe failure degrades the prompt
+      // to unknown facts rather than failing the stream.
+      const facts =
+        this.probesRuntime && !this.abortSignal?.aborted
+          ? await probeRuntimeFacts(toolCtx).catch(
+              (): RuntimeExecutionFacts => UNKNOWN_FACTS,
+            )
+          : null;
+      // Re-check after the await: the escape hatch may have raced the probe.
+      if (this._streamResult !== null) return;
+      this._streamResult = this.createStream(facts);
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -771,23 +958,55 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   /**
-   * The underlying Vercel AI SDK stream result — escape hatch for advanced use.
-   * Created lazily so its telemetry binds to the span active at first
-   * consumption (this agent's `invoke_agent` span), not the construction context.
+   * Asynchronous initialization seam: probe runtime facts through this
+   * agent's command backend (only when its selected tools can use them), then
+   * create the stream. Idempotent; every consumption entry point awaits it,
+   * so the AI layer's prompt budgeting and recovery see the actual final
+   * system text.
+   */
+  streamReady(): Promise<void> {
+    this.streamInit ??= this.initializeStreamOnce();
+    return this.streamInit;
+  }
+
+  /**
+   * The underlying Vercel AI SDK stream result — synchronous escape hatch.
+   * Always a real SDK result. Cold access creates it immediately with facts
+   * already settled for this runtime scope, else explicit unknown facts —
+   * never host facts; callers needing freshly probed facts await
+   * {@link streamReady}, `consume()`, or `fullStream` iteration instead.
+   * Guarded so a cold access racing an in-flight probe never creates a
+   * second model stream.
    */
   get streamResult(): StreamTextResult<ToolSet, never> {
     if (this._streamResult === null) {
-      this._streamResult = this.createStream();
+      const facts = this.probesRuntime
+        ? (peekSettledRuntimeFacts(this.toolCtx) ?? UNKNOWN_FACTS)
+        : null;
+      this._streamResult = this.createStream(facts);
     }
     return this._streamResult;
   }
 
   /**
    * The raw async-iterable stream of chunks.
-   * Equivalent to `streamResult.fullStream`.
+   * Equivalent to `streamResult.fullStream`; before initialization it
+   * settles {@link streamReady} on first iteration, then delegates to the
+   * real stream.
    */
   get fullStream(): AsyncIterable<TextStreamPart<ToolSet>> {
-    return this.streamResult.fullStream;
+    if (this._streamResult !== null) {
+      return this._streamResult.fullStream;
+    }
+    const self = this;
+    return (async function* () {
+      await self.streamReady();
+      const stream = self._streamResult;
+      if (stream === null) {
+        throw new Error("Stream initialization did not produce a stream");
+      }
+      yield* stream.fullStream;
+    })();
   }
 
   /**
@@ -799,6 +1018,7 @@ export class OffensiveSecurityAgent<TResult = void> {
    * **Note:** The underlying stream can only be consumed once.
    */
   async *[Symbol.asyncIterator](): AsyncIterator<TextStreamPart<ToolSet>> {
+    await this.streamReady();
     for await (const chunk of this.streamResult.fullStream) {
       yield chunk;
     }
@@ -823,6 +1043,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
 
     const runConsume = async (): Promise<TResult> => {
+      // Reset per-run stream counters so a replayed run derives the same ids.
+      this.streamStepIndex = -1;
+      this.streamTextPartIndex = 0;
       // Tool-call part ids are minted once and reused for the WHOLE session, never reset per step.
       const toolParts = new Map<string, string>();
       const ids: StreamIdContext = {
@@ -835,7 +1058,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         toolPartId: (toolCallId: string) => {
           let p = toolParts.get(toolCallId);
           if (!p) {
-            p = newPartId();
+            p =
+              this.streamIdFactory?.({ kind: "tool-part", toolCallId }) ??
+              newPartId();
             toolParts.set(toolCallId, p);
           }
           return p;
@@ -846,7 +1071,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       // unpersisted results (PR #779), streamed arg text, and deferred tool
       // errors — all owned by the tracker (see ./toolLifecycle).
       const tracker = new ToolLifecycleTracker();
-      let streamError: unknown = null;
+      let streamError: unknown;
+      let hasStreamError = false;
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
@@ -859,6 +1085,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       diagnostics.start();
 
       try {
+        // Initialize (runtime probe + stream creation) inside the span so
+        // telemetry binds to this agent's invoke_agent span.
+        await this.streamReady();
         // 1–3. Iterate the stream: observe diagnostics, apply the part (id
         // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
@@ -870,8 +1099,17 @@ export class OffensiveSecurityAgent<TResult = void> {
         // finish-step needs them for the finalization snapshot.
       } catch (err) {
         // 4. Capture the error; finalization below still runs.
-        streamError = err;
+        streamError =
+          this.abortSignal?.aborted && isGenericAbortError(err)
+            ? agentAbortReason(this.abortSignal)
+            : err;
+        hasStreamError = true;
       } finally {
+        // Preserve an already-observed abort if cleanup subsequently fails.
+        if (!hasStreamError && this.abortSignal?.aborted) {
+          streamError = agentAbortReason(this.abortSignal);
+          hasStreamError = true;
+        }
         // 5–7. Close the interrupted step, dispose owned resources, settle.
         const finalizeError = await this.finalizeRun({
           tracker,
@@ -879,18 +1117,19 @@ export class OffensiveSecurityAgent<TResult = void> {
           ids,
           streamError,
         });
-        // Teardown failures must not replace the provider/stream failure.
-        if (streamError === null && finalizeError !== null) {
+        // Teardown failures must not replace the originating run failure.
+        if (!hasStreamError && finalizeError !== null) {
           streamError = finalizeError;
+          hasStreamError = true;
         }
       }
 
-      if (streamError) {
+      if (hasStreamError) {
         throw streamError;
       }
 
       if (this.abortSignal?.aborted) {
-        throw new DOMException("Agent aborted by user", "AbortError");
+        throw agentAbortReason(this.abortSignal);
       }
 
       if (this.resolveResult) {
@@ -902,25 +1141,23 @@ export class OffensiveSecurityAgent<TResult = void> {
       return undefined as TResult;
     };
 
-    // One invoke_agent span per execution: root runs get the full run
-    // attribution (stable run id, mode); subagent runs nest beneath the root
-    // span via the async context and carry their own execution-session id.
+    // One invoke_agent span per execution. The conversation/root id stays
+    // stable across the tree while each span identifies its current agent.
     const isSubagent = Boolean(sid);
     const spanLabel = isSubagent
       ? (this.subagentName ?? sid ?? "subagent")
       : this.agentMode;
-    const runId = isSubagent ? undefined : newRunId();
+    const rootSessionId = this._session.id;
+    const agentSessionId = this.busSessionId;
     const runSpanAttributes: Record<string, string> = {
       "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.id": agentSessionId,
       "gen_ai.agent.name": spanLabel,
-      "gen_ai.conversation.id": this.busSessionId,
-      "pensar.session.id": this.busSessionId,
-      ...(isSubagent
-        ? {}
-        : {
-            "pensar.run.id": runId,
-            "pensar.agent.mode": this.agentMode,
-          }),
+      "gen_ai.conversation.id": rootSessionId,
+      "session.id": rootSessionId,
+      "pensar.session.id": agentSessionId,
+      "pensar.root_session.id": rootSessionId,
+      ...(!isSubagent ? { "pensar.agent.mode": this.agentMode } : {}),
     };
 
     const runInSpan = () =>
@@ -931,8 +1168,33 @@ export class OffensiveSecurityAgent<TResult = void> {
           // Root runs register so process-exit shutdown can end an
           // in-flight run's span before the final flush.
           if (!isSubagent) registerActiveRootSpan(span);
+          // Root-level input/output for trace previews — ONLY under full
+          // payload capture (sensitive: objectives can name internal hosts).
+          // Fast Strike uses a synthetic subagent id for UI routing but is the
+          // primary run in that workflow.
+          const recordRootIO =
+            (!isSubagent || this.agentMode === "fast-strike") &&
+            shouldRecordAiPayloads();
+          if (recordRootIO && this.userPrompt) {
+            span.setAttribute("gen_ai.prompt", this.userPrompt);
+          }
           try {
-            return await runConsume();
+            const result = await runConsume();
+            const completedResult =
+              result === undefined && this._responseToolFired
+                ? this._responseToolResult
+                : result;
+            if (
+              recordRootIO &&
+              completedResult !== undefined &&
+              completedResult !== null
+            ) {
+              span.setAttribute(
+                "gen_ai.completion",
+                safePreview(completedResult),
+              );
+            }
+            return result;
           } catch (err) {
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);
@@ -941,12 +1203,21 @@ export class OffensiveSecurityAgent<TResult = void> {
               "error.type",
               err instanceof Error ? err.name : "Error",
             );
+            if (recordRootIO) {
+              span.setAttribute(
+                "gen_ai.completion",
+                this._responseToolFired
+                  ? safePreview(this._responseToolResult)
+                  : `Failure: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
             throw err;
           } finally {
             unregisterActiveRootSpan(span);
             // Ends only after runConsume's finalization (persistence +
-            // owned-resource disposal) has settled.
-            span.end();
+            // owned-resource disposal) has settled. Shutdown may have already
+            // ended it while that finalization was still in flight.
+            if (span.isRecording()) span.end();
           }
         },
       );
@@ -1009,12 +1280,24 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
     switch (chunk.type) {
       case "start-step":
-        ids.messageId = newMessageId();
+        this.streamStepIndex++;
+        this.streamTextPartIndex = 0;
+        ids.messageId =
+          this.streamIdFactory?.({
+            kind: "message",
+            stepIndex: this.streamStepIndex,
+          }) ?? newMessageId();
         this.currentMessageId = ids.messageId;
         ids.textPartId = undefined;
         break;
       case "text-start":
-        ids.textPartId = newPartId();
+        ids.textPartId =
+          this.streamIdFactory?.({
+            kind: "text-part",
+            stepIndex: this.streamStepIndex,
+            textPartIndex: this.streamTextPartIndex,
+          }) ?? newPartId();
+        this.streamTextPartIndex++;
         break;
       case "text-end":
         ids.textPartId = undefined;
@@ -1116,11 +1399,37 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     try {
-      // Dispose first — don't block on persistence I/O.
+      // Dispose first — the 3s kill protocol is awaited, never
+      // fire-and-forget: hosts rely on drained before closeout, so an
+      // active command must settle (bounded) before finalization continues.
       try {
-        this.disposeOwnedShell();
+        await this.disposeOwnedShell();
       } catch (error) {
         recordFinalizationError(error);
+      }
+      // Stop this agent's callback listeners (each outcome independent;
+      // the seam clears the abort signal so cleanup still runs post-abort).
+      try {
+        const outcomes = await this.callbackListeners.stopAll();
+        const failed = outcomes.find((o) => o.error);
+        if (failed) {
+          recordFinalizationError(
+            new Error(
+              `callback listener cleanup failed for ${failed.jobId}: ${failed.error}`,
+            ),
+          );
+        }
+      } catch (error) {
+        recordFinalizationError(error);
+      }
+      // Flush after disposal: surfaces the latched step-commit failure (the
+      // SDK swallows onStepFinish errors) without skipping owned cleanup.
+      if (this.contextRecorder) {
+        try {
+          await this.contextRecorder.flush();
+        } catch (error) {
+          recordFinalizationError(error);
+        }
       }
       // Flush tool-errors that never reached a finish-step into the snapshot.
       for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {
@@ -1145,11 +1454,17 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Snapshot unpersisted step state: open tools get synthetic closes,
       // completed/errored results get written.
       if (tracker.hasUnpersistedState()) {
-        const reason = this.abortSignal?.aborted
-          ? "Agent aborted by user"
-          : streamError instanceof Error && streamError.message
-            ? streamError.message
-            : "Stream terminated unexpectedly";
+        const failure =
+          streamError ??
+          (this.abortSignal?.aborted
+            ? agentAbortReason(this.abortSignal)
+            : undefined);
+        const reason =
+          failure instanceof Error && failure.message
+            ? failure.message
+            : failure !== undefined
+              ? String(failure)
+              : "Stream terminated unexpectedly";
         try {
           await this.finalizeInterruptedStep({
             snapshot: tracker.snapshot(),
@@ -1180,11 +1495,21 @@ export class OffensiveSecurityAgent<TResult = void> {
   // without knowing the shell/browser implementations.
   // ---------------------------------------------------------------------------
 
-  /** Disposes the owned persistent shell exactly once; safe to call from multiple teardown paths. */
-  disposeOwnedShell(): void {
-    if (this.shellDisposed) return;
+  /**
+   * Disposes the owned per-command executor exactly once; safe to call from
+   * multiple teardown paths. Returns the same cached barrier on repeat
+   * calls; the barrier resolves once a killed invocation's bounded
+   * termination protocol has settled, so closeout never races an active
+   * command.
+   */
+  disposeOwnedShell(): Promise<void> {
+    if (this.shellDisposed) {
+      return this.shellDisposeBarrier ?? Promise.resolve();
+    }
     this.shellDisposed = true;
-    this.persistentShell?.dispose();
+    this.shellDisposeBarrier =
+      this.commandShell?.dispose() ?? Promise.resolve();
+    return this.shellDisposeBarrier;
   }
 
   /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */
@@ -1198,11 +1523,13 @@ export class OffensiveSecurityAgent<TResult = void> {
   /**
    * Idempotent teardown for hosts that abort before `consume()` settles
    * (Console `settleOnAbort` on timeout/pause). Force-disconnects the owned
-   * browser, then awaits the drain so Camoufox is reaped before the next
-   * endpoint starts.
+   * browser, awaits the shell's bounded kill barrier, then awaits the drain
+   * so owned work settles before the host starts closeout.
    */
   async abortAndDrain(): Promise<void> {
     await this.disconnectOwnedBrowser();
+    await this.disposeOwnedShell().catch(() => {});
+    await this.callbackListeners.stopAll().catch(() => {});
     await this.drained.catch(() => {});
   }
 
@@ -1211,7 +1538,7 @@ export class OffensiveSecurityAgent<TResult = void> {
    * has been fully consumed. Await this *after* iterating the stream.
    */
   get response() {
-    return this.streamResult.response;
+    return this.streamReady().then(() => this.streamResult.response);
   }
 }
 
@@ -1270,4 +1597,14 @@ function wrapToolsWithApprovalGate(
   }
 
   return wrapped;
+}
+
+/** Bounded, crash-safe JSON preview of a run result for span output. */
+function safePreview(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    return text === undefined ? String(value) : text.slice(0, 2000);
+  } catch {
+    return "[unserializable result]";
+  }
 }

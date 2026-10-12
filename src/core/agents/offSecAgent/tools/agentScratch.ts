@@ -3,7 +3,7 @@ import type { ToolContext } from "./types";
 
 /**
  * Directory for an agent's spilled log artifacts — large HTTP response bodies
- * (`http-responses/`) and command output (`cmd-output/`).
+ * (`http-responses/`) and command/search output (`tool-output/`).
  *
  * Scoped under the owning subagent's directory (`subagents/{subagentId}/logs`)
  * so a host that orchestrates many subagents inside ONE shared session (e.g.

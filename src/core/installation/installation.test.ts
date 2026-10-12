@@ -7,7 +7,6 @@ import {
   getLatestVersion,
   getUpgradeCommandString,
   isNewerVersion,
-  resolveVersion,
   upgrade,
 } from "./index";
 
@@ -27,43 +26,6 @@ describe("getCurrentVersion", () => {
   it("returns a valid semver-like string", () => {
     const version = getCurrentVersion();
     expect(version).toMatch(/^\d+\.\d+\.\d+/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveVersion
-// ---------------------------------------------------------------------------
-
-describe("resolveVersion", () => {
-  const originalEnv = process.env.APEX_VERSION;
-
-  afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.APEX_VERSION = originalEnv;
-    } else {
-      delete process.env.APEX_VERSION;
-    }
-    vi.restoreAllMocks();
-  });
-
-  it("returns APEX_VERSION env var when set", async () => {
-    process.env.APEX_VERSION = "1.2.3-custom";
-    const version = await resolveVersion();
-    expect(version).toBe("1.2.3-custom");
-  });
-
-  it("delegates to getLatestVersion when env var is not set", async () => {
-    delete process.env.APEX_VERSION;
-    const mockFetch = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify({ version: "9.9.9" }), { status: 200 }),
-      );
-    const version = await resolveVersion();
-    expect(version).toBe("9.9.9");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://registry.npmjs.org/@pensar/apex/latest",
-    );
   });
 });
 

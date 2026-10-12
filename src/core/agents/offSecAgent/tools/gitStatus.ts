@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const gitStatusInputSchema = z.object({
@@ -17,43 +18,6 @@ export type GitStatusResult = {
   cwd: string;
 };
 
-async function runGit(
-  ctx: ToolContext,
-  args: string[],
-): Promise<{ success: boolean; stdout: string; stderr: string }> {
-  const command = `git ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`;
-  const full = `cd "${ctx.agentCwd}" && ${command}`;
-
-  if (ctx.sandbox) {
-    const result = await ctx.sandbox.execute(full, { timeout: 30 });
-    return {
-      success: result.success,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
-  }
-
-  if (ctx.persistentShell) {
-    const result = await ctx.persistentShell.execute(
-      full,
-      30,
-      undefined,
-      ctx.abortSignal,
-    );
-    return {
-      success: result.exitCode === 0,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
-  }
-
-  return {
-    success: false,
-    stdout: "",
-    stderr: "No shell or sandbox available",
-  };
-}
-
 export function gitStatus(ctx: ToolContext) {
   return tool({
     description: `Show git working-tree status (porcelain) for the agent repository.
@@ -62,12 +26,27 @@ Use this to self-check which files you changed before finalizing.
 Does not commit, stage, push, or open a PR.`,
     inputSchema: gitStatusInputSchema,
     execute: async (): Promise<GitStatusResult> => {
-      const result = await runGit(ctx, ["status", "--porcelain"]);
+      const result = await resolveBackends(ctx).fs.git("status");
+      // A capped capture is partial evidence: keep the prefix, label it
+      // INCOMPLETE — an empty prefix can still hide entries past the cap,
+      // so it must never read as "(clean)".
+      const truncNote = result.stdoutTruncated
+        ? "git status capture truncated at the byte limit — the porcelain list is INCOMPLETE, not the full status"
+        : "";
       if (!result.success) {
+        const baseError = result.stderr || "git status failed";
         return {
           success: false,
-          error: result.stderr || "git status failed",
+          error: truncNote ? `${baseError}; ${truncNote}` : baseError,
           status: result.stdout,
+          cwd: ctx.agentCwd,
+        };
+      }
+      if (result.stdoutTruncated) {
+        return {
+          success: true,
+          error: truncNote,
+          status: `${result.stdout.trim()}\n${truncNote}`,
           cwd: ctx.agentCwd,
         };
       }
@@ -80,6 +59,3 @@ Does not commit, stage, push, or open a PR.`,
     },
   });
 }
-
-// Re-export helper for git_diff tool
-export { runGit };

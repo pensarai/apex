@@ -1,0 +1,21 @@
+{
+  "transport": "pensar-anthropic-rest",
+  "usage": {
+    "inputTokens": {
+      "total": 500,
+      "noCache": null,
+      "cacheRead": null,
+      "cacheWrite": null
+    },
+    "outputTokens": { "total": 20 }
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": null,
+      "uncachedInput": 500,
+      "cacheRead": null,
+      "cacheWrite": null,
+      "output": 20
+    }
+  }
+}

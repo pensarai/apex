@@ -1,3 +1,4 @@
+import { loadHoonifyModels } from "../hoonify";
 import type { ProviderType } from "./types";
 
 export interface VerifyResult {
@@ -174,6 +175,19 @@ export async function verifyApiKey(
           };
     case "inception":
       return verifyInception(apiKey);
+    case "hoonify":
+      try {
+        await loadHoonifyModels(apiKey, true);
+        return { valid: true };
+      } catch (error) {
+        return {
+          valid: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not load Hoonify models.",
+        };
+      }
     case "bedrock":
     case "local":
     case "pensar":

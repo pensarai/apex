@@ -4,30 +4,53 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
+  defaultSettingsMiddleware,
   generateText,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
+  simulateStreamingMiddleware,
   type TextStreamPart,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 // Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
 // → ai → api. Use the leaf constants module directly.
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
+import type { CustomProviders } from "../config/customProviders";
+import type { HoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
-import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
 import {
+  type AIModel,
+  buildOpenRouterProviderOptions,
+  recordContextRestart,
+  type StreamResponseOpts,
+  streamResponse,
+} from "./ai";
+import {
+  beginCompaction,
+  type CompactionTelemetry,
+} from "./compactionTelemetry";
+import {
+  estimateMessageTokens,
   extractTaskSummaryFromMessages,
   truncateWithMarker,
 } from "./contextManagement";
 import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
+import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
+import { createAnthropicModel } from "./providers/anthropic";
+import { createConcentrateModel } from "./providers/concentrate";
+import { createCustomModel } from "./providers/custom";
+import { createHoonifyModel } from "./providers/hoonify";
+import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -62,12 +85,15 @@ export function buildStreamingFetchSignal(
 }
 
 export type AIAuthConfig = {
+  customProviders?: CustomProviders;
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
   googleAPIKey?: string;
   openRouterAPIKey?: string;
   concentrateAPIKey?: string;
   inceptionAPIKey?: string;
+  hoonifyAPIKey?: string;
+  hoonifyModels?: HoonifyModel[];
   pensarAPIKey?: string;
   // WorkOS CLI auth
   accessToken?: string;
@@ -95,12 +121,15 @@ export type AIAuthConfig = {
  * and including Pensar/WorkOS fields alongside the standard provider keys.
  */
 export function buildAuthConfig(cfg: {
+  customProviders?: CustomProviders;
   anthropicAPIKey?: string | null;
   openAiAPIKey?: string | null;
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  hoonifyAPIKey?: string | null;
+  hoonifyModels?: HoonifyModel[];
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -111,12 +140,15 @@ export function buildAuthConfig(cfg: {
   localModelUrl?: string | null;
 }): AIAuthConfig {
   return {
+    customProviders: cfg.customProviders,
     anthropicAPIKey: cfg.anthropicAPIKey ?? undefined,
     openAiAPIKey: cfg.openAiAPIKey ?? undefined,
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     concentrateAPIKey: cfg.concentrateAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
+    hoonifyAPIKey: cfg.hoonifyAPIKey ?? undefined,
+    hoonifyModels: cfg.hoonifyModels,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
@@ -131,7 +163,7 @@ export function buildAuthConfig(cfg: {
 export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,
-): LanguageModel {
+): LanguageModelV3 {
   const { provider } = getModelInfo(model);
 
   const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;
@@ -159,32 +191,58 @@ export function getProviderModel(
     process.env.LOCAL_MODEL_URL ||
     "http://127.0.0.1:1234/v1";
 
-  let providerModel: LanguageModel;
+  let providerModel: LanguageModelV3;
 
   switch (provider) {
+    case "custom":
+      return createCustomModel(model, authConfig?.customProviders);
+    case "hoonify":
+      return createHoonifyModel(model, {
+        apiKey: authConfig?.hoonifyAPIKey,
+        models: authConfig?.hoonifyModels,
+      });
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
+        fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
       });
-      providerModel = openai(model);
+      providerModel = openai.responses(model);
+      if (/^gpt-6[.-]/.test(model)) {
+        // The pinned SDK recognizes reasoning models only through GPT-5.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: defaultSettingsMiddleware({
+            settings: {
+              providerOptions: {
+                openai: { forceReasoning: true, reasoningEffort: "medium" },
+              },
+            },
+          }),
+        });
+      }
+      if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
+        // Pro supports Responses tool calls but cannot stream from the API.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: simulateStreamingMiddleware(),
+        });
+      }
       break;
     }
 
     case "openrouter": {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
+        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : undefined,
       });
       providerModel = openrouter(model);
       break;
     }
 
     case "concentrate": {
-      const concentrate = createOpenAICompatible({
-        name: "concentrate",
+      providerModel = createConcentrateModel(model, {
         apiKey: concentrateAPIKey,
-        baseURL: "https://api.concentrate.ai/v1",
       });
-      providerModel = concentrate(model.replace(/^concentrate:/, ""));
       break;
     }
 
@@ -255,9 +313,7 @@ export function getProviderModel(
     }
 
     case "anthropic":
-      providerModel = createAnthropic({
-        apiKey: anthropicAPIKey,
-      }).chat(model);
+      providerModel = createAnthropicModel(model, anthropicAPIKey);
       break;
 
     case "google": {
@@ -340,7 +396,10 @@ export function getProviderModel(
 async function summarizeConversation(
   messages: ModelMessage[],
   opts: StreamResponseOpts,
-  model: LanguageModel,
+  {
+    model,
+    compaction,
+  }: { model: LanguageModel; compaction?: CompactionTelemetry },
 ): Promise<StreamTextResult<ToolSet, never>> {
   // Filter and clean messages to remove tool calls/results
   // We only want conversational content for summarization
@@ -374,6 +433,12 @@ async function summarizeConversation(
   const MAX_PER_MESSAGE_CHARS = 4_000;
   const MAX_SLICED_TOTAL_CHARS = 25_000;
   const SYSTEM_PROMPT_SNIPPET_CHARS = 2_000;
+  compaction?.attributes({
+    "apex.compaction.summary.max_message_chars": MAX_PER_MESSAGE_CHARS,
+    "apex.compaction.summary.max_history_chars": MAX_SLICED_TOTAL_CHARS,
+    "apex.compaction.summary.max_system_chars": SYSTEM_PROMPT_SNIPPET_CHARS,
+    "apex.compaction.summary.max_messages": 20,
+  });
 
   const truncateMessageContent = (msg: ModelMessage): ModelMessage => {
     // Tool-role messages require array content; nothing to truncate by char count.
@@ -435,22 +500,36 @@ async function summarizeConversation(
     },
   ];
 
-  const { text: summary, usage: summaryUsage } = await generateText({
-    model,
-    system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
-    messages: summarizedMessages,
-    abortSignal: opts.abortSignal,
-    experimental_telemetry: createAiTelemetrySettings({
-      operation: "apex.context.summarize",
-      sessionId: opts.sessionId,
-    }),
-  });
+  const {
+    text: summary,
+    usage: summaryUsage,
+    providerMetadata: summaryProviderMetadata,
+  } = await runWithNativeRolloutOperation(
+    { operationKind: "context.summarize", sessionId: opts.sessionId },
+    () =>
+      generateText({
+        model,
+        providerOptions: buildOpenRouterProviderOptions(opts.model),
+        system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
+        messages: summarizedMessages,
+        abortSignal: opts.abortSignal,
+        experimental_telemetry: createAiTelemetrySettings({
+          operation: "apex.context.summarize",
+          sessionId: opts.sessionId,
+          compaction: compaction?.link,
+        }),
+      }),
+  );
 
   // Report summarization token usage if onStepFinish callback is provided
-  // This ensures summarization tokens are tracked even though it's not a "step"
+  // This ensures summarization tokens are tracked even though it's not a "step".
+  // Awaited: the callback persists messages and records usage — a detached
+  // invocation would leak unhandled rejections into the resumed stream.
   if (opts.onStepFinish && summaryUsage) {
-    // Create a minimal step finish event for the summarization
-    opts.onStepFinish({
+    // Create a minimal step finish event for the summarization. `messages`
+    // must be a valid array (handlers spread it); cache details and provider
+    // metadata flow through so cache usage stays attributable.
+    await opts.onStepFinish({
       text: "",
       reasoning: undefined,
       reasoningDetails: [],
@@ -463,6 +542,9 @@ async function summarizeConversation(
         inputTokens: summaryUsage.inputTokens ?? 0,
         outputTokens: summaryUsage.outputTokens ?? 0,
         totalTokens: summaryUsage.totalTokens ?? 0,
+        ...(summaryUsage.inputTokenDetails
+          ? { inputTokenDetails: summaryUsage.inputTokenDetails }
+          : {}),
       },
       warnings: [],
       request: {},
@@ -470,8 +552,9 @@ async function summarizeConversation(
         id: "summarization",
         timestamp: new Date(),
         modelId: "",
+        messages,
       },
-      providerMetadata: undefined,
+      providerMetadata: summaryProviderMetadata,
       stepType: "initial",
       isContinued: false,
     } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
@@ -492,11 +575,24 @@ async function summarizeConversation(
       ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
       : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
 
+  compaction?.measure(
+    "after",
+    () => estimateMessageTokens([{ role: "user", content: enhancedPrompt }]),
+    1,
+  );
+  compaction?.capture("after", () => ({
+    messages: [{ role: "user", content: enhancedPrompt }],
+    system: opts.system,
+  }));
+  // End before starting the resumed stream so its execution isn't compaction time.
+  compaction?.finish("completed");
+
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);
 
   // Bump depth so a recursive overflow eventually trips
   // `ContextLengthExhaustedError` instead of looping forever.
+  await recordContextRestart((opts._restartDepth ?? 0) + 1, opts);
   const resumed = streamResponse({
     ...opts,
     prompt: enhancedPrompt,
@@ -539,6 +635,26 @@ export function createSummarizationStream(
   opts: StreamResponseOpts,
   model: LanguageModel,
 ): StreamTextResult<ToolSet, never> {
+  const compactionState = opts._compaction ?? {};
+  opts = { ...opts, _compaction: compactionState };
+  const compaction = beginCompaction("summarize", {
+    trigger: opts._compactionTrigger ?? "context_overflow",
+    model: opts.model,
+    sessionId: opts.sessionId,
+    restartDepth: opts._restartDepth,
+    previous: opts._compaction?.last,
+  });
+  compaction?.capture("before", () => ({
+    messages,
+    system: opts.system,
+    prompt: opts.prompt,
+  }));
+  compaction?.measure(
+    "before",
+    () => estimateMessageTokens(messages),
+    messages.length,
+  );
+  if (compaction) compactionState.last = compaction.link;
   // Generate a unique tool call ID
   const toolCallId = `summarize-${Date.now()}`;
 
@@ -546,7 +662,12 @@ export function createSummarizationStream(
   // Create a promise that will hold the resumed stream
   // Start the summarization process
   const resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>> =
-    summarizeConversation(messages, opts, model);
+    summarizeConversation(messages, opts, { model, compaction }).catch(
+      (error) => {
+        compaction?.fail(error, opts.abortSignal?.aborted);
+        throw error;
+      },
+    );
 
   // Create a custom async generator that wraps the resumed stream
   const wrappedFullStream = (async function* () {
@@ -587,24 +708,27 @@ export function createSummarizationStream(
     }
   })();
 
-  // Return a minimal StreamTextResult-like object with the wrapped stream
-  // We delegate most properties to the resumed stream once it's available
+  // Convenience fields delegate to the resumed stream once available. A
+  // summarization failure surfaces through `fullStream` (the primary
+  // consumption path); these derived promises must not each reject unhandled —
+  // derive them from a caught base so a failure resolves undefined here.
+  const resumedForFields = resumedStreamPromise.catch(() => undefined);
   return {
     fullStream: wrappedFullStream,
-    text: resumedStreamPromise.then((s) => s.text),
-    content: resumedStreamPromise.then((s) => s.content),
-    reasoning: resumedStreamPromise.then((s) => s.reasoning),
-    reasoningText: resumedStreamPromise.then((s) => s.reasoningText),
-    toolCalls: resumedStreamPromise.then((s) => s.toolCalls),
-    toolResults: resumedStreamPromise.then((s) => s.toolResults),
-    usage: resumedStreamPromise.then((s) => s.usage),
-    finishReason: resumedStreamPromise.then((s) => s.finishReason),
-    warnings: resumedStreamPromise.then((s) => s.warnings),
-    response: resumedStreamPromise.then((s) => s.response),
-    files: resumedStreamPromise.then((s) => s.files),
-    sources: resumedStreamPromise.then((s) => s.sources),
-    staticToolCalls: resumedStreamPromise.then((s) => s.staticToolCalls),
-    dynamicToolCalls: resumedStreamPromise.then((s) => s.dynamicToolCalls),
+    text: resumedForFields.then((s) => s?.text),
+    content: resumedForFields.then((s) => s?.content),
+    reasoning: resumedForFields.then((s) => s?.reasoning),
+    reasoningText: resumedForFields.then((s) => s?.reasoningText),
+    toolCalls: resumedForFields.then((s) => s?.toolCalls),
+    toolResults: resumedForFields.then((s) => s?.toolResults),
+    usage: resumedForFields.then((s) => s?.usage),
+    finishReason: resumedForFields.then((s) => s?.finishReason),
+    warnings: resumedForFields.then((s) => s?.warnings),
+    response: resumedForFields.then((s) => s?.response),
+    files: resumedForFields.then((s) => s?.files),
+    sources: resumedForFields.then((s) => s?.sources),
+    staticToolCalls: resumedForFields.then((s) => s?.staticToolCalls),
+    dynamicToolCalls: resumedForFields.then((s) => s?.dynamicToolCalls),
     pipeTextStreamToResponse: async (response: unknown, init?: unknown) => {
       const stream = await resumedStreamPromise;
       return stream.pipeTextStreamToResponse(
@@ -627,6 +751,7 @@ export function createSummarizationStream(
   } as unknown as StreamTextResult<ToolSet, never>;
 }
 
+/** @knipignore drives the live-API stream tests in ai.test.ts; no production caller. */
 export async function consumeStream(
   stream: StreamTextResult<ToolSet, never>,
   {

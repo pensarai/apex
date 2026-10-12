@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { buildBaseSystemPrompt } from "./prompt";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+
+describe("unconfined workspace guidance", () => {
+  const session = {
+    rootPath: "/tmp/apex-unconfined-prompt",
+    findingsPath: "/tmp/apex-unconfined-prompt/findings",
+    pocsPath: "/tmp/apex-unconfined-prompt/pocs",
+    scratchpadPath: "/tmp/apex-unconfined-prompt/scratchpad",
+    logsPath: "/tmp/apex-unconfined-prompt/logs",
+  };
+
+  it("keeps session-relative guidance for agents without a file workspace", () => {
+    const prompt = buildSessionWorkspaceSection(session, session.rootPath, []);
+    expect(prompt).toContain("Use relative paths for everything");
+    expect(prompt).toContain("temporary scripts");
+    expect(prompt).not.toContain("Native file tools are confined");
+  });
+
+  it("keeps the project cwd separate from session artifacts", () => {
+    const prompt = buildSessionWorkspaceSection(session, "/project", []);
+    expect(prompt).toContain(
+      "Your shell starts in the user's project directory: /project",
+    );
+    expect(prompt).toContain(
+      `Session artifacts are stored separately at ${session.rootPath}`,
+    );
+    expect(prompt).not.toContain("Native file tools are confined");
+  });
+});
 
 describe("buildBaseSystemPrompt workspace management", () => {
   const prompt = buildBaseSystemPrompt();

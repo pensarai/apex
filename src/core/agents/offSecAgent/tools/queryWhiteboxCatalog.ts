@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
 import {
   type CatalogRecordKind,
   profileCodebase,
@@ -23,6 +24,7 @@ const profileCache = new Map<
   string,
   { profile: RepoProfile; expiresAt: number }
 >();
+const profileInFlight = new Map<string, Promise<RepoProfile | undefined>>();
 const PROFILE_CACHE_TTL_MS = 45_000;
 const PROFILE_CACHE_MAX_ENTRIES = 16;
 
@@ -45,19 +47,38 @@ async function getCachedRepoProfile(
     return hit.profile;
   }
   profileCache.delete(key);
-  const profile = await profileCodebase(rootPath).catch(() => undefined);
-  if (profile) {
-    evictExpiredProfileCache();
-    if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {
-      const oldestKey = profileCache.keys().next().value;
-      if (oldestKey !== undefined) profileCache.delete(oldestKey);
+  const pending = profileInFlight.get(key);
+  if (pending) return pending;
+  // One shared attempt per overlapping session/root miss. A failed
+  // profileCodebase falls back to undefined for every waiter, and the entry
+  // is dropped so the next miss retries. Profiling runs through the injected
+  // command backend so it lands in the sandbox under the durable runtime.
+  const attempt = (async () => {
+    const profile = await profileCodebase(
+      rootPath,
+      resolveWhiteboxBackend(ctx).profile,
+    ).catch(() => undefined);
+    if (profile) {
+      evictExpiredProfileCache();
+      if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {
+        const oldestKey = profileCache.keys().next().value;
+        if (oldestKey !== undefined) profileCache.delete(oldestKey);
+      }
+      profileCache.set(key, {
+        profile,
+        expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
+      });
     }
-    profileCache.set(key, {
-      profile,
-      expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
-    });
+    return profile;
+  })();
+  profileInFlight.set(key, attempt);
+  try {
+    return await attempt;
+  } finally {
+    if (profileInFlight.get(key) === attempt) {
+      profileInFlight.delete(key);
+    }
   }
-  return profile;
 }
 
 export function queryWhiteboxCatalog(ctx: ToolContext) {

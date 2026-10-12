@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { listPromptInjections } from "./listPromptInjections";
 import type { ToolContext } from "./types";
 
@@ -39,6 +40,7 @@ type ListPromptInjectionsResult = {
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",

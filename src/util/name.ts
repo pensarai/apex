@@ -98,6 +98,7 @@ export async function generateSessionName(opts: {
   model: AIModel;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
+  sessionId?: string;
 }): Promise<string | null> {
   const { targets, userMessage, model, authConfig, abortSignal } = opts;
 
@@ -127,6 +128,8 @@ export async function generateSessionName(opts: {
       temperature: 0.7,
       authConfig,
       abortSignal,
+      sessionId: opts.sessionId,
+      operation: "apex.session.name",
     });
 
     if (!result?.name) return null;

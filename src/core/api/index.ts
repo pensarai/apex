@@ -8,6 +8,45 @@
 //    eliminate the split. The lint rule for module barriers exempts this.
 
 export type {
+  CreateNativeRolloutEvidenceCaptureInput,
+  NativeRolloutCaptureLimits,
+  NativeRolloutCaptureReportV1,
+  NativeRolloutEvidenceCapture,
+  NativeRolloutEvidenceEnvelopeV1,
+  NativeRolloutEvidenceSink,
+  NativeRolloutModelContext,
+} from "../ai";
+export {
+  createNativeRolloutEvidenceCapture,
+  DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
+} from "../ai";
+export type {
+  RunCheckpointStore,
+  SessionEvidence,
+} from "../runtime/runCheckpointStore";
+export type { ContextReference, ContextStore } from "../runtime/runContext";
+export type {
+  ApprovalDecision,
+  RecordedApproval,
+  RunControlIntent,
+  RunControlRecord,
+  RunControlStore,
+} from "../runtime/runControlStore";
+export { inspectSessionEvidence } from "../runtime/runEvidence";
+export type {
+  RecordedModelAttempt,
+  RecordedRetry,
+  RunModelStore,
+} from "../runtime/runModelStore";
+export type { RecordedRunSpec, RunRecord, RunStore } from "../runtime/runStore";
+export type {
+  RecordedToolInput,
+  RecordedToolOperation,
+  RecordedToolPolicy,
+  RunToolStore,
+} from "../runtime/runToolStore";
+export { openSqliteRunStore } from "../runtime/sqliteRunStore";
+export type {
   AppDetail,
   ApplicationType,
   AppSummary,
@@ -71,6 +110,7 @@ export type {
   AgentLogEntry,
   ClosedDisposition,
   CommentAuthor,
+  DispatchPentestInput,
   DispatchPentestResult,
   FixDetail,
   FixSummary,
@@ -111,13 +151,69 @@ export {
   searchTargetLogs,
   updateIssue,
 } from "./issues";
-export type { RunAgentResult } from "./offesecAgent";
-export { runOffensiveSecurityAgent } from "./offesecAgent";
+export type {
+  KnowledgeCategory,
+  KnowledgeEntry,
+  KnowledgeInput,
+  KnowledgeStatus,
+} from "./knowledge";
+export {
+  archiveKnowledge,
+  createKnowledge,
+  getKnowledge,
+  KNOWLEDGE_CATEGORIES,
+  KNOWLEDGE_STATUSES,
+  listKnowledge,
+  updateKnowledge,
+} from "./knowledge";
+export { serveLocalRunWorker } from "./localWorker";
+export type {
+  OffensiveSecurityAgentClientInput,
+  RunAgentResult,
+} from "./offesecAgent";
+export {
+  createOffensiveSecurityAgentClient,
+  runOffensiveSecurityAgent,
+} from "./offesecAgent";
 export type { PatchingAgentInput, PatchResult } from "./patching";
 export { runPatchingAgent } from "./patching";
+export type {
+  RecordedRunAgentInput,
+  RecordedRunOutcome,
+  ResumeRecordedAgentInput,
+} from "./recordedRun";
+export {
+  RunRecoveryBlockedError,
+  resumeRecordedAgent,
+  runRecordedAgent,
+} from "./recordedRun";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,
   ThreatModelWorkflowResult,
 } from "./threatModel";
 export { runThreatModelWorkflow } from "./threatModel";
+export type {
+  TrajectoryEvidenceFile,
+  TrajectoryExportErrorCode,
+  TrajectoryExportFile,
+  TrajectoryExportInput,
+  TrajectoryExportResult,
+} from "./trajectoryExport";
+export {
+  exportTrajectoryBundle,
+  TrajectoryExportError,
+} from "./trajectoryExport";
+export type {
+  VulnerabilityReportAnswerKey,
+  VulnerabilityReproductionAgentInput,
+  VulnerabilityReproductionHandle,
+  VulnerabilityReproductionResult,
+} from "./vulnerabilityReproduction";
+export {
+  runVulnerabilityReproductionAgent,
+  startVulnerabilityReproductionAgent,
+  VulnerabilityReproductionResultSchema,
+  VulnerabilityReproductionStepSchema,
+  VulnerabilityReproductionVerdictSchema,
+} from "./vulnerabilityReproduction";

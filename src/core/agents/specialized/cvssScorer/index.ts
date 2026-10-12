@@ -8,6 +8,7 @@
  * severity scoring based on the CVSS 4.0 specification.
  */
 
+import type { LanguageModelMiddleware } from "ai";
 import { z } from "zod";
 import { type CVSS4Metrics, calculateCVSS4Score } from "../../../../lib/cvss";
 import {
@@ -19,6 +20,7 @@ import {
   type AIAuthConfig,
   type AIModel,
   generateObjectResponse,
+  type UsageRecorder,
 } from "../../../ai";
 
 // =============================================================================
@@ -55,6 +57,12 @@ export interface CVSSScorerResult {
   reasoning: string;
   /** CWE classifications assigned to this vulnerability (validated against MITRE database) */
   cwes: ValidatedCweEntry[];
+}
+
+/** Per-run model-call hooks forwarded to the scorer's structured-output call. */
+export interface CVSSScorerHooks {
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  usageRecorder?: UsageRecorder;
 }
 
 // =============================================================================
@@ -371,6 +379,8 @@ export async function scoreFindingWithCVSS(
   model: AIModel,
   authConfig?: AIAuthConfig,
   abortSignal?: AbortSignal,
+  sessionId?: string,
+  hooks?: CVSSScorerHooks,
 ): Promise<CVSSScorerResult> {
   const prompt = buildScoringPrompt(input);
 
@@ -382,6 +392,10 @@ export async function scoreFindingWithCVSS(
     system: CVSS_SCORER_SYSTEM_PROMPT,
     authConfig,
     abortSignal,
+    sessionId,
+    languageModelMiddleware: hooks?.languageModelMiddleware,
+    usageRecorder: hooks?.usageRecorder,
+    operation: "apex.finding.cvss",
   });
 
   // Calculate final score using the CVSS calculator

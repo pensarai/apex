@@ -1,4 +1,4 @@
-import { AVAILABLE_MODELS, type ModelInfo } from "../ai";
+import { AVAILABLE_MODELS, getModelInfo, type ModelInfo } from "../ai";
 import type { Config } from "../config/config";
 import {
   AVAILABLE_PROVIDERS,
@@ -22,7 +22,7 @@ const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
   openai: "gpt-5.6-sol",
   google: "gemini-3.1-pro-preview",
   openrouter: "anthropic/claude-opus-4.6",
-  concentrate: "concentrate:claude-opus-4-6",
+  concentrate: "concentrate:glm-5.3",
   bedrock: "anthropic.claude-opus-4-6-v1",
 };
 
@@ -54,6 +54,8 @@ function isProviderConfigured(
       return !!config.concentrateAPIKey;
     case "inception":
       return !!config.inceptionAPIKey;
+    case "hoonify":
+      return !!config.hoonifyAPIKey?.trim();
     case "bedrock":
       return !!config.bedrockAPIKey;
     case "local":
@@ -77,12 +79,14 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.openRouterAPIKey ||
     !!config.concentrateAPIKey ||
     !!config.inceptionAPIKey ||
+    !!config.hoonifyAPIKey?.trim() ||
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||
     !!config.localModelName ||
     !!process.env.LOCAL_MODEL_URL ||
     !!config.pensarAPIKey ||
-    !!config.accessToken
+    !!config.accessToken ||
+    Object.keys(config.customProviders ?? {}).length > 0
   );
 }
 
@@ -95,6 +99,19 @@ export function getAvailableModels(config: Config): ModelInfo[] {
     return isProviderConfigured(model.provider as ProviderType, config);
   });
 
+  for (const [providerId, provider] of Object.entries(
+    config.customProviders ?? {},
+  )) {
+    for (const model of provider.models) {
+      models.push({
+        id: `custom:${providerId}:${model.id}`,
+        name: `${provider.name ?? providerId} / ${model.name ?? model.id}`,
+        provider: "custom",
+        contextLength: model.contextLength,
+      });
+    }
+  }
+
   if (isProviderConfigured("local", config) && config.localModelName) {
     models.push({
       id: config.localModelName,
@@ -103,7 +120,33 @@ export function getAvailableModels(config: Config): ModelInfo[] {
     });
   }
 
+  if (isProviderConfigured("hoonify", config)) {
+    for (const model of config.hoonifyModels ?? []) {
+      models.push({
+        id: `hoonify:${model.id}`,
+        name: model.id,
+        provider: "hoonify",
+        contextLength: model.contextLength,
+      });
+    }
+  }
+
   return models;
+}
+
+export function getSavedModelForConfig(config: Config): ModelInfo | null {
+  const id = config.selectedModelId;
+  if (!id) return null;
+  const available = getAvailableModels(config).find((model) => model.id === id);
+  // A catalog outage must not silently switch a saved Hoonify selection.
+  return (
+    available ??
+    (id.startsWith("hoonify:") &&
+    isProviderConfigured("hoonify", config) &&
+    config.hoonifyCatalogError
+      ? getModelInfo(id)
+      : null)
+  );
 }
 
 /**

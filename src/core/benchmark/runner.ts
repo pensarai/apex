@@ -13,7 +13,7 @@ import {
   BenchmarkComparisonAgent,
   type BenchmarkComparisonResult,
 } from "../agents/specialized/benchmarkComparisonAgent";
-import type { CacheMetrics } from "../ai";
+import { normalizeStepUsage } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import * as sessions from "../session";
 import {
@@ -395,17 +395,14 @@ export async function runSingleBenchmark(
         abortSignal: controller.signal,
         eventBus: benchBus,
         onStepFinish: (event) => {
-          const u = event.usage;
-          if (u) {
-            tokenTotals.inputTokens += u.inputTokens ?? 0;
-            tokenTotals.outputTokens += u.outputTokens ?? 0;
-            tokenTotals.totalTokens +=
-              u.totalTokens ?? (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
-          }
-        },
-        onCacheMetrics: (metrics: CacheMetrics) => {
-          cacheTotals.cacheReadTokens += metrics.cacheReadInputTokens;
-          cacheTotals.cacheWriteTokens += metrics.cacheCreationInputTokens;
+          const stepUsage = normalizeStepUsage(event);
+          tokenTotals.inputTokens += stepUsage.inputTokens;
+          tokenTotals.outputTokens += stepUsage.outputTokens;
+          tokenTotals.totalTokens +=
+            event.usage?.totalTokens ??
+            stepUsage.inputTokens + stepUsage.outputTokens;
+          cacheTotals.cacheReadTokens += stepUsage.cacheReadTokens;
+          cacheTotals.cacheWriteTokens += stepUsage.cacheWriteTokens;
         },
       });
     } finally {

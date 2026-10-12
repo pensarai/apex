@@ -1,0 +1,19 @@
+{
+  "transport": "bedrock-converse",
+  "usage": {
+    "inputTokens": 25825,
+    "outputTokens": 40
+  },
+  "providerMetadata": {
+    "openai": {}
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 25825,
+      "uncachedInput": null,
+      "cacheRead": null,
+      "cacheWrite": null,
+      "output": 40
+    }
+  }
+}
