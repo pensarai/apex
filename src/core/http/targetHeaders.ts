@@ -164,7 +164,9 @@ export function targetFetch(
     resolveEffectiveHeaders(
       session,
       hopUrl,
-      context.crossOriginTainted ? undefined : callerHeaders,
+      context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
+        ? callerHeaders
+        : undefined,
     ),
   );
 }

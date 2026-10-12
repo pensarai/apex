@@ -14,6 +14,7 @@ import {
   sanitizeRedirectHeaders,
 } from "../../http/redirects";
 import { resolveEffectiveHeaders, shellQuote } from "../../http/targetHeaders";
+import { isUrlInSessionScope } from "../../http/targetScope";
 
 const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
 
@@ -163,7 +164,6 @@ export async function requestSandboxHttp(
   let currentMethod = method.toUpperCase();
   let currentBody = body;
   let bodyDropped = false;
-  let crossOriginTainted = false;
 
   for (let redirectCount = 0; ; redirectCount++) {
     const remaining =
@@ -193,9 +193,11 @@ export async function requestSandboxHttp(
       resolveEffectiveHeaders(
         session,
         currentUrl,
-        crossOriginTainted ? undefined : requestHeaders,
+        redirectCount === 0 || isUrlInSessionScope(currentUrl, session)
+          ? requestHeaders
+          : undefined,
       ),
-      { crossOriginTainted, bodyDropped },
+      { redirectCount, bodyDropped },
     );
     const response = await requestSandboxHttpSingleHop(ctx, {
       url: currentUrl,
@@ -240,8 +242,6 @@ export async function requestSandboxHttp(
         error: error instanceof Error ? error.message : String(error),
       };
     }
-    crossOriginTainted ||=
-      new URL(currentUrl).origin !== new URL(nextUrl).origin;
     const nextRequest = redirectRequest(
       response.status,
       currentMethod,

@@ -136,6 +136,90 @@ describe("injected HTTP backends", () => {
     });
   });
 
+  it("retains sandbox request headers for an in-scope redirect destination", async () => {
+    const ctx = context();
+    ctx.session.config = {
+      headers: {
+        Authorization: "Bearer session-secret",
+        "X-Session-Secret": "session-secret",
+      },
+    } as NonNullable<ToolContext["session"]["config"]>;
+    const commands: string[] = [];
+    const execute = vi.fn(async (command: string) => {
+      commands.push(command);
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      const wire =
+        commands.length === 1
+          ? "HTTP/1.1 302 Found\r\nLocation: https://api.example.com/final\r\nContent-Length: 0\r\n\r\n"
+          : "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nsafe";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: Buffer.from(`${wire}\n__APEX_${nonce}_CURL_EXIT_0\n`).toString(
+          "base64",
+        ),
+        stderr: "",
+      };
+    });
+    ctx.sandbox = {
+      type: "linux",
+      execute,
+    } as unknown as NonNullable<ToolContext["sandbox"]>;
+
+    await LocalBackends(ctx).http.request(
+      {
+        url: "https://example.com/start",
+        headers: { "X-Request-Secret": "request-secret" },
+        followRedirects: true,
+      },
+      { timeoutMs: 5000 },
+    );
+
+    expect(commands[1]).toContain("Authorization: Bearer session-secret");
+    expect(commands[1]).toContain("X-Session-Secret: session-secret");
+    expect(commands[1]).toContain("X-Request-Secret: request-secret");
+  });
+
+  it("shell-quotes a server-controlled redirect destination", async () => {
+    const ctx = context();
+    const commands: string[] = [];
+    const execute = vi.fn(async (command: string) => {
+      commands.push(command);
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      const wire =
+        commands.length === 1
+          ? "HTTP/1.1 302 Found\r\nLocation: https://example.com/$(__APEX_REDIRECT_SENTINEL__)\r\nContent-Length: 0\r\n\r\n"
+          : "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nsafe";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: Buffer.from(`${wire}\n__APEX_${nonce}_CURL_EXIT_0\n`).toString(
+          "base64",
+        ),
+        stderr: "",
+      };
+    });
+    ctx.sandbox = {
+      type: "linux",
+      execute,
+    } as unknown as NonNullable<ToolContext["sandbox"]>;
+
+    await LocalBackends(ctx).http.request(
+      {
+        url: "https://example.com/start",
+        followRedirects: true,
+      },
+      { timeoutMs: 5000 },
+    );
+
+    expect(commands[1]).toContain(
+      '"https://example.com/\\$(__APEX_REDIRECT_SENTINEL__)"',
+    );
+    expect(commands[1]).not.toContain(
+      '"https://example.com/$(__APEX_REDIRECT_SENTINEL__)"',
+    );
+  });
+
   it("uses the supplied backend exclusively and retains completed authentication responses", async () => {
     const ctx = context();
     const fetch = vi.fn();

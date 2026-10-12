@@ -11,15 +11,8 @@ const BODY_HEADERS = new Set([
   "content-type",
   "transfer-encoding",
 ]);
-const CROSS_ORIGIN_CREDENTIAL_HEADERS = new Set([
-  "authorization",
-  "cookie",
-  "cookie2",
-  "proxy-authorization",
-]);
-
 export interface RedirectHeaderContext {
-  readonly crossOriginTainted: boolean;
+  readonly redirectCount: number;
   readonly bodyDropped: boolean;
 }
 
@@ -73,18 +66,12 @@ export function sanitizeRedirectHeaders(
   headers: HeaderRecord,
   context: RedirectHeaderContext,
 ): HeaderRecord {
-  if (!context.crossOriginTainted && !context.bodyDropped) return headers;
+  if (!context.bodyDropped) return headers;
 
   return Object.fromEntries(
     Object.entries(headers).filter(([name]) => {
       const normalized = name.toLowerCase();
-      if (
-        context.crossOriginTainted &&
-        CROSS_ORIGIN_CREDENTIAL_HEADERS.has(normalized)
-      ) {
-        return false;
-      }
-      return !context.bodyDropped || !BODY_HEADERS.has(normalized);
+      return !BODY_HEADERS.has(normalized);
     }),
   );
 }
@@ -99,13 +86,12 @@ export async function fetchWithScopedRedirects(
   let method = (init.method ?? "GET").toUpperCase();
   let body = init.body;
   let bodyDropped = false;
-  let crossOriginTainted = false;
   const redirectChain = [currentUrl];
 
   for (let redirectCount = 0; ; redirectCount++) {
     const headers = sanitizeRedirectHeaders(
-      headersForUrl(currentUrl, { crossOriginTainted, bodyDropped }),
-      { crossOriginTainted, bodyDropped },
+      headersForUrl(currentUrl, { redirectCount, bodyDropped }),
+      { redirectCount, bodyDropped },
     );
     const response = await fetch(currentUrl, {
       ...init,
@@ -147,9 +133,6 @@ export async function fetchWithScopedRedirects(
         [...redirectChain],
       );
     }
-    crossOriginTainted ||=
-      new URL(currentUrl).origin !== new URL(nextUrl).origin;
-
     const redirectedRequest = redirectRequest(response.status, method, body);
     method = redirectedRequest.method;
     body = redirectedRequest.body;

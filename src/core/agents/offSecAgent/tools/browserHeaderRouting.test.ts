@@ -88,7 +88,10 @@ describe("browserHeaderRouteFunction", () => {
     await handler({
       request: () => ({
         url: () => "https://api.example.com/data",
-        allHeaders: async () => ({ accept: "application/json" }),
+        allHeaders: async () => ({
+          ":authority": "api.example.com",
+          accept: "application/json",
+        }),
       }),
       continue: continueRequest,
     });

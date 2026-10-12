@@ -340,6 +340,58 @@ describe("targetFetch redirect scoping", () => {
     expect(result.response.url).toBe(`http://127.0.0.1:${outsidePort}/stolen`);
   });
 
+  it("re-resolves all headers for an in-scope cross-origin redirect", async () => {
+    let received: import("node:http").IncomingHttpHeaders = {};
+    const destinationPort = await listen(
+      createServer((request, response) => {
+        received = request.headers;
+        response.end("destination");
+      }),
+    );
+    const targetPort = await listen(
+      createServer((_request, response) => {
+        response.writeHead(302, {
+          Location: `http://localhost:${destinationPort}/final`,
+        });
+        response.end();
+      }),
+    );
+    const target = `http://localhost:${targetPort}`;
+    const session = makeSession({
+      targets: [target],
+      config: {
+        headers: {
+          "X-Session-Secret": "session-secret",
+          Authorization: "Bearer session-secret",
+          Cookie: "sid=session-secret",
+        },
+      },
+      credentialManager: {
+        listCredentialsWithHeaders: () => [
+          {
+            tokens: {
+              customHeaders: {
+                "X-Credential-Secret": "credential-secret",
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await targetFetch(session, `${target}/start`, {
+      headers: { "X-Request-Secret": "request-secret" },
+      redirect: "follow",
+    });
+    await result.response.text();
+
+    expect(received["x-session-secret"]).toBe("session-secret");
+    expect(received["x-credential-secret"]).toBe("credential-secret");
+    expect(received["x-request-secret"]).toBe("request-secret");
+    expect(received.authorization).toBe("Bearer session-secret");
+    expect(received.cookie).toBe("sid=session-secret");
+  });
+
   it("does not dispatch the redirect when manual mode is selected", async () => {
     let outsideRequests = 0;
     const outsidePort = await listen(

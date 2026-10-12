@@ -59,7 +59,11 @@ if (__apexAllowedHosts.length > 0 && Object.keys(__apexHeaders).length > 0) {
       await route.continue();
       return;
     }
-    const requestHeaders = await request.allHeaders();
+    const requestHeaders = Object.fromEntries(
+      Object.entries(await request.allHeaders()).filter(
+        ([name]) => !name.startsWith(':'),
+      ),
+    );
     await route.continue({ headers: { ...requestHeaders, ...__apexHeaders } });
   });
 }

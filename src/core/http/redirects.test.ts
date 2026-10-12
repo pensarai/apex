@@ -41,19 +41,6 @@ describe("redirectRequest", () => {
 });
 
 describe("sanitizeRedirectHeaders", () => {
-  it("drops standard credentials after crossing origins", () => {
-    expect(
-      sanitizeRedirectHeaders(
-        {
-          Authorization: "secret",
-          Cookie: "sid=secret",
-          "X-Scoped-Key": "keep",
-        },
-        { crossOriginTainted: true, bodyDropped: false },
-      ),
-    ).toEqual({ "X-Scoped-Key": "keep" });
-  });
-
   it("drops body headers after redirect method rewriting", () => {
     expect(
       sanitizeRedirectHeaders(
@@ -62,7 +49,7 @@ describe("sanitizeRedirectHeaders", () => {
           "Content-Length": "2",
           Accept: "application/json",
         },
-        { crossOriginTainted: false, bodyDropped: true },
+        { redirectCount: 1, bodyDropped: true },
       ),
     ).toEqual({ Accept: "application/json" });
   });
@@ -144,8 +131,8 @@ describe("fetchWithScopedRedirects", () => {
     expect(secondInit.headers).toEqual({ Accept: "text/plain" });
   });
 
-  it("marks every later hop as cross-origin tainted", async () => {
-    const contexts: boolean[] = [];
+  it("reports each hop index to the header resolver", async () => {
+    const contexts: number[] = [];
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -164,12 +151,12 @@ describe("fetchWithScopedRedirects", () => {
       "https://example.com/start",
       { redirect: "follow" },
       (_url, context) => {
-        contexts.push(context.crossOriginTainted);
+        contexts.push(context.redirectCount);
         return {};
       },
     );
 
-    expect(contexts).toEqual([false, true, true]);
+    expect(contexts).toEqual([0, 1, 2]);
   });
 
   it("rejects unsupported redirect protocols", async () => {
