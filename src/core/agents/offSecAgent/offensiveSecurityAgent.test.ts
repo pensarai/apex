@@ -1156,6 +1156,183 @@ describe("OffensiveSecurityAgent.consume()", () => {
   });
 
   describe("abort signal", () => {
+    it.each([
+      new Error("Execution broker receipt unavailable"),
+      new DOMException("Recorded run deadline expired", "AbortError"),
+      new DOMException("Attempt deadline expired", "TimeoutError"),
+      Object.assign(
+        new Error("Aborted", { cause: new Error("Backend unavailable") }),
+        { name: "AbortError" },
+      ),
+      "host shutdown",
+      0,
+      null,
+    ])("preserves an explicit abort reason: %s", async (reason) => {
+      const controller = new AbortController();
+      controller.abort(reason);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(reason);
+    });
+
+    it("uses the originating reason when the SDK echoes a generic abort", async () => {
+      const controller = new AbortController();
+      const cause = new Error("Execution outcome could not be confirmed");
+      controller.abort(cause);
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [],
+          new DOMException("Aborted", "AbortError"),
+        ),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+    });
+
+    it("preserves the runtime's AbortSignal.timeout reason", async () => {
+      const signal = AbortSignal.timeout(1);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(signal.aborted).toBe(true);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([]),
+        abortSignal: signal,
+      });
+      await expect(agent.consume()).rejects.toBe(signal.reason);
+      expect(signal.reason.name).toBe("TimeoutError");
+    });
+
+    it("keeps a generic stream abort when the caller signal was not aborted", async () => {
+      const cause = new DOMException("Aborted", "AbortError");
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], cause),
+        abortSignal: new AbortController().signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+    });
+
+    it("preserves a stream abort carrying its own cause even after a user abort", async () => {
+      const cause = Object.assign(
+        new Error("Aborted", { cause: new Error("Backend unavailable") }),
+        { name: "AbortError" },
+      );
+      const controller = new AbortController();
+      controller.abort();
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([], cause),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+    });
+
+    it("keeps user-abort wording for a generic SDK echo", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [],
+          new DOMException("Aborted", "AbortError"),
+        ),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toMatchObject({
+        name: "AbortError",
+        message: "Agent aborted by user",
+      });
+    });
+
+    it("keeps a prior abort cause when later cleanup fails", async () => {
+      const controller = new AbortController();
+      const cause = new Error("Target session disconnected");
+      controller.abort(cause);
+      const dispose = vi.fn().mockRejectedValue(new Error("Cleanup failed"));
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+        commandShell: { dispose },
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+      expect(dispose).toHaveBeenCalledOnce();
+    });
+
+    it("waits for owned cleanup before rejecting with the abort cause", async () => {
+      const controller = new AbortController();
+      const cause = new Error("Execution infrastructure failed");
+      controller.abort(cause);
+      let release!: () => void;
+      const disposal = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const dispose = vi.fn(() => disposal);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+        commandShell: { dispose },
+      });
+      let settled = false;
+      const result = agent.consume().catch((error) => {
+        settled = true;
+        return error;
+      });
+      try {
+        await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+        expect(settled).toBe(false);
+      } finally {
+        release();
+      }
+      expect(await result).toBe(cause);
+    });
+
+    it.each([
+      "abort",
+      "provider",
+      "cleanup",
+    ])("saves the primary cause in interrupted tool evidence (%s)", async (source) => {
+      const directory = mkdtempSync(join(tmpdir(), "apex-abort-cause-"));
+      const controller = new AbortController();
+      const infrastructure = new Error("Execution infrastructure failed");
+      const provider = new Error("Provider stream failed first");
+      const cause = source === "provider" ? provider : infrastructure;
+      async function* stream() {
+        yield {
+          type: "tool-call",
+          toolCallId: "pending",
+          toolName: "run_command",
+          input: { command: "fixture" },
+        };
+        if (source === "provider") throw provider;
+        if (source === "abort") controller.abort(infrastructure);
+      }
+      const agent = buildStubAgent({
+        fullStream: stream(),
+        abortSignal: controller.signal,
+        commandShell: {
+          dispose: async () => {
+            controller.abort(infrastructure);
+          },
+        },
+        messagesPath: join(directory, "messages.json"),
+        latestMessages: [{ role: "user", content: "fixture" }],
+      });
+      const results: unknown[] = [];
+      agent.eventBus.on("tool-result", (event) => results.push(event.result));
+      try {
+        await expect(agent.consume()).rejects.toBe(cause);
+        expect(results).toContainEqual({
+          type: "error-text",
+          value: expect.stringContaining(cause.message),
+        });
+        const saved = readFileSync(join(directory, "messages.json"), "utf8");
+        expect(saved).toContain(cause.message);
+        expect(saved).not.toContain("Agent aborted by user");
+        if (source === "provider")
+          expect(saved).not.toContain(infrastructure.message);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
     it("disposes shell even when abort signal causes throw", async () => {
       const controller = new AbortController();
       controller.abort();
@@ -2107,6 +2284,36 @@ describe("root agent-run spans", () => {
         ),
       ).toBe(true);
       expect(span?.attributes["error.type"]).toBe("Error");
+      expect(span?.ended).toBe(true);
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("records the originating infrastructure cause on the root span", async () => {
+    const otel = setupOtel();
+    const controller = new AbortController();
+    const cause = new Error("Execution receipt unavailable");
+    cause.name = "ExecutionInfrastructureError";
+    controller.abort(cause);
+    try {
+      const agent = buildStubAgent({
+        fullStream: singleStepStream(),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toBe(cause);
+      const span = otel
+        .spans()
+        .find((entry) => entry.name === "invoke_agent default");
+      expect(span?.status.code).toBe(2);
+      expect(span?.attributes["error.type"]).toBe(cause.name);
+      expect(
+        span?.events.some(
+          (event) =>
+            event.name === "exception" &&
+            event.attributes?.["exception.message"] === cause.message,
+        ),
+      ).toBe(true);
       expect(span?.ended).toBe(true);
     } finally {
       await otel.teardown();

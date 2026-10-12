@@ -75,6 +75,24 @@ import type {
   StreamIdFactory,
 } from "./types";
 
+function isGenericAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === "AbortError" &&
+    error.cause === undefined &&
+    /^(?:Aborted|Agent aborted by user|(?:This|The) operation was aborted|The user aborted a request)\.?$/.test(
+      error.message,
+    )
+  );
+}
+
+function agentAbortReason(signal: AbortSignal): unknown {
+  const reason: unknown = signal.reason;
+  return reason === undefined || isGenericAbortError(reason)
+    ? new DOMException("Agent aborted by user", "AbortError")
+    : reason;
+}
+
 const log = scopedLogger(() => createLogger("approval-gate"));
 
 // Opt-in `response` tool lifecycle tracer (RESPONSE_DEBUG=1) for the empty-`{}` / "Tool call did not complete" loop on threat-model sub-agents.
@@ -1061,7 +1079,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       // unpersisted results (PR #779), streamed arg text, and deferred tool
       // errors — all owned by the tracker (see ./toolLifecycle).
       const tracker = new ToolLifecycleTracker();
-      let streamError: unknown = null;
+      let streamError: unknown;
+      let hasStreamError = false;
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
@@ -1088,8 +1107,17 @@ export class OffensiveSecurityAgent<TResult = void> {
         // finish-step needs them for the finalization snapshot.
       } catch (err) {
         // 4. Capture the error; finalization below still runs.
-        streamError = err;
+        streamError =
+          this.abortSignal?.aborted && isGenericAbortError(err)
+            ? agentAbortReason(this.abortSignal)
+            : err;
+        hasStreamError = true;
       } finally {
+        // Preserve an already-observed abort if cleanup subsequently fails.
+        if (!hasStreamError && this.abortSignal?.aborted) {
+          streamError = agentAbortReason(this.abortSignal);
+          hasStreamError = true;
+        }
         // 5–7. Close the interrupted step, dispose owned resources, settle.
         const finalizeError = await this.finalizeRun({
           tracker,
@@ -1097,18 +1125,19 @@ export class OffensiveSecurityAgent<TResult = void> {
           ids,
           streamError,
         });
-        // Teardown failures must not replace the provider/stream failure.
-        if (streamError === null && finalizeError !== null) {
+        // Teardown failures must not replace the originating run failure.
+        if (!hasStreamError && finalizeError !== null) {
           streamError = finalizeError;
+          hasStreamError = true;
         }
       }
 
-      if (streamError) {
+      if (hasStreamError) {
         throw streamError;
       }
 
       if (this.abortSignal?.aborted) {
-        throw new DOMException("Agent aborted by user", "AbortError");
+        throw agentAbortReason(this.abortSignal);
       }
 
       if (this.resolveResult) {
@@ -1433,11 +1462,17 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Snapshot unpersisted step state: open tools get synthetic closes,
       // completed/errored results get written.
       if (tracker.hasUnpersistedState()) {
-        const reason = this.abortSignal?.aborted
-          ? "Agent aborted by user"
-          : streamError instanceof Error && streamError.message
-            ? streamError.message
-            : "Stream terminated unexpectedly";
+        const failure =
+          streamError ??
+          (this.abortSignal?.aborted
+            ? agentAbortReason(this.abortSignal)
+            : undefined);
+        const reason =
+          failure instanceof Error && failure.message
+            ? failure.message
+            : failure !== undefined
+              ? String(failure)
+              : "Stream terminated unexpectedly";
         try {
           await this.finalizeInterruptedStep({
             snapshot: tracker.snapshot(),
