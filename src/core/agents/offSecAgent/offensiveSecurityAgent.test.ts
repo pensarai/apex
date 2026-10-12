@@ -103,6 +103,7 @@ vi.mock("./tools", () => ({
   },
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
+  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
