@@ -1,6 +1,5 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
-import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -137,13 +136,11 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 /**
  * Anthropic adaptive-thinking effort hint. Soft guidance for how much the model
- * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `high` (the
- * model default) reasons deeply. Only meaningful for models that support
- * adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
+ * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `max`
+ * reasons hardest (`high` is the model default). Only meaningful for models that
+ * support adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
  */
-export type ThinkingEffort = NonNullable<
-  AnthropicLanguageModelOptions["effort"]
->;
+export type ThinkingEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-6.1-sol",
