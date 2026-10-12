@@ -35,6 +35,15 @@ prompt at every dispatch. No API key, external target, or network call is used.
 | Revision            | Provider calls | Summary calls | Peak estimated input | Cumulative estimated input |
 | ------------------- | -------------: | ------------: | -------------------: | -------------------------: |
 | `6bd9a0eb` baseline |             73 |             0 |               97,835 |                  3,571,835 |
+| In-stream fit       |             73 |             1 |               16,902 |                    785,758 |
+
+In-stream fitting reduces the peak estimate by 82.7% and the cumulative
+estimate by 78.0% in this fixture. All 72 tool calls still execute and the
+final response completes. One summary model call is added when truncating and
+snipping tool history can no longer fit the configured budget. The benchmark
+asserts an 18K peak and 1.3M cumulative ceiling to catch a return to
+unbounded growth without requiring an exact output from the tokenizer
+heuristic.
 
 The benchmark's input figures use Apex's `estimateMessageTokens` heuristic on
 the provider-visible prompt, not provider-reported usage. The synthetic model

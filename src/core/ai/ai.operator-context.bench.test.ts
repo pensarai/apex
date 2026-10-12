@@ -133,6 +133,12 @@ it("measures a synthetic long tool loop through the real stream and context path
 
     expect(providerCalls).toBe(TOOL_STEPS + 1);
     expect(seen.at(-1)).toBe("done");
+    expect(summaryCalls).toBeGreaterThan(0);
+    expect(compactionEvents).toBe(summaryCalls);
+    expect(Math.max(...providerInputTokens)).toBeLessThan(18_000);
+    expect(
+      providerInputTokens.reduce((total, value) => total + value, 0),
+    ).toBeLessThan(1_300_000);
     if (process.env.APEX_CONTEXT_BENCH === "1") {
       console.log(
         "OPERATOR_CONTEXT_BENCH",
