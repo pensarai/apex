@@ -4,7 +4,7 @@
     "pensar": "./bin/pensar.js"
   },
   "dependencies": {
-    "@ai-sdk/amazon-bedrock": "^4.0.119",
+    "@ai-sdk/amazon-bedrock": "4.0.119",
     "@ai-sdk/anthropic": "^3.0.85",
     "@ai-sdk/google": "^3.0.83",
     "@ai-sdk/openai": "3.0.46",
