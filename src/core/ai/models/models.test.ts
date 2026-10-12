@@ -103,12 +103,35 @@ describe("getMaxOutputTokens", () => {
   });
 
   it("recognizes Claude tier-specific budgets", () => {
+    expect(getMaxOutputTokens("claude-haiku-5-5")).toBe(128_000);
+    expect(getMaxOutputTokens("global.anthropic.claude-haiku-5-5")).toBe(
+      128_000,
+    );
+    expect(getMaxOutputTokens("anthropic/claude-haiku-5.5")).toBe(128_000);
     expect(getMaxOutputTokens("claude-sonnet-4-5-20250929")).toBe(64_000);
     expect(getMaxOutputTokens("claude-opus-4-5-20250101")).toBe(64_000);
     expect(getMaxOutputTokens("claude-haiku-4-5-20251001")).toBe(64_000);
     expect(getMaxOutputTokens("claude-opus-4-1-20250805")).toBe(32_000);
     expect(getMaxOutputTokens("claude-3-7-sonnet-20250219")).toBe(64_000);
     expect(getMaxOutputTokens("claude-3-5-haiku-20241022")).toBe(8_192);
+  });
+
+  it("registers Claude Haiku 5.5 across Anthropic, Bedrock, and OpenRouter", () => {
+    expect(getModelInfo("claude-haiku-5-5")).toMatchObject({
+      name: "Claude Haiku 5.5",
+      provider: "anthropic",
+      contextLength: 1_000_000,
+    });
+    expect(getModelInfo("global.anthropic.claude-haiku-5-5")).toMatchObject({
+      name: "Claude Haiku 5.5 (Global)",
+      provider: "bedrock",
+      contextLength: 1_000_000,
+    });
+    expect(getModelInfo("anthropic/claude-haiku-5.5")).toMatchObject({
+      name: "Claude Haiku 5.5",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+    });
   });
 
   it("pins latest-tier Claude (4.6 + 4.7 + 4.8) to 128K output", () => {

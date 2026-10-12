@@ -12,12 +12,14 @@ import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
 const boundModels = new Set([
+  "claude-haiku-5-5",
   "claude-sonnet-5-5",
   "claude-opus-5-5",
   "claude-fable-5-1",
 ]);
 
 const models = [
+  { id: "claude-haiku-5-5", required: false },
   { id: "claude-sonnet-5-5", required: true },
   { id: "claude-opus-5-5", required: true },
   { id: "claude-fable-5-1", required: true },
@@ -105,7 +107,10 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
     expect(body).toMatchObject({
       model: id,
       max_tokens: 128_000,
-      output_config: { effort: "medium", format: { type: "json_schema" } },
+      output_config: {
+        ...(enableThinking || required ? { effort: "medium" } : {}),
+        format: { type: "json_schema" },
+      },
       thinking: { type: enableThinking || required ? "adaptive" : "disabled" },
     });
     expect(body.temperature).toBeUndefined();
@@ -260,5 +265,59 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
         tool_use_id: "tool_test",
       }),
     );
+  });
+});
+
+describe("Anthropic Claude Haiku 5.5 effort", () => {
+  it.each([
+    "xhigh",
+    "max",
+  ] as const)("sends the %s effort with adaptive thinking", async (effort) => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        completion("claude-haiku-5-5"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getProviderModel("claude-haiku-5-5", {
+      anthropicAPIKey: "test-key",
+    }).doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+      providerOptions: buildReasoningProviderOptions("claude-haiku-5-5", {
+        enableThinking: true,
+        thinkingEffort: effort,
+      }),
+    });
+
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("Expected a Claude request");
+    expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+      thinking: { type: "adaptive" },
+      output_config: { effort },
+    });
+  });
+
+  it("uses the documented medium effort by default", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        completion("claude-haiku-5-5"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getProviderModel("claude-haiku-5-5", {
+      anthropicAPIKey: "test-key",
+    }).doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+      providerOptions: buildReasoningProviderOptions("claude-haiku-5-5", {
+        enableThinking: true,
+      }),
+    });
+
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("Expected a Claude request");
+    expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
+    });
   });
 });
