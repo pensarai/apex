@@ -1,8 +1,8 @@
 # Custom inference endpoints
 
-Apex can run against an OpenAI-compatible **Chat Completions** endpoint. Define a
-named provider, the environment variable containing its bearer token, and its
-models. No model-discovery endpoint or Pensar login is required.
+Apex can run against an OpenAI-compatible **Chat Completions** or **Responses**
+endpoint. Define a named provider, the environment variable containing its bearer
+token, and its models. No model-discovery endpoint or Pensar login is required.
 
 ## Configuration
 
@@ -37,15 +37,17 @@ Use the endpoint and limits granted by your provider; the URL above is Z.ai's
 public example. A full URL ending in `/chat/completions` is also accepted.
 `contextLength` includes input and output; `maxOutputTokens` must be smaller.
 Apex uses these limits for context fitting and caps requests accordingly.
+Omitting `apiType` selects Chat Completions for existing configurations.
 
 Set `GLM_RESEARCH_API_KEY` in the environment that starts Apex. Store the token
 through your normal secret mechanism, separately from this configuration. Omit
 `apiKeyEnv` for an unauthenticated local server. `headers` is for nonsecret extra
 headers; `apiKeyEnv` supplies `Authorization: Bearer ...`.
 
-`requestBody` adds provider-specific fields to every inference request, including
-streaming, structured generation, and summarization. Configured fields take
-precedence over SDK defaults. Apex retains control of messages, tool definitions,
+For Chat Completions, `requestBody` adds provider-specific fields to every
+inference request, including streaming, structured generation, and summarization.
+Configured fields take precedence over SDK defaults. Apex retains control of
+messages, tool definitions,
 model identity, streaming, response format, and output limits; those fields cannot
 be overridden here. The endpoint must support streaming and function calling.
 Structured generation uses JSON mode with Apex validating the returned schema.
@@ -53,6 +55,41 @@ Structured generation uses JSON mode with Apex validating the returned schema.
 The compatible SDK returns GLM reasoning content on subsequent tool turns.
 Persisted message histories retain it on resume. Normal context compaction still
 replaces old history with a summary; preserved thinking does not disable compaction.
+
+### Responses endpoints
+
+For an endpoint that implements the OpenAI Responses API, set `apiType` to
+`responses` and use the API base URL (without `/responses`). You can set an
+optional `reasoningEffort` on each model:
+
+```json
+{
+  "customProviders": {
+    "research": {
+      "name": "Research endpoint",
+      "apiType": "responses",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyEnv": "RESEARCH_API_KEY",
+      "models": [
+        {
+          "id": "your-model-id",
+          "contextLength": 200000,
+          "maxOutputTokens": 32000,
+          "reasoningEffort": "high"
+        }
+      ]
+    }
+  }
+}
+```
+
+Replace the model ID and limits with values for your endpoint. Set
+`RESEARCH_API_KEY` in the environment that starts Apex; this provider does not
+use the saved OpenAI key. Responses providers require `apiKeyEnv`. Supported
+effort values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`;
+the endpoint decides which values a model accepts. Omit `reasoningEffort` to
+leave the effort choice to the endpoint. `requestBody` is available only for
+Chat Completions providers.
 
 ## Headless CLI and workers
 

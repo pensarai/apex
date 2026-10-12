@@ -19,13 +19,17 @@ const customModelSchema = z
     name: z.string().trim().min(1).optional(),
     contextLength: z.number().int().positive(),
     maxOutputTokens: z.number().int().positive(),
+    reasoningEffort: z
+      .enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+      .optional(),
   })
   .refine((model) => model.maxOutputTokens < model.contextLength, {
     message: "maxOutputTokens must be smaller than contextLength",
   });
 
-const customProviderSchema = z.strictObject({
+const customProviderBaseSchema = z.strictObject({
   name: z.string().trim().min(1).optional(),
+  apiType: z.enum(["chat-completions", "responses"]).optional(),
   baseUrl: z.string().transform((value, ctx) => {
     try {
       const url = new URL(value);
@@ -84,6 +88,31 @@ const customProviderSchema = z.strictObject({
       { message: "Model IDs must be unique within a provider" },
     ),
 });
+
+const customProviderSchema = customProviderBaseSchema.superRefine(
+  (provider, ctx) => {
+    if (provider.apiType === "responses") {
+      if (!provider.apiKeyEnv)
+        ctx.addIssue({
+          code: "custom",
+          path: ["apiKeyEnv"],
+          message: "Responses requires apiKeyEnv",
+        });
+      if (provider.requestBody)
+        ctx.addIssue({
+          code: "custom",
+          path: ["requestBody"],
+          message: "requestBody is only supported for Chat Completions",
+        });
+    } else if (provider.models.some((model) => model.reasoningEffort)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["models"],
+        message: "reasoningEffort requires the Responses API",
+      });
+    }
+  },
+);
 
 const customProvidersSchema = z.record(providerIdSchema, customProviderSchema);
 export type CustomProviders = z.infer<typeof customProvidersSchema>;

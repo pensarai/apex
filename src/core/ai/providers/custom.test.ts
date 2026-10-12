@@ -10,6 +10,15 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { buildAuthConfig, consumeStream, getProviderModel } from "../utils";
 
+vi.mock("undici", async (importOriginal) => {
+  const original = await importOriginal<typeof import("undici")>();
+  return {
+    ...original,
+    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+      globalThis.fetch(input, init),
+  };
+});
+
 const modelId = "custom:research:glm-5.3";
 const customProviders: CustomProviders = {
   research: {
@@ -23,6 +32,23 @@ const customProviders: CustomProviders = {
     },
     models: [
       { id: "glm-5.3", contextLength: 200_000, maxOutputTokens: 32_000 },
+    ],
+  },
+};
+const responsesModelId = "custom:responses:org/reasoning-model";
+const responsesProviders: CustomProviders = {
+  responses: {
+    baseUrl: "https://inference.example/v1",
+    apiType: "responses",
+    apiKeyEnv: "APEX_TEST_RESPONSES_KEY",
+    headers: { "X-Test-Provider": "research" },
+    models: [
+      {
+        id: "org/reasoning-model",
+        contextLength: 200_000,
+        maxOutputTokens: 32_000,
+        reasoningEffort: "xhigh",
+      },
     ],
   },
 };
@@ -41,6 +67,23 @@ function completion(text: string): Response {
       },
     ],
     usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  });
+}
+
+function responsesCompletion(text: string): Response {
+  return Response.json({
+    id: "resp_test",
+    created_at: 1,
+    model: "org/reasoning-model",
+    output: [
+      {
+        type: "message",
+        role: "assistant",
+        id: "msg_test",
+        content: [{ type: "output_text", text, annotations: [] }],
+      },
+    ],
+    usage: { input_tokens: 12, output_tokens: 8 },
   });
 }
 
@@ -67,6 +110,203 @@ afterEach(() => {
 });
 
 describe("custom inference", () => {
+  it("sends configured effort, credentials, and output budget through Responses", async () => {
+    vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
+    vi.stubEnv("OPENAI_API_KEY", "wrong-key");
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      responsesCompletion("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await getProviderModel(responsesModelId, {
+      customProviders: responsesProviders,
+    }).doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Say ok" }] }],
+      maxOutputTokens: 100_000,
+    });
+    expect(result.content).toContainEqual(
+      expect.objectContaining({ type: "text", text: "ok" }),
+    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://inference.example/v1/responses");
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer test-secret",
+    );
+    expect(new Headers(init?.headers).get("x-test-provider")).toBe("research");
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      model: "org/reasoning-model",
+      max_output_tokens: 32_000,
+      reasoning: { effort: "xhigh" },
+    });
+    expect(body.max_tokens).toBeUndefined();
+    expect(getContextWindow(responsesModelId, responsesProviders)).toBe(
+      200_000,
+    );
+    expect(getMaxOutputTokens(responsesModelId, responsesProviders)).toBe(
+      32_000,
+    );
+  });
+
+  it("omits reasoning when the Responses model has no effort setting", async () => {
+    vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      responsesCompletion("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const providers: CustomProviders = {
+      responses: {
+        ...responsesProviders.responses,
+        models: [
+          {
+            id: "org/reasoning-model",
+            contextLength: 200_000,
+            maxOutputTokens: 32_000,
+          },
+        ],
+      },
+    };
+    await getProviderModel(responsesModelId, {
+      customProviders: providers,
+    }).doGenerate({ prompt: [] });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.reasoning).toBeUndefined();
+    expect(body.max_output_tokens).toBe(32_000);
+  });
+
+  it("rejects an unvalidated Responses provider without its own key", () => {
+    vi.stubEnv("OPENAI_API_KEY", "must-not-borrow");
+    const providers: CustomProviders = {
+      responses: { ...responsesProviders.responses, apiKeyEnv: undefined },
+    };
+    expect(() =>
+      getProviderModel(responsesModelId, { customProviders: providers }),
+    ).toThrow("require apiKeyEnv");
+  });
+
+  it("streams a Responses tool call and sends its result on the next turn", async () => {
+    vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
+    const item = {
+      status: "completed",
+      type: "function_call",
+      id: "fc_test",
+      call_id: "call_test",
+      name: "check",
+      arguments: "{}",
+    };
+    const events = [
+      {
+        type: "response.created",
+        response: {
+          id: "resp_stream",
+          created_at: 1,
+          model: "org/reasoning-model",
+        },
+      },
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { ...item, arguments: "" },
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        item_id: "fc_test",
+        delta: "{}",
+      },
+      {
+        type: "response.function_call_arguments.done",
+        output_index: 0,
+        item_id: "fc_test",
+        arguments: "{}",
+      },
+      { type: "response.output_item.done", output_index: 0, item },
+      {
+        type: "response.completed",
+        response: {
+          id: "resp_stream",
+          created_at: 1,
+          model: "org/reasoning-model",
+          output: [item],
+          usage: { input_tokens: 12, output_tokens: 8 },
+        },
+      },
+    ];
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      if (!JSON.parse(String(init?.body)).stream)
+        return responsesCompletion("done");
+      return new Response(
+        events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const model = getProviderModel(responsesModelId, {
+      customProviders: responsesProviders,
+    });
+    const { stream } = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+      tools: [
+        {
+          type: "function",
+          name: "check",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+    });
+    const chunks = [];
+    const reader = stream.getReader();
+    for (let next = await reader.read(); !next.done; next = await reader.read())
+      chunks.push(next.value);
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-call",
+        toolCallId: "call_test",
+        toolName: "check",
+      }),
+    );
+    await model.doGenerate({
+      prompt: [
+        { role: "user", content: [{ type: "text", text: "Check" }] },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call_test",
+              toolName: "check",
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_test",
+              toolName: "check",
+              output: { type: "json", value: { ok: true } },
+            },
+          ],
+        },
+      ],
+    });
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(firstBody).toMatchObject({
+      stream: true,
+      reasoning: { effort: "xhigh" },
+    });
+    expect(secondBody).toMatchObject({ reasoning: { effort: "xhigh" } });
+    expect(secondBody.input).toContainEqual(
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_test",
+        output: '{"ok":true}',
+      }),
+    );
+  });
+
   it("uses the configured endpoint, bearer key, GLM settings, and output budget", async () => {
     vi.stubEnv("APEX_TEST_CUSTOM_KEY", "test-secret");
     const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
