@@ -25,7 +25,7 @@ vi.mock("./utils", async () => ({
   },
 }));
 
-const { streamResponse } = await import("./ai");
+const { streamResponse, ContextLengthExhaustedError } = await import("./ai");
 
 const MODEL = "custom:fixture:synthetic";
 const TOOL_STEPS = 72;
@@ -160,5 +160,72 @@ it("measures a synthetic long tool loop through the real stream and context path
   } finally {
     state.model = null;
     rmSync(sessionPath, { recursive: true, force: true });
+  }
+});
+
+it("contains a context error from an in-stream summary", async () => {
+  let providerCalls = 0;
+  state.model = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          {
+            type: "tool-call",
+            toolCallId: `probe-${providerCalls++}`,
+            toolName: "probe",
+            input: JSON.stringify({ q: TOOL_INPUT }),
+          },
+          {
+            type: "finish",
+            finishReason: { unified: "tool-calls", raw: "tool_calls" },
+            usage,
+          },
+        ] as LanguageModelV3StreamPart[],
+      }),
+    }),
+    doGenerate: async () => {
+      throw new Error("prompt is too long: 999999 tokens > 20000 maximum");
+    },
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Run synthetic probes.",
+      tools: {
+        probe: tool({
+          description: "Return synthetic evidence",
+          inputSchema: z.object({ q: z.string() }),
+          execute: async () => TOOL_OUTPUT,
+        }),
+      },
+      stopWhen: stepCountIs(100),
+      silent: true,
+      _restartDepth: 3,
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 20_000,
+                maxOutputTokens: 2_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    let caught: unknown;
+    try {
+      for await (const part of stream.fullStream) void part;
+    } catch (error) {
+      caught = error;
+    }
+    expect(providerCalls).toBeGreaterThan(1);
+    expect(caught).toBeInstanceOf(ContextLengthExhaustedError);
+  } finally {
+    state.model = null;
   }
 });
