@@ -73,6 +73,11 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("0.0.67", "0.0.67")).toBe(false);
   });
 
+  it("treats the stable release as newer than its canary prerelease", () => {
+    expect(isNewerVersion("2.6.1-canary.0cc77dcc", "2.6.1")).toBe(true);
+    expect(isNewerVersion("2.6.1", "2.6.1-canary.0cc77dcc")).toBe(false);
+  });
+
   it("returns false when current is newer than latest", () => {
     expect(isNewerVersion("0.0.67", "0.0.66")).toBe(false);
   });

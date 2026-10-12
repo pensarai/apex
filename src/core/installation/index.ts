@@ -14,12 +14,13 @@ export function getCurrentVersion(): string {
   return packageJson.version;
 }
 
-/**
- * Returns true if `latest` is strictly greater than `current` by semver.
- * Only compares major.minor.patch; pre-release suffixes are ignored.
- */
+/** Compares core versions and treats a stable release as newer than its prerelease. */
 export function isNewerVersion(current: string, latest: string): boolean {
-  const parse = (v: string) => v.split(".").map((n) => parseInt(n, 10) || 0);
+  const parse = (v: string) =>
+    v
+      .replace(/-.*/, "")
+      .split(".")
+      .map((n) => parseInt(n, 10) || 0);
   const c = parse(current);
   const l = parse(latest);
   for (let i = 0; i < Math.max(c.length, l.length); i++) {
@@ -28,7 +29,7 @@ export function isNewerVersion(current: string, latest: string): boolean {
     if (lv > cv) return true;
     if (lv < cv) return false;
   }
-  return false;
+  return current.includes("-") && !latest.includes("-");
 }
 
 export async function getLatestVersion(): Promise<string> {
