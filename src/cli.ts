@@ -269,6 +269,7 @@ Usage:
   pensar targets                      List pentest targets and view their agent logs
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
+  pensar knowledge                    Read and edit the workspace knowledge base
   pensar logs                         View agent execution logs
   pensar config headers               Manage global default HTTP headers
   pensar export-trajectory            Convert saved rollout evidence to ATIF
@@ -828,6 +829,9 @@ try {
   } else if (command === "issues") {
     process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
     await import("./cli/issues");
+  } else if (command === "knowledge") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/knowledge");
   } else if (command === "fixes") {
     process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
     await import("./cli/fixes");

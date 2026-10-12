@@ -257,6 +257,7 @@ export interface DispatchPentestInput {
   branch?: string;
   scanLevel?: "priority" | "full";
   endpointIds?: string[];
+  knowledgeEntryIds?: string[];
 }
 
 export async function dispatchPentest(
