@@ -14,24 +14,28 @@ The script loads 12 public Apex TypeScript files from the fixed canary commit
 It reads those temporary files during the tool loop. Each ten-step block has
 one directory listing, one bounded search across the files, and eight bounded
 source reads. The 15-, 30-, 60-, and 120-step workloads are prefixes of this
-same action sequence. Reads and searches return at most 1,500 content
-characters per step; paths, line numbers, and action labels are included in
-the tool result. No external target, customer data, or prior session content
-is part of the fixture.
+same action sequence. The main comparison bounds reads and searches to 1,500
+content characters per step. A separate 120-step normal-window comparison
+allows up to 8,000 content characters per read/search to cross the default
+fit threshold. Paths, line numbers, and action labels are included in the
+tool result. No external target, customer data, or prior session content is
+part of the fixture.
 
 The snapshot SHA-256 and ordered tool-result SHA-256 are saved per run. A pair
 is included only if both variants complete every requested tool call and both
 hashes match. Each included trial runs in a fresh process. The baseline runtime
 is `79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36`; the fitted runtime is
 `d510b8fc124d3f78e04668317089bf2ab118f945`. The same script is copied
-unchanged into the baseline checkout. Its SHA-256 is saved with each record.
+unchanged into the baseline checkout for each comparison. Each record saves
+the script SHA-256 for its exact version.
 
-All trials use Claude Haiku 4.5 and a 96K **local** catalog window, reserving
-64K tokens for output and Apex's 10K safety margin. Anthropic's native context
-window is not changed. The 15-, 30-, and 60-step runs each enforce a 1M input
-token cap; the 120-step runs allow up to 5M. These are controlled stress
-conditions. Haiku's normal Apex catalog window is 200K, so these percentages
-do not predict savings for every ordinary session.
+The main 15-, 30-, 60-, and 120-step trials use Claude Haiku 4.5 and a 96K
+**local** catalog window, reserving 64K tokens for output and Apex's 10K
+safety margin. Anthropic's native context window is not changed. The 15-,
+30-, and 60-step runs each enforce a 1M input-token cap; the 120-step runs
+allow up to 5M. These are controlled stress conditions. Haiku's normal Apex
+catalog window is 200K, so these percentages do not predict savings for every
+ordinary session.
 
 ## Results
 
@@ -72,18 +76,46 @@ default setting.
 
 ### Normal catalog-window control
 
-The same 120-step file workload was run once per variant with Haiku's normal
-200K Apex catalog window. The action-result checksum matched the 96K runs.
+The 1,500-character 120-step file workload was run once per variant with
+Haiku's normal 200K Apex catalog window. The action-result checksum matched
+the 96K runs.
 
 | Local window | Baseline input | Fitted input | Input decrease | Baseline / fitted peak step input | Completed calls |
 | -----------: | -------------: | -----------: | -------------: | --------------------------------: | --------------: |
 |         200K |      3,675,731 |    3,675,731 |         **0%** |                   59,773 / 59,773 |       120 / 120 |
 
-Neither variant made a summary call. In this particular 120-step workload, the
-normal-window fit threshold was not reached. The 49.725% decrease above is
-evidence for the stated 96K stress budget; it is not a measured decrease for
-the normal 200K configuration at 120 steps. Larger results or more steps could
-cross that threshold, but this replay does not measure where that happens.
+Neither variant made a summary call. This smaller-result workload did not
+reach the normal-window fit threshold.
+
+### Normal catalog window with larger file results
+
+The same 120 operations were replayed at the normal 200K Apex catalog window
+with an 8,000-character read/search limit. All six runs completed 12 listings,
+12 searches, and 96 reads. Every run returned 793,127 tool-result characters
+with the same result SHA-256, recorded 120 completed model steps, produced 1,920 output
+tokens, and made no summary call. These are three fresh-process pairs with
+the baseline run before the fitted run in each pair.
+
+| Trial | Baseline input | Fitted input | Saved input | Paired decrease |
+| ----: | -------------: | -----------: | ----------: | --------------: |
+|     1 |     11,181,769 |    8,342,352 |   2,839,417 |         25.393% |
+|     2 |     11,184,073 |    8,342,604 |   2,841,469 |         25.406% |
+|     3 |     11,181,545 |    8,339,202 |   2,842,343 |         25.420% |
+
+| Baseline input, mean ± SD | Fitted input, mean ± SD | Saved per pair, mean ± SD | Paired decrease, mean ± SD | Baseline / fitted peak step input |
+| ------------------------: | ----------------------: | ------------------------: | -------------------------: | --------------------------------: |
+|        11,182,462 ± 1,399 |       8,341,386 ± 1,896 |         2,841,076 ± 1,502 |     **25.407% ± 0.013 pp** |                 194,963 / 163,688 |
+
+Step 74 was the first provider call with different input usage in every pair.
+The two result sizes show the threshold effect at the normal setting: the
+1,500-character run saved 0%, while the 8,000-character run saved 25.407%
+on average. The 49.725% decrease at the 96K local window remains a
+controlled stress result.
+
+The replay sums provider usage from completed steps. It does not measure
+tokens for any rejected provider attempts, so these figures are not billed
+input totals. They also do not measure whether an autonomous agent would
+choose these exact file operations or complete a real task.
 
 ## Reproduce
 
@@ -96,11 +128,14 @@ bun --no-env-file scripts/performance/operator-context-workflow-live.ts 15 96000
 bun --no-env-file scripts/performance/operator-context-workflow-live.ts 30 96000 claude-haiku-4-5
 bun --no-env-file scripts/performance/operator-context-workflow-live.ts 60 96000 claude-haiku-4-5
 bun --no-env-file scripts/performance/operator-context-workflow-live.ts 120 96000 claude-haiku-4-5
+bun --no-env-file scripts/performance/operator-context-workflow-live.ts 120 200000 claude-haiku-4-5 20000000 8000
 ```
 
-The [raw records](operator-context-workflow-pass3.json) retain each step's
-numeric provider usage, total output and cache-read input, operation counts,
-runtime and fixture SHAs, script SHA-256, and elapsed time. They contain no
-prompts or file contents. The workload is a forced tool replay, so completed
-calls verify that the context change preserves this tool loop; they do not
-establish a general operator-task completion rate or billed cost reduction.
+The [1,500-character raw records](operator-context-workflow-pass3.json) and
+[8,000-character normal-window records](operator-context-workflow-normal-pass3.json)
+retain each step's numeric provider usage, total output and cache-read input,
+operation counts, runtime and fixture SHAs, script SHA-256, and elapsed time.
+They contain no prompts or file contents. The workload is a forced tool replay,
+so completed calls verify that the context change preserves this tool loop;
+they do not establish a general operator-task completion rate or billed cost
+reduction.
