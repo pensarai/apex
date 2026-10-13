@@ -51,6 +51,7 @@ import {
 } from "./compactionTelemetry";
 import {
   estimateMessageTokens,
+  type FitContextResult,
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
@@ -678,7 +679,7 @@ function createToolExecutionGate(): {
 }
 
 class InStreamCompactionRequired extends Error {
-  constructor(readonly messages: ModelMessage[]) {
+  constructor(readonly fitted: FitContextResult) {
     super("In-stream compaction required before provider dispatch");
   }
 }
@@ -793,7 +794,9 @@ function wrapStreamWithErrorHandler(
 
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
-              const isCtxError = checkIfContextLengthError(error);
+              const isCtxError =
+                error instanceof InStreamCompactionRequired ||
+                checkIfContextLengthError(error);
 
               // A latched persistence failure is terminal: retrying would
               // dispatch a turn whose context was never durably committed.
@@ -803,24 +806,6 @@ function wrapStreamWithErrorHandler(
                 error instanceof RunControlInterruption
               ) {
                 throw error;
-              }
-
-              if (error instanceof InStreamCompactionRequired) {
-                const summarizationStream = wrapStreamWithErrorHandler(
-                  createSummarizationStream(
-                    error.messages,
-                    { ...opts, _compactionTrigger: "proactive" },
-                    model,
-                  ),
-                  messagesContainer,
-                  opts,
-                  model,
-                  silent,
-                );
-                for await (const chunk of summarizationStream.fullStream) {
-                  yield chunk;
-                }
-                return;
               }
 
               // Handle stream idle timeout — resume from accumulated messages
@@ -918,42 +903,50 @@ function wrapStreamWithErrorHandler(
               }
 
               if (isCtxError) {
-                let currentMessages: ModelMessage[] = messagesContainer.current;
-                try {
-                  const response = await originalStream.response;
-                  if (response.messages && response.messages.length > 0) {
-                    currentMessages = response.messages as ModelMessage[];
+                let currentMessages: ModelMessage[] =
+                  error instanceof InStreamCompactionRequired
+                    ? error.fitted.messages
+                    : messagesContainer.current;
+                if (!(error instanceof InStreamCompactionRequired)) {
+                  try {
+                    const response = await originalStream.response;
+                    if (response.messages && response.messages.length > 0) {
+                      currentMessages = response.messages as ModelMessage[];
+                    }
+                  } catch {
+                    // Fall back to container messages.
                   }
-                } catch {
-                  // Fall back to container messages.
                 }
 
-                const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                    opts.authConfig?.hoonifyModels,
-                  ),
-                  maxOutputTokens: getMaxOutputTokens(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                    opts.authConfig?.hoonifyModels,
-                  ),
-                  system: applySequentialToolCallPolicy(
-                    opts.system,
-                    opts.tools,
-                    opts.model,
-                  ),
-                  tools: opts.tools,
-                  sessionPath: opts.sessionPath,
-                  telemetry: {
-                    trigger: "context_overflow",
-                    model: opts.model,
-                    sessionId: opts.sessionId,
-                    restartDepth: opts._restartDepth,
-                    previous: opts._compaction?.last,
-                  },
-                });
+                const fitted =
+                  error instanceof InStreamCompactionRequired
+                    ? error.fitted
+                    : fitMessagesToContext(currentMessages, {
+                        contextWindow: getContextWindow(
+                          opts.model,
+                          opts.authConfig?.customProviders,
+                          opts.authConfig?.hoonifyModels,
+                        ),
+                        maxOutputTokens: getMaxOutputTokens(
+                          opts.model,
+                          opts.authConfig?.customProviders,
+                          opts.authConfig?.hoonifyModels,
+                        ),
+                        system: applySequentialToolCallPolicy(
+                          opts.system,
+                          opts.tools,
+                          opts.model,
+                        ),
+                        tools: opts.tools,
+                        sessionPath: opts.sessionPath,
+                        telemetry: {
+                          trigger: "context_overflow",
+                          model: opts.model,
+                          sessionId: opts.sessionId,
+                          restartDepth: opts._restartDepth,
+                          previous: opts._compaction?.last,
+                        },
+                      });
 
                 if (fitted.compaction && opts._compaction)
                   opts._compaction.last = fitted.compaction;
@@ -1047,7 +1040,10 @@ function wrapStreamWithErrorHandler(
                     {
                       ...opts,
                       _restartDepth: postReactiveDepth,
-                      _compactionTrigger: "context_overflow",
+                      _compactionTrigger:
+                        error instanceof InStreamCompactionRequired
+                          ? "proactive"
+                          : "context_overflow",
                     },
                     model,
                   );
@@ -1917,7 +1913,7 @@ function streamResponseWithinOperation(
           stepMessages = fitted.messages;
           if (!fitted.fitsBudget) {
             messagesContainer.current = stepMessages;
-            throw new InStreamCompactionRequired(stepMessages);
+            throw new InStreamCompactionRequired(fitted);
           }
         }
         if (contextRecorder) {
