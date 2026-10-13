@@ -151,6 +151,21 @@ export {
   searchTargetLogs,
   updateIssue,
 } from "./issues";
+export type {
+  KnowledgeCategory,
+  KnowledgeEntry,
+  KnowledgeInput,
+  KnowledgeStatus,
+} from "./knowledge";
+export {
+  archiveKnowledge,
+  createKnowledge,
+  getKnowledge,
+  KNOWLEDGE_CATEGORIES,
+  KNOWLEDGE_STATUSES,
+  listKnowledge,
+  updateKnowledge,
+} from "./knowledge";
 export { serveLocalRunWorker } from "./localWorker";
 export type {
   OffensiveSecurityAgentClientInput,

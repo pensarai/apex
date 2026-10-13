@@ -94,6 +94,9 @@ describe("remaining runtime backend consumers", () => {
 
   it("forwards the execution backend to coding children", async () => {
     const ctx = context();
+    ctx.sandbox = { type: "linux", execute: vi.fn() };
+    ctx.environmentVariables = { EPISODE: "isolated" };
+    ctx.secretValues = ["episode-secret"];
     const spawn = vi.fn().mockResolvedValue({ text: "done" });
     ctx.subagentSpawner = {
       spawn,
@@ -118,6 +121,11 @@ describe("remaining runtime backend consumers", () => {
       ),
     ).toMatchObject({ success: true, results: [{ output: "done" }] });
     expect(spawn.mock.calls[0][0].runtime.backends).toBe(ctx.backends);
+    expect(spawn.mock.calls[0][0].runtime.sandbox).toBe(ctx.sandbox);
+    expect(spawn.mock.calls[0][0].runtime.environmentVariables).toBe(
+      ctx.environmentVariables,
+    );
+    expect(spawn.mock.calls[0][0].runtime.secretValues).toBe(ctx.secretValues);
   });
 
   it("forwards the execution backend to endpoint analysis children", async () => {

@@ -1,5 +1,7 @@
 /** Execution backends, policies, and shared operation helpers. */
 
+export type { DaytonaExecutionSandboxOptions } from "../daytonaSandbox";
+export { createDaytonaExecutionSandbox } from "../daytonaSandbox";
 export {
   CAPS,
   deleteViaSandbox,

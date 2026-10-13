@@ -15,6 +15,7 @@ import {
 
 import { join } from "node:path";
 import { applyPatchImpl } from "../../agents/offSecAgent/tools/applyPatchImpl";
+import { resolveBrowserHeaderPolicy } from "../../agents/offSecAgent/tools/browserHeaderRouting";
 import {
   deleteWorkspaceFile,
   readWorkspaceFile,
@@ -31,6 +32,7 @@ import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuar
 import { HttpSmsInbox } from "../../agents/offSecAgent/tools/smsInbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { postPensarWebSearch } from "../../agents/offSecAgent/tools/webSearch";
+import { TargetRedirectError } from "../../http/redirects";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
@@ -313,6 +315,7 @@ export function LocalBackends(
           undefined,
           undefined,
           ctx.browserSession,
+          resolveBrowserHeaderPolicy(resolverSessionFromCtx(ctx), ctx.target),
         );
     return localBrowser;
   }
@@ -403,6 +406,7 @@ async function* runCommand(
     yield { type: "start" };
     const result = await ctx.sandbox.execute(cmd, {
       timeout: normalizeExecuteCommandTimeout(o?.timeoutSeconds),
+      abortSignal,
       cwd: ctx.agentCwd,
       envVars: {
         ...readSandboxAgentEnv(),
@@ -577,12 +581,18 @@ async function fetchTargetWithRedirects(
   initialRequest: HttpRequest,
   signal: AbortSignal,
   authorize: AuthorizeHttp,
-): Promise<{ response: Response; url: string; redirected: boolean }> {
+): Promise<{
+  response: Response;
+  url: string;
+  redirected: boolean;
+  redirectChain: string[];
+}> {
   let request = initialRequest;
   let redirected = false;
+  const redirectChain = [initialRequest.url];
 
   for (let redirectCount = 0; ; redirectCount++) {
-    const response = await targetFetch(
+    const { response } = await targetFetch(
       resolverSessionFromCtx(ctx),
       request.url,
       {
@@ -594,7 +604,7 @@ async function fetchTargetWithRedirects(
       },
     );
     if (!request.followRedirects || !REDIRECT_STATUSES.has(response.status)) {
-      return { response, url: response.url || request.url, redirected };
+      return { response, url: request.url, redirected, redirectChain };
     }
     if (redirectCount >= 9) {
       response.body?.cancel().catch(() => {});
@@ -602,7 +612,7 @@ async function fetchTargetWithRedirects(
     }
     const location = response.headers.get("location");
     if (!location) {
-      return { response, url: response.url || request.url, redirected };
+      return { response, url: request.url, redirected, redirectChain };
     }
 
     response.body?.cancel().catch(() => {});
@@ -614,6 +624,7 @@ async function fetchTargetWithRedirects(
     await authorize(next);
     request = next;
     redirected = true;
+    redirectChain.push(next.url);
   }
 }
 
@@ -678,6 +689,7 @@ async function fetchStandard(
   authorize: AuthorizeHttp,
 ): Promise<HttpResponse> {
   const method = req.method ?? "GET";
+  const headers = req.headers ?? {};
   const timeout = o?.timeoutMs;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -698,11 +710,11 @@ async function fetchStandard(
       : timeoutController.signal;
     const fetched = await fetchTargetWithRedirects(
       ctx,
-      { ...req, method },
+      { ...req, method, headers },
       combinedSignal,
       authorize,
     );
-    const { response } = fetched;
+    const { response, redirectChain } = fetched;
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       responseHeaders[key] = value;
@@ -739,7 +751,8 @@ async function fetchStandard(
       headers: responseHeaders,
       body: read.text,
       url: fetched.url,
-      redirected: fetched.redirected || response.redirected,
+      redirected: redirectChain.length > 1,
+      ...(redirectChain.length > 1 ? { redirectChain } : {}),
       error,
       capture: {
         complete,
@@ -751,6 +764,8 @@ async function fetchStandard(
     };
   } catch (error: unknown) {
     const isAbort = error instanceof Error && error.name === "AbortError";
+    const redirectChain =
+      error instanceof TargetRedirectError ? error.redirectChain : undefined;
     const stopReason = isAbort
       ? o?.abortSignal?.aborted
         ? "aborted"
@@ -763,13 +778,14 @@ async function fetchStandard(
           ? "Request aborted by user"
           : `Request timeout after ${timeout}ms`
         : errMessage(error),
-      url: req.url,
+      url: redirectChain?.at(-1) ?? req.url,
       method,
       status: 0,
       statusText: "",
       headers: {},
       body: "",
-      redirected: false,
+      redirected: (redirectChain?.length ?? 0) > 1,
+      ...(redirectChain && redirectChain.length > 1 ? { redirectChain } : {}),
       capture: {
         complete: false,
         stopReason,
@@ -786,7 +802,12 @@ async function fetchBrokeredResearch(
   url: string,
   fetchToken: string,
   signal: AbortSignal,
-): Promise<{ response: Response; url: string; redirected: boolean }> {
+): Promise<{
+  response: Response;
+  url: string;
+  redirected: boolean;
+  redirectChain: string[];
+}> {
   const result = await postPensarWebSearch({ url, fetchToken }, signal);
   if (!result.ok) {
     throw new Error(
@@ -811,6 +832,7 @@ async function fetchBrokeredResearch(
     }),
     url: document.url,
     redirected: document.url !== url,
+    redirectChain: document.url === url ? [url] : [url, document.url],
   };
 }
 
@@ -846,7 +868,7 @@ async function fetchReadable(
           combinedSignal,
           authorize,
         );
-    const { response } = fetched;
+    const { response, redirectChain } = fetched;
 
     if (!response.ok) {
       response.body?.cancel().catch(() => {});
@@ -857,7 +879,8 @@ async function fetchReadable(
         statusText: response.statusText,
         headers: {},
         body: "",
-        redirected: fetched.redirected || response.redirected,
+        redirected: redirectChain.length > 1,
+        ...(redirectChain.length > 1 ? { redirectChain } : {}),
         error: `Failed to fetch page: ${response.status} ${response.statusText}`,
       };
     }
@@ -876,7 +899,8 @@ async function fetchReadable(
         statusText: response.statusText,
         headers: {},
         body: "",
-        redirected: fetched.redirected || response.redirected,
+        redirected: redirectChain.length > 1,
+        ...(redirectChain.length > 1 ? { redirectChain } : {}),
         error: `Unsupported content type: ${contentType}. This tool only supports HTML and text pages.`,
       };
     }
@@ -918,7 +942,8 @@ async function fetchReadable(
         statusText: response.statusText,
         headers: {},
         body: `${content}\n\n... (INCOMPLETE — ${error})`,
-        redirected: fetched.redirected || response.redirected,
+        redirected: redirectChain.length > 1,
+        ...(redirectChain.length > 1 ? { redirectChain } : {}),
         error,
         contentTruncated: true,
         stopReason: producerStop,
@@ -935,10 +960,13 @@ async function fetchReadable(
       statusText: response.statusText,
       headers: {},
       body: content,
-      redirected: fetched.redirected || response.redirected,
+      redirected: redirectChain.length > 1,
+      ...(redirectChain.length > 1 ? { redirectChain } : {}),
     };
   } catch (error: unknown) {
     const isAbort = error instanceof Error && error.name === "AbortError";
+    const redirectChain =
+      error instanceof TargetRedirectError ? error.redirectChain : undefined;
     const errorMsg = isAbort
       ? o?.abortSignal?.aborted
         ? "Request aborted by user"
@@ -946,12 +974,13 @@ async function fetchReadable(
       : `Failed to fetch page: ${errMessage(error)}`;
     return {
       success: false,
-      url,
+      url: redirectChain?.at(-1) ?? url,
       status: 0,
       statusText: "",
       headers: {},
       body: "",
-      redirected: false,
+      redirected: (redirectChain?.length ?? 0) > 1,
+      ...(redirectChain && redirectChain.length > 1 ? { redirectChain } : {}),
       error: errorMsg,
       contentTruncated: true,
       stopReason: isAbort

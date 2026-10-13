@@ -466,6 +466,18 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     contextLength: 262000,
   },
   {
+    id: "anthropic.claude-haiku-5-5",
+    name: "Claude Haiku 5.5 (Bedrock)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
+    id: "us.anthropic.claude-haiku-5-5",
+    name: "Claude Haiku 5.5 (US)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
     id: "anthropic.claude-opus-4-8",
     name: "Claude Opus 4.8 (Bedrock)",
     provider: "bedrock",
@@ -594,6 +606,12 @@ export const BEDROCK_MODELS: ModelInfo[] = [
   {
     id: "global.anthropic.claude-opus-4-8",
     name: "Claude Opus 4.8 (Global)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
+    id: "global.anthropic.claude-haiku-5-5",
+    name: "Claude Haiku 5.5 (Global)",
     provider: "bedrock",
     contextLength: 1000000,
   },

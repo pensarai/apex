@@ -18,7 +18,6 @@ const BASE_OPTS: WindowsCurlOptions = {
   url: "https://example.com/api",
   method: "GET",
   headers: { "Content-Type": "application/json" },
-  followRedirects: false,
   timeoutSeconds: 10,
   maxBytes: 5 * 1024 * 1024,
   exitMarker: "__APEX_abc123_CURL_EXIT_",
@@ -65,17 +64,9 @@ describe("buildWindowsCurlCommand generation (any OS)", () => {
     expect(args).toContain(BASE_OPTS.url);
   });
 
-  it("followRedirects=false omits -L; true includes it in the argv", () => {
-    const noFollow = buildWindowsCurlCommand({
-      ...BASE_OPTS,
-      followRedirects: false,
-    });
-    expect(noFollow.envVars.APEX_HTTP_CURL_ARGS).not.toMatch(/\s-L\s/);
-    const follow = buildWindowsCurlCommand({
-      ...BASE_OPTS,
-      followRedirects: true,
-    });
-    expect(follow.envVars.APEX_HTTP_CURL_ARGS).toMatch(/\s-L\s/);
+  it("keeps each curl invocation single-hop", () => {
+    const built = buildWindowsCurlCommand(BASE_OPTS);
+    expect(built.envVars.APEX_HTTP_CURL_ARGS).not.toMatch(/\s-L\s/);
   });
 
   it("always sets BODY_COUNT/LENGTH 0 when no body; chunks present when given", () => {

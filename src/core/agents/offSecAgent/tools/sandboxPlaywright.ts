@@ -21,10 +21,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
-  resolveEffectiveHeaders,
-  stripBrowserManagedHeaders,
-} from "../../../http/targetHeaders";
-import {
   defaultPolicy,
   type ToolPolicy,
   ToolPolicyDeniedError,
@@ -40,6 +36,11 @@ import type {
   BrowserScreenshotResult,
   BrowserSnapshotResult,
 } from "../../../tools/backends/types";
+import {
+  type BrowserHeaderPolicy,
+  browserHeaderRouteBody,
+  resolveBrowserHeaderPolicy,
+} from "./browserHeaderRouting";
 import { createBackendBrowserToolFactories } from "./browserToolFactories";
 import {
   CAMOUFOX_OPTIONS,
@@ -338,15 +339,14 @@ async function runPlaywrightScript(
   sandbox: UnifiedSandbox,
   body: string,
   timeout = 60,
-  extraHttpHeaders?: Record<string, string>,
+  headerPolicy?: BrowserHeaderPolicy,
   installDirOverride?: string,
   allowedHosts: string[] = [],
   enforceScope = false,
 ): Promise<unknown> {
-  const headersJson =
-    extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
-      ? JSON.stringify(extraHttpHeaders)
-      : "null";
+  const headerRoute = browserHeaderRouteBody(
+    headerPolicy ?? { allowedHosts: [], headers: {} },
+  );
   const script = `
 const { firefox } = require('playwright-core');
 const fs = require('fs');
@@ -357,9 +357,6 @@ const fs = require('fs');
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
   }
 
-  // Resolved per script invocation so /headers mutations take effect
-  // on the next browser tool call.
-  const __extraHeaders = ${headersJson};
   const __allowedHosts = ${JSON.stringify(allowedHosts)};
   const __enforceScope = ${JSON.stringify(enforceScope)};
   const __hostAllowed = (hostname) => {
@@ -371,7 +368,6 @@ const fs = require('fs');
       return lower === base || (wildcard && lower.endsWith('.' + base));
     });
   };
-
   // Use the sandbox's virtual display if one is present — Camoufox is far less
   // detectable headful. Falls back to plain headless, which is still fully
   // fingerprint-spoofed (just a weaker stealth posture, never vanilla Chromium).
@@ -413,9 +409,9 @@ const fs = require('fs');
       // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
       // fan-out that otherwise costs ~3 GB across the run.
       firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
-      ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
       serviceWorkers: 'block',
     });
+    ${headerRoute}
     await context.route('**/*', async route => {
       const requestUrl = route.request().url();
       let parsed;
@@ -433,7 +429,7 @@ const fs = require('fs');
         await route.abort('blockedbyclient');
         return;
       }
-      await route.continue();
+      await route.fallback();
     });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
@@ -602,10 +598,10 @@ export function SandboxBrowserBackend(
   let scriptQueue: Promise<unknown> = Promise.resolve();
 
   function runScript(body: string, timeout = 60): Promise<unknown> {
-    const resolved = targetUrl
-      ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
-      : ctx.session.config?.headers;
-    const headers = stripBrowserManagedHeaders(resolved);
+    const headerPolicy = resolveBrowserHeaderPolicy(
+      resolverSessionFromCtx(ctx),
+      targetUrl || undefined,
+    );
     const installDirOverride = bakedEnvCache.get(sandbox)
       ? BAKED_CAMOUFOX_DIR
       : undefined;
@@ -614,7 +610,7 @@ export function SandboxBrowserBackend(
         sandbox,
         body,
         timeout,
-        headers,
+        headerPolicy,
         installDirOverride,
         allowedHosts,
         enforceScope,

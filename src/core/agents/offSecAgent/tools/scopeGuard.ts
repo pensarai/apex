@@ -12,12 +12,15 @@
  */
 
 import { parseTargetUrl } from "../../../../util/url";
+import type { ResolverSession } from "../../../http/targetHeaders";
 import {
+  getRegistrableDomain,
   getSessionAllowedHosts,
   isHostInScope,
-  type ResolverSession,
-} from "../../../http/targetHeaders";
+} from "../../../http/targetScope";
 import type { ToolContext } from "./types";
+
+export { getRegistrableDomain };
 
 export class ScopeViolationError extends Error {
   constructor(

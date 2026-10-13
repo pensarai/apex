@@ -5,6 +5,7 @@
 // assets when execution is remote, and must keep the real SDK result contract
 // on the initialization seam (streamReady).
 
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -524,4 +525,165 @@ describe("initialization seam", () => {
       expect(agent.streamResult).toBe(observed.results[0]);
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Remote file workspace fallback — real tools, real remote adapter
+// ---------------------------------------------------------------------------
+
+const hasPython3 = (() => {
+  try {
+    execFileSync("python3", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+const itPython = hasPython3 ? it : it.skip;
+
+/**
+ * Executes the file tools' real `python3 -c '<script>'` payload locally, so
+ * the confinement contract is the one the remote sandbox enforces.
+ */
+function localShellSandbox() {
+  return {
+    type: "linux" as const,
+    async execute(
+      command: string,
+      opts?: { envVars?: Record<string, string> },
+    ) {
+      const stdout = execFileSync("/bin/bash", ["-c", command], {
+        env: { ...process.env, ...opts?.envVars },
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      return { stdout, stderr: "", exitCode: 0, success: true };
+    },
+  };
+}
+
+describe("remote file workspace fallback through the real tool registry", () => {
+  itPython(
+    "keeps the remote-root finding writable and rejects escapes outside it",
+    async () => {
+      await withRoot(async (root) => {
+        const agentCwd = mkdtempSync(join(tmpdir(), "apex-rws-cwd-"));
+        const remoteRoot = mkdtempSync(join(tmpdir(), "apex-rws-ws-"));
+        try {
+          const agent = new OffensiveSecurityAgent({
+            prompt: "strike the target",
+            system: FAST_STRIKE_SYSTEM_PROMPT,
+            model: "fixture-model",
+            session: {
+              ...makeSession(root),
+              config: { agentCwd, remoteFileWorkspaceRoot: remoteRoot },
+            },
+            mode: "fast-strike",
+            activeTools: [],
+            sandbox: localShellSandbox(),
+          } as never);
+          await agent.streamReady();
+          const stream = observed.streams[0];
+          const system = stream.system as string;
+          expect(system).toContain(
+            `Native file tools are confined to ${remoteRoot}`,
+          );
+          expect(system).not.toContain(join(root, "scratchpad"));
+          const tools = stream.tools as Record<
+            string,
+            { execute?: (input: unknown, options: unknown) => Promise<unknown> }
+          >;
+          expect(tools.create_file).toBeDefined();
+          const call = (name: string, input: unknown) =>
+            (tools[name].execute as (i: unknown, o: unknown) => Promise<never>)(
+              input,
+              {
+                toolCallId: `tc_${name}`,
+                messages: [],
+                abortSignal: undefined,
+              },
+            );
+          const created = (await call("create_file", {
+            path: join(remoteRoot, "finding.json"),
+            content: '{"smoke": true}\n',
+            toolCallDescription: "canonical submission",
+          })) as { success: boolean; error: string };
+          expect(created.success).toBe(true);
+          const read = (await call("read_file", {
+            path: join(remoteRoot, "finding.json"),
+            toolCallDescription: "read back the submission",
+          })) as { success: boolean; content: string };
+          expect(read.success).toBe(true);
+          expect(read.content).toContain('"smoke": true');
+          // A path outside the remote root is reported, not silently written.
+          const escapeAttempt = (await call("create_file", {
+            path: join(agentCwd, "escape.txt"),
+            content: "outside the remote root",
+            toolCallDescription: "escape attempt",
+          })) as { success: boolean; error: string };
+          expect(escapeAttempt.success).toBe(false);
+          expect(escapeAttempt.error).toContain("Path escapes file workspace");
+        } finally {
+          rmSync(agentCwd, { recursive: true, force: true });
+          rmSync(remoteRoot, { recursive: true, force: true });
+        }
+      });
+    },
+  );
+
+  itPython(
+    "lets an explicit child helper root win over the configured remote workspace",
+    async () => {
+      await withRoot(async (root) => {
+        const remoteRoot = mkdtempSync(join(tmpdir(), "apex-rws-ws-"));
+        const childRoot = join(remoteRoot, "subagents", "sub_1", "helpers");
+        try {
+          const agent = new OffensiveSecurityAgent({
+            prompt: "worker task",
+            system: "Worker instructions",
+            model: "fixture-model",
+            session: {
+              ...makeSession(root),
+              config: { remoteFileWorkspaceRoot: remoteRoot },
+            },
+            fileWorkspaceRoot: childRoot,
+            activeTools: ["create_file"],
+            sandbox: localShellSandbox(),
+          } as never);
+          await agent.streamReady();
+          const tools = observed.streams[0].tools as Record<
+            string,
+            { execute?: (input: unknown, options: unknown) => Promise<unknown> }
+          >;
+          const call = (input: unknown) =>
+            (
+              tools.create_file.execute as (
+                i: unknown,
+                o: unknown,
+              ) => Promise<never>
+            )(input, {
+              toolCallId: "tc_create_file",
+              messages: [],
+              abortSignal: undefined,
+            });
+          // The remote-root path is NOT inside the child helper root.
+          const outside = (await call({
+            path: join(remoteRoot, "finding.json"),
+            content: "{}\n",
+            toolCallDescription: "outside the child helper root",
+          })) as { success: boolean; error: string };
+          expect(outside.success).toBe(false);
+          expect(outside.error).toContain("Path escapes file workspace");
+          const created = (await call({
+            path: join(childRoot, "scan.sh"),
+            content: "#!/usr/bin/env bash\necho helper-ok\n",
+            toolCallDescription: "inside the child helper root",
+          })) as { success: boolean; error: string };
+          expect(created.success).toBe(true);
+        } finally {
+          rmSync(remoteRoot, { recursive: true, force: true });
+        }
+      });
+    },
+  );
 });

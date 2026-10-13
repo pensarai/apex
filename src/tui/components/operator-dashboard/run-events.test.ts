@@ -567,9 +567,9 @@ describe("createDisplayEventHandlers", () => {
           (callback, delay = 0, ...args) =>
             schedule(() => {
               timerCallbacks++;
-              (callback as (...callbackArgs: unknown[]) => void)(
-                ...(args as unknown[]),
-              );
+              if (typeof callback === "function") {
+                Reflect.apply(callback, undefined, args);
+              }
             }, delay),
         );
       }

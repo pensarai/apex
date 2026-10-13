@@ -5,7 +5,15 @@
 // The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
-import { parseTargetUrl } from "../../util/url";
+import {
+  fetchWithScopedRedirects,
+  type RedirectFetchResult,
+} from "./redirects";
+import {
+  getSessionAllowedHosts,
+  isHostInScope,
+  isUrlInSessionScope,
+} from "./targetScope";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
 // Structural subset of session shape the resolver reads. Kept loose so
@@ -27,59 +35,6 @@ export interface ResolverSession {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Scope check
-// ---------------------------------------------------------------------------
-
-function normalizeAllowedHost(hostname: string): string {
-  return hostname.trim().toLowerCase().replace(/\.$/, "");
-}
-
-export function getSessionAllowedHosts(session: ResolverSession): string[] {
-  const hosts = new Set<string>();
-  const explicit = session.config?.scopeConstraints?.allowedHosts;
-  if (explicit !== undefined) {
-    for (const host of explicit) {
-      const normalized = normalizeAllowedHost(host);
-      if (normalized) hosts.add(normalized);
-    }
-    // An empty list is the serialized default, not an exclusive grant.
-    if (hosts.size > 0) return [...hosts];
-  }
-
-  if (session.targets) {
-    for (const t of session.targets) {
-      const parsed = parseTargetUrl(t);
-      if (parsed) hosts.add(normalizeAllowedHost(parsed.hostname));
-    }
-  }
-
-  return [...hosts];
-}
-
-export function isHostInScope(
-  hostname: string,
-  allowedHosts: ReadonlyArray<string>,
-): boolean {
-  if (allowedHosts.length === 0) return false;
-  const lower = normalizeAllowedHost(hostname);
-  for (const allowed of allowedHosts) {
-    const normalized = normalizeAllowedHost(allowed);
-    const wildcard = normalized.startsWith("*.");
-    const base = wildcard ? normalized.slice(2) : normalized;
-    if (lower === base) return true;
-    if (wildcard && lower.endsWith(`.${base}`)) return true;
-  }
-  return false;
-}
-
-function isUrlInSessionScope(url: string, session: ResolverSession): boolean {
-  const parsed = parseTargetUrl(url);
-  if (!parsed) return false;
-  return isHostInScope(parsed.hostname, getSessionAllowedHosts(session));
-}
-
-// ---------------------------------------------------------------------------
 // Layer collection
 // ---------------------------------------------------------------------------
 
@@ -196,80 +151,32 @@ function normalizeHeadersInit(
   return { ...(init as Record<string, string>) };
 }
 
-function mergeHeadersInto(
-  init: RequestInit | undefined,
-  session: ResolverSession,
-  url: string,
-): RequestInit {
-  const callerHeaders = normalizeHeadersInit(init?.headers);
-  const merged = resolveEffectiveHeaders(session, url, callerHeaders);
-  return {
-    ...(init ?? {}),
-    headers: merged,
-  };
-}
-
-// Blessed fetch for target HTTP — behaves like `fetch(url, init)` plus
-// resolver-merged headers. Out-of-scope URLs pass through unchanged.
+// Redirect hops are dispatched manually so each destination gets a fresh
+// scope decision instead of inheriting the initial target's credentials.
 export function targetFetch(
   session: ResolverSession,
   url: string,
   init?: RequestInit,
-): Promise<Response> {
+): Promise<RedirectFetchResult> {
   const strict = session.config?.scopeConstraints?.strictScope === true;
-  if (!strict) {
-    return fetch(url, mergeHeadersInto(init, session, url));
-  }
-  return (async () => {
-    let currentUrl = url;
-    let currentInit = { ...(init ?? {}) };
-    const follow =
-      currentInit.redirect === undefined || currentInit.redirect === "follow";
-    for (let redirectCount = 0; ; redirectCount++) {
-      if (!isUrlInSessionScope(currentUrl, session)) {
-        throw new Error(
-          `Scope violation: ${currentUrl} is not in the immutable run policy`,
-        );
-      }
-      const response = await fetch(
-        currentUrl,
-        mergeHeadersInto(
-          {
-            ...currentInit,
-            redirect: follow ? "manual" : currentInit.redirect,
-          },
-          session,
-          currentUrl,
-        ),
+  const callerHeaders = normalizeHeadersInit(init?.headers);
+  const { headers: _headers, ...requestInit } = init ?? {};
+  return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) => {
+    if (strict && !isUrlInSessionScope(hopUrl, session)) {
+      throw new Error(
+        context.redirectCount > 0
+          ? `Scope violation: redirect destination ${hopUrl} is not in the immutable run policy`
+          : `Scope violation: ${hopUrl} is not in the immutable run policy`,
       );
-      if (!follow || ![301, 302, 303, 307, 308].includes(response.status)) {
-        return response;
-      }
-      if (redirectCount >= 9) {
-        response.body?.cancel().catch(() => {});
-        throw new Error("Too many redirects (maximum 10)");
-      }
-      const location = response.headers.get("location");
-      if (!location) return response;
-      const nextUrl = new URL(location, currentUrl).toString();
-      if (!isUrlInSessionScope(nextUrl, session)) {
-        response.body?.cancel().catch(() => {});
-        throw new Error(
-          `Scope violation: redirect destination ${nextUrl} is not in the immutable run policy`,
-        );
-      }
-      response.body?.cancel().catch(() => {});
-      if (
-        response.status === 303 ||
-        ((response.status === 301 || response.status === 302) &&
-          currentInit.method !== "GET" &&
-          currentInit.method !== "HEAD")
-      ) {
-        currentInit = { ...currentInit, method: "GET", body: undefined };
-      }
-      currentUrl = nextUrl;
     }
-  })();
+    return resolveEffectiveHeaders(
+      session,
+      hopUrl,
+      context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
+        ? callerHeaders
+        : undefined,
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------

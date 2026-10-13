@@ -1,0 +1,105 @@
+---
+title: "pensar knowledge"
+description: "Read and edit the workspace knowledge base via the Pensar Console API"
+---
+
+## Overview
+
+The `pensar knowledge` command reads and edits your workspace knowledge base: the context Pensar agents use during pentests, such as technology notes, testing history and false positive patterns. A `false_positive_pattern` entry suppresses matching findings, so treat edits to it as triage decisions.
+
+## Usage
+
+```bash
+pensar knowledge [filters]              # List entries
+pensar knowledge get <id>               # Get one entry
+pensar knowledge add [options]          # Add an entry
+pensar knowledge update <id> [options]  # Edit an entry
+pensar knowledge archive <id>           # Archive an entry
+```
+
+## Prerequisites
+
+You must be connected to Pensar Console via [`pensar login`](/apex/cli-commands/pensar-login) before using this command.
+
+<Note>
+Adding, editing and archiving require a user login. A workspace API key (`PENSAR_API_KEY`) can list and read entries but cannot change them. Entries you add are attributed to you.
+</Note>
+
+## Subcommands
+
+### List Entries
+
+```bash
+pensar knowledge [--category <category>] [--status <status>] [--tag <tags>]
+```
+
+Returns a JSON array of entries, newest first. A `--tag` filter matches entries that carry every listed tag.
+
+### Get Entry
+
+```bash
+pensar knowledge get <id>
+```
+
+### Add Entry
+
+```bash
+pensar knowledge add --title <text> --content <text> --category <category> [--tag <tags>]
+```
+
+### Update Entry
+
+```bash
+pensar knowledge update <id> [--title <text>] [--content <text>] [--category <category>] [--status <status>] [--tag <tags>]
+```
+
+Only the flags you pass are changed. `--tag` replaces the entry's tags.
+
+### Archive Entry
+
+```bash
+pensar knowledge archive <id>
+```
+
+Archived entries stay readable but are no longer given to agents.
+
+## Options
+
+| Flag | Description |
+| --- | --- |
+| `--title <text>` | Entry title (required for `add`) |
+| `--content <text>` | Entry body (required for `add`) |
+| `--category <category>` | `false_positive_pattern`, `technology_context`, `testing_history`, `user_note` or `agent_learning` (required for `add`) |
+| `--status <status>` | `active`, `stale` or `archived` |
+| `--tag <tags>` | Repeat the flag or separate tags with commas |
+
+## Examples
+
+```bash
+# List active technology notes
+pensar knowledge --category technology_context --status active
+
+# Record context for future pentests
+pensar knowledge add \
+  --title "Auth stack" \
+  --content "Sessions are issued by the /auth service as signed cookies." \
+  --category technology_context \
+  --tag auth
+
+# Mark an entry stale, then archive it
+pensar knowledge update 33333333-3333-4333-8333-333333333333 --status stale
+pensar knowledge archive 33333333-3333-4333-8333-333333333333
+```
+
+To give a pentest specific entries as context, pass their IDs to [`pensar pentests dispatch --knowledge-id`](/apex/cli-commands/pensar-pentests#dispatch-a-new-pentest).
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar pentests" icon="shield" href="/apex/cli-commands/pensar-pentests">
+    Dispatch pentests with knowledge entries attached
+  </Card>
+  <Card title="pensar issues" icon="bug" href="/apex/cli-commands/pensar-issues">
+    Triage the findings agents report
+  </Card>
+</CardGroup>

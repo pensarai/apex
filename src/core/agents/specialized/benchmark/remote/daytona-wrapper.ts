@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { Daytona, type Sandbox } from "@daytonaio/sdk";
+import { Daytona, type Sandbox } from "@daytona/sdk";
 import pLimit from "p-limit";
 import type { AIModel } from "../../../../ai";
 import { CircuitBreaker } from "./circuit-breaker";

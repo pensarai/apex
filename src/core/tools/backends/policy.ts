@@ -63,6 +63,10 @@ interface BrowserNavigatePolicyArgs {
   url: string;
 }
 
+interface BrowserNavigatePolicyArgs {
+  url: string;
+}
+
 const ALLOW: PolicyDecision = { allow: true };
 
 /**
