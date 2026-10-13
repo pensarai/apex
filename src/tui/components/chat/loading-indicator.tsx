@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { INTERNAL_ID_PATTERN } from "../../../core/operator";
 import { useTheme } from "../../theme";
+import { CompactingIcon } from "../shared";
 
 // Braille spinner frames for smooth animation
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -16,7 +17,12 @@ const SPINNER_INTERVAL = 80;
 const DOTS_FRAMES = ["", ".", "..", "..."];
 const DOTS_INTERVAL = 400;
 
-export type LoadingState = "thinking" | "executing" | "streaming" | "waiting";
+export type LoadingState =
+  | "thinking"
+  | "compacting"
+  | "executing"
+  | "streaming"
+  | "waiting";
 
 interface LoadingIndicatorProps {
   /** Current loading state */
@@ -42,19 +48,21 @@ export function LoadingIndicator({
 
   // Spinner animation
   useEffect(() => {
+    if (state === "compacting") return;
     const interval = setInterval(() => {
       setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
     }, SPINNER_INTERVAL);
     return () => clearInterval(interval);
-  }, []);
+  }, [state]);
 
   // Dots animation
   useEffect(() => {
+    if (state === "compacting") return;
     const interval = setInterval(() => {
       setDotsFrame((f) => (f + 1) % DOTS_FRAMES.length);
     }, DOTS_INTERVAL);
     return () => clearInterval(interval);
-  }, []);
+  }, [state]);
 
   const spinner = SPINNER_FRAMES[spinnerFrame];
   const dots = DOTS_FRAMES[dotsFrame];
@@ -64,6 +72,8 @@ export function LoadingIndicator({
     switch (state) {
       case "thinking":
         return `Thinking${dots}`;
+      case "compacting":
+        return "Compacting";
       case "streaming":
         return `Responding${dots}`;
       case "waiting":
@@ -95,6 +105,8 @@ export function LoadingIndicator({
     switch (state) {
       case "thinking":
         return colors.warning;
+      case "compacting":
+        return colors.primary;
       case "streaming":
         return colors.primary;
       case "waiting":
@@ -108,7 +120,11 @@ export function LoadingIndicator({
 
   return (
     <box flexDirection="row" marginTop={1} marginLeft={2} gap={1}>
-      <text fg={getColor()}>{spinner}</text>
+      {state === "compacting" ? (
+        <CompactingIcon fg={getColor()} />
+      ) : (
+        <text fg={getColor()}>{spinner}</text>
+      )}
       <text fg={colors.textMuted}>{getMessage()}</text>
     </box>
   );

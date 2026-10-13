@@ -7,6 +7,7 @@
 // Action labels
 export { deriveActionLabel, deriveApprovedActionLabel } from "./action-label";
 export { AsciiSpinner } from "./ascii-spinner";
+export { CompactingIcon } from "./compacting-icon";
 // Components
 export {
   type ControlItem,
