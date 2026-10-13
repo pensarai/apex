@@ -45,10 +45,61 @@ asserts an 18K peak and 1.3M cumulative ceiling to catch a return to
 unbounded growth without requiring an exact output from the tokenizer
 heuristic.
 
-The provider input figures use Apex's `estimateMessageTokens` heuristic, not
-provider-reported usage. The synthetic model does not enforce its context
-limit; that makes the baseline's unbounded growth observable without a provider
-error.
+The benchmark's input figures use Apex's `estimateMessageTokens` heuristic on
+the provider-visible prompt, not provider-reported usage. The synthetic model
+does not enforce its context limit; that makes the unbounded growth observable
+without a provider error. Later changes should preserve all 72 tool executions
+and the final response while reducing the peak and cumulative input.
+
+## Live provider replay
+
+`scripts/performance/operator-context-live.ts` runs the production
+`streamResponse` path against Anthropic's Claude Haiku 4.5 with a forced,
+one-at-a-time synthetic tool. The tool returns the same 8,000-character record
+sequence on every run; only its ordinal changes. No external target, user data,
+or prior session content is sent. The script reports usage from completed model
+steps, including any summarization call, and stops before its 1M-input-token
+limit. Run it in a fresh process from each revision:
+
+```sh
+bun --no-env-file scripts/performance/operator-context-live.ts 30 8000 96000
+```
+
+The key is read from `ANTHROPIC_API_KEY`. The third argument changes Apex's
+_local_ catalog window for this isolated process. The 96K setting leaves about
+21K estimated message tokens after Apex's 64K output reservation, 10K safety
+margin, and tool overhead. Haiku's catalog window remains 200K in normal runs;
+the smaller test window makes the in-stream threshold reachable before the
+1M-input-token cap. These are real provider calls with provider-reported usage,
+but a controlled stress fixture rather than a full operator session at the
+model's default window.
+
+| Revision            | Tool calls | Summary calls | Provider input | Peak step input | Provider output | Cache-read input |
+| ------------------- | ---------: | ------------: | -------------: | --------------: | --------------: | ---------------: |
+| `79788062` baseline |         30 |             0 |        769,080 |          50,576 |             480 |          714,744 |
+| `66c01d97` fit      |         30 |             0 |        248,378 |          17,896 |             480 |          233,776 |
+| `66c01d97` repeat   |         30 |             0 |        248,360 |          17,896 |             480 |          233,760 |
+
+Input includes cache-read tokens; the cache-read column is a subset, not an
+additional charge or token count. All three 30-step input series are saved in
+`operator-context-live.json`. The first 11 provider steps have identical usage;
+the twelfth drops from 19,616 baseline input tokens to about 4,540 after
+fitting. Provider input falls 67.7% across the full workload and peak step
+input falls 64.6%, while all 30 tool calls and 480 output tokens remain. The
+two fixed runs differ by 18 input tokens in total. No summarization model call
+was needed in this fixture; the improvement comes from fitting old tool
+results during the stream.
+
+A longer fixed run with 60 tool calls used 738,484 provider-reported input
+tokens, peaked at 21,412 in one step, and produced 960 output tokens with no
+summary or provider context error. The script enforces the same per-run cap.
+
+As a threshold check, the fixed 30-step workload was also run with Haiku's
+normal 200K catalog window (`30 8000 200000`). It used 769,080 input tokens,
+matching the baseline: the conversation did not reach that larger local fit
+threshold. The 67.7% figure therefore applies to the stated 96K stress budget,
+not every session using Haiku's default configuration. Actual agent tasks,
+tool mixes, and provider cache pricing can change the end-to-end savings.
 
 ## Fitted transcript handoff
 
