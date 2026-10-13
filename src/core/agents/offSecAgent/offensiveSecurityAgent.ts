@@ -778,6 +778,18 @@ export class OffensiveSecurityAgent<TResult = void> {
         preparedContextRef.current.responseMessageOffset,
       ),
     ];
+    const persistedMessages = (messages: ModelMessage[]) => {
+      // Cache-marked system messages are transport context; the next turn
+      // supplies a fresh system prompt and must not replay saved copies.
+      let first = 0;
+      while (
+        messages[first]?.role === "system" &&
+        messages[first]?.providerOptions
+      ) {
+        first++;
+      }
+      return first === 0 ? messages : messages.slice(first);
+    };
 
     // Agent-local persistence: debounce, latest snapshot, and the
     // serialized write queue live in the writer (see ./messagePersistence).
@@ -897,7 +909,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           const canonical =
             input.contextRecorder?.latest() ??
             legacyMessages(event.response.messages);
-          this.writer.setLatest(canonical);
+          this.writer.setLatest(persistedMessages(canonical));
           schedulePersist();
           traceWriter.recordStep(
             event.response.messages as ModelMessage[],
@@ -924,10 +936,11 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.writer.cancelTimer();
           // Skip if the interrupted-step finalizer already wrote the abort snapshot.
           if (!this.writer.syntheticsPersisted) {
-            const finalMessages =
+            const finalMessages = persistedMessages(
               input.contextRecorder?.latest() ??
-              this.writer.latest ??
-              legacyMessages(event.response.messages);
+                this.writer.latest ??
+                legacyMessages(event.response.messages),
+            );
             this.writer.setLatest(finalMessages);
             await this.writer.enqueueWrite(finalMessages).catch(() => {});
           }
