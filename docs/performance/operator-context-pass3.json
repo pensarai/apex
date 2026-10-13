@@ -1,0 +1,371 @@
+{
+  "fixture": "operator-context-live.ts",
+  "transport": "Anthropic direct",
+  "localContextWindow": 96000,
+  "toolPayloadChars": 8000,
+  "perRunInputTokenCap": 1000000,
+  "trialOrder": "baseline then in-stream fit, three fresh-process pairs per model",
+  "scriptSha256": "7155ea1d9eab6e882484cff7ff1232ae5aecf0de523d269145d1e0ce9fdc4bf5",
+  "runs": [
+    {
+      "model": "claude-haiku-4-5",
+      "trial": 1,
+      "variant": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "recordedAtUtc": "2026-10-13T02:18:20.051492+00:00",
+      "result": {
+        "model": "claude-haiku-4-5",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 64000,
+        "requestedSteps": 30,
+        "payloadChars": 8000,
+        "toolCalls": 30,
+        "mainProviderCalls": 30,
+        "summaryCalls": 0,
+        "totalInputTokens": 769080,
+        "totalOutputTokens": 480,
+        "cacheReadTokens": 714744,
+        "peakMainStepInputTokens": 50576,
+        "firstMainStepInputTokens": 696,
+        "lastMainStepInputTokens": 50576,
+        "mainStepInputTokens": [
+          696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+          19616, 21336, 23056, 24776, 26496, 28216, 29936, 31656, 33376, 35096,
+          36816, 38536, 40256, 41976, 43696, 45416, 47136, 48856, 50576
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 18299
+      }
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "trial": 1,
+      "variant": "in-stream fit",
+      "revision": "aa90630f813398294103db04d1f4170e5d8c87a2",
+      "recordedAtUtc": "2026-10-13T02:18:36.283984+00:00",
+      "result": {
+        "model": "claude-haiku-4-5",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 64000,
+        "requestedSteps": 30,
+        "payloadChars": 8000,
+        "toolCalls": 30,
+        "mainProviderCalls": 30,
+        "summaryCalls": 0,
+        "totalInputTokens": 249165,
+        "totalOutputTokens": 480,
+        "cacheReadTokens": 234506,
+        "peakMainStepInputTokens": 17896,
+        "firstMainStepInputTokens": 696,
+        "lastMainStepInputTokens": 10899,
+        "mainStepInputTokens": [
+          696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+          4566, 4919, 5271, 5623, 5974, 6326, 6680, 7030, 7381, 7730, 8083,
+          8435, 8785, 9138, 9489, 9841, 10193, 10546, 10899
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 16111
+      }
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "trial": 2,
+      "variant": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "recordedAtUtc": "2026-10-13T02:18:54.375572+00:00",
+      "result": {
+        "model": "claude-haiku-4-5",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 64000,
+        "requestedSteps": 30,
+        "payloadChars": 8000,
+        "toolCalls": 30,
+        "mainProviderCalls": 30,
+        "summaryCalls": 0,
+        "totalInputTokens": 769080,
+        "totalOutputTokens": 480,
+        "cacheReadTokens": 765296,
+        "peakMainStepInputTokens": 50576,
+        "firstMainStepInputTokens": 696,
+        "lastMainStepInputTokens": 50576,
+        "mainStepInputTokens": [
+          696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+          19616, 21336, 23056, 24776, 26496, 28216, 29936, 31656, 33376, 35096,
+          36816, 38536, 40256, 41976, 43696, 45416, 47136, 48856, 50576
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 17960
+      }
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "trial": 2,
+      "variant": "in-stream fit",
+      "revision": "aa90630f813398294103db04d1f4170e5d8c87a2",
+      "recordedAtUtc": "2026-10-13T02:19:10.528437+00:00",
+      "result": {
+        "model": "claude-haiku-4-5",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 64000,
+        "requestedSteps": 30,
+        "payloadChars": 8000,
+        "toolCalls": 30,
+        "mainProviderCalls": 30,
+        "summaryCalls": 0,
+        "totalInputTokens": 248811,
+        "totalOutputTokens": 480,
+        "cacheReadTokens": 234179,
+        "peakMainStepInputTokens": 17896,
+        "firstMainStepInputTokens": 696,
+        "lastMainStepInputTokens": 10872,
+        "mainStepInputTokens": [
+          696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+          4554, 4904, 5256, 5607, 5960, 6312, 6663, 7015, 7365, 7716, 8067,
+          8415, 8764, 9116, 9467, 9817, 10167, 10518, 10872
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 16030
+      }
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "trial": 3,
+      "variant": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "recordedAtUtc": "2026-10-13T02:19:28.159018+00:00",
+      "result": {
+        "model": "claude-haiku-4-5",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 64000,
+        "requestedSteps": 30,
+        "payloadChars": 8000,
+        "toolCalls": 30,
+        "mainProviderCalls": 30,
+        "summaryCalls": 0,
+        "totalInputTokens": 769080,
+        "totalOutputTokens": 480,
+        "cacheReadTokens": 765296,
+        "peakMainStepInputTokens": 50576,
+        "firstMainStepInputTokens": 696,
+        "lastMainStepInputTokens": 50576,
+        "mainStepInputTokens": [
+          696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+          19616, 21336, 23056, 24776, 26496, 28216, 29936, 31656, 33376, 35096,
+          36816, 38536, 40256, 41976, 43696, 45416, 47136, 48856, 50576
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 17501
+      }
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "trial": 3,
+      "variant": "in-stream fit",
+      "revision": "aa90630f813398294103db04d1f4170e5d8c87a2",
+      "recordedAtUtc": "2026-10-13T02:19:44.040802+00:00",
+      "result": {
+        "model": "claude-haiku-4-5",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 64000,
+        "requestedSteps": 30,
+        "payloadChars": 8000,
+        "toolCalls": 30,
+        "mainProviderCalls": 30,
+        "summaryCalls": 0,
+        "totalInputTokens": 249034,
+        "totalOutputTokens": 480,
+        "cacheReadTokens": 234388,
+        "peakMainStepInputTokens": 17896,
+        "firstMainStepInputTokens": 696,
+        "lastMainStepInputTokens": 10886,
+        "mainStepInputTokens": [
+          696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+          4562, 4915, 5268, 5620, 5969, 6319, 6669, 7023, 7374, 7725, 8078,
+          8429, 8781, 9132, 9483, 9831, 10180, 10534, 10886
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 15742
+      }
+    },
+    {
+      "model": "claude-opus-4-8",
+      "trial": 1,
+      "variant": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "recordedAtUtc": "2026-10-13T02:21:36.871247+00:00",
+      "result": {
+        "model": "claude-opus-4-8",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 48000,
+        "requestedSteps": 25,
+        "payloadChars": 8000,
+        "toolCalls": 25,
+        "mainProviderCalls": 25,
+        "summaryCalls": 0,
+        "totalInputTokens": 875150,
+        "totalOutputTokens": 275,
+        "cacheReadTokens": 804770,
+        "peakMainStepInputTokens": 69458,
+        "firstMainStepInputTokens": 554,
+        "lastMainStepInputTokens": 69458,
+        "mainStepInputTokens": [
+          554, 3425, 6296, 9167, 12038, 14909, 17780, 20651, 23522, 26393,
+          29264, 32135, 35006, 37877, 40748, 43619, 46490, 49361, 52232, 55103,
+          57974, 60845, 63716, 66587, 69458
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 54719
+      }
+    },
+    {
+      "model": "claude-opus-4-8",
+      "trial": 1,
+      "variant": "in-stream fit",
+      "revision": "aa90630f813398294103db04d1f4170e5d8c87a2",
+      "recordedAtUtc": "2026-10-13T02:22:38.524079+00:00",
+      "result": {
+        "model": "claude-opus-4-8",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 48000,
+        "requestedSteps": 25,
+        "payloadChars": 8000,
+        "toolCalls": 25,
+        "mainProviderCalls": 25,
+        "summaryCalls": 0,
+        "totalInputTokens": 568390,
+        "totalOutputTokens": 275,
+        "cacheReadTokens": 555080,
+        "peakMainStepInputTokens": 52232,
+        "firstMainStepInputTokens": 554,
+        "lastMainStepInputTokens": 12388,
+        "mainStepInputTokens": [
+          554, 3425, 6296, 9167, 12038, 14909, 17780, 20651, 23522, 26393,
+          29264, 32135, 35006, 37877, 40748, 43619, 46490, 49361, 52232, 9920,
+          10411, 10906, 11402, 11896, 12388
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 55003
+      }
+    },
+    {
+      "model": "claude-opus-4-8",
+      "trial": 2,
+      "variant": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "recordedAtUtc": "2026-10-13T02:23:39.447310+00:00",
+      "result": {
+        "model": "claude-opus-4-8",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 48000,
+        "requestedSteps": 25,
+        "payloadChars": 8000,
+        "toolCalls": 25,
+        "mainProviderCalls": 25,
+        "summaryCalls": 0,
+        "totalInputTokens": 875150,
+        "totalOutputTokens": 275,
+        "cacheReadTokens": 874212,
+        "peakMainStepInputTokens": 69458,
+        "firstMainStepInputTokens": 554,
+        "lastMainStepInputTokens": 69458,
+        "mainStepInputTokens": [
+          554, 3425, 6296, 9167, 12038, 14909, 17780, 20651, 23522, 26393,
+          29264, 32135, 35006, 37877, 40748, 43619, 46490, 49361, 52232, 55103,
+          57974, 60845, 63716, 66587, 69458
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 60787
+      }
+    },
+    {
+      "model": "claude-opus-4-8",
+      "trial": 2,
+      "variant": "in-stream fit",
+      "revision": "aa90630f813398294103db04d1f4170e5d8c87a2",
+      "recordedAtUtc": "2026-10-13T02:24:50.204823+00:00",
+      "result": {
+        "model": "claude-opus-4-8",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 48000,
+        "requestedSteps": 25,
+        "payloadChars": 8000,
+        "toolCalls": 25,
+        "mainProviderCalls": 25,
+        "summaryCalls": 0,
+        "totalInputTokens": 568359,
+        "totalOutputTokens": 275,
+        "cacheReadTokens": 555058,
+        "peakMainStepInputTokens": 52232,
+        "firstMainStepInputTokens": 554,
+        "lastMainStepInputTokens": 12379,
+        "mainStepInputTokens": [
+          554, 3425, 6296, 9167, 12038, 14909, 17780, 20651, 23522, 26393,
+          29264, 32135, 35006, 37877, 40748, 43619, 46490, 49361, 52232, 9917,
+          10409, 10904, 11395, 11888, 12379
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 70617
+      }
+    },
+    {
+      "model": "claude-opus-4-8",
+      "trial": 3,
+      "variant": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "recordedAtUtc": "2026-10-13T02:26:01.268017+00:00",
+      "result": {
+        "model": "claude-opus-4-8",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 48000,
+        "requestedSteps": 25,
+        "payloadChars": 8000,
+        "toolCalls": 25,
+        "mainProviderCalls": 25,
+        "summaryCalls": 0,
+        "totalInputTokens": 875150,
+        "totalOutputTokens": 275,
+        "cacheReadTokens": 874212,
+        "peakMainStepInputTokens": 69458,
+        "firstMainStepInputTokens": 554,
+        "lastMainStepInputTokens": 69458,
+        "mainStepInputTokens": [
+          554, 3425, 6296, 9167, 12038, 14909, 17780, 20651, 23522, 26393,
+          29264, 32135, 35006, 37877, 40748, 43619, 46490, 49361, 52232, 55103,
+          57974, 60845, 63716, 66587, 69458
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 70921
+      }
+    },
+    {
+      "model": "claude-opus-4-8",
+      "trial": 3,
+      "variant": "in-stream fit",
+      "revision": "aa90630f813398294103db04d1f4170e5d8c87a2",
+      "recordedAtUtc": "2026-10-13T02:26:57.087836+00:00",
+      "result": {
+        "model": "claude-opus-4-8",
+        "declaredContextWindow": 96000,
+        "maxOutputTokens": 48000,
+        "requestedSteps": 25,
+        "payloadChars": 8000,
+        "toolCalls": 25,
+        "mainProviderCalls": 25,
+        "summaryCalls": 0,
+        "totalInputTokens": 568243,
+        "totalOutputTokens": 275,
+        "cacheReadTokens": 554961,
+        "peakMainStepInputTokens": 52232,
+        "firstMainStepInputTokens": 554,
+        "lastMainStepInputTokens": 12360,
+        "mainStepInputTokens": [
+          554, 3425, 6296, 9167, 12038, 14909, 17780, 20651, 23522, 26393,
+          29264, 32135, 35006, 37877, 40748, 43619, 46490, 49361, 52232, 9898,
+          10392, 10884, 11374, 11868, 12360
+        ],
+        "summaryInputTokens": [],
+        "elapsedMs": 55697
+      }
+    }
+  ]
+}

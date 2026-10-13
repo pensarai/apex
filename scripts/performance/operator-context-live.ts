@@ -30,7 +30,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Set ANTHROPIC_API_KEY before running the live benchmark");
 }
 
-const model = "claude-haiku-4-5";
+const model = process.argv[5] ?? "claude-haiku-4-5";
 const modelInfo = AVAILABLE_MODELS.find((entry) => entry.id === model);
 if (!modelInfo) throw new Error("Benchmark model is missing from the catalog");
 // A smaller local window reaches the fit threshold within the token cap; the provider retains its native limit.
