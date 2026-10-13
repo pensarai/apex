@@ -105,6 +105,11 @@ Both variants had identical per-step provider usage, the same ordered tool
 results as the shared 200K large-result case, and no summary calls. This
 workload did not reach the fitting threshold at Opus's default window.
 
+A later [native-window stress replay](operator-context-workflow-opus-native-stress.md)
+uses larger file results and reaches 990,634 input tokens on a single Opus
+call. Its pass@3 result shows no material reduction from the current fitted
+runtime at the 1M setting.
+
 ## Limits and reproduction
 
 The script forces a fixed tool loop; it does not measure autonomous task

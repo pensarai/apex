@@ -49,10 +49,10 @@ if (
   maxInputTokens < 100_000 ||
   !Number.isSafeInteger(resultCharacterLimit) ||
   resultCharacterLimit < 1_500 ||
-  resultCharacterLimit > 8_000
+  resultCharacterLimit > 96_000
 ) {
   throw new Error(
-    "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..1000000] [model] [input token cap] [result character limit: 1500..8000]",
+    "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..1000000] [model] [input token cap] [result character limit: 1500..96000]",
   );
 }
 if (!process.env.ANTHROPIC_API_KEY) {
