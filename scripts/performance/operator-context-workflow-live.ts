@@ -44,7 +44,7 @@ if (
   ![15, 30, 60, 120].includes(requestedSteps) ||
   !Number.isSafeInteger(declaredContextWindow) ||
   declaredContextWindow < 96_000 ||
-  declaredContextWindow > 200_000 ||
+  declaredContextWindow > 1_000_000 ||
   !Number.isSafeInteger(maxInputTokens) ||
   maxInputTokens < 100_000 ||
   !Number.isSafeInteger(resultCharacterLimit) ||
@@ -52,7 +52,7 @@ if (
   resultCharacterLimit > 8_000
 ) {
   throw new Error(
-    "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..200000] [model] [input token cap] [result character limit: 1500..8000]",
+    "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..1000000] [model] [input token cap] [result character limit: 1500..8000]",
   );
 }
 if (!process.env.ANTHROPIC_API_KEY) {
