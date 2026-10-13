@@ -101,6 +101,67 @@ threshold. The 67.7% figure therefore applies to the stated 96K stress budget,
 not every session using Haiku's default configuration. Actual agent tasks,
 tool mixes, and provider cache pricing can change the end-to-end savings.
 
+## Three-run live replay
+
+The initial replay above established the comparison. A separate repeated replay
+used the same script and payload, with three fresh-process baseline/fitted pairs
+per model. The script was copied unchanged into a checkout at baseline runtime
+`79788062`; the fitted checkout was `aa90630f`. The only script change from
+the earlier replay was an optional fifth argument selecting the Anthropic model.
+Every trial used a 96K **local** catalog window, 8,000-character tool results,
+and the script's 1M-input-token cap. Haiku used 30 tool steps. Opus 4.8 used
+25: an exploratory 30-step Opus baseline stopped after 26 calls at the budget
+guard and was excluded because it did not complete the requested workload.
+
+All 12 included trials completed the requested tool loop (3/3 per revision and
+model), with zero summaries and no provider context error. Results are
+provider-reported usage. Values below are the arithmetic mean ± sample standard
+deviation of three runs, not confidence intervals. A zero spread means this
+forced fixture returned identical counts in three trials; it is not a claim
+that real operator tasks are deterministic.
+
+| Model and steps | Runtime       | Total input tokens | Peak step input tokens | Output tokens |
+| --------------- | ------------- | -----------------: | ---------------------: | ------------: |
+| Haiku 4.5, 30   | Baseline      |        769,080 ± 0 |             50,576 ± 0 |       480 ± 0 |
+| Haiku 4.5, 30   | In-stream fit |      249,003 ± 179 |             17,896 ± 0 |       480 ± 0 |
+| Opus 4.8, 25    | Baseline      |        875,150 ± 0 |             69,458 ± 0 |       275 ± 0 |
+| Opus 4.8, 25    | In-stream fit |       568,331 ± 77 |             52,232 ± 0 |       275 ± 0 |
+
+For each model, trial 1 baseline was paired with trial 1 fitted, and likewise
+for trials 2 and 3. The percentage reduction was calculated for each pair as
+`100 × (baseline − fitted) / baseline`, then summarized as mean ± sample
+standard deviation. The ± on a percentage is in **percentage points**.
+
+| Model     | Input tokens saved per pair |    Input reduction | Peak step input saved | Peak reduction |
+| --------- | --------------------------: | -----------------: | --------------------: | -------------: |
+| Haiku 4.5 |               520,077 ± 179 | 67.623% ± 0.023 pp |            32,680 ± 0 | 64.616% ± 0 pp |
+| Opus 4.8  |                306,819 ± 77 | 35.059% ± 0.009 pp |            17,226 ± 0 | 24.801% ± 0 pp |
+
+The 30-step Haiku baselines each consumed 769K input tokens and the 25-step
+Opus baselines each consumed 875K, within the 500K–1M baseline band
+chosen for this replay. The models have different effective output reservations at the 96K
+local window: 64K for Haiku and 48K for Opus after Apex's small-window clamp.
+Compare each model only with its own baseline. The first trial's cache-read
+input also differs from later warm-cache trials; cache-read tokens are already
+included in total input. These tables measure token counts, not billed cost or
+savings at each model's normal catalog window. A three-run synthetic fixture
+also does not establish a general operator-task success rate.
+
+[Raw trial records](operator-context-pass3.json) include each step's input
+usage, cache-read and output counts, elapsed time, runtime SHA, and the SHA-256
+of the exact replay script. No prompts, targets, or tool-result content are
+recorded. To reproduce, copy the script to the same relative path in a
+checkout at `79788062`, install dependencies, and run each command three times
+in a fresh process at both revisions (use the fitted branch's script verbatim):
+
+```sh
+bun --no-env-file scripts/performance/operator-context-live.ts 30 8000 96000 claude-haiku-4-5
+bun --no-env-file scripts/performance/operator-context-live.ts 25 8000 96000 claude-opus-4-8
+```
+
+The commands require `ANTHROPIC_API_KEY` and make real provider calls. The
+one-million-token guard applies independently to each invocation.
+
 ## Fitted transcript handoff
 
 The same test file also replays a new stream with 40 synthetic prior tool
