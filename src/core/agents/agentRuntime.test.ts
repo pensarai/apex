@@ -53,6 +53,10 @@ function buildHooks() {
     emailAdapterFor: vi.fn(() => null),
     abortSignal: new AbortController().signal,
     extraTools: { extra_tool: {} },
+    toolProtocol: "schema-code",
+    directTools: ["direct_tool"],
+    nestedTools: ["nested_tool"],
+    onCodeCellComplete: vi.fn(),
     sandbox: { kind: "fake-sandbox" },
     // biome-ignore lint/suspicious/noExplicitAny: test doubles for opaque host-injected interfaces
   } as unknown as Required<AgentHooks> & Record<string, any>;
@@ -196,6 +200,10 @@ describe("assembleAgentHooks — compile-time completeness", () => {
         "emailAdapterFor",
         "abortSignal",
         "extraTools",
+        "toolProtocol",
+        "directTools",
+        "nestedTools",
+        "onCodeCellComplete",
         "sandbox",
       ].sort(),
     );
@@ -217,6 +225,10 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       abortSignal: undefined,
       extraTools: undefined,
       sandbox: undefined,
+      toolProtocol: undefined,
+      directTools: undefined,
+      nestedTools: undefined,
+      onCodeCellComplete: undefined,
     };
     expectTypeOf(complete).toEqualTypeOf<RequiredAgentHooks>();
 
@@ -236,6 +248,10 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       emailAdapterFor: undefined,
       abortSignal: undefined,
       extraTools: undefined,
+      toolProtocol: undefined,
+      directTools: undefined,
+      nestedTools: undefined,
+      onCodeCellComplete: undefined,
     };
     expect(missingSandbox).toBeDefined();
   });

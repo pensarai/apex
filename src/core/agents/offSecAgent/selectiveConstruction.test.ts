@@ -113,6 +113,7 @@ vi.mock("./tools", () => {
 });
 
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: Record<string, unknown>) => {
     state.streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };

@@ -90,6 +90,7 @@ function makeAgent(
     prompt: "Read the requested file",
     system: "Public-path construction fixture",
     model: "fixture-model",
+    toolProtocol: "direct",
     session: makeSession(root, extraInput.__config as never),
     activeTools,
     sandbox: {
@@ -209,6 +210,7 @@ describe("OffensiveSecurityAgent public-path construction counts", () => {
         prompt: "Read the requested file",
         system: "Public-path construction fixture",
         model: "fixture-model",
+        toolProtocol: "direct",
         session: {
           ...makeSession(root, { taskDriven: true }),
           credentialManager: { listReferences: () => [] },

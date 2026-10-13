@@ -23,6 +23,10 @@ import type { StreamIdFactory } from "./offSecAgent/types";
  * "dropping a hook is a type error".
  */
 export interface RequiredAgentHooks {
+  toolProtocol: AgentHooks["toolProtocol"];
+  directTools: AgentHooks["directTools"];
+  nestedTools: AgentHooks["nestedTools"];
+  onCodeCellComplete: AgentHooks["onCodeCellComplete"];
   backends: ToolBackends | undefined;
   subagentSpawner: SubagentSpawner | undefined;
   languageModelMiddleware:
@@ -51,6 +55,10 @@ export interface RequiredAgentHooks {
  */
 export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
   return {
+    toolProtocol: opts.toolProtocol,
+    directTools: opts.directTools,
+    nestedTools: opts.nestedTools,
+    onCodeCellComplete: opts.onCodeCellComplete,
     backends: opts.backends,
     subagentSpawner: opts.subagentSpawner,
     languageModelMiddleware: opts.languageModelMiddleware,
