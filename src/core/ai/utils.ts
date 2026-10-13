@@ -677,7 +677,7 @@ export function createSummarizationStream(
       toolCallId,
       toolName: "summarize_conversation",
       input: JSON.stringify({
-        reason: "Context length exceeded, summarizing conversation to continue",
+        reason: "Compacting context to continue",
         messageCount: messages.length,
       }),
     } as unknown as TextStreamPart<ToolSet>;
@@ -692,11 +692,10 @@ export function createSummarizationStream(
       toolCallId,
       toolName: "summarize_conversation",
       input: JSON.stringify({
-        reason: "Context length exceeded, summarizing conversation to continue",
+        reason: "Compacting context to continue",
         messageCount: messages.length,
       }),
-      result:
-        "Conversation summarized successfully. Resuming with condensed context...",
+      result: "Context compacted. Continuing with shorter history...",
     } as unknown as TextStreamPart<ToolSet>;
     yield toolResultEvent;
 
