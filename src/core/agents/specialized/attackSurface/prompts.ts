@@ -252,6 +252,7 @@ Use \`browser_get_cookies\` to document all cookies set by the application — n
 ## 5a. Document applications first, then endpoints
 
 **Step 1: Document each application** using \`document_app\`:
+- Set \`domain\` to the target URL for the primary web application or API, and to the evidence-derived URL for target-owned subdomains and resources.
 - \`web_application\` — the target web application (usually one per target domain)
 - \`api\` — API services hosted by the target (REST, GraphQL, WebSocket)
 - \`full_stack\` — applications serving both UI and API (e.g. Next.js, Django with templates)
