@@ -39,16 +39,20 @@ const model = process.argv[4] ?? "claude-haiku-4-5";
 const maxInputTokens = Number(
   process.argv[5] ?? (requestedSteps > 60 ? 5_000_000 : 1_000_000),
 );
+const resultCharacterLimit = Number(process.argv[6] ?? 1_500);
 if (
   ![15, 30, 60, 120].includes(requestedSteps) ||
   !Number.isSafeInteger(declaredContextWindow) ||
   declaredContextWindow < 96_000 ||
   declaredContextWindow > 200_000 ||
   !Number.isSafeInteger(maxInputTokens) ||
-  maxInputTokens < 100_000
+  maxInputTokens < 100_000 ||
+  !Number.isSafeInteger(resultCharacterLimit) ||
+  resultCharacterLimit < 1_500 ||
+  resultCharacterLimit > 8_000
 ) {
   throw new Error(
-    "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..200000] [model] [input token cap]",
+    "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..200000] [model] [input token cap] [result character limit: 1500..8000]",
   );
 }
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -98,7 +102,7 @@ function inspectNext(): string {
         }
       }
     }
-    result = `search_files ${term}\n${matches.join("\n").slice(0, 1_500)}`;
+    result = `search_files ${term}\n${matches.join("\n").slice(0, resultCharacterLimit)}`;
   } else {
     readOps++;
     const path = fixtureFiles[(index * 7) % fixtureFiles.length];
@@ -108,7 +112,7 @@ function inspectNext(): string {
     let length = 0;
     for (let line = first; line < lines.length; line++) {
       const entry = `${line + 1}: ${lines[line]}\n`;
-      if (length + entry.length > 1_500) break;
+      if (length + entry.length > resultCharacterLimit) break;
       excerpt.push(entry);
       length += entry.length;
     }
@@ -209,6 +213,7 @@ try {
       maxOutputTokens: getMaxOutputTokens(model),
       requestedSteps,
       maxInputTokens,
+      resultCharacterLimit,
       toolCalls,
       readOps,
       searchOps,
