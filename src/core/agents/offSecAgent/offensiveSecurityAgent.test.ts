@@ -385,8 +385,24 @@ describe("auxiliary model events", () => {
         { role: "assistant", content: "first call" },
         { role: "tool", content: "full first result" },
       ];
+      const cachedSystem = {
+        role: "system",
+        content: "cached effective system prompt",
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
+      };
+      const historySystem = {
+        role: "system",
+        content: "caller-supplied history instruction",
+      };
       call.onContextPrepared({
-        messages: [{ role: "user", content: "fitted prefix" }],
+        messages: [
+          cachedSystem,
+          cachedSystem,
+          historySystem,
+          { role: "user", content: "fitted prefix" },
+        ],
         responseMessageOffset: 0,
       });
       await call.onStepFinish({
@@ -395,12 +411,13 @@ describe("auxiliary model events", () => {
       });
 
       const compacted = [
+        historySystem,
         { role: "user", content: "fitted prefix" },
         { role: "assistant", content: "first call" },
         { role: "tool", content: "short first result" },
       ];
       call.onContextPrepared({
-        messages: compacted,
+        messages: [cachedSystem, cachedSystem, ...compacted],
         responseMessageOffset: 2,
       });
       const secondStep = [
@@ -2869,6 +2886,11 @@ describe("trace identity and root IO", () => {
 describe("contextRecorder integration", () => {
   const streamTextChunk = { type: "text-delta", id: "t1", delta: "hi" };
   const CANONICAL = [
+    {
+      role: "system",
+      content: "cached effective system prompt",
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    },
     { role: "user", content: "recorded prompt" },
     { role: "assistant", content: "recorded answer" },
   ] as never[];
@@ -2937,14 +2959,13 @@ describe("contextRecorder integration", () => {
     expect(streamResponseCalls[0]?.inferenceRecorder).toBe(inferenceRecorder);
 
     const stepEvent = {
-      response: { id: "resp_1", messages: CANONICAL.slice(1) },
+      response: { id: "resp_1", messages: CANONICAL.slice(2) },
       usage: {},
     };
     await streamOpts.onStepFinish(stepEvent);
 
-    // Writer snapshot equals canonical latest() exactly — the step's
-    // response.messages are already part of the committed context, so the
-    // projection must not re-prepend a base or duplicate them.
+    // The cached system message is transport-only; it must not enter the
+    // transcript reloaded with a fresh system prompt on the next turn.
     const writer = agent["writer" as keyof typeof agent] as unknown as {
       waitForPendingWrites: () => Promise<void>;
       latest: unknown[] | null;
@@ -2957,6 +2978,9 @@ describe("contextRecorder integration", () => {
     await streamOpts.onFinish(finishEvent);
 
     expect(recorder.latest).toHaveBeenCalled();
-    expect((captured as unknown[]).length).toBe(CANONICAL.length);
+    expect(captured).toEqual(CANONICAL.slice(1));
+    expect(
+      JSON.parse(readFileSync(join(rootPath, "messages.json"), "utf8")),
+    ).toEqual(CANONICAL.slice(1));
   });
 });
