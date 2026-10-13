@@ -41,3 +41,37 @@ the provider-visible prompt, not provider-reported usage. The synthetic model
 does not enforce its context limit; that makes the unbounded growth observable
 without a provider error. Later changes should preserve all 72 tool executions
 and the final response while reducing the peak and cumulative input.
+
+## Live provider replay
+
+`scripts/performance/operator-context-live.ts` runs the production
+`streamResponse` path against Anthropic's Claude Haiku 4.5 with a forced,
+one-at-a-time synthetic tool. The tool returns the same 8,000-character record
+sequence on every run; only its ordinal changes. No external target, user data,
+or prior session content is sent. The script reports usage from completed model
+steps, including any summarization call, and stops before its 1M-input-token
+limit. Run it in a fresh process from each revision:
+
+```sh
+bun --no-env-file scripts/performance/operator-context-live.ts 30 8000 96000
+```
+
+The key is read from `ANTHROPIC_API_KEY`. The third argument changes Apex's
+_local_ catalog window for this isolated process. The 96K setting leaves about
+21K estimated message tokens after Apex's 64K output reservation, 10K safety
+margin, and tool overhead. Haiku's catalog window remains 200K in normal runs;
+the smaller test window makes the in-stream threshold reachable before the
+1M-token spend cap. These are real provider calls with provider-reported usage,
+but a controlled stress fixture rather than a full operator session at the
+model's default window.
+
+| Revision            | Tool calls | Summary calls | Provider input | Peak step input | Provider output | Cache-read input |
+| ------------------- | ---------: | ------------: | -------------: | --------------: | --------------: | ---------------: |
+| `79788062` baseline |         30 |             0 |        769,080 |          50,576 |             480 |          714,744 |
+
+Input includes cache-read tokens; the cache-read column is a subset, not an
+additional charge or token count. The first 30 per-step input figures are saved
+in `operator-context-live.json`. The baseline rose from 696 on the first step
+to 50,576 on the thirtieth, with no in-stream fit or summary. Provider output
+and the completed tool count are also recorded so later revisions can be
+compared on the same work.
