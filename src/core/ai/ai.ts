@@ -51,6 +51,8 @@ import {
 } from "./compactionTelemetry";
 import {
   estimateMessageTokens,
+  estimateTokens,
+  estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
   truncateWithMarker,
@@ -1644,7 +1646,8 @@ function streamResponseWithinOperation(
   // older, pre-fit messages again.
   let recorderBase: ModelMessage[] | undefined;
   let responseMessageLength = 0;
-  let preparedMessageTokens = 0;
+  const estimatedOverheadTokens = estimateToolsOverheadTokens(tools) + 1_000;
+  let preparedInputEstimateTokens = 0;
   let inputSafetyMarginTokens = 10_000;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
@@ -1655,15 +1658,15 @@ function streamResponseWithinOperation(
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     const stepUsage = normalizeStepUsage(step);
     if (
-      preparedMessageTokens > 0 &&
+      preparedInputEstimateTokens > 0 &&
       stepUsage.inputTokens > 0 &&
       step.response?.id !== "summarization" &&
       step.response?.id !== "tool-repair"
     ) {
-      // Provider tokenization can exceed chars/4 for code-heavy results; retain the largest observed gap across fits.
+      // Fixed system and tool overhead is already reserved by the fitter; calibrate only the remaining tokenization gap.
       inputSafetyMarginTokens = Math.max(
         inputSafetyMarginTokens,
-        stepUsage.inputTokens - preparedMessageTokens + 10_000,
+        stepUsage.inputTokens - preparedInputEstimateTokens + 10_000,
       );
     }
     // Canonical commit precedes every downstream use; the recorder latches
@@ -1914,6 +1917,7 @@ function streamResponseWithinOperation(
             ),
             system: effectiveSystem,
             tools,
+            overheadTokens: estimatedOverheadTokens,
             sessionPath,
             safetyMarginTokens: inputSafetyMarginTokens,
             telemetry: {
@@ -1943,7 +1947,10 @@ function streamResponseWithinOperation(
         }
         // Update the container with the latest messages
         messagesContainer.current = stepMessages;
-        preparedMessageTokens = estimateMessageTokens(stepMessages);
+        preparedInputEstimateTokens =
+          estimateMessageTokens(stepMessages) +
+          estimatedOverheadTokens +
+          (effectiveSystem ? estimateTokens(effectiveSystem) : 0);
         onContextPrepared?.({
           messages: stepMessages,
           responseMessageOffset: responseMessageLength,
