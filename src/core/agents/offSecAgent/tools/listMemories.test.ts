@@ -38,15 +38,108 @@ describe("list_memories pagination", () => {
       )) as ListMemoriesResult;
       expect(first.memories.length).toBeLessThan(20);
       expect(JSON.stringify(first).length).toBeLessThan(12_500);
-      expect(first.nextOffset).toBe(first.memories.length);
+      expect(first.nextCursor).toEqual({
+        id: first.memories.at(-1)?.id,
+        category: first.memories.at(-1)?.category,
+        createdAt: first.memories.at(-1)?.createdAt,
+      });
       const second = (await list(
         {
-          offset: first.nextOffset ?? 0,
+          cursor: first.nextCursor ?? undefined,
           toolCallDescription: "Continue large synthetic memories",
         },
         options,
       )) as ListMemoriesResult;
       expect(second.memories[0]?.id).toBe(summaries[first.memories.length]?.id);
+    });
+  });
+
+  it("continues past the last returned memory when a newer one is added", async () => {
+    const original: MemorySummary[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `memory-${i}`,
+      category: "general",
+      title: `Memory ${i}`,
+      tags: [],
+      createdAt: new Date(Date.UTC(2026, 0, 1) - i * 1_000).toISOString(),
+    }));
+    let summaries = original;
+    const backend: MemoryBackend = {
+      add: vi.fn(async () => {
+        throw new Error("unexpected add");
+      }),
+      list: vi.fn(async () => summaries),
+      get: vi.fn(async () => null),
+    };
+    await withMemoryBackend(backend, async () => {
+      const first = (await list(
+        { toolCallDescription: "List first memory page" },
+        options,
+      )) as ListMemoriesResult;
+      summaries = [
+        {
+          ...original[0],
+          id: "memory-new",
+          createdAt: new Date(Date.UTC(2026, 0, 2)).toISOString(),
+        },
+        ...original,
+      ];
+      const second = (await list(
+        {
+          cursor: first.nextCursor ?? undefined,
+          toolCallDescription: "Continue after an insertion",
+        },
+        options,
+      )) as ListMemoriesResult;
+
+      expect(first.memories.map((memory) => memory.id)).toEqual(
+        original.slice(0, 20).map((memory) => memory.id),
+      );
+      expect(second.memories.map((memory) => memory.id)).toEqual(
+        original.slice(20).map((memory) => memory.id),
+      );
+      expect(second.count).toBe(31);
+      expect(second.nextCursor).toBeNull();
+    });
+  });
+
+  it("uses stable tie ordering when the cursor memory is deleted", async () => {
+    const original: MemorySummary[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `memory-${i.toString().padStart(2, "0")}`,
+      category: "general",
+      title: `Memory ${i}`,
+      tags: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+    let summaries = [...original].reverse();
+    const backend: MemoryBackend = {
+      add: vi.fn(async () => {
+        throw new Error("unexpected add");
+      }),
+      list: vi.fn(async () => summaries),
+      get: vi.fn(async () => null),
+    };
+    await withMemoryBackend(backend, async () => {
+      const first = (await list(
+        { toolCallDescription: "List tied memories" },
+        options,
+      )) as ListMemoriesResult;
+      expect(first.memories.map((memory) => memory.id)).toEqual(
+        original.slice(0, 20).map((memory) => memory.id),
+      );
+      summaries = summaries.filter(
+        (memory) => memory.id !== first.nextCursor?.id,
+      );
+      const second = (await list(
+        {
+          cursor: first.nextCursor ?? undefined,
+          toolCallDescription: "Continue after anchor deletion",
+        },
+        options,
+      )) as ListMemoriesResult;
+      expect(second.memories.map((memory) => memory.id)).toEqual(
+        original.slice(20).map((memory) => memory.id),
+      );
+      expect(second.nextCursor).toBeNull();
     });
   });
 
@@ -81,12 +174,15 @@ describe("list_memories pagination", () => {
 
     await withMemoryBackend(backend, async () => {
       const allIds: string[] = [];
-      let offset = 0;
+      let cursor: ListMemoriesResult["nextCursor"] = null;
       let firstResultChars = 0;
       let pages = 0;
       for (;;) {
         const result = (await list(
-          { offset, toolCallDescription: "List synthetic memories" },
+          {
+            cursor: cursor ?? undefined,
+            toolCallDescription: "List synthetic memories",
+          },
           options,
         )) as ListMemoriesResult;
         expect(result.success).toBe(true);
@@ -102,9 +198,9 @@ describe("list_memories pagination", () => {
         }
         allIds.push(...result.memories.map((memory) => memory.id));
         pages++;
-        if (result.nextOffset === null) break;
-        expect(result.nextOffset).toBeGreaterThan(offset);
-        offset = result.nextOffset;
+        if (result.nextCursor === null) break;
+        expect(result.nextCursor.id).toBe(result.memories.at(-1)?.id);
+        cursor = result.nextCursor;
       }
 
       expect(allIds).toEqual(summaries.map((memory) => memory.id));

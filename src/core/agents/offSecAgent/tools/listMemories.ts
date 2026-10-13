@@ -22,12 +22,14 @@ const listMemoriesInputSchema = z.object({
     .string()
     .optional()
     .describe("Optional tag to filter memories by (exact match)"),
-  offset: z
-    .number()
-    .int()
-    .min(0)
+  cursor: z
+    .object({
+      createdAt: z.string(),
+      category: z.enum(MEMORY_CATEGORIES),
+      id: z.string(),
+    })
     .optional()
-    .describe("Start at this offset to continue a previous listing"),
+    .describe("Pass the previous nextCursor to continue a listing"),
   toolCallDescription: z
     .string()
     .describe(
@@ -36,14 +38,21 @@ const listMemoriesInputSchema = z.object({
 });
 
 type ListMemoriesInput = z.infer<typeof listMemoriesInputSchema>;
+type MemoryCursor = Pick<MemorySummary, "createdAt" | "category" | "id">;
 
 export type ListMemoriesResult = {
   success: boolean;
   error: string;
   memories: Array<MemorySummary & { truncated?: true }>;
   count: number;
-  nextOffset: number | null;
+  nextCursor: MemoryCursor | null;
 };
+
+function compareMemories(a: MemoryCursor, b: MemoryCursor): number {
+  const byCreatedAt = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  if (byCreatedAt > 0 || byCreatedAt < 0) return byCreatedAt;
+  return a.category.localeCompare(b.category) || a.id.localeCompare(b.id);
+}
 
 function previewSummary(memory: MemorySummary) {
   const title = memory.title.slice(0, 160);
@@ -69,12 +78,13 @@ export function listMemories(ctx: ToolContext) {
     description: `List saved memories, optionally filtered by category and/or tag.
 
 Returns up to 20 lightweight summaries (id, category, title, tags, createdAt)
-sorted by most recent first. Use nextOffset to continue until it is null;
-count is the total matching memories. Titles and tags may be abbreviated in the
+sorted by most recent first. Use nextCursor to continue until it is null;
+count is the current total matching memories. A fresh listing includes newer
+memories added ahead of a cursor. Titles and tags may be abbreviated in the
 listing. Use category + id with get_memory to retrieve full content.`,
     inputSchema: listMemoriesInputSchema,
     execute: async (
-      { category, tag, offset = 0 },
+      { category, tag, cursor },
       { toolCallId },
     ): Promise<ListMemoriesResult> => {
       try {
@@ -82,22 +92,37 @@ listing. Use category + id with get_memory to retrieve full content.`,
           { category, tag },
           { sessionId: ctx.session.id, toolCallId },
         );
+        const ordered = [...memories].sort(compareMemories);
+        let start = 0;
+        if (cursor) {
+          start = ordered.findIndex(
+            (memory) => compareMemories(memory, cursor) > 0,
+          );
+          if (start < 0) start = ordered.length;
+        }
         const page: ListMemoriesResult["memories"] = [];
         let pageChars = 0;
-        for (const memory of memories.slice(offset, offset + PAGE_SIZE)) {
+        for (const memory of ordered.slice(start, start + PAGE_SIZE)) {
           const summary = previewSummary(memory);
           const chars = JSON.stringify(summary).length + 1;
           if (page.length > 0 && pageChars + chars > PAGE_CHAR_BUDGET) break;
           page.push(summary);
           pageChars += chars;
         }
-        const nextOffset = offset + page.length;
+        const last = page.at(-1);
         return {
           success: true,
           error: "",
           memories: page,
           count: memories.length,
-          nextOffset: nextOffset < memories.length ? nextOffset : null,
+          nextCursor:
+            start + page.length < ordered.length && last
+              ? {
+                  createdAt: last.createdAt,
+                  category: last.category,
+                  id: last.id,
+                }
+              : null,
         };
       } catch (err: unknown) {
         return {
@@ -105,7 +130,7 @@ listing. Use category + id with get_memory to retrieve full content.`,
           error: err instanceof Error ? err.message : String(err),
           memories: [],
           count: 0,
-          nextOffset: null,
+          nextCursor: null,
         };
       }
     },

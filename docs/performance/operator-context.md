@@ -183,13 +183,18 @@ next stream to compact it again.
 
 `list_memories` now returns at most 20 summaries per call with a 12K-character
 page budget. The response retains the total match count and supplies
-`nextOffset` until every summary has been listed. Long titles and tags are
+`nextCursor` until every summary has been listed. The cursor identifies the
+last returned creation time, category, and id, so a newer insertion cannot
+shift the next page. The total count reflects the current listing; a fresh
+listing includes newly added memories ahead of the cursor. Long titles and tags are
 marked as abbreviated; their full values remain available through
 `get_memory` by category and id.
 
 In a network-free fixture with 200 memories, the previous single result was
-122,432 characters. The first page is 6,018 characters, 95.1% smaller. Ten
+122,432 characters. The first page is 6,094 characters, 95.0% smaller. Ten
 pages recover all 200 ids, and the oldest memory remains retrievable. This
 measures one tool response, not total cost if the agent chooses to read every
 page. The improvement comes from letting the agent stop after the relevant
-page or use category/tag filters.
+page or use category/tag filters. A separate fixture verifies continuation
+when a new memory appears or the last returned memory is deleted between
+pages.
