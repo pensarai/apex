@@ -31,7 +31,7 @@ describe("resolveBrowserHeaderPolicy", () => {
       "https://app.example.com",
     );
 
-    expect(policy.allowedHosts).toEqual(["example.com"]);
+    expect(policy.allowedHosts).toEqual(["app.example.com"]);
     expect(policy.headers).toEqual({
       "X-Session-Secret": "session-secret",
       "X-Credential-Secret": "credential-secret",
@@ -69,7 +69,7 @@ describe("browserHeaderRouteFunction", () => {
     };
     const fn = runInNewContext(
       `(${browserHeaderRouteFunction({
-        allowedHosts: ["example.com"],
+        allowedHosts: ["*.example.com"],
         headers: { "X-Scoped-Secret": "secret" },
       })})`,
     ) as (page: {
