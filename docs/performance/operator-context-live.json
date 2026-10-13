@@ -1,0 +1,27 @@
+{
+  "model": "claude-haiku-4-5",
+  "transport": "Anthropic direct",
+  "catalogContextWindow": 200000,
+  "localContextWindow": 96000,
+  "maxOutputTokens": 64000,
+  "toolSteps": 30,
+  "toolPayloadChars": 8000,
+  "runs": [
+    {
+      "label": "baseline",
+      "revision": "79788062d2ea93e1fa3e9c5ab27f43bcc97b3b36",
+      "mainProviderCalls": 30,
+      "summaryCalls": 0,
+      "inputTokens": 769080,
+      "outputTokens": 480,
+      "cacheReadInputTokens": 714744,
+      "peakStepInputTokens": 50576,
+      "elapsedMs": 17567,
+      "mainStepInputTokens": [
+        696, 2416, 4136, 5856, 7576, 9296, 11016, 12736, 14456, 16176, 17896,
+        19616, 21336, 23056, 24776, 26496, 28216, 29936, 31656, 33376, 35096,
+        36816, 38536, 40256, 41976, 43696, 45416, 47136, 48856, 50576
+      ]
+    }
+  ]
+}
