@@ -7,6 +7,10 @@ forced to call one tool per step; the tool executes a predetermined directory
 listing, source search, or file read. The fixture isolates context growth and
 tool-result handling, rather than measuring autonomous task quality.
 
+For the same-step Haiku 4.5 and Opus 4.8 comparison, including an Opus
+catalog-window control, see
+[the matched model replay](operator-context-workflow-model-parity.md).
+
 ## Workload and controls
 
 The script loads 12 public Apex TypeScript files from the fixed canary commit
