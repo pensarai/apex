@@ -127,6 +127,15 @@ describe("deriveActionLabel", () => {
     expect(deriveActionLabel("scratchpad", undefined)).toBe("note");
   });
 
+  it("labels context compaction without exposing the synthetic tool name", () => {
+    expect(
+      deriveActionLabel("summarize_conversation", {
+        reason: "Compacting context to continue",
+        messageCount: 20,
+      }),
+    ).toBe("Compacting");
+  });
+
   it("handles empty args gracefully (returns the tool name itself)", () => {
     expect(deriveActionLabel("custom_tool", {})).toBe("custom_tool");
   });
