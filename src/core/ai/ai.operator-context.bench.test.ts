@@ -163,6 +163,125 @@ it("measures a synthetic long tool loop through the real stream and context path
   }
 });
 
+it("fits code-heavy tool history before reported provider usage reaches the context limit", async () => {
+  const sessionPath = mkdtempSync(join(tmpdir(), "apex-context-calibration-"));
+  const contextLimit = 90_000;
+  const requestedToolCalls = 60;
+  const toolOutput = "x=foo.bar();\n".repeat(650);
+  let providerCalls = 0;
+  let toolCalls = 0;
+  let rejectedCalls = 0;
+  let summaryCalls = 0;
+  const observedInputTokens: number[] = [];
+
+  state.model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      const estimated = estimateMessageTokens(options.prompt as ModelMessage[]);
+      const observed = estimated * 2 + 500;
+      if (observed > contextLimit) {
+        rejectedCalls++;
+        throw new Error(
+          `prompt is too long: ${observed} tokens > ${contextLimit} maximum`,
+        );
+      }
+      observedInputTokens.push(observed);
+      const call = providerCalls++;
+      const hasToolCall = call < requestedToolCalls;
+      const chunks: unknown[] = hasToolCall
+        ? [
+            {
+              type: "tool-call",
+              toolCallId: `probe-${call}`,
+              toolName: "probe",
+              input: "{}",
+            },
+          ]
+        : [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "done" },
+            { type: "text-end", id: "done" },
+          ];
+      chunks.push({
+        type: "finish",
+        finishReason: {
+          unified: hasToolCall ? "tool-calls" : "stop",
+          raw: hasToolCall ? "tool_calls" : "stop",
+        },
+        usage: {
+          ...usage,
+          inputTokens: {
+            total: observed,
+            noCache: observed,
+            cacheRead: 0,
+            cacheWrite: 0,
+          },
+        },
+      });
+      return {
+        stream: simulateReadableStream({
+          chunks: chunks as LanguageModelV3StreamPart[],
+        }),
+      };
+    },
+    doGenerate: async () => {
+      summaryCalls++;
+      return {
+        content: [{ type: "text" as const, text: "Continue inspection." }],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      };
+    },
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Inspect the fixed files and finish.",
+      tools: {
+        probe: tool({
+          description: "Read the next source excerpt",
+          inputSchema: z.object({}),
+          execute: async () => {
+            toolCalls++;
+            return toolOutput;
+          },
+        }),
+      },
+      stopWhen: stepCountIs(100),
+      sessionPath,
+      silent: true,
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 100_000,
+                maxOutputTokens: 10_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    const text: string[] = [];
+    for await (const part of stream.fullStream) {
+      if (part.type === "text-delta") text.push(part.text);
+    }
+    expect(toolCalls).toBe(requestedToolCalls);
+    expect(providerCalls).toBe(requestedToolCalls + 1);
+    expect(rejectedCalls).toBe(0);
+    expect(summaryCalls).toBe(0);
+    expect(Math.max(...observedInputTokens)).toBeLessThanOrEqual(contextLimit);
+    expect(text.at(-1)).toBe("done");
+  } finally {
+    state.model = null;
+    rmSync(sessionPath, { recursive: true, force: true });
+  }
+});
+
 it("contains a context error from an in-stream summary", async () => {
   let providerCalls = 0;
   state.model = new MockLanguageModelV3({

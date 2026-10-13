@@ -1644,6 +1644,8 @@ function streamResponseWithinOperation(
   // older, pre-fit messages again.
   let recorderBase: ModelMessage[] | undefined;
   let responseMessageLength = 0;
+  let preparedMessageTokens = 0;
+  let inputSafetyMarginTokens = 10_000;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1652,6 +1654,18 @@ function streamResponseWithinOperation(
   // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     const stepUsage = normalizeStepUsage(step);
+    if (
+      preparedMessageTokens > 0 &&
+      stepUsage.inputTokens > 0 &&
+      step.response?.id !== "summarization" &&
+      step.response?.id !== "tool-repair"
+    ) {
+      // Provider tokenization can exceed chars/4 for code-heavy results; retain the largest observed gap across fits.
+      inputSafetyMarginTokens = Math.max(
+        inputSafetyMarginTokens,
+        stepUsage.inputTokens - preparedMessageTokens + 10_000,
+      );
+    }
     // Canonical commit precedes every downstream use; the recorder latches
     // rejections (SDK notify() swallows them) until the next turn gate or
     // agent-side flush turns the latch into a stream failure.
@@ -1901,6 +1915,7 @@ function streamResponseWithinOperation(
             system: effectiveSystem,
             tools,
             sessionPath,
+            safetyMarginTokens: inputSafetyMarginTokens,
             telemetry: {
               trigger: "proactive",
               model,
@@ -1928,6 +1943,7 @@ function streamResponseWithinOperation(
         }
         // Update the container with the latest messages
         messagesContainer.current = stepMessages;
+        preparedMessageTokens = estimateMessageTokens(stepMessages);
         onContextPrepared?.({
           messages: stepMessages,
           responseMessageOffset: responseMessageLength,
