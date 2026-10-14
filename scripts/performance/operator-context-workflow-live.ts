@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { tool } from "ai";
+import { type LanguageModelMiddleware, tool } from "ai";
 import { z } from "zod";
 import { normalizeStepUsage, streamResponse } from "../../src/core/ai/ai";
 import { AVAILABLE_MODELS, getMaxOutputTokens } from "../../src/core/ai/models";
@@ -40,6 +40,8 @@ const maxInputTokens = Number(
   process.argv[5] ?? (requestedSteps > 60 ? 5_000_000 : 1_000_000),
 );
 const resultCharacterLimit = Number(process.argv[6] ?? 1_500);
+const cacheRunTag = process.env.APEX_CACHE_RUN_TAG ?? "";
+const cacheToolChoice = process.env.APEX_CACHE_TOOL_CHOICE ?? "required";
 if (
   ![15, 30, 60, 120].includes(requestedSteps) ||
   !Number.isSafeInteger(declaredContextWindow) ||
@@ -54,6 +56,12 @@ if (
   throw new Error(
     "Usage: operator-context-workflow-live.ts [steps: 15|30|60|120] [local window: 96000..1000000] [model] [input token cap] [result character limit: 1500..96000]",
   );
+}
+if (cacheRunTag && !/^[a-zA-Z0-9_-]{1,32}$/.test(cacheRunTag)) {
+  throw new Error("APEX_CACHE_RUN_TAG must be 1–32 alphanumeric characters");
+}
+if (cacheToolChoice !== "required" && cacheToolChoice !== "auto") {
+  throw new Error("APEX_CACHE_TOOL_CHOICE must be required or auto");
 }
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Set ANTHROPIC_API_KEY before running the live benchmark");
@@ -74,12 +82,33 @@ let toolResultChars = 0;
 let totalInputTokens = 0;
 let totalOutputTokens = 0;
 let cacheReadTokens = 0;
+let cacheWriteTokens = 0;
+let uncachedInputTokens = 0;
+let stepsWithoutCacheUsage = 0;
 let summaryCalls = 0;
 let summaryEvents = 0;
 let stopForBudget = false;
+let providerStreamAttempts = 0;
+let providerGenerateAttempts = 0;
 const mainStepInputTokens: number[] = [];
+const mainStepCacheReadTokens: number[] = [];
+const mainStepCacheWriteTokens: number[] = [];
+const mainStepUncachedInputTokens: number[] = [];
 const summaryInputTokens: number[] = [];
+const summaryCacheReadTokens: number[] = [];
+const summaryCacheWriteTokens: number[] = [];
 const started = performance.now();
+const attemptCounter: LanguageModelMiddleware = {
+  specificationVersion: "v3",
+  wrapStream: async ({ doStream }) => {
+    providerStreamAttempts++;
+    return doStream();
+  },
+  wrapGenerate: async ({ doGenerate }) => {
+    providerGenerateAttempts++;
+    return doGenerate();
+  },
+};
 
 function inspectNext(): string {
   const index = toolCalls++;
@@ -136,7 +165,7 @@ try {
 
   const stream = streamResponse({
     model,
-    prompt: `Inspect the repository for ${requestedSteps} steps. Call inspect_next once per step to follow the fixed file workflow.`,
+    prompt: `Inspect the repository for ${requestedSteps} steps. Call inspect_next once per step to follow the fixed file workflow.${cacheRunTag ? ` Run ${cacheRunTag}.` : ""}`,
     system:
       "This is a controlled repository-inspection benchmark. Call inspect_next once per step and do not visit an external target.",
     tools: {
@@ -147,9 +176,13 @@ try {
         execute: async () => inspectNext(),
       }),
     },
-    toolChoice: { type: "tool", toolName: "inspect_next" },
+    toolChoice:
+      cacheToolChoice === "auto"
+        ? "auto"
+        : { type: "tool", toolName: "inspect_next" },
     stopWhen: () => toolCalls >= requestedSteps || stopForBudget,
     sessionPath,
+    languageModelMiddleware: attemptCounter,
     silent: true,
     onStepFinish: (step) => {
       const usage = normalizeStepUsage(step);
@@ -161,11 +194,35 @@ try {
       totalInputTokens += usage.inputTokens;
       totalOutputTokens += usage.outputTokens;
       cacheReadTokens += usage.cacheReadTokens;
+      cacheWriteTokens += usage.cacheWriteTokens;
+      const uncached =
+        usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens;
+      if (uncached < 0) {
+        throw new Error("Provider cache buckets exceed total input tokens");
+      }
+      uncachedInputTokens += uncached;
+      const anthropicMetadata = (
+        step.providerMetadata as
+          | { anthropic?: Record<string, unknown> }
+          | undefined
+      )?.anthropic;
+      const inputDetails = step.usage.inputTokenDetails;
+      if (
+        typeof anthropicMetadata?.cacheReadInputTokens !== "number" &&
+        typeof inputDetails?.cacheReadTokens !== "number"
+      ) {
+        stepsWithoutCacheUsage++;
+      }
       if (step.response.id === "summarization") {
         summaryCalls++;
         summaryInputTokens.push(usage.inputTokens);
+        summaryCacheReadTokens.push(usage.cacheReadTokens);
+        summaryCacheWriteTokens.push(usage.cacheWriteTokens);
       } else {
         mainStepInputTokens.push(usage.inputTokens);
+        mainStepCacheReadTokens.push(usage.cacheReadTokens);
+        mainStepCacheWriteTokens.push(usage.cacheWriteTokens);
+        mainStepUncachedInputTokens.push(uncached);
       }
       const last = mainStepInputTokens.at(-1) ?? 0;
       const previous = mainStepInputTokens.at(-2) ?? 0;
@@ -209,6 +266,8 @@ try {
       snapshotSha256: snapshotHash.digest("hex"),
       toolResultsSha256: toolResultHash.digest("hex"),
       model,
+      cacheRunTag,
+      cacheToolChoice,
       declaredContextWindow,
       maxOutputTokens: getMaxOutputTokens(model),
       requestedSteps,
@@ -220,10 +279,20 @@ try {
       listOps,
       toolResultChars,
       mainProviderCalls: mainStepInputTokens.length,
+      providerStreamAttempts,
+      providerGenerateAttempts,
       summaryCalls,
       totalInputTokens,
       totalOutputTokens,
       cacheReadTokens,
+      cacheWriteTokens,
+      uncachedInputTokens,
+      stepsWithoutCacheUsage,
+      mainStepCacheReadTokens,
+      mainStepCacheWriteTokens,
+      mainStepUncachedInputTokens,
+      summaryCacheReadTokens,
+      summaryCacheWriteTokens,
       peakMainStepInputTokens: Math.max(...mainStepInputTokens),
       firstMainStepInputTokens: mainStepInputTokens[0],
       lastMainStepInputTokens: mainStepInputTokens.at(-1),
@@ -232,6 +301,29 @@ try {
       elapsedMs: Math.round(performance.now() - started),
     }),
   );
+} catch (error) {
+  console.log(
+    "OPERATOR_CONTEXT_WORKFLOW_FAILURE",
+    JSON.stringify({
+      model,
+      cacheRunTag,
+      requestedSteps,
+      declaredContextWindow,
+      resultCharacterLimit,
+      toolCalls,
+      mainProviderCalls: mainStepInputTokens.length,
+      providerStreamAttempts,
+      providerGenerateAttempts,
+      summaryCalls,
+      totalInputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      uncachedInputTokens,
+      errorName: error instanceof Error ? error.name : "unknown",
+      elapsedMs: Math.round(performance.now() - started),
+    }),
+  );
+  throw error;
 } finally {
   rmSync(sessionPath, { recursive: true, force: true });
 }
