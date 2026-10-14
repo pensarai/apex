@@ -14,6 +14,7 @@ import { z } from "zod";
 import {
   estimateMessageTokens,
   estimateToolsOverheadTokens,
+  fitMessagesToContext,
 } from "./contextManagement";
 
 const state: { model: MockLanguageModelV3 | null } = vi.hoisted(() => ({
@@ -284,6 +285,116 @@ it.each([
   }
 });
 
+it.each([
+  "empty",
+  "ineffective",
+])("keeps fitting history after an %s proactive summary", async (summaryKind) => {
+  const messages: ModelMessage[] = [
+    { role: "user", content: "Inspect the fixed sources." },
+    ...Array.from({ length: 32 }, (_, index): ModelMessage[] => [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: `read-${index}`,
+            toolName: "probe",
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: `read-${index}`,
+            toolName: "probe",
+            output: {
+              type: "text",
+              value: `source-${index}:${"x".repeat(20_000)}`,
+            },
+          },
+        ],
+      },
+    ]).flat(),
+  ];
+  let summaryCalls = 0;
+  let resumedPrompt = "";
+  let skipped = false;
+  const onSummarized = vi.fn();
+  state.model = new MockLanguageModelV3({
+    doGenerate: async () => {
+      summaryCalls++;
+      return {
+        content:
+          summaryKind === "empty"
+            ? []
+            : [{ type: "text" as const, text: "s".repeat(540_000) }],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      };
+    },
+    doStream: async (options) => {
+      resumedPrompt = JSON.stringify(options.prompt);
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "done" },
+            { type: "text-end", id: "done" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ] as LanguageModelV3StreamPart[],
+        }),
+      };
+    },
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Continue the inspection.",
+      messages,
+      onSummarized,
+      silent: true,
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 200_000,
+                maxOutputTokens: 20_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    for await (const part of stream.fullStream) {
+      if (
+        part.type === "tool-result" &&
+        JSON.stringify(part).includes("Compaction skipped")
+      ) {
+        skipped = true;
+      }
+    }
+    expect(summaryCalls).toBe(summaryKind === "empty" ? 2 : 1);
+    expect(skipped).toBe(true);
+    expect(resumedPrompt).toContain("source-0:");
+    expect(resumedPrompt).toContain("source-31:");
+    expect(onSummarized).not.toHaveBeenCalled();
+  } finally {
+    state.model = null;
+  }
+});
+
 it("retries an oversized summary with fitted history", async () => {
   const messages: ModelMessage[] = [
     { role: "user", content: "Preserve the original task." },
@@ -379,16 +490,122 @@ it("retries an oversized summary with fitted history", async () => {
   }
 });
 
-it("retries a tool-only compaction response without executing the tool", async () => {
+it("tries shortened summary history even when the retry budget is too small", async () => {
+  const messages: ModelMessage[] = [
+    { role: "user", content: `Keep this request: ${"p".repeat(550_000)}` },
+    ...Array.from({ length: 8 }, (_, index): ModelMessage[] => [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: `source-${index}`,
+            toolName: "probe",
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: `source-${index}`,
+            toolName: "probe",
+            output: { type: "text", value: `source:${"e".repeat(10_000)}` },
+          },
+        ],
+      },
+    ]).flat(),
+  ];
+  const fitted = fitMessagesToContext(messages, {
+    contextWindow: 150_000,
+    maxOutputTokens: 20_000,
+    overheadTokens: 1_000,
+  });
+  expect(fitted.modified).toBe(true);
+  expect(fitted.fitsBudget).toBe(false);
+
+  const summaryInputs: number[] = [];
+  state.model = new MockLanguageModelV3({
+    doGenerate: async (options) => {
+      summaryInputs.push(
+        estimateMessageTokens(options.prompt as ModelMessage[]),
+      );
+      if (summaryInputs.length === 1) {
+        throw new Error("prompt is too long: maximum context length exceeded");
+      }
+      return {
+        content: [{ type: "text" as const, text: "Kept the request." }],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      };
+    },
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "text-start", id: "done" },
+          { type: "text-delta", id: "done", delta: "done" },
+          { type: "text-end", id: "done" },
+          {
+            type: "finish",
+            finishReason: { unified: "stop", raw: "stop" },
+            usage,
+          },
+        ] as LanguageModelV3StreamPart[],
+      }),
+    }),
+  });
+
+  try {
+    const stream = createSummarizationStream(
+      messages,
+      {
+        model: MODEL,
+        prompt: "Continue.",
+        authConfig: {
+          customProviders: {
+            fixture: {
+              baseUrl: "https://example.invalid/v1",
+              models: [
+                {
+                  id: "synthetic",
+                  contextLength: 200_000,
+                  maxOutputTokens: 20_000,
+                },
+              ],
+            },
+          },
+        },
+      },
+      state.model,
+    );
+    for await (const _part of stream.fullStream) void _part;
+    expect(summaryInputs).toHaveLength(2);
+    expect(summaryInputs[1]).toBeLessThan(summaryInputs[0]!);
+  } finally {
+    state.model = null;
+  }
+});
+
+it.each([
+  "tool-only",
+  "partial-text",
+])("retries a %s compaction response without executing the tool", async (firstResponse) => {
   let summaryAttempts = 0;
   let usageEvents = 0;
   let toolExecutions = 0;
+  let resumedPrompt = "";
   state.model = new MockLanguageModelV3({
     doGenerate: async () => {
       summaryAttempts++;
       return summaryAttempts === 1
         ? {
             content: [
+              ...(firstResponse === "partial-text"
+                ? [{ type: "text" as const, text: "Incomplete summary." }]
+                : []),
               {
                 type: "tool-call" as const,
                 toolCallId: "summary-probe",
@@ -407,20 +624,23 @@ it("retries a tool-only compaction response without executing the tool", async (
             warnings: [],
           };
     },
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          { type: "text-start", id: "done" },
-          { type: "text-delta", id: "done", delta: "done" },
-          { type: "text-end", id: "done" },
-          {
-            type: "finish",
-            finishReason: { unified: "stop", raw: "stop" },
-            usage,
-          },
-        ] as LanguageModelV3StreamPart[],
-      }),
-    }),
+    doStream: async (options) => {
+      resumedPrompt = JSON.stringify(options.prompt);
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "done" },
+            { type: "text-end", id: "done" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ] as LanguageModelV3StreamPart[],
+        }),
+      };
+    },
   });
 
   try {
@@ -463,6 +683,8 @@ it("retries a tool-only compaction response without executing the tool", async (
     expect(summaryAttempts).toBe(2);
     expect(usageEvents).toBe(2);
     expect(toolExecutions).toBe(0);
+    expect(resumedPrompt).toContain("Continue safely.");
+    expect(resumedPrompt).not.toContain("Incomplete summary.");
   } finally {
     state.model = null;
   }
@@ -696,6 +918,169 @@ it("does not count system and tool overhead twice when calibrating", async () =>
   } finally {
     state.model = null;
     rmSync(sessionPath, { recursive: true, force: true });
+  }
+});
+
+it("continues an in-stream turn when its proactive summary is rejected", async () => {
+  let providerCalls = 0;
+  let summaryCalls = 0;
+  let resumedPrompt = "";
+  state.model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      const call = providerCalls++;
+      if (call > 0) resumedPrompt = JSON.stringify(options.prompt);
+      return {
+        stream: simulateReadableStream({
+          chunks:
+            call === 0
+              ? ([
+                  {
+                    type: "tool-call",
+                    toolCallId: "source",
+                    toolName: "probe",
+                    input: "{}",
+                  },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                    usage,
+                  },
+                ] as LanguageModelV3StreamPart[])
+              : ([
+                  { type: "text-start", id: "done" },
+                  { type: "text-delta", id: "done", delta: "done" },
+                  { type: "text-end", id: "done" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage,
+                  },
+                ] as LanguageModelV3StreamPart[]),
+        }),
+      };
+    },
+    doGenerate: async () => {
+      summaryCalls++;
+      return {
+        content: [],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      };
+    },
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Read the source.",
+      tools: {
+        probe: tool({
+          description: "Return synthetic evidence",
+          inputSchema: z.object({}),
+          execute: async () => `source-evidence:${"e".repeat(620_000)}`,
+        }),
+      },
+      stopWhen: stepCountIs(2),
+      silent: true,
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 200_000,
+                maxOutputTokens: 20_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    for await (const _part of stream.fullStream) void _part;
+    expect(providerCalls).toBe(2);
+    expect(summaryCalls).toBe(2);
+    expect(resumedPrompt).toContain("source-evidence:");
+  } finally {
+    state.model = null;
+  }
+});
+
+it("uses minimal recovery when a reactive summary is rejected", async () => {
+  let providerCalls = 0;
+  let summaryCalls = 0;
+  let resumedPrompt = "";
+  const onSummarized = vi.fn();
+  state.model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      const call = providerCalls++;
+      if (call > 0) resumedPrompt = JSON.stringify(options.prompt);
+      return {
+        stream: simulateReadableStream({
+          chunks:
+            call === 0
+              ? ([
+                  {
+                    type: "error",
+                    error: new Error(
+                      "prompt is too long: context length exceeded",
+                    ),
+                  },
+                ] as LanguageModelV3StreamPart[])
+              : ([
+                  { type: "text-start", id: "done" },
+                  { type: "text-delta", id: "done", delta: "done" },
+                  { type: "text-end", id: "done" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage,
+                  },
+                ] as LanguageModelV3StreamPart[]),
+        }),
+      };
+    },
+    doGenerate: async () => {
+      summaryCalls++;
+      return {
+        content: [],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      };
+    },
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Continue the task.",
+      messages: [{ role: "user", content: "Old synthetic evidence." }],
+      onSummarized,
+      silent: true,
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 200_000,
+                maxOutputTokens: 20_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    for await (const _part of stream.fullStream) void _part;
+    expect(providerCalls).toBe(2);
+    expect(summaryCalls).toBe(2);
+    expect(onSummarized).toHaveBeenCalledWith("");
+    expect(resumedPrompt).not.toContain("Old synthetic evidence.");
+  } finally {
+    state.model = null;
   }
 });
 

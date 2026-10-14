@@ -78,6 +78,7 @@ import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
+  CompactionRejectedError,
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
@@ -826,6 +827,7 @@ function wrapStreamWithErrorHandler(
               // as-is; the prompt must be reduced via summarization.
               const isCtxError =
                 error instanceof InStreamCompactionRequired ||
+                error instanceof CompactionRejectedError ||
                 checkIfContextLengthError(error);
 
               // A latched persistence failure is terminal: retrying would
@@ -992,7 +994,11 @@ function wrapStreamWithErrorHandler(
                 // `MAX_RESTART_DEPTH` finally trips.
                 let postReactiveDepth = opts._restartDepth ?? 0;
 
-                if (fitted.fitsBudget && fitted.modified) {
+                if (
+                  !(error instanceof CompactionRejectedError) &&
+                  fitted.fitsBudget &&
+                  fitted.modified
+                ) {
                   if (!silent) {
                     log.warn(
                       `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
@@ -1065,6 +1071,7 @@ function wrapStreamWithErrorHandler(
                 }
 
                 try {
+                  if (error instanceof CompactionRejectedError) throw error;
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
                     {
@@ -1074,6 +1081,9 @@ function wrapStreamWithErrorHandler(
                         error instanceof InStreamCompactionRequired
                           ? "proactive"
                           : "context_overflow",
+                      _proactiveSummaryMayFit:
+                        error instanceof InStreamCompactionRequired &&
+                        error.fitted.fitsBudget,
                     },
                     model,
                   );
@@ -1081,7 +1091,7 @@ function wrapStreamWithErrorHandler(
                     yield chunk;
                   }
                 } catch (summarizeError) {
-                  // Only fall through to minimal-restart for context-length
+                  // Fall through to minimal restart for context or rejected-summary
                   // errors. For everything else — auth failures, network
                   // errors, abort signals, the typed terminal
                   // `ContextLengthExhaustedError`, or non-`Error` throws —
@@ -1094,7 +1104,10 @@ function wrapStreamWithErrorHandler(
                     (summarizeError instanceof Error &&
                       summarizeError.name === "AbortError") ||
                     opts.abortSignal?.aborted ||
-                    !checkIfContextLengthError(summarizeError)
+                    !(
+                      checkIfContextLengthError(summarizeError) ||
+                      summarizeError instanceof CompactionRejectedError
+                    )
                   ) {
                     throw summarizeError;
                   }
@@ -1589,6 +1602,8 @@ export interface StreamResponseOpts {
   /** Shared only by continuations of this stream, never across agents. */
   _compaction?: { last?: CompactionLink };
   _compactionTrigger?: CompactionTrigger;
+  _proactiveSummaryMayFit?: boolean;
+  _skipProactiveSummary?: boolean;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1784,6 +1799,7 @@ function streamResponseWithinOperation(
   );
   if (
     messages &&
+    !opts._skipProactiveSummary &&
     shouldSummarizeBeforeFitting(
       messages,
       contextWindow,
@@ -1797,7 +1813,11 @@ function streamResponseWithinOperation(
     return wrapStreamWithErrorHandler(
       createSummarizationStream(
         messages,
-        { ...opts, _compactionTrigger: "proactive" },
+        {
+          ...opts,
+          _compactionTrigger: "proactive",
+          _proactiveSummaryMayFit: true,
+        },
         providerModel,
       ),
       { current: messages },
@@ -1861,7 +1881,11 @@ function streamResponseWithinOperation(
     return wrapStreamWithErrorHandler(
       createSummarizationStream(
         fittedMessages,
-        { ...opts, _compactionTrigger: "proactive" },
+        {
+          ...opts,
+          _compactionTrigger: "proactive",
+          _proactiveSummaryMayFit: false,
+        },
         providerModel,
       ),
       messagesContainer,
@@ -1956,10 +1980,11 @@ function streamResponseWithinOperation(
       // Awaiting inside prepareStep keeps streamResponse synchronous; the
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
-      prepareStep: async (opts) => {
-        let stepMessages = opts.messages;
-        if (opts.stepNumber > 0) {
+      prepareStep: async (step) => {
+        let stepMessages = step.messages;
+        if (step.stepNumber > 0) {
           if (
+            !opts._skipProactiveSummary &&
             shouldSummarizeBeforeFitting(
               stepMessages,
               contextWindow,
@@ -1975,7 +2000,7 @@ function streamResponseWithinOperation(
               messages: stepMessages,
               estimatedInputTokens: estimateMessageTokens(stepMessages),
               modified: false,
-              fitsBudget: false,
+              fitsBudget: true,
             });
           }
           const fitted = fitMessagesToContext(stepMessages, {
@@ -2027,7 +2052,7 @@ function streamResponseWithinOperation(
             messages: withCachedLastMessage(stepMessages, cacheBreakpoint),
           };
         }
-        return stepMessages === opts.messages
+        return stepMessages === step.messages
           ? undefined
           : { messages: stepMessages };
       },

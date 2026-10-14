@@ -63,6 +63,8 @@ import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
 
+export class CompactionRejectedError extends Error {}
+
 /**
  * Check if a model is served by a provider that speaks Anthropic's thinking
  * options — direct Anthropic, AWS Bedrock, and the Pensar gateway (which routes
@@ -523,7 +525,7 @@ async function summarizeConversation(
         overheadTokens: estimateToolsOverheadTokens(summaryTools) + 1_000,
         sessionPath: opts.sessionPath,
       });
-      if (!fitted.fitsBudget || !fitted.modified) continue;
+      if (!fitted.modified) continue;
       usedHistory = [
         ...fitted.messages,
         { role: "user", content: summaryInstruction },
@@ -542,7 +544,10 @@ async function summarizeConversation(
   }
   if (!summaryResult) throw lastContextError;
   await reportSummaryUsage(summaryResult);
-  if (summaryTools && !summaryResult.text.trim()) {
+  if (
+    (summaryResult.toolCalls?.length ?? 0) > 0 ||
+    !summaryResult.text.trim()
+  ) {
     summaryResult = await runWithNativeRolloutOperation(
       { operationKind: "context.summarize", sessionId: opts.sessionId },
       () => generateSummary(usedHistory, "none"),
@@ -550,8 +555,10 @@ async function summarizeConversation(
     await reportSummaryUsage(summaryResult);
   }
   const { text: summary } = summaryResult;
-  if (!summary.trim()) {
-    throw new Error("Compaction returned no summary text");
+  if (!summary.trim() || (summaryResult.toolCalls?.length ?? 0) > 0) {
+    throw new CompactionRejectedError(
+      "Compaction returned no complete summary",
+    );
   }
 
   // Preserve task state through summarization so the agent doesn't lose
@@ -574,7 +581,9 @@ async function summarizeConversation(
     estimateMessageTokens([{ role: "user", content: enhancedPrompt }]) >=
       estimateMessageTokens(messages) * 0.8
   ) {
-    throw new Error("Proactive compaction did not reduce context enough");
+    throw new CompactionRejectedError(
+      "Proactive compaction did not reduce context enough",
+    );
   }
 
   compaction?.measure(
@@ -664,10 +673,26 @@ export function createSummarizationStream(
   // We need to handle this asynchronously but return synchronously
   // Create a promise that will hold the resumed stream
   // Start the summarization process
+  let didCompact = true;
   const resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>> =
     summarizeConversation(messages, opts, { model, compaction }).catch(
       (error) => {
         compaction?.fail(error, opts.abortSignal?.aborted);
+        if (
+          opts._compactionTrigger === "proactive" &&
+          opts._proactiveSummaryMayFit &&
+          (error instanceof CompactionRejectedError ||
+            checkIfContextLengthError(error))
+        ) {
+          didCompact = false;
+          return streamResponse({
+            ...opts,
+            messages,
+            _compactionTrigger: undefined,
+            _proactiveSummaryMayFit: false,
+            _skipProactiveSummary: true,
+          });
+        }
         throw error;
       },
     );
@@ -698,7 +723,9 @@ export function createSummarizationStream(
         reason: "Compacting context to continue",
         messageCount: messages.length,
       }),
-      result: "Context compacted. Continuing with shorter history...",
+      result: didCompact
+        ? "Context compacted. Continuing with shorter history..."
+        : "Compaction skipped. Continuing with original history...",
     } as unknown as TextStreamPart<ToolSet>;
     yield toolResultEvent;
 
