@@ -686,6 +686,34 @@ class InStreamCompactionRequired extends Error {
   }
 }
 
+function shouldSummarizeBeforeFitting(
+  messages: ModelMessage[],
+  contextWindow: number,
+  maxOutputTokens: number,
+  overheadTokens: number,
+  safetyMarginTokens: number,
+  system?: string,
+  toolChoice?: ToolChoice<ToolSet>,
+): boolean {
+  const historyBudget =
+    contextWindow -
+    maxOutputTokens -
+    overheadTokens -
+    safetyMarginTokens -
+    (system ? estimateTokens(system) : 0);
+  const estimatedHistoryTokens = estimateMessageTokens(messages);
+  // Forced-tool replays missed the summary cache; keep their fitted history path.
+  return (
+    historyBudget > 0 &&
+    messages.length > 2 &&
+    toolChoice !== "required" &&
+    typeof toolChoice !== "object" &&
+    estimatedHistoryTokens >=
+      Math.max(100_000, Math.floor(historyBudget * 0.8)) &&
+    estimatedHistoryTokens <= historyBudget
+  );
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -1744,22 +1772,49 @@ function streamResponseWithinOperation(
     model,
   );
 
+  const contextWindow = getContextWindow(
+    model,
+    authConfig?.customProviders,
+    authConfig?.hoonifyModels,
+  );
+  const maxOutputTokens = getMaxOutputTokens(
+    model,
+    authConfig?.customProviders,
+    authConfig?.hoonifyModels,
+  );
+  if (
+    messages &&
+    shouldSummarizeBeforeFitting(
+      messages,
+      contextWindow,
+      maxOutputTokens,
+      estimatedOverheadTokens,
+      inputSafetyMarginTokens,
+      systemWithToolPolicy,
+      toolChoice,
+    )
+  ) {
+    return wrapStreamWithErrorHandler(
+      createSummarizationStream(
+        messages,
+        { ...opts, _compactionTrigger: "proactive" },
+        providerModel,
+      ),
+      { current: messages },
+      opts,
+      providerModel,
+      silent,
+    );
+  }
+
   // Proactive context fit: compact before the call. Reactive recovery
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-      ),
-      maxOutputTokens: getMaxOutputTokens(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-      ),
+      contextWindow,
+      maxOutputTokens,
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1904,17 +1959,28 @@ function streamResponseWithinOperation(
       prepareStep: async (opts) => {
         let stepMessages = opts.messages;
         if (opts.stepNumber > 0) {
+          if (
+            shouldSummarizeBeforeFitting(
+              stepMessages,
+              contextWindow,
+              maxOutputTokens,
+              estimatedOverheadTokens,
+              inputSafetyMarginTokens,
+              effectiveSystem,
+              toolChoice,
+            )
+          ) {
+            messagesContainer.current = stepMessages;
+            throw new InStreamCompactionRequired({
+              messages: stepMessages,
+              estimatedInputTokens: estimateMessageTokens(stepMessages),
+              modified: false,
+              fitsBudget: false,
+            });
+          }
           const fitted = fitMessagesToContext(stepMessages, {
-            contextWindow: getContextWindow(
-              model,
-              authConfig?.customProviders,
-              authConfig?.hoonifyModels,
-            ),
-            maxOutputTokens: getMaxOutputTokens(
-              model,
-              authConfig?.customProviders,
-              authConfig?.hoonifyModels,
-            ),
+            contextWindow,
+            maxOutputTokens,
             system: effectiveSystem,
             tools,
             overheadTokens: estimatedOverheadTokens,

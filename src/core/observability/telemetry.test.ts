@@ -684,10 +684,9 @@ describe("auxiliary model lifecycle", () => {
 
     const synthetic = events.find((e) => e.response.id === "summarization");
     expect(synthetic).toBeDefined();
-    // Handler-safe: handlers spread response.messages; cache and provider
-    // metadata survive the synthetic event.
+    // Handler-safe: callbacks can spread response.messages without replaying history.
     expect(Array.isArray(synthetic?.response.messages)).toBe(true);
-    expect(synthetic?.response.messages).toEqual(history);
+    expect(synthetic?.response.messages).toEqual([]);
     expect(synthetic?.usage.inputTokenDetails?.cacheReadTokens).toBe(400);
     expect(synthetic?.usage.inputTokenDetails?.cacheWriteTokens).toBe(7);
     expect(synthetic?.providerMetadata).toEqual({
