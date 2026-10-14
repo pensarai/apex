@@ -42,6 +42,14 @@ const maxInputTokens = Number(
 const resultCharacterLimit = Number(process.argv[6] ?? 1_500);
 const cacheRunTag = process.env.APEX_CACHE_RUN_TAG ?? "";
 const cacheToolChoice = process.env.APEX_CACHE_TOOL_CHOICE ?? "required";
+const recallMode = process.env.APEX_CONTEXT_RECALL === "1";
+const earlyReviewKey = "CEDAR-4182";
+const lateReviewKey = "GRANITE-9073";
+const earlyReviewStep = 2;
+const lateReviewStep = requestedSteps - 1;
+const earlyReviewFile =
+  fixtureFiles[(earlyReviewStep * 7) % fixtureFiles.length];
+const lateReviewFile = fixtureFiles[(lateReviewStep * 7) % fixtureFiles.length];
 if (
   ![15, 30, 60, 120].includes(requestedSteps) ||
   !Number.isSafeInteger(declaredContextWindow) ||
@@ -90,6 +98,21 @@ let summaryEvents = 0;
 let stopForBudget = false;
 let providerStreamAttempts = 0;
 let providerGenerateAttempts = 0;
+let inspectedThisStep = false;
+let duplicateInspectionCalls = 0;
+let extraInspectionCalls = 0;
+let report:
+  | {
+      earlyKey: string;
+      lateKey: string;
+      earlyFile: string;
+      lateFile: string;
+    }
+  | undefined;
+let reportAtInspection: number | undefined;
+let reportAfterResult = false;
+let finalPromptHasEarlyKey = false;
+let finalPromptHasLateKey = false;
 const mainStepInputTokens: number[] = [];
 const mainStepCacheReadTokens: number[] = [];
 const mainStepCacheWriteTokens: number[] = [];
@@ -100,8 +123,13 @@ const summaryCacheWriteTokens: number[] = [];
 const started = performance.now();
 const attemptCounter: LanguageModelMiddleware = {
   specificationVersion: "v3",
-  wrapStream: async ({ doStream }) => {
+  wrapStream: async ({ doStream, params }) => {
     providerStreamAttempts++;
+    if (recallMode && toolCalls >= requestedSteps) {
+      const prompt = JSON.stringify(params.prompt) ?? "";
+      finalPromptHasEarlyKey = prompt.includes(earlyReviewKey);
+      finalPromptHasLateKey = prompt.includes(lateReviewKey);
+    }
     return doStream();
   },
   wrapGenerate: async ({ doGenerate }) => {
@@ -111,6 +139,15 @@ const attemptCounter: LanguageModelMiddleware = {
 };
 
 function inspectNext(): string {
+  if (recallMode && toolCalls >= requestedSteps) {
+    extraInspectionCalls++;
+    return "All inspections are complete. Call submit_report.";
+  }
+  if (recallMode && inspectedThisStep) {
+    duplicateInspectionCalls++;
+    return "Wait for this inspection result before calling inspect_next again.";
+  }
+  inspectedThisStep = true;
   const index = toolCalls++;
   let result: string;
   if (index % 10 === 0) {
@@ -146,6 +183,17 @@ function inspectNext(): string {
       length += entry.length;
     }
     result = `read_file ${path}:${first + 1}\n${excerpt.join("")}`;
+    if (recallMode && index === earlyReviewStep) {
+      result = `${result}\nReview code for ${path}: ${earlyReviewKey}`;
+    }
+    if (recallMode && index === lateReviewStep) {
+      result = `${result}\nReview code for ${path}: ${lateReviewKey}`;
+    }
+  }
+  if (recallMode) {
+    result = `${result}\nInspection ${toolCalls}/${requestedSteps}. Next: ${
+      toolCalls < requestedSteps ? "inspect_next" : "submit_report"
+    }.`;
   }
   toolResultChars += result.length;
   toolResultHash.update(result);
@@ -165,9 +213,12 @@ try {
 
   const stream = streamResponse({
     model,
-    prompt: `Inspect the repository for ${requestedSteps} steps. Call inspect_next once per step to follow the fixed file workflow.${cacheRunTag ? ` Run ${cacheRunTag}.` : ""}`,
-    system:
-      "This is a controlled repository-inspection benchmark. Call inspect_next once per step and do not visit an external target.",
+    prompt: recallMode
+      ? `Inspect the repository for ${requestedSteps} steps. Call inspect_next once per step. The first and last source reads contain different review codes; remember each code and its file path. Only after all ${requestedSteps} inspections, call submit_report with both codes and paths. Do not guess or submit early.${cacheRunTag ? ` Run ${cacheRunTag}.` : ""}`
+      : `Inspect the repository for ${requestedSteps} steps. Call inspect_next once per step to follow the fixed file workflow.${cacheRunTag ? ` Run ${cacheRunTag}.` : ""}`,
+    system: recallMode
+      ? "This is a controlled repository-inspection benchmark. Follow the inspection count in each result. Call inspect_next until the count is complete, then call submit_report. Do not visit an external target."
+      : "This is a controlled repository-inspection benchmark. Call inspect_next once per step and do not visit an external target.",
     tools: {
       inspect_next: tool({
         description:
@@ -175,12 +226,39 @@ try {
         inputSchema: z.object({}),
         execute: async () => inspectNext(),
       }),
+      ...(recallMode
+        ? {
+            submit_report: tool({
+              description:
+                "Submit the review codes and source paths after all inspections",
+              inputSchema: z.object({
+                earlyKey: z.string(),
+                lateKey: z.string(),
+                earlyFile: z.string(),
+                lateFile: z.string(),
+              }),
+              execute: async (input) => {
+                report = input;
+                reportAtInspection = toolCalls;
+                reportAfterResult = !inspectedThisStep;
+                return "Report recorded";
+              },
+            }),
+          }
+        : {}),
     },
     toolChoice:
       cacheToolChoice === "auto"
         ? "auto"
-        : { type: "tool", toolName: "inspect_next" },
-    stopWhen: () => toolCalls >= requestedSteps || stopForBudget,
+        : recallMode
+          ? "required"
+          : { type: "tool", toolName: "inspect_next" },
+    stopWhen: () =>
+      (recallMode
+        ? report !== undefined ||
+          extraInspectionCalls >= 3 ||
+          duplicateInspectionCalls > requestedSteps
+        : toolCalls >= requestedSteps) || stopForBudget,
     sessionPath,
     languageModelMiddleware: attemptCounter,
     silent: true,
@@ -229,6 +307,7 @@ try {
       const projectedNext = last + Math.max(0, last - previous);
       stopForBudget =
         totalInputTokens + projectedNext > maxInputTokens - 25_000;
+      if (step.response.id !== "summarization") inspectedThisStep = false;
     },
   });
 
@@ -242,20 +321,34 @@ try {
   }
 
   if (
-    toolCalls !== requestedSteps ||
-    mainStepInputTokens.length !== requestedSteps
+    (!recallMode &&
+      (toolCalls !== requestedSteps ||
+        mainStepInputTokens.length !== requestedSteps)) ||
+    (recallMode && extraInspectionCalls > 3)
   ) {
     throw new Error(
       `Incomplete workload: ${toolCalls} tool calls and ${mainStepInputTokens.length} model steps`,
     );
   }
-  if (summaryCalls !== summaryEvents) {
+  if (
+    recallMode
+      ? summaryCalls < summaryEvents ||
+        (summaryCalls > 0 && summaryEvents === 0)
+      : summaryCalls !== summaryEvents
+  ) {
     throw new Error("Summary usage and compaction event counts differ");
   }
   if (totalInputTokens > maxInputTokens) {
     throw new Error("Live benchmark exceeded the input token budget");
   }
 
+  const reportCorrect =
+    reportAtInspection === requestedSteps &&
+    reportAfterResult &&
+    report?.earlyKey === earlyReviewKey &&
+    report?.lateKey === lateReviewKey &&
+    report?.earlyFile === earlyReviewFile &&
+    report?.lateFile === lateReviewFile;
   console.log(
     "OPERATOR_CONTEXT_WORKFLOW",
     JSON.stringify({
@@ -274,6 +367,18 @@ try {
       maxInputTokens,
       resultCharacterLimit,
       toolCalls,
+      completedAllInspections: toolCalls === requestedSteps,
+      duplicateInspectionCalls,
+      extraInspectionCalls,
+      recallMode,
+      earlyReviewStep,
+      lateReviewStep,
+      reportAtInspection,
+      reportAfterResult,
+      reportCorrect,
+      report,
+      finalPromptHasEarlyKey,
+      finalPromptHasLateKey,
       readOps,
       searchOps,
       listOps,
@@ -282,6 +387,8 @@ try {
       providerStreamAttempts,
       providerGenerateAttempts,
       summaryCalls,
+      summaryEvents,
+      stopForBudget,
       totalInputTokens,
       totalOutputTokens,
       cacheReadTokens,
@@ -301,6 +408,7 @@ try {
       elapsedMs: Math.round(performance.now() - started),
     }),
   );
+  if (recallMode && !reportCorrect) process.exitCode = 1;
 } catch (error) {
   console.log(
     "OPERATOR_CONTEXT_WORKFLOW_FAILURE",
@@ -311,10 +419,15 @@ try {
       declaredContextWindow,
       resultCharacterLimit,
       toolCalls,
+      completedAllInspections: toolCalls === requestedSteps,
+      duplicateInspectionCalls,
+      extraInspectionCalls,
       mainProviderCalls: mainStepInputTokens.length,
       providerStreamAttempts,
       providerGenerateAttempts,
       summaryCalls,
+      summaryEvents,
+      stopForBudget,
       totalInputTokens,
       cacheReadTokens,
       cacheWriteTokens,
