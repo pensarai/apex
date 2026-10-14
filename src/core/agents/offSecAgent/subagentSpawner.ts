@@ -197,6 +197,11 @@ export interface SubagentSpawner {
    */
   spawn<TResult = unknown>(opts: SpawnOptions<TResult>): Promise<TResult>;
 
+  spawnBatch?<TResult>(
+    requests: readonly SpawnOptions<TResult>[],
+    opts: { concurrency: number; abortSignal?: AbortSignal },
+  ): Promise<PromiseSettledResult<TResult>[]>;
+
   /**
    * Run a fan-out with bounded concurrency. Unifies the `pLimit` /
    * `runWithBoundedConcurrency` / sequential mechanisms behind one `concurrency`
@@ -207,6 +212,37 @@ export interface SubagentSpawner {
     worker: (item: TItem, index: number) => Promise<TResult>,
     opts: { concurrency: number; abortSignal?: AbortSignal },
   ): Promise<(TResult | null)[]>;
+}
+
+export async function spawnBatch<TResult>(
+  spawner: SubagentSpawner,
+  requests: readonly SpawnOptions<TResult>[],
+  opts: { concurrency: number; abortSignal?: AbortSignal },
+  limiter?: <T>(run: () => Promise<T>) => Promise<T>,
+): Promise<PromiseSettledResult<TResult>[]> {
+  if (spawner.spawnBatch) return spawner.spawnBatch(requests, opts);
+  const results = await spawner.spawnMany(
+    requests,
+    async (request) => {
+      try {
+        const run = () => spawner.spawn(request);
+        return {
+          status: "fulfilled",
+          value: await (limiter ? limiter(run) : run()),
+        } as const;
+      } catch (reason) {
+        return { status: "rejected", reason } as const;
+      }
+    },
+    opts,
+  );
+  return results.map((result) => {
+    if (result === null) {
+      opts.abortSignal?.throwIfAborted();
+      throw new Error("Subagent batch lost a result");
+    }
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------
