@@ -712,7 +712,7 @@ it("tries shortened summary history even when the retry budget is too small", as
     );
     for await (const _part of stream.fullStream) void _part;
     expect(summaryInputs).toHaveLength(2);
-    expect(summaryInputs[1]).toBeLessThan(summaryInputs[0]!);
+    expect(summaryInputs[1]).toBeLessThan(summaryInputs[0] ?? 0);
   } finally {
     state.model = null;
   }
