@@ -105,7 +105,7 @@ afterEach(() => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical", () => {
-  it("fans out per-app work through the same runWithBoundedConcurrency pool, once", async () => {
+  it("bounds per-app work and batches each app’s discovery children", async () => {
     const spy = vi.spyOn(concurrencyModule, "runWithBoundedConcurrency");
 
     await runWhiteboxAttackSurfaceWorkflow({
@@ -115,7 +115,9 @@ describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical"
       surfaceIntegrationEnabled: false,
     });
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1][0]).toHaveLength(2);
+    expect(spy.mock.calls[1][1]).toBe(2);
     const [items, concurrency] = spy.mock.calls[0];
     expect(items).toHaveLength(1);
     expect(concurrency).toBe(5);
