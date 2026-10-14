@@ -610,6 +610,7 @@ async function summarizeConversation(
     prompt: enhancedPrompt,
     messages: undefined,
     _restartDepth: nextRestartDepth,
+    _proactiveSummaryFailures: 0,
   });
   return resumed;
 }
@@ -690,7 +691,8 @@ export function createSummarizationStream(
             messages,
             _compactionTrigger: undefined,
             _proactiveSummaryMayFit: false,
-            _skipProactiveSummary: true,
+            _proactiveSummaryFailures:
+              (opts._proactiveSummaryFailures ?? 0) + 1,
           });
         }
         throw error;
@@ -712,7 +714,22 @@ export function createSummarizationStream(
     yield toolCallEvent;
 
     // Wait for the summarization to complete
-    const resumedStream = await resumedStreamPromise;
+    let resumedStream: StreamTextResult<ToolSet, never>;
+    try {
+      resumedStream = await resumedStreamPromise;
+    } catch (error) {
+      yield {
+        type: "tool-result",
+        toolCallId,
+        toolName: "summarize_conversation",
+        input: JSON.stringify({
+          reason: "Compacting context to continue",
+          messageCount: messages.length,
+        }),
+        result: "Compaction failed.",
+      } as unknown as TextStreamPart<ToolSet>;
+      throw error;
+    }
 
     // Emit a synthetic tool-result event
     const toolResultEvent = {

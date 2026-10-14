@@ -395,6 +395,135 @@ it.each([
   }
 });
 
+it("retries proactive compaction after a new tool result", async () => {
+  const messages: ModelMessage[] = [
+    { role: "user", content: "Keep the first source." },
+    ...Array.from({ length: 2 }, (_, index): ModelMessage[] => [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: `old-${index}`,
+            toolName: "probe",
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: `old-${index}`,
+            toolName: "probe",
+            output: {
+              type: "text",
+              value: `source-${index}:${"x".repeat(300_000)}`,
+            },
+          },
+        ],
+      },
+    ]).flat(),
+  ];
+  let summaryCalls = 0;
+  let providerCalls = 0;
+  let retryPrompt = "";
+  const onSummarized = vi.fn();
+  state.model = new MockLanguageModelV3({
+    doGenerate: async (options) => {
+      summaryCalls++;
+      if (summaryCalls === 3) retryPrompt = JSON.stringify(options.prompt);
+      return {
+        content:
+          summaryCalls < 3
+            ? []
+            : [
+                {
+                  type: "text" as const,
+                  text: "The first source is source-0.",
+                },
+              ],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      };
+    },
+    doStream: async () => {
+      const call = providerCalls++;
+      return {
+        stream: simulateReadableStream({
+          chunks:
+            call === 0
+              ? ([
+                  {
+                    type: "tool-call",
+                    toolCallId: "new-source",
+                    toolName: "probe",
+                    input: "{}",
+                  },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                    usage,
+                  },
+                ] as LanguageModelV3StreamPart[])
+              : ([
+                  { type: "text-start", id: "done" },
+                  { type: "text-delta", id: "done", delta: "done" },
+                  { type: "text-end", id: "done" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage,
+                  },
+                ] as LanguageModelV3StreamPart[]),
+        }),
+      };
+    },
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Continue.",
+      messages,
+      tools: {
+        probe: tool({
+          description: "Return the next source",
+          inputSchema: z.object({}),
+          execute: async () => "new-evidence",
+        }),
+      },
+      stopWhen: stepCountIs(2),
+      onSummarized,
+      silent: true,
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 200_000,
+                maxOutputTokens: 20_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    for await (const _part of stream.fullStream) void _part;
+    expect(summaryCalls).toBe(3);
+    expect(providerCalls).toBe(2);
+    expect(retryPrompt).toContain("source-0:");
+    expect(retryPrompt).toContain("new-evidence");
+    expect(onSummarized).toHaveBeenCalledWith("The first source is source-0.");
+  } finally {
+    state.model = null;
+  }
+});
+
 it("retries an oversized summary with fitted history", async () => {
   const messages: ModelMessage[] = [
     { role: "user", content: "Preserve the original task." },
@@ -1011,6 +1140,8 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
   let providerCalls = 0;
   let summaryCalls = 0;
   let resumedPrompt = "";
+  let syntheticCalls = 0;
+  let syntheticResults = 0;
   const onSummarized = vi.fn();
   state.model = new MockLanguageModelV3({
     doStream: async (options) => {
@@ -1074,9 +1205,24 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
         },
       },
     });
-    for await (const _part of stream.fullStream) void _part;
+    for await (const part of stream.fullStream) {
+      if (
+        part.type === "tool-call" &&
+        part.toolName === "summarize_conversation"
+      ) {
+        syntheticCalls++;
+      }
+      if (
+        part.type === "tool-result" &&
+        part.toolName === "summarize_conversation"
+      ) {
+        syntheticResults++;
+      }
+    }
     expect(providerCalls).toBe(2);
     expect(summaryCalls).toBe(2);
+    expect(syntheticCalls).toBe(1);
+    expect(syntheticResults).toBe(1);
     expect(onSummarized).toHaveBeenCalledWith("");
     expect(resumedPrompt).not.toContain("Old synthetic evidence.");
   } finally {

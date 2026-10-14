@@ -687,6 +687,9 @@ class InStreamCompactionRequired extends Error {
   }
 }
 
+// Retry once after new tool output, then let fitting handle this turn.
+const MAX_PROACTIVE_SUMMARY_FAILURES = 2;
+
 function shouldSummarizeBeforeFitting(
   messages: ModelMessage[],
   contextWindow: number,
@@ -1603,7 +1606,7 @@ export interface StreamResponseOpts {
   _compaction?: { last?: CompactionLink };
   _compactionTrigger?: CompactionTrigger;
   _proactiveSummaryMayFit?: boolean;
-  _skipProactiveSummary?: boolean;
+  _proactiveSummaryFailures?: number;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1799,7 +1802,7 @@ function streamResponseWithinOperation(
   );
   if (
     messages &&
-    !opts._skipProactiveSummary &&
+    !opts._proactiveSummaryFailures &&
     shouldSummarizeBeforeFitting(
       messages,
       contextWindow,
@@ -1984,7 +1987,8 @@ function streamResponseWithinOperation(
         let stepMessages = step.messages;
         if (step.stepNumber > 0) {
           if (
-            !opts._skipProactiveSummary &&
+            (opts._proactiveSummaryFailures ?? 0) <
+              MAX_PROACTIVE_SUMMARY_FAILURES &&
             shouldSummarizeBeforeFitting(
               stepMessages,
               contextWindow,
