@@ -120,6 +120,31 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
     expect(body.tools).toBeUndefined();
   });
 
+  it.each([
+    "xhigh",
+    "max",
+  ] as const)("preserves the %s adaptive effort through SDK serialization", async (thinkingEffort) => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => completion(id),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const model = getProviderModel(id, { anthropicAPIKey: "test-key" });
+    await model.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+      providerOptions: buildReasoningProviderOptions(id, {
+        enableThinking: true,
+        thinkingEffort,
+      }),
+    });
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("Expected a Claude request");
+    expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+      model: id,
+      thinking: { type: "adaptive" },
+      output_config: { effort: thinkingEffort },
+    });
+  });
+
   it("preserves signed thinking and tool calls across turns", async () => {
     const events = [
       {

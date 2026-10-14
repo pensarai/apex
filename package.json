@@ -4,12 +4,14 @@
     "pensar": "./bin/pensar.js"
   },
   "dependencies": {
-    "@ai-sdk/amazon-bedrock": "^4.0.119",
+    "@ai-sdk/amazon-bedrock": "4.0.119",
     "@ai-sdk/anthropic": "^3.0.85",
     "@ai-sdk/google": "^3.0.83",
     "@ai-sdk/openai": "3.0.46",
     "@ai-sdk/openai-compatible": "^2.0.51",
     "@ai-sdk/provider": "^3.0.10",
+    "@aws-sdk/client-s3": "3.1146.0",
+    "@aws-sdk/lib-storage": "3.1146.0",
     "@daytona/sdk": "0.222.0",
     "@googleapis/gmail": "^16.1.2",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -342,5 +344,5 @@
     "tsc": "tsc --noEmit"
   },
   "type": "module",
-  "version": "2.5.0"
+  "version": "2.6.1"
 }

@@ -207,6 +207,7 @@ export interface HttpResponse {
   body: string;
   url: string;
   redirected: boolean;
+  redirectChain?: string[];
   error?: string;
   method?: string;
   title?: string;

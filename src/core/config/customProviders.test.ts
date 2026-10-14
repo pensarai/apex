@@ -37,6 +37,24 @@ describe("custom provider configuration", () => {
     );
   });
 
+  it("accepts a Responses model with an optional configured effort", () => {
+    const parsed = parseCustomProviders({
+      research: {
+        ...providers.research,
+        apiType: "responses",
+        models: [
+          {
+            id: "org/reasoning-model",
+            contextLength: 200_000,
+            maxOutputTokens: 32_000,
+            reasoningEffort: "xhigh",
+          },
+        ],
+      },
+    });
+    expect(parsed.research.models[0].reasoningEffort).toBe("xhigh");
+  });
+
   it.each([
     { baseUrl: "file:///tmp/model" },
     { baseUrl: "https://token:secret@inference.example/v1" },
@@ -46,6 +64,14 @@ describe("custom provider configuration", () => {
     { requestBody: { messages: [] } },
     { requestBody: { stream: false } },
     { requestBody: { max_tokens: 1 } },
+    { apiType: "unknown" },
+    { models: [{ ...providers.research.models[0], reasoningEffort: "high" }] },
+    { apiType: "responses", apiKeyEnv: undefined },
+    { apiType: "responses", requestBody: { temperature: 1 } },
+    {
+      apiType: "responses",
+      models: [{ ...providers.research.models[0], reasoningEffort: "ultra" }],
+    },
     { models: [{ id: "glm-5.3", contextLength: 100, maxOutputTokens: 100 }] },
     { models: [providers.research.models[0], providers.research.models[0]] },
   ])("rejects invalid config without echoing supplied values: %j", (override) => {

@@ -3,7 +3,6 @@ export interface WindowsCurlOptions {
   method: string;
   headers: Record<string, string>;
   body?: string;
-  followRedirects: boolean;
   timeoutSeconds: number;
   maxBytes: number;
   exitMarker: string;
@@ -42,7 +41,6 @@ function buildCurlArgs(opts: WindowsCurlOptions): string {
   for (const [name, value] of Object.entries(opts.headers)) {
     argv.push("-H", `${name}: ${value}`);
   }
-  if (opts.followRedirects) argv.push("-L");
   argv.push("--max-time", String(opts.timeoutSeconds), opts.url);
   return argv.map(quoteArg).join(" ");
 }

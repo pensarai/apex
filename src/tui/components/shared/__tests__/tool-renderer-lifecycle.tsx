@@ -64,6 +64,24 @@ try {
       ),
     );
   }
+
+  const compacting = applyToolCall([], "compact-1", "summarize_conversation", {
+    reason: "Compacting context to continue",
+    messageCount: 20,
+  });
+  const pendingFrame = await frame(compacting);
+  assert.ok(pendingFrame.includes("⠁ Compacting"));
+  assert.ok(!pendingFrame.includes("summarize_conversation"));
+
+  const completedFrame = await frame(
+    applyToolResult(
+      compacting,
+      "compact-1",
+      "Conversation summarized successfully. Resuming with condensed context...",
+    ),
+  );
+  assert.ok(completedFrame.includes("Context compacted"));
+  assert.ok(!completedFrame.includes("summarized"));
 } finally {
   await act(() => setup.renderer.destroy());
 }

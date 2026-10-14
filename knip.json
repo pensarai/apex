@@ -29,7 +29,11 @@
     "src/core/workflows/whiteboxAttackSurface.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "loader-demo.tsx"],
-  "ignoreDependencies": ["@playwright/mcp"],
+  "ignoreDependencies": [
+    "@aws-sdk/client-s3",
+    "@aws-sdk/lib-storage",
+    "@playwright/mcp"
+  ],
   "ignore": [
     "src/core/atif/test-fixtures.ts",
     "**/*.test.{ts,tsx,js,jsx,mts,cts}",
