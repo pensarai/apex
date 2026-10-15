@@ -6,6 +6,7 @@ import { PerCommandShell } from "../../agents/offSecAgent/tools/perCommandShell"
 import type { ReadFileResult } from "../../agents/offSecAgent/tools/readFile";
 import { readFile as readFileTool } from "../../agents/offSecAgent/tools/readFile";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
+import { createLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { LocalBackends, runLocalProgram } from "./local";
 import type { CommandEvent } from "./types";
 
@@ -241,6 +242,45 @@ describe("LocalBackends.http destructive guard", () => {
   });
 });
 
+describe("LocalBackends local research capabilities", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("redeems a URL-bound Brave result without forwarding target credentials", async () => {
+    const externalUrl = "https://research.example/advisory";
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("<html><body>Advisory</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = makeCtx({ target: "https://target.example" });
+    ctx.session.config = {
+      headers: { Authorization: "Bearer target-secret" },
+      scopeConstraints: {
+        allowedHosts: ["target.example"],
+        strictScope: true,
+      },
+    };
+
+    const result = await LocalBackends(ctx).http.request({
+      url: externalUrl,
+      method: "GET",
+      extract: "readability",
+      fetchToken: createLocalResearchFetchToken(externalUrl),
+    });
+
+    expect(result).toMatchObject({ success: true, url: externalUrl });
+    expect(fetchMock).toHaveBeenCalledWith(externalUrl, {
+      method: "GET",
+      redirect: "manual",
+      signal: expect.any(AbortSignal),
+    });
+  });
+});
+
 describe("LocalBackends.http redirect policy", () => {
   it("blocks an out-of-scope sandbox redirect before a second request", async () => {
     const execute = vi.fn(async (command: string) => {
@@ -273,6 +313,57 @@ describe("LocalBackends.http redirect policy", () => {
       error: expect.stringMatching(/scope violation/i),
     });
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { status: 303, method: "HEAD", expected: "HEAD", body: undefined },
+    { status: 301, method: "PUT", expected: "PUT", body: "put-body" },
+    {
+      status: 302,
+      method: "PATCH",
+      expected: "PATCH",
+      body: "patch-body",
+    },
+  ] as const)("preserves $method across $status like the shared redirect primitive", async ({
+    status,
+    method,
+    expected,
+    body,
+  }) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status,
+          headers: { location: "https://target.example/final" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = makeCtx({ target: "https://target.example" });
+    ctx.session.config = {
+      allowDestructiveActions: true,
+      scopeConstraints: {
+        allowedHosts: ["target.example"],
+        allowedPorts: [443],
+        strictScope: true,
+      },
+    };
+
+    try {
+      await LocalBackends(ctx).http.request({
+        url: "https://target.example/start",
+        method,
+        body,
+        followRedirects: true,
+      });
+
+      const redirectedInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+      expect(redirectedInit.method).toBe(expected);
+      expect(redirectedInit.body).toBe(body);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

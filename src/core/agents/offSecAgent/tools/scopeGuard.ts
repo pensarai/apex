@@ -16,6 +16,8 @@ import type { ResolverSession } from "../../../http/targetHeaders";
 import {
   getRegistrableDomain,
   getSessionAllowedHosts,
+  getSessionAllowedPorts,
+  getUrlPort,
   isHostInScope,
 } from "../../../http/targetScope";
 import type { ToolContext } from "./types";
@@ -26,10 +28,14 @@ export class ScopeViolationError extends Error {
   constructor(
     public readonly hostname: string,
     public readonly allowedHosts: string[],
+    public readonly port?: number,
+    public readonly allowedPorts: number[] = [],
   ) {
     super(
-      `Scope violation: "${hostname}" is not in the list of allowed target domains [${allowedHosts.join(", ")}]. ` +
-        `Only exact hosts and explicit wildcard grants are permitted.`,
+      port !== undefined && allowedPorts.length > 0
+        ? `Scope violation: port ${port} on "${hostname}" is not in the list of allowed target ports [${allowedPorts.join(", ")}].`
+        : `Scope violation: "${hostname}" is not in the list of allowed target domains [${allowedHosts.join(", ")}]. ` +
+            `Only exact hosts and explicit wildcard grants are permitted.`,
     );
     this.name = "ScopeViolationError";
   }
@@ -54,6 +60,10 @@ export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
  */
 export function getAllowedHosts(ctx: ToolContext): string[] {
   return getSessionAllowedHosts(resolverSessionFromCtx(ctx));
+}
+
+export function getAllowedPorts(ctx: ToolContext): number[] {
+  return getSessionAllowedPorts(resolverSessionFromCtx(ctx));
 }
 
 /**
@@ -92,7 +102,14 @@ export function extractHostname(url: string): string | null {
  */
 export function assertUrlInScope(url: string, ctx: ToolContext): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0 && !strictScope(ctx)) return;
+  const allowedPorts = getAllowedPorts(ctx);
+  if (
+    allowedHosts.length === 0 &&
+    allowedPorts.length === 0 &&
+    !strictScope(ctx)
+  ) {
+    return;
+  }
 
   const hostname = extractHostname(url);
   if (!hostname) {
@@ -101,6 +118,19 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
 
   if (!isHostAllowed(hostname, allowedHosts)) {
     throw new ScopeViolationError(hostname, allowedHosts);
+  }
+
+  const port = getUrlPort(url);
+  if (
+    allowedPorts.length > 0 &&
+    (port === null || !allowedPorts.includes(port))
+  ) {
+    throw new ScopeViolationError(
+      hostname,
+      allowedHosts,
+      port ?? undefined,
+      allowedPorts,
+    );
   }
 }
 
@@ -120,19 +150,20 @@ export function assertFindingEndpointInScope(
   ctx: ToolContext,
 ): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0 && !strictScope(ctx)) return;
+  const allowedPorts = getAllowedPorts(ctx);
+  if (
+    allowedHosts.length === 0 &&
+    allowedPorts.length === 0 &&
+    !strictScope(ctx)
+  ) {
+    return;
+  }
 
   // Only absolute http(s) URLs name their own host; anything else (a path,
   // "host:port", a scheme-less token) is treated as relative to the in-scope
   // target and left to the existing deterministic target boundary.
   if (!/^https?:\/\//i.test(endpoint.trim())) return;
-
-  const hostname = extractHostname(endpoint);
-  if (!hostname) return;
-
-  if (!isHostAllowed(hostname, allowedHosts)) {
-    throw new ScopeViolationError(hostname, allowedHosts);
-  }
+  assertUrlInScope(endpoint, ctx);
 }
 
 /**

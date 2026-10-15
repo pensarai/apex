@@ -9,6 +9,7 @@ import {
   extractHostname,
   extractHostsFromCommand,
   getAllowedHosts,
+  getAllowedPorts,
   isHostAllowed,
   resolverSessionFromCtx,
   ScopeViolationError,
@@ -123,6 +124,26 @@ describe("getAllowedHosts", () => {
       scopeConstraints: { allowedHosts: [] },
     };
     expect(getAllowedHosts(ctx)).toEqual(["example.com"]);
+  });
+});
+
+describe("getAllowedPorts", () => {
+  it("returns the configured port allowlist", () => {
+    const ctx = makeCtx({ target: "https://example.com:8443" });
+    ctx.session.config = {
+      scopeConstraints: { allowedPorts: [8443, 9443] },
+    };
+    expect(getAllowedPorts(ctx)).toEqual([8443, 9443]);
+  });
+
+  it("deduplicates and rejects invalid structural values", () => {
+    const ctx = makeCtx();
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedPorts: [443, 443, 0, 65536],
+      },
+    };
+    expect(getAllowedPorts(ctx)).toEqual([443]);
   });
 });
 
@@ -271,6 +292,30 @@ describe("assertUrlInScope", () => {
     expect(() => assertUrlInScope("https://api.example.com/v1", ctx)).toThrow(
       ScopeViolationError,
     );
+  });
+
+  it("enforces configured ports, including protocol defaults", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedHosts: ["example.com"],
+        allowedPorts: [443, 8443],
+        strictScope: true,
+      },
+    };
+
+    expect(() =>
+      assertUrlInScope("https://example.com/login", ctx),
+    ).not.toThrow();
+    expect(() =>
+      assertUrlInScope("https://example.com:8443/login", ctx),
+    ).not.toThrow();
+    expect(() => assertUrlInScope("http://example.com/login", ctx)).toThrow(
+      /port 80.*allowed target ports \[443, 8443\]/,
+    );
+    expect(() =>
+      assertUrlInScope("https://example.com:9443/login", ctx),
+    ).toThrow(/port 9443.*allowed target ports \[443, 8443\]/);
   });
 
   it("blocks out-of-scope URLs", () => {

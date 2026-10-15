@@ -195,6 +195,24 @@ describe("resolveEffectiveHeaders", () => {
     });
     expect(resolveEffectiveHeaders(s, "https://example.com/x")).toEqual({});
   });
+
+  it("does not resolve injected headers on an unlisted port", () => {
+    const s = makeSession({
+      config: {
+        headers: { "X-Test": "1" },
+        scopeConstraints: {
+          allowedHosts: ["example.com"],
+          allowedPorts: [443],
+        },
+      },
+    });
+    expect(resolveEffectiveHeaders(s, "https://example.com/x")).toEqual({
+      "X-Test": "1",
+    });
+    expect(resolveEffectiveHeaders(s, "https://example.com:8443/x")).toEqual(
+      {},
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -498,6 +516,22 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.status).toBe("injected");
     expect(r.tool).toBe("curl");
     expect(r.command).toContain(`-H "X-API-Key: abc"`);
+    expect(r.command).toMatch(/--max-redirs 0$/);
+  });
+
+  it("disables automatic redirects for wget when injecting headers", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "wget https://example.com/api",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("wget");
+    expect(r.command).toContain(`--header="X-API-Key: abc"`);
+    expect(r.command).toMatch(/--max-redirect=0$/);
   });
 
   it("returns unknown-tool when the binary is not in the registry", () => {
@@ -640,7 +674,8 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.tool).toBe("curl");
     expect(r.command).toContain(`-H "X-API-Key: abc"`);
     // The merge token must survive byte-for-byte.
-    expect(r.command.endsWith("2>&1")).toBe(true);
+    expect(r.command).toContain("2>&1");
+    expect(r.command).toMatch(/--max-redirs 0$/);
   });
 
   it("injects when 2>&1 follows a file redirect (tool-guided capture pattern)", () => {

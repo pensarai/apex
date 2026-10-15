@@ -32,7 +32,12 @@ import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuar
 import { HttpSmsInbox } from "../../agents/offSecAgent/tools/smsInbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { postPensarWebSearch } from "../../agents/offSecAgent/tools/webSearch";
-import { TargetRedirectError } from "../../http/redirects";
+import {
+  redirectRequest,
+  sanitizeRedirectHeaders,
+  TargetRedirectError,
+} from "../../http/redirects";
+import { verifyLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
@@ -58,6 +63,7 @@ import type {
   GlobResult,
   GrepQuery,
   GrepResult,
+  HttpMethod,
   HttpOpts,
   HttpRequest,
   HttpResponse,
@@ -550,20 +556,22 @@ type AuthorizeHttp = (req: HttpRequest) => Promise<void>;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-function redirectedRequest(
+function redirectedHttpRequest(
   req: HttpRequest,
   status: number,
   url: string,
 ): HttpRequest {
-  if (
-    status === 303 ||
-    ((status === 301 || status === 302) &&
-      req.method !== "GET" &&
-      req.method !== "HEAD")
-  ) {
-    return { ...req, url, method: "GET", body: undefined };
-  }
-  return { ...req, url };
+  const redirected = redirectRequest(status, req.method ?? "GET", req.body);
+  return {
+    ...req,
+    url,
+    method: redirected.method as HttpMethod,
+    body: redirected.body,
+    headers: sanitizeRedirectHeaders(req.headers ?? {}, {
+      redirectCount: 1,
+      bodyDropped: redirected.bodyDropped,
+    }),
+  };
 }
 
 function responseHeader(
@@ -616,7 +624,7 @@ async function fetchTargetWithRedirects(
     }
 
     response.body?.cancel().catch(() => {});
-    const next = redirectedRequest(
+    const next = redirectedHttpRequest(
       request,
       response.status,
       new URL(location, request.url).toString(),
@@ -671,7 +679,7 @@ async function fetchSandboxWithRedirects(
     const location = responseHeader(response.headers, "location");
     if (!location) return { ...response, url: request.url, redirected };
 
-    const next = redirectedRequest(
+    const next = redirectedHttpRequest(
       request,
       response.status,
       new URL(location, request.url).toString(),
@@ -808,6 +816,20 @@ async function fetchBrokeredResearch(
   redirected: boolean;
   redirectChain: string[];
 }> {
+  if (verifyLocalResearchFetchToken(fetchToken, url)) {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      signal,
+    });
+    return {
+      response,
+      url,
+      redirected: false,
+      redirectChain: [url],
+    };
+  }
+
   const result = await postPensarWebSearch({ url, fetchToken }, signal);
   if (!result.ok) {
     throw new Error(

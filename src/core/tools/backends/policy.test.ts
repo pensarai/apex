@@ -105,6 +105,25 @@ describe("defaultPolicy", () => {
     if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
   });
 
+  it("denies a direct browser navigation on an unlisted port", async () => {
+    const ctx = scopedCtx();
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedHosts: ["example.com"],
+        allowedPorts: [443],
+        strictScope: true,
+      },
+    };
+    const decision = await defaultPolicy.beforeCall({
+      backend: "browser",
+      op: "navigate",
+      args: { url: "https://example.com:8443/" },
+      ctx,
+    });
+    expect(decision.allow).toBe(false);
+    if (!decision.allow) expect(decision.reason).toMatch(/port 8443/);
+  });
+
   it("allows direct browser navigation when no scope is configured", async () => {
     const decision = await defaultPolicy.beforeCall({
       backend: "browser",

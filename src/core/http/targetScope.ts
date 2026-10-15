@@ -6,6 +6,7 @@ export interface TargetScope {
   readonly config?: {
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
+      readonly allowedPorts?: ReadonlyArray<number>;
     };
   };
 }
@@ -32,6 +33,16 @@ export function getSessionAllowedHosts(scope: TargetScope): string[] {
   return [...hosts];
 }
 
+export function getSessionAllowedPorts(scope: TargetScope): number[] {
+  return [
+    ...new Set(
+      (scope.config?.scopeConstraints?.allowedPorts ?? []).filter(
+        (port) => Number.isInteger(port) && port >= 1 && port <= 65535,
+      ),
+    ),
+  ];
+}
+
 export function isHostInScope(
   hostname: string,
   allowedHosts: ReadonlyArray<string>,
@@ -45,10 +56,33 @@ export function isHostInScope(
   });
 }
 
+export function getUrlPort(url: string): number | null {
+  let value = url.trim();
+  if (!value) return null;
+  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "http:") {
+      return parsed.port ? Number.parseInt(parsed.port, 10) : 80;
+    }
+    if (parsed.protocol === "https:") {
+      return parsed.port ? Number.parseInt(parsed.port, 10) : 443;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function isUrlInSessionScope(url: string, scope: TargetScope): boolean {
   const parsed = parseTargetUrl(url);
+  const allowedPorts = getSessionAllowedPorts(scope);
+  const port = getUrlPort(url);
   return (
     parsed !== null &&
-    isHostInScope(parsed.hostname, getSessionAllowedHosts(scope))
+    isHostInScope(parsed.hostname, getSessionAllowedHosts(scope)) &&
+    (allowedPorts.length === 0 ||
+      (port !== null && allowedPorts.includes(port)))
   );
 }

@@ -130,6 +130,7 @@ describe("SandboxBrowserBackend", () => {
       scopeConstraints: {
         strictScope: true,
         allowedHosts: ["target.example", "*.assets.example"],
+        allowedPorts: [443, 8443],
       },
     };
 
@@ -141,11 +142,15 @@ describe("SandboxBrowserBackend", () => {
     expect(script).toContain(
       'const __allowedHosts = ["target.example","*.assets.example"];',
     );
+    expect(script).toContain("const __allowedPorts = [443,8443];");
     expect(script).toContain("const __enforceScope = true;");
     expect(script).toContain("serviceWorkers: 'block'");
     expect(script).toContain("await context.route('**/*'");
     expect(script).toContain(
       "lower === base || (wildcard && lower.endsWith('.' + base))",
+    );
+    expect(script).toContain(
+      "!__allowedPorts.includes(Number(parsed.port || (parsed.protocol === 'http:' ? 80 : 443)))",
     );
   });
 
@@ -182,6 +187,8 @@ describe("SandboxBrowserBackend", () => {
     expect(script).toContain("context.route('**/*'");
     expect(script).toContain("X-Session-Secret");
     expect(script).toContain("X-Credential-Secret");
+    expect(script).toContain("maxRedirects: 0");
+    expect(script).toContain("await route.fulfill({ response })");
     expect(script).not.toContain("extraHTTPHeaders");
   });
 

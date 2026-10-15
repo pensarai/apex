@@ -51,7 +51,11 @@ import {
   parseViewportSize,
 } from "./camoufox";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
-import { getAllowedHosts, resolverSessionFromCtx } from "./scopeGuard";
+import {
+  getAllowedHosts,
+  getAllowedPorts,
+  resolverSessionFromCtx,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -333,6 +337,7 @@ async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
  *   `CAMOUFOX_INSTALL_DIR`. Undefined lets camoufox-js use its own default.
  * @param allowedHosts - Exact hosts and explicit wildcard grants for browser
  *   navigation and subresources.
+ * @param allowedPorts - Permitted destination ports; empty means unrestricted.
  * @param enforceScope - Fail closed when the immutable policy has no hosts.
  */
 async function runPlaywrightScript(
@@ -342,10 +347,16 @@ async function runPlaywrightScript(
   headerPolicy?: BrowserHeaderPolicy,
   installDirOverride?: string,
   allowedHosts: string[] = [],
+  allowedPorts: number[] = [],
   enforceScope = false,
 ): Promise<unknown> {
   const headerRoute = browserHeaderRouteBody(
-    headerPolicy ?? { allowedHosts: [], headers: {} },
+    headerPolicy ?? {
+      allowedHosts: [],
+      allowedPorts: [],
+      headers: {},
+      enforceScope: false,
+    },
   );
   const script = `
 const { firefox } = require('playwright-core');
@@ -358,6 +369,7 @@ const fs = require('fs');
   }
 
   const __allowedHosts = ${JSON.stringify(allowedHosts)};
+  const __allowedPorts = ${JSON.stringify(allowedPorts)};
   const __enforceScope = ${JSON.stringify(enforceScope)};
   const __hostAllowed = (hostname) => {
     const lower = hostname.toLowerCase().replace(/\\.$/, '');
@@ -424,7 +436,13 @@ const fs = require('fs');
       if (
         __enforceScope &&
         (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-        !__hostAllowed(parsed.hostname)
+        (
+          !__hostAllowed(parsed.hostname) ||
+          (
+            __allowedPorts.length > 0 &&
+            !__allowedPorts.includes(Number(parsed.port || (parsed.protocol === 'http:' ? 80 : 443)))
+          )
+        )
       ) {
         await route.abort('blockedbyclient');
         return;
@@ -580,8 +598,10 @@ export function SandboxBrowserBackend(
   const evidenceDir = join(ctx.session.rootPath, "evidence");
   const targetUrl = ctx.target ?? "";
   const allowedHosts = getAllowedHosts(ctx);
+  const allowedPorts = getAllowedPorts(ctx);
   const enforceScope =
     allowedHosts.length > 0 ||
+    allowedPorts.length > 0 ||
     ctx.session.config?.scopeConstraints?.strictScope === true;
 
   // Shared setup gate — only runs once per sandbox.
@@ -613,6 +633,7 @@ export function SandboxBrowserBackend(
         headerPolicy,
         installDirOverride,
         allowedHosts,
+        allowedPorts,
         enforceScope,
       ),
     );
