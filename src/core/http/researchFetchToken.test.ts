@@ -43,8 +43,8 @@ describe("local research fetch tokens", () => {
         "https://docs.example/",
       ),
     ).toBe(false);
-    expect(() =>
-      createLocalResearchFetchToken("file:///etc/passwd"),
-    ).toThrow(/protocol/i);
+    expect(() => createLocalResearchFetchToken("file:///etc/passwd")).toThrow(
+      /protocol/i,
+    );
   });
 });

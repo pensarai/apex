@@ -1,8 +1,4 @@
-import {
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const TOKEN_PREFIX = "apex-research-v1";
 const TOKEN_TTL_MS = 10 * 60 * 1000;
