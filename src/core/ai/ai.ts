@@ -78,6 +78,7 @@ import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
+  CompactionRejectedError,
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
@@ -686,6 +687,37 @@ class InStreamCompactionRequired extends Error {
   }
 }
 
+// Retry once after new tool output, then let fitting handle this turn.
+const MAX_PROACTIVE_SUMMARY_FAILURES = 2;
+
+function shouldSummarizeBeforeFitting(
+  messages: ModelMessage[],
+  contextWindow: number,
+  maxOutputTokens: number,
+  overheadTokens: number,
+  safetyMarginTokens: number,
+  system?: string,
+  toolChoice?: ToolChoice<ToolSet>,
+): boolean {
+  const historyBudget =
+    contextWindow -
+    maxOutputTokens -
+    overheadTokens -
+    safetyMarginTokens -
+    (system ? estimateTokens(system) : 0);
+  const estimatedHistoryTokens = estimateMessageTokens(messages);
+  // Forced-tool replays missed the summary cache; keep their fitted history path.
+  return (
+    historyBudget > 0 &&
+    messages.length > 2 &&
+    toolChoice !== "required" &&
+    typeof toolChoice !== "object" &&
+    estimatedHistoryTokens >=
+      Math.max(100_000, Math.floor(historyBudget * 0.8)) &&
+    estimatedHistoryTokens <= historyBudget
+  );
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -798,6 +830,7 @@ function wrapStreamWithErrorHandler(
               // as-is; the prompt must be reduced via summarization.
               const isCtxError =
                 error instanceof InStreamCompactionRequired ||
+                error instanceof CompactionRejectedError ||
                 checkIfContextLengthError(error);
 
               // A latched persistence failure is terminal: retrying would
@@ -964,7 +997,11 @@ function wrapStreamWithErrorHandler(
                 // `MAX_RESTART_DEPTH` finally trips.
                 let postReactiveDepth = opts._restartDepth ?? 0;
 
-                if (fitted.fitsBudget && fitted.modified) {
+                if (
+                  !(error instanceof CompactionRejectedError) &&
+                  fitted.fitsBudget &&
+                  fitted.modified
+                ) {
                   if (!silent) {
                     log.warn(
                       `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
@@ -1037,6 +1074,7 @@ function wrapStreamWithErrorHandler(
                 }
 
                 try {
+                  if (error instanceof CompactionRejectedError) throw error;
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
                     {
@@ -1046,6 +1084,9 @@ function wrapStreamWithErrorHandler(
                         error instanceof InStreamCompactionRequired
                           ? "proactive"
                           : "context_overflow",
+                      _proactiveSummaryMayFit:
+                        error instanceof InStreamCompactionRequired &&
+                        error.fitted.fitsBudget,
                     },
                     model,
                   );
@@ -1053,7 +1094,7 @@ function wrapStreamWithErrorHandler(
                     yield chunk;
                   }
                 } catch (summarizeError) {
-                  // Only fall through to minimal-restart for context-length
+                  // Fall through to minimal restart for context or rejected-summary
                   // errors. For everything else — auth failures, network
                   // errors, abort signals, the typed terminal
                   // `ContextLengthExhaustedError`, or non-`Error` throws —
@@ -1066,7 +1107,10 @@ function wrapStreamWithErrorHandler(
                     (summarizeError instanceof Error &&
                       summarizeError.name === "AbortError") ||
                     opts.abortSignal?.aborted ||
-                    !checkIfContextLengthError(summarizeError)
+                    !(
+                      checkIfContextLengthError(summarizeError) ||
+                      summarizeError instanceof CompactionRejectedError
+                    )
                   ) {
                     throw summarizeError;
                   }
@@ -1561,6 +1605,8 @@ export interface StreamResponseOpts {
   /** Shared only by continuations of this stream, never across agents. */
   _compaction?: { last?: CompactionLink };
   _compactionTrigger?: CompactionTrigger;
+  _proactiveSummaryMayFit?: boolean;
+  _proactiveSummaryFailures?: number;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1744,22 +1790,54 @@ function streamResponseWithinOperation(
     model,
   );
 
+  const contextWindow = getContextWindow(
+    model,
+    authConfig?.customProviders,
+    authConfig?.hoonifyModels,
+  );
+  const maxOutputTokens = getMaxOutputTokens(
+    model,
+    authConfig?.customProviders,
+    authConfig?.hoonifyModels,
+  );
+  if (
+    messages &&
+    !opts._proactiveSummaryFailures &&
+    shouldSummarizeBeforeFitting(
+      messages,
+      contextWindow,
+      maxOutputTokens,
+      estimatedOverheadTokens,
+      inputSafetyMarginTokens,
+      systemWithToolPolicy,
+      toolChoice,
+    )
+  ) {
+    return wrapStreamWithErrorHandler(
+      createSummarizationStream(
+        messages,
+        {
+          ...opts,
+          _compactionTrigger: "proactive",
+          _proactiveSummaryMayFit: true,
+        },
+        providerModel,
+      ),
+      { current: messages },
+      opts,
+      providerModel,
+      silent,
+    );
+  }
+
   // Proactive context fit: compact before the call. Reactive recovery
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-      ),
-      maxOutputTokens: getMaxOutputTokens(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-      ),
+      contextWindow,
+      maxOutputTokens,
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1806,7 +1884,11 @@ function streamResponseWithinOperation(
     return wrapStreamWithErrorHandler(
       createSummarizationStream(
         fittedMessages,
-        { ...opts, _compactionTrigger: "proactive" },
+        {
+          ...opts,
+          _compactionTrigger: "proactive",
+          _proactiveSummaryMayFit: false,
+        },
         providerModel,
       ),
       messagesContainer,
@@ -1901,20 +1983,33 @@ function streamResponseWithinOperation(
       // Awaiting inside prepareStep keeps streamResponse synchronous; the
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
-      prepareStep: async (opts) => {
-        let stepMessages = opts.messages;
-        if (opts.stepNumber > 0) {
+      prepareStep: async (step) => {
+        let stepMessages = step.messages;
+        if (step.stepNumber > 0) {
+          if (
+            (opts._proactiveSummaryFailures ?? 0) <
+              MAX_PROACTIVE_SUMMARY_FAILURES &&
+            shouldSummarizeBeforeFitting(
+              stepMessages,
+              contextWindow,
+              maxOutputTokens,
+              estimatedOverheadTokens,
+              inputSafetyMarginTokens,
+              effectiveSystem,
+              toolChoice,
+            )
+          ) {
+            messagesContainer.current = stepMessages;
+            throw new InStreamCompactionRequired({
+              messages: stepMessages,
+              estimatedInputTokens: estimateMessageTokens(stepMessages),
+              modified: false,
+              fitsBudget: true,
+            });
+          }
           const fitted = fitMessagesToContext(stepMessages, {
-            contextWindow: getContextWindow(
-              model,
-              authConfig?.customProviders,
-              authConfig?.hoonifyModels,
-            ),
-            maxOutputTokens: getMaxOutputTokens(
-              model,
-              authConfig?.customProviders,
-              authConfig?.hoonifyModels,
-            ),
+            contextWindow,
+            maxOutputTokens,
             system: effectiveSystem,
             tools,
             overheadTokens: estimatedOverheadTokens,
@@ -1961,7 +2056,7 @@ function streamResponseWithinOperation(
             messages: withCachedLastMessage(stepMessages, cacheBreakpoint),
           };
         }
-        return stepMessages === opts.messages
+        return stepMessages === step.messages
           ? undefined
           : { messages: stepMessages };
       },
