@@ -229,3 +229,113 @@ it("contains a context error from an in-stream summary", async () => {
     state.model = null;
   }
 });
+
+it("measures the fitted history handed to legacy transcript persistence", async () => {
+  const sessionPath = mkdtempSync(join(tmpdir(), "apex-history-bench-"));
+  const priorMessages: ModelMessage[] = [
+    { role: "user", content: "Continue the synthetic task." },
+    ...Array.from({ length: 40 }, (_, index): ModelMessage[] => [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: `prior-${index}`,
+            toolName: "probe",
+            input: { q: "q".repeat(100) },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: `prior-${index}`,
+            toolName: "probe",
+            output: { type: "text", value: "e".repeat(4_000) },
+          },
+        ],
+      },
+    ]).flat(),
+  ];
+  let prepared:
+    | { messages: ModelMessage[]; responseMessageOffset: number }
+    | undefined;
+  let responseMessages: ModelMessage[] = [];
+  state.model = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "text-start", id: "done" },
+          { type: "text-delta", id: "done", delta: "done" },
+          { type: "text-end", id: "done" },
+          {
+            type: "finish",
+            finishReason: { unified: "stop", raw: "stop" },
+            usage,
+          },
+        ] as LanguageModelV3StreamPart[],
+      }),
+    }),
+  });
+
+  try {
+    const stream = streamResponse({
+      model: MODEL,
+      prompt: "Continue the synthetic task.",
+      messages: priorMessages,
+      sessionPath,
+      silent: true,
+      onContextPrepared: (context) => {
+        prepared = context;
+      },
+      onStepFinish: (step) => {
+        responseMessages = step.response.messages;
+      },
+      authConfig: {
+        customProviders: {
+          fixture: {
+            baseUrl: "https://example.invalid/v1",
+            models: [
+              {
+                id: "synthetic",
+                contextLength: 32_000,
+                maxOutputTokens: 4_000,
+              },
+            ],
+          },
+        },
+      },
+    });
+    for await (const _part of stream.fullStream) {
+      void _part;
+    }
+
+    expect(prepared).toBeDefined();
+    const previousTranscript = [...priorMessages, ...responseMessages];
+    const fittedTranscript = [
+      ...(prepared?.messages ?? []),
+      ...responseMessages.slice(prepared?.responseMessageOffset ?? 0),
+    ];
+    const previousEstimate = estimateMessageTokens(previousTranscript);
+    const fittedEstimate = estimateMessageTokens(fittedTranscript);
+    expect(fittedEstimate).toBeLessThan(previousEstimate / 2);
+    expect(JSON.stringify(fittedTranscript)).toContain("full output saved to");
+    expect(responseMessages).toHaveLength(1);
+    if (process.env.APEX_CONTEXT_BENCH === "1") {
+      console.log(
+        "OPERATOR_HISTORY_BENCH",
+        JSON.stringify({
+          previousTranscriptEstimatedTokens: previousEstimate,
+          fittedTranscriptEstimatedTokens: fittedEstimate,
+          previousTranscriptMessages: previousTranscript.length,
+          fittedTranscriptMessages: fittedTranscript.length,
+        }),
+      );
+    }
+  } finally {
+    state.model = null;
+    rmSync(sessionPath, { recursive: true, force: true });
+  }
+});
