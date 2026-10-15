@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import type { RunContextRecorder } from "../runtime/runContext";
+import { estimateMessageTokens } from "./contextManagement";
 
 const state: { model?: MockLanguageModelV3 } = {};
 vi.mock("./utils", async () => ({
@@ -178,6 +179,71 @@ describe("pre-dispatch gate (real SDK)", () => {
 });
 
 describe("step commits (real SDK)", () => {
+  it("commits fitted in-stream context before dispatch without restoring old tool results", async () => {
+    const output = "e".repeat(8_000);
+    const seenAtDispatch: number[] = [];
+    const { recorder } = fakeRecorder();
+    let calls = 0;
+    state.model = new MockLanguageModelV3({
+      modelId: "small",
+      doStream: async () => {
+        const latest = recorder.latest();
+        if (latest) seenAtDispatch.push(estimateMessageTokens(latest));
+        const call = calls++;
+        return call < 8
+          ? streamOf([
+              {
+                type: "tool-call",
+                toolCallId: `c${call}`,
+                toolName: "probe",
+                input: '{"q":"x"}',
+              },
+              finishChunk(),
+            ])
+          : streamOf([...textStepChunks("done", "done"), finishChunk()]);
+      },
+    });
+
+    await drain(
+      streamResponse({
+        model: "custom:fixture:small",
+        prompt: "run probes",
+        silent: true,
+        tools: {
+          probe: {
+            description: "probe",
+            inputSchema: z.object({ q: z.string() }),
+            execute: async () => output,
+          },
+        },
+        stopWhen: stepCountIs(20),
+        contextRecorder: recorder,
+        authConfig: {
+          customProviders: {
+            fixture: {
+              baseUrl: "https://example.invalid/v1",
+              models: [
+                { id: "small", contextLength: 20_000, maxOutputTokens: 2_000 },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(calls).toBe(9);
+    expect(seenAtDispatch).toHaveLength(9);
+    expect(Math.max(...seenAtDispatch)).toBeLessThan(7_000);
+    const final = recorder.latest();
+    expect(final).toHaveLength(18);
+    const toolOutputLengths = final
+      ?.filter((message) => message.role === "tool")
+      .map((message) => JSON.stringify(message).length);
+    expect(
+      toolOutputLengths?.filter((length) => length < 1_000).length,
+    ).toBeGreaterThanOrEqual(4);
+  });
+
   it("commits base + cumulative response.messages per step, preserving accepted outputs in later turns", async () => {
     let call = 0;
     state.model = new MockLanguageModelV3({

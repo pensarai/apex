@@ -51,6 +51,7 @@ import {
 } from "./compactionTelemetry";
 import {
   estimateMessageTokens,
+  type FitContextResult,
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
@@ -677,6 +678,12 @@ function createToolExecutionGate(): {
   };
 }
 
+class InStreamCompactionRequired extends Error {
+  constructor(readonly fitted: FitContextResult) {
+    super("In-stream compaction required before provider dispatch");
+  }
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -787,7 +794,9 @@ function wrapStreamWithErrorHandler(
 
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
-              const isCtxError = checkIfContextLengthError(error);
+              const isCtxError =
+                error instanceof InStreamCompactionRequired ||
+                checkIfContextLengthError(error);
 
               // A latched persistence failure is terminal: retrying would
               // dispatch a turn whose context was never durably committed.
@@ -894,42 +903,50 @@ function wrapStreamWithErrorHandler(
               }
 
               if (isCtxError) {
-                let currentMessages: ModelMessage[] = messagesContainer.current;
-                try {
-                  const response = await originalStream.response;
-                  if (response.messages && response.messages.length > 0) {
-                    currentMessages = response.messages as ModelMessage[];
+                let currentMessages: ModelMessage[] =
+                  error instanceof InStreamCompactionRequired
+                    ? error.fitted.messages
+                    : messagesContainer.current;
+                if (!(error instanceof InStreamCompactionRequired)) {
+                  try {
+                    const response = await originalStream.response;
+                    if (response.messages && response.messages.length > 0) {
+                      currentMessages = response.messages as ModelMessage[];
+                    }
+                  } catch {
+                    // Fall back to container messages.
                   }
-                } catch {
-                  // Fall back to container messages.
                 }
 
-                const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                    opts.authConfig?.hoonifyModels,
-                  ),
-                  maxOutputTokens: getMaxOutputTokens(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                    opts.authConfig?.hoonifyModels,
-                  ),
-                  system: applySequentialToolCallPolicy(
-                    opts.system,
-                    opts.tools,
-                    opts.model,
-                  ),
-                  tools: opts.tools,
-                  sessionPath: opts.sessionPath,
-                  telemetry: {
-                    trigger: "context_overflow",
-                    model: opts.model,
-                    sessionId: opts.sessionId,
-                    restartDepth: opts._restartDepth,
-                    previous: opts._compaction?.last,
-                  },
-                });
+                const fitted =
+                  error instanceof InStreamCompactionRequired
+                    ? error.fitted
+                    : fitMessagesToContext(currentMessages, {
+                        contextWindow: getContextWindow(
+                          opts.model,
+                          opts.authConfig?.customProviders,
+                          opts.authConfig?.hoonifyModels,
+                        ),
+                        maxOutputTokens: getMaxOutputTokens(
+                          opts.model,
+                          opts.authConfig?.customProviders,
+                          opts.authConfig?.hoonifyModels,
+                        ),
+                        system: applySequentialToolCallPolicy(
+                          opts.system,
+                          opts.tools,
+                          opts.model,
+                        ),
+                        tools: opts.tools,
+                        sessionPath: opts.sessionPath,
+                        telemetry: {
+                          trigger: "context_overflow",
+                          model: opts.model,
+                          sessionId: opts.sessionId,
+                          restartDepth: opts._restartDepth,
+                          previous: opts._compaction?.last,
+                        },
+                      });
 
                 if (fitted.compaction && opts._compaction)
                   opts._compaction.last = fitted.compaction;
@@ -1023,7 +1040,10 @@ function wrapStreamWithErrorHandler(
                     {
                       ...opts,
                       _restartDepth: postReactiveDepth,
-                      _compactionTrigger: "context_overflow",
+                      _compactionTrigger:
+                        error instanceof InStreamCompactionRequired
+                          ? "proactive"
+                          : "context_overflow",
                     },
                     model,
                   );
@@ -1609,13 +1629,15 @@ function streamResponseWithinOperation(
     thinkingEffort,
     openAIReasoningEffort,
     sessionId,
+    sessionPath,
     contextRecorder,
   } = opts;
 
-  // Recorded-run base, captured once at the first prepareStep of this
-  // streamText call; only used to reconstruct cumulative prefixes in
-  // onStepFinish (response.messages excludes the input base).
+  // response.messages accumulates all generated steps, even after prepareStep
+  // replaces the provider context. Track its previous length so a compacted
+  // recorder base only receives newly completed messages.
   let recorderBase: ModelMessage[] | undefined;
+  let recordedResponseLength = 0;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1639,9 +1661,13 @@ function streamResponseWithinOperation(
         throw new Error("context recorder active without a committed base");
       }
       await contextRecorder.checkpoint({
-        messages: [...recorderBase, ...step.response.messages],
+        messages: [
+          ...recorderBase,
+          ...step.response.messages.slice(recordedResponseLength),
+        ],
         system: effectiveSystem ?? null,
       });
+      recordedResponseLength = step.response.messages.length;
     }
     if (
       onCacheMetrics &&
@@ -1847,27 +1873,58 @@ function streamResponseWithinOperation(
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
       prepareStep: async (opts) => {
-        if (contextRecorder) {
-          if (recorderBase === undefined) {
-            recorderBase = structuredClone(opts.messages);
+        let stepMessages = opts.messages;
+        if (opts.stepNumber > 0) {
+          const fitted = fitMessagesToContext(stepMessages, {
+            contextWindow: getContextWindow(
+              model,
+              authConfig?.customProviders,
+              authConfig?.hoonifyModels,
+            ),
+            maxOutputTokens: getMaxOutputTokens(
+              model,
+              authConfig?.customProviders,
+              authConfig?.hoonifyModels,
+            ),
+            system: effectiveSystem,
+            tools,
+            sessionPath,
+            telemetry: {
+              trigger: "proactive",
+              model,
+              sessionId,
+              restartDepth,
+              previous: compactionState.last,
+            },
+          });
+          if (fitted.compaction) compactionState.last = fitted.compaction;
+          stepMessages = fitted.messages;
+          if (!fitted.fitsBudget) {
+            messagesContainer.current = stepMessages;
+            throw new InStreamCompactionRequired(fitted);
           }
+        }
+        if (contextRecorder) {
+          recorderBase = structuredClone(stepMessages);
           // Full logical context each turn — accepted step outputs must
           // survive into every later commit, and system is explicit (when
           // cached into messages, effectiveSystem is undefined → null).
           await contextRecorder.checkpoint({
-            messages: opts.messages,
+            messages: stepMessages,
             system: effectiveSystem ?? null,
           });
         }
         // Update the container with the latest messages
-        messagesContainer.current = opts.messages;
+        messagesContainer.current = stepMessages;
         // Mark the last message so the growing conversation caches incrementally
         if (cacheBreakpoint) {
           return {
-            messages: withCachedLastMessage(opts.messages, cacheBreakpoint),
+            messages: withCachedLastMessage(stepMessages, cacheBreakpoint),
           };
         }
-        return undefined;
+        return stepMessages === opts.messages
+          ? undefined
+          : { messages: stepMessages };
       },
       onError: async ({ error }: { error: unknown }) => {
         // Never throw here: the SDK calls this inside its stream pipeline,
