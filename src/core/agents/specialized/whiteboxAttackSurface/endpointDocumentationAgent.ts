@@ -256,6 +256,7 @@ async function runEndpointDocumentationAgent(
         attackSurfaceRegistry,
       },
       runtime: {
+        findingPolicy: hooks?.findingPolicy,
         model,
         session,
         authConfig,

@@ -8,6 +8,8 @@ export type { AgentEventMap } from "../../eventBus";
 // ---------------------------------------------------------------------------
 export { AgentEventBus } from "../../eventBus";
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+/** Runtime marker for hosts that require Apex's externally graded finding policy. */
+export const EXTERNAL_FINDING_POLICY_CAPABILITY = "v1" as const;
 // ---------------------------------------------------------------------------
 // System prompts
 // ---------------------------------------------------------------------------
@@ -156,6 +158,7 @@ export {
   type CommandCancelHandle,
   type CreateAgentInput,
   type Finding,
+  type FindingPolicy,
   type OffensiveSecurityAgentInput,
   type SpecializedAgentInput,
   type SystemPentestScope,

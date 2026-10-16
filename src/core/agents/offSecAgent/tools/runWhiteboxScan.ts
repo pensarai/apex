@@ -22,13 +22,16 @@ const ScanKindSchema = z.enum([
 ]);
 
 export function runWhiteboxScan(ctx: ToolContext) {
+  const verificationGuidance =
+    ctx.findingPolicy === "external"
+      ? "as recoverable conditions. Static results are candidates only; assess them against the caller's evidence requirements."
+      : "as recoverable conditions. Static results are candidates only; verify before\ncalling document_vulnerability.";
   return tool({
     description: `Run installed whitebox security scanners with bounded output.
 
 The tool detects applicable scanner adapters for the repository and normalizes
 results into concise summaries plus artifact paths. Missing tools are reported
-as recoverable conditions. Static results are candidates only; verify before
-calling document_vulnerability.`,
+${verificationGuidance}`,
     inputSchema: z.object({
       path: z
         .string()

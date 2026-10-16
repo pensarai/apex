@@ -298,6 +298,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private readonly resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
+    validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
   /** The structured result captured by the `response` tool, or `null` until it fires. */
@@ -552,6 +553,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.credentialManager ?? input.session.credentialManager;
 
     const toolCtx = {
+      findingPolicy: input.findingPolicy,
       ...(input.attackSurfaceArtifactsPath
         ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
         : {}),
@@ -658,6 +660,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    if (input.findingPolicy === "external") {
+      activeTools = activeTools.filter(
+        (name) => name !== "document_vulnerability",
+      );
+    }
+
     activeTools = filterWorkspaceToolsForRun(
       activeTools,
       input.prompt,
@@ -666,8 +674,16 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createToolsForNames(toolCtx, activeTools);
 
-    let tools: ToolSet = input.extraTools
-      ? { ...builtinTools, ...input.extraTools }
+    const extraTools =
+      input.findingPolicy === "external" && input.extraTools
+        ? Object.fromEntries(
+            Object.entries(input.extraTools).filter(
+              ([name]) => name !== "document_vulnerability",
+            ),
+          )
+        : input.extraTools;
+    let tools: ToolSet = extraTools
+      ? { ...builtinTools, ...extraTools }
       : { ...builtinTools };
 
     // Only approved calls may reach the execution journal.
@@ -712,7 +728,7 @@ export class OffensiveSecurityAgent<TResult = void> {
                         Promise.race([sr.response, this._drainRejection]),
                     },
                   });
-                  return customResolve(guarded);
+                  return customResolve(guarded, result);
                 })
                 .then((resolved) => {
                   this._capturedResponse = resolved;
@@ -816,6 +832,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.system ??
       buildBaseSystemPrompt({
         sandboxMode: agentCwd === input.session.rootPath,
+        findingPolicy: input.findingPolicy,
       });
     const commandPlatform = resolveCommandPlatform(toolCtx);
     const workspaceSection = buildSessionWorkspaceSection(
@@ -823,6 +840,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       agentCwd,
       activeTools,
       fileWorkspaceRoot,
+      input.findingPolicy,
     );
     // Bundled wordlist paths are host-local: advertise them only when
     // commands execute locally.

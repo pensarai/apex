@@ -22,7 +22,11 @@ import type { ToolBackends } from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
-import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type {
+  FindingPolicy,
+  StreamIdFactory,
+  SystemPentestScope,
+} from "../types";
 import type { CallbackListenerRegistry } from "./callbackListener";
 import type { EmailAdapterResolver } from "./email/adapters";
 import type { PerCommandShell } from "./perCommandShell";
@@ -38,6 +42,7 @@ import type { SmsInbox } from "./smsInbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  findingPolicy?: FindingPolicy;
   attackSurfaceArtifactsPath?: string;
 
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */

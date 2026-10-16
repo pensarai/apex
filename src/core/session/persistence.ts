@@ -56,6 +56,7 @@ interface SavedSubagentData {
   toolCallCount?: number;
   stepCount?: number;
   findingsCount?: number;
+  reportedFindings?: string[];
   status?: string;
   error?: string;
   messages?: ModelMessage[];
@@ -115,6 +116,7 @@ export interface SubagentSaveInput {
   status: string;
   error?: string;
   findingsCount?: number;
+  reportedFindings?: string[];
   /** Raw AI SDK messages from onStepFinish (e.response.messages) */
   messages: ModelMessage[];
   /** System prompt used for this agent (for training data export) */
@@ -150,6 +152,27 @@ export function loadSubagentMessages(
   }
 }
 
+/** Read external findings from a completed swarm target on resume. */
+export function loadSubagentReportedFindings(
+  session: SessionInfo,
+  key: string,
+): string[] | null {
+  const snapshotPath = join(session.rootPath, SUBAGENTS_DIR, `${key}.json`);
+  if (!existsSync(snapshotPath)) return null;
+  try {
+    const data = JSON.parse(
+      readFileSync(snapshotPath, "utf-8"),
+    ) as SavedSubagentData;
+    return data.status === "completed" &&
+      Array.isArray(data.reportedFindings) &&
+      data.reportedFindings.every((finding) => typeof finding === "string")
+      ? data.reportedFindings
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`. */
 export function saveSubagentData(
   session: SessionInfo,
@@ -181,6 +204,7 @@ export function saveSubagentData(
     toolCallCount,
     stepCount,
     findingsCount: data.findingsCount ?? 0,
+    reportedFindings: data.reportedFindings,
     status: data.status,
     error: data.error,
     messages: data.messages,

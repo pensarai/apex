@@ -11,6 +11,12 @@ describe("report_error tool", () => {
     expect(REPORT_ERROR_TOOL_NAME).toBe("report_error");
   });
 
+  it("does not name the unavailable finding tool under external grading", () => {
+    const external = createReportErrorTool(vi.fn(), "external");
+    expect(external.description).toContain("final response");
+    expect(external.description).not.toContain("document_vulnerability");
+  });
+
   it("forwards the reason + message to the onError callback", async () => {
     const onError = vi.fn<(error: ReportedError) => void>();
     const tool = createReportErrorTool(onError);

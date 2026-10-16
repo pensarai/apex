@@ -188,6 +188,7 @@ async function runSingleCodingAgent(
   const result = await spawner.spawn<CodingChildResult | undefined>({
     spec: { type: "code", codebasePath, objective },
     runtime: {
+      findingPolicy: ctx.findingPolicy,
       session: ctx.session,
       model: ctx.model!,
       authConfig: ctx.authConfig,

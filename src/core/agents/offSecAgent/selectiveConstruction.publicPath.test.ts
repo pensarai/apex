@@ -201,6 +201,20 @@ describe("OffensiveSecurityAgent public-path construction counts", () => {
     });
   });
 
+  it("external Fast Strike never constructs the native finding tool", async () => {
+    await withRoot(async (root) => {
+      reset();
+      observed.armed = true;
+      makeAgent(root, [], { mode: "fast-strike", findingPolicy: "external" });
+      observed.armed = false;
+      expect(observed.constructed).toBe(42);
+      expect(stream().tools).not.toHaveProperty("document_vulnerability");
+      expect(stream().tools).toHaveProperty("execute_command");
+      expect(stream().tools).toHaveProperty("http_request");
+      expect(stream().tools).toHaveProperty("read_file");
+    });
+  });
+
   it("selected seven plus five available conditional tools construct twelve", async () => {
     await withRoot(async (root) => {
       reset();
@@ -237,6 +251,30 @@ describe("OffensiveSecurityAgent public-path construction counts", () => {
 });
 
 describe("response injection on the real path", () => {
+  it("passes only the executed response tool's validated result to the resolver", async () => {
+    await withRoot(async (root) => {
+      reset();
+      const resolved = vi.fn(
+        (_streamResult: unknown, result: unknown) => result,
+      );
+      const agent = makeAgent(root, ["response"], {
+        responseSchema: z.object({ reportedFindings: z.array(z.string()) }),
+        resolveResult: resolved,
+      });
+      const response = stream().tools.response as {
+        execute: (input: unknown, options: unknown) => Promise<unknown>;
+      };
+      const finding = { reportedFindings: ["Observed cross-tenant access"] };
+      await response.execute(
+        { result: finding },
+        { toolCallId: "tc_response", messages: [] },
+      );
+
+      await expect(agent.responseCaptured).resolves.toEqual(finding);
+      expect(resolved).toHaveBeenCalledWith(expect.anything(), finding);
+    });
+  });
+
   it("fast-strike + responseSchema + non-enumerable own response extra still activates the injected response", async () => {
     await withRoot(async (root) => {
       reset();

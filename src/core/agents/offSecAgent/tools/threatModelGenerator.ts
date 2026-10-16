@@ -373,6 +373,7 @@ export async function generateThreatModelForEndpoint(
           excludeTools: ["document_endpoint", "document_app"],
         },
         runtime: {
+          findingPolicy: ctx.findingPolicy,
           session: ctx.session,
           model,
           authConfig: ctx.authConfig,
