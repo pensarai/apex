@@ -15,7 +15,9 @@ import { z } from "zod";
 import type { AgentHooks } from "../agents/offSecAgent";
 import {
   inProcessSubagentSpawner,
+  type SpawnOptions,
   type SubagentSpawner,
+  spawnBatch,
 } from "../agents/offSecAgent/subagentSpawner";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
@@ -272,92 +274,102 @@ export async function runWhiteboxAttackSurfaceApp(
   const hooksForApp = resolveItemHooks(sharedHooks, seams, app, appIndex);
   let failed = false;
 
-  const spawnDiscoveryAgent = async (
+  const discoveryRequest = (
     type: DiscoveryTaskType,
     objective: string,
-  ): Promise<void> => {
+  ): SpawnOptions<DiscoverySummary> => {
     const subagentId = mintChildId(TASK_TYPE_LABELS[type]);
 
     log.debug(
       `Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
     );
 
-    const spawner = subagentSpawner ?? inProcessSubagentSpawner;
+    return {
+      spec: {
+        type: "code",
+        codebasePath,
+        objective,
+        system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+        excludeTools: ["document_app"],
+        responseSchema: DiscoverySummarySchema,
+        projectThreatModel,
+        attackSurfaceRegistry,
+      },
+      runtime: {
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        enableThinking,
+        thinkingEffort,
+        openAIReasoningEffort,
+        onStepFinish,
+        onCacheMetrics,
+        backends: hooksForApp.backends,
+        sandbox: hooksForApp.sandbox,
+        languageModelMiddleware: hooksForApp.languageModelMiddleware,
+        usageRecorder: hooksForApp.usageRecorder,
+        streamIdFactory: hooksForApp.streamIdFactory,
+      },
+      subagentId,
+      subagentName: TASK_TYPE_LABELS[type],
+      parentBus: eventBus,
+      parentSubagentId: appNodeId,
+      lifecycleInput: { app: app.name, type },
+    };
+  };
 
-    try {
-      await agentLimiter(() =>
-        spawner.spawn<DiscoverySummary>({
-          spec: {
-            type: "code",
-            codebasePath,
-            objective,
-            system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-            excludeTools: ["document_app"],
-            responseSchema: DiscoverySummarySchema,
-            projectThreatModel,
-            attackSurfaceRegistry,
-          },
-          runtime: {
-            model,
-            session,
-            authConfig,
-            abortSignal,
-            enableThinking,
-            thinkingEffort,
-            openAIReasoningEffort,
-            onStepFinish,
-            onCacheMetrics,
-            backends: hooksForApp.backends,
-            sandbox: hooksForApp.sandbox,
-            languageModelMiddleware: hooksForApp.languageModelMiddleware,
-            usageRecorder: hooksForApp.usageRecorder,
-            streamIdFactory: hooksForApp.streamIdFactory,
-          },
-          subagentId,
-          subagentName: TASK_TYPE_LABELS[type],
-          parentBus: eventBus,
-          parentSubagentId: appNodeId,
-          lifecycleInput: { app: app.name, type },
-        }),
-      );
-
-      log.debug(`Phase 2: agent "${subagentId}" completed`);
-    } catch (error) {
-      log.error(
-        `Phase 2: agent "${subagentId}" FAILED`,
-        error instanceof Error ? error : undefined,
-        { error: String(error) },
-      );
-
-      failed = true;
+  const spawnDiscoveryAgents = async (
+    requests: SpawnOptions<DiscoverySummary>[],
+  ) => {
+    const results = await spawnBatch(
+      subagentSpawner ?? inProcessSubagentSpawner,
+      requests,
+      {
+        concurrency: requests.length,
+        abortSignal,
+      },
+      agentLimiter,
+    );
+    for (const [index, result] of results.entries()) {
+      const subagentId = requests[index]!.subagentId;
+      if (result.status === "rejected") {
+        failed = true;
+        log.error(
+          `Phase 2: agent "${subagentId}" FAILED`,
+          result.reason instanceof Error ? result.reason : undefined,
+          { error: String(result.reason) },
+        );
+      } else {
+        log.debug(`Phase 2: agent "${subagentId}" completed`);
+      }
     }
   };
 
-  const spawnPagesAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "pages",
-      buildPagesDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnApiEndpointsAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "apiEndpoints",
-      buildApiEndpointsDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnCloudResourceAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "cloudResourceEndpoints",
-      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
-    );
+  const discoverPagesAndApi = () =>
+    spawnDiscoveryAgents([
+      discoveryRequest(
+        "pages",
+        buildPagesDiscoveryObjective(codebasePath, app),
+      ),
+      discoveryRequest(
+        "apiEndpoints",
+        buildApiEndpointsDiscoveryObjective(codebasePath, app),
+      ),
+    ]);
 
   try {
     if (NON_SERVICE_TYPES.includes(app.type)) {
       // Cloud resources: surface doesn't enumerate these — always fallback.
-      await spawnCloudResourceAgent();
+      await spawnDiscoveryAgents([
+        discoveryRequest(
+          "cloudResourceEndpoints",
+          buildCloudResourceEndpointsObjective(codebasePath, app, environments),
+        ),
+      ]);
     } else if (!surfaceIntegrationEnabled) {
       log.debug(`${app.name}: legacy (surfaceIntegrationEnabled=false)`);
-      await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+      await discoverPagesAndApi();
     } else {
       const surfaceResult = mapAppWithSurface(
         join(codebasePath, app.location),
@@ -394,7 +406,7 @@ export async function runWhiteboxAttackSurfaceApp(
         });
       } else {
         log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
-        await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+        await discoverPagesAndApi();
       }
     }
   } catch {

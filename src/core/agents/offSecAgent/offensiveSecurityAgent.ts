@@ -43,6 +43,7 @@ import {
 } from "./runtimeContext";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
+import { wrapToolExecutionContext } from "./toolExecutionContext";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
@@ -728,6 +729,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           },
         ),
       };
+    }
+
+    if (input.toolExecutionContext) {
+      tools = wrapToolExecutionContext(tools, input.toolExecutionContext);
     }
 
     if (input.resolveResult) {
