@@ -432,7 +432,10 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
           pocsPath,
           reportPath,
           reportedFindings,
+          objectiveResults,
           submissionJson,
+          solved,
+          summary,
         } = await runPentestAgent({
           target,
           ...(cwd ? { cwd } : {}),
@@ -457,7 +460,10 @@ Evaluation: external`);
             JSON.stringify(
               {
                 reportedFindings: reportedFindings ?? [],
+                ...(objectiveResults ? { objectiveResults } : {}),
                 ...(submissionJson ? { submissionJson } : {}),
+                ...(solved === undefined ? {} : { solved }),
+                ...(summary === undefined ? {} : { summary }),
               },
               null,
               2,

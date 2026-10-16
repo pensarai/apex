@@ -28,6 +28,7 @@ export type { SessionInfo };
 
 import type { ModelMessage } from "ai";
 import type { GrpcPentestContext } from "../agents/specialized/attackSurface/grpcSchema";
+import type { ObjectiveResult } from "../agents/specialized/pentest/agent";
 import { newSessionId, type SessionID } from "../id/id";
 import type { AuthenticationInfo } from "./types";
 
@@ -57,6 +58,7 @@ interface SavedSubagentData {
   stepCount?: number;
   findingsCount?: number;
   reportedFindings?: string[];
+  objectiveResults?: ObjectiveResult[];
   status?: string;
   error?: string;
   messages?: ModelMessage[];
@@ -117,6 +119,7 @@ export interface SubagentSaveInput {
   error?: string;
   findingsCount?: number;
   reportedFindings?: string[];
+  objectiveResults?: ObjectiveResult[];
   /** Raw AI SDK messages from onStepFinish (e.response.messages) */
   messages: ModelMessage[];
   /** System prompt used for this agent (for training data export) */
@@ -173,6 +176,34 @@ export function loadSubagentReportedFindings(
   }
 }
 
+/** Read completed objective coverage from a swarm target on resume. */
+export function loadSubagentObjectiveResults(
+  session: SessionInfo,
+  key: string,
+): ObjectiveResult[] | null {
+  const snapshotPath = join(session.rootPath, SUBAGENTS_DIR, `${key}.json`);
+  if (!existsSync(snapshotPath)) return null;
+  try {
+    const data = JSON.parse(
+      readFileSync(snapshotPath, "utf-8"),
+    ) as SavedSubagentData;
+    return data.status === "completed" &&
+      Array.isArray(data.objectiveResults) &&
+      data.objectiveResults.every(
+        (result) =>
+          result !== null &&
+          typeof result === "object" &&
+          typeof result.objective === "string" &&
+          typeof result.completed === "boolean" &&
+          (result.result === undefined || typeof result.result === "string"),
+      )
+      ? data.objectiveResults
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`. */
 export function saveSubagentData(
   session: SessionInfo,
@@ -205,6 +236,7 @@ export function saveSubagentData(
     stepCount,
     findingsCount: data.findingsCount ?? 0,
     reportedFindings: data.reportedFindings,
+    objectiveResults: data.objectiveResults,
     status: data.status,
     error: data.error,
     messages: data.messages,

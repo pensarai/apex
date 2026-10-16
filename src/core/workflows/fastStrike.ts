@@ -38,7 +38,7 @@ const FastStrikeExternalResult = z.object({
   summary: z
     .string()
     .describe(
-      "Concise account of security findings and the evidence observed.",
+      "Concise account of security findings and the evidence observed, including any flag or sensitive data extracted for an exfiltration objective.",
     ),
   reportedFindings: z
     .array(z.string())
@@ -181,6 +181,11 @@ export async function runFastStrike(
       ? "Run the fast strike: investigate the target, identify security weaknesses, and submit the findings in the requested output. Stop when the supplied objective is met."
       : "Run the fast strike: find and exploit the vulnerability, complete the objective, and report what worked.",
   );
+  if (findingPolicy === "external" && session.config?.exfilMode) {
+    promptParts.push(
+      "Exfiltration goal: locate and extract FLAG{...} or the assigned sensitive data through a confirmed weakness. Do not stop at discovery; include the extraction result in the final summary.",
+    );
+  }
 
   const agent = new OffensiveSecurityAgent<FastStrikeOutcome>({
     subagentSpawner: input.subagentSpawner,
@@ -287,6 +292,8 @@ export async function runFastStrike(
       reportPath: null,
       reportedFindings: strikeResult.reportedFindings,
       submissionJson: strikeResult.submissionJson,
+      solved: strikeResult.solved,
+      summary: strikeResult.summary,
     };
   }
 

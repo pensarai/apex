@@ -218,6 +218,31 @@ it("forwards canonical hooks and legacy fields to the fast-strike operator", asy
 });
 
 describe("external Fast Strike", () => {
+  it("keeps exfiltration mode explicit and returns the extracted result", async () => {
+    session.config = { exfilMode: true };
+    mocks.consumeImpl = async () => ({
+      solved: true,
+      summary: "Extracted FLAG{example}",
+      reportedFindings: ["Confirmed scoped weakness"],
+      submissionJson: "",
+    });
+
+    const result = await runFastStrike({
+      target: "https://example.com",
+      model: {} as PentestWorkflowInput["model"],
+      session,
+      findingPolicy: "external",
+    });
+
+    expect(String(mocks.fastStrikeInputs.at(-1)?.prompt)).toContain(
+      "Exfiltration goal: locate and extract FLAG{...}",
+    );
+    expect(result).toMatchObject({
+      solved: true,
+      summary: "Extracted FLAG{example}",
+    });
+  });
+
   it("returns exact submission JSON and skips native finding aggregation", async () => {
     const submissionJson = JSON.stringify({
       schema_version: "penbench-finding/v1",
@@ -246,6 +271,8 @@ describe("external Fast Strike", () => {
       findings: [],
       reportedFindings: ["GET /private reads another tenant's data"],
       submissionJson,
+      solved: true,
+      summary: "Cross-tenant read found",
       reportPath: null,
     });
     expect(mocks.registry.groupByRootCause).not.toHaveBeenCalled();
