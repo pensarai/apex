@@ -9,6 +9,7 @@ import {
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
@@ -127,6 +128,50 @@ describe("resolveOperatorStrikeMode", () => {
         persistedDefault: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe("resolveOperatorFindingPolicy", () => {
+  it("defaults new sessions to Apex finding review", () => {
+    expect(resolveOperatorFindingPolicy({ resuming: false })).toBe("native");
+  });
+
+  it("uses the saved preference for new sessions", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        persistedDefault: "external",
+      }),
+    ).toBe("external");
+  });
+
+  it("lets an explicit workflow override the saved preference", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        routeOverride: "native",
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+  });
+
+  it("restores the policy saved with a resumed session", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        savedSessionValue: "external",
+        persistedDefault: "native",
+      }),
+    ).toBe("external");
+  });
+
+  it("keeps legacy resumed sessions native despite a newer global preference", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
   });
 });
 
@@ -621,6 +666,17 @@ describe("buildOperatorSystemPrompt", () => {
     );
     expect(prompt).toContain("extending a working script");
     expect(prompt).toContain("account for each viable primitive");
+  });
+
+  it("keeps Strike's research loop while leaving finding review to the caller", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "fast-strike", {
+      findingPolicy: "external",
+    });
+    expect(prompt).toContain("# Strike Mode");
+    expect(prompt).toContain("requested output format");
+    expect(prompt).not.toContain("document_vulnerability");
+    expect(prompt).not.toContain("document confirmed vulnerabilities");
+    expect(prompt).not.toContain("official report is generated automatically");
   });
 
   it("does not include Strike Mode instructions in the standard mode", () => {

@@ -96,6 +96,7 @@ const OperatorSettingsObject = z.object({
   enableSuggestions: z.boolean().default(true),
   /** Run the top-level operator as a focused solo researcher without orchestration tools. */
   strikeMode: z.boolean().optional(),
+  findingPolicy: z.enum(["native", "external"]).optional(),
 });
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
@@ -989,6 +990,7 @@ export async function updateOperatorSettings(
         requireApproval: true,
         enableSuggestions: true,
         strikeMode: false,
+        findingPolicy: "native",
       };
     }
 
@@ -1006,6 +1008,9 @@ export async function updateOperatorSettings(
     }
     if (settings.strikeMode !== undefined) {
       session.config.operatorSettings.strikeMode = settings.strikeMode;
+    }
+    if (settings.findingPolicy !== undefined) {
+      session.config.operatorSettings.findingPolicy = settings.findingPolicy;
     }
   });
 }

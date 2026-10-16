@@ -29,6 +29,7 @@ import {
   type AgentMode,
   ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
+  type FindingPolicy,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../core/agents/offSecAgent";
@@ -111,6 +112,7 @@ import {
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
@@ -159,6 +161,7 @@ export default function OperatorDashboard({
     target?: string;
     operatorMode?: OperatorMode;
     strikeMode?: boolean;
+    findingPolicy?: FindingPolicy;
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
@@ -206,6 +209,16 @@ export default function OperatorDashboard({
     }),
   );
   const [strikeMode, setStrikeMode] = useState(initialStrikeModeRef.current);
+  const initialFindingPolicyRef = useRef(
+    resolveOperatorFindingPolicy({
+      resuming: !!sessionId,
+      routeOverride: initialConfig?.findingPolicy,
+      persistedDefault: config.data.findingPolicy,
+    }),
+  );
+  const [findingPolicy, setFindingPolicy] = useState(
+    initialFindingPolicyRef.current,
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
@@ -433,6 +446,12 @@ export default function OperatorDashboard({
               savedSessionValue: s.config?.operatorSettings?.strikeMode,
             }),
           );
+          setFindingPolicy(
+            resolveOperatorFindingPolicy({
+              resuming: true,
+              savedSessionValue: s.config?.operatorSettings?.findingPolicy,
+            }),
+          );
 
           const hasState = sessions.hasOperatorState(s);
           if (hasState) {
@@ -516,6 +535,7 @@ export default function OperatorDashboard({
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           setStrikeMode(initialStrikeModeRef.current);
+          setFindingPolicy(initialFindingPolicyRef.current);
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
           const requireApproval = newMode === "manual";
@@ -871,6 +891,7 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
+        findingPolicy,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
@@ -926,6 +947,7 @@ export default function OperatorDashboard({
               agentMode !== "plan" ? approvedPlanRef.current : null,
             taskDriven:
               session?.config?.taskDriven ?? initialConfig?.taskDriven,
+            findingPolicy,
           },
         );
 
@@ -945,6 +967,7 @@ export default function OperatorDashboard({
               requireApproval,
               enableSuggestions: true,
               strikeMode,
+              findingPolicy,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -1082,6 +1105,7 @@ export default function OperatorDashboard({
       initialConfig?.headers,
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
+      findingPolicy,
       route.data,
       setSessionCwd,
       skillsRegistry.buildCatalog,
@@ -1926,6 +1950,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         <box flexDirection="row" gap={2}>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
           {strikeMode && <text fg={colors.warning}>STRIKE</text>}
+          {findingPolicy === "external" && (
+            <text fg={colors.textMuted}>JUDGE OFF</text>
+          )}
           {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>

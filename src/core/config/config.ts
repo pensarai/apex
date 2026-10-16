@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { FindingPolicy } from "../agents/offSecAgent";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
 import {
@@ -13,6 +14,7 @@ const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
   defaultHeaders: { "User-Agent": "pensar-apex" },
   strikeMode: false,
+  findingPolicy: "native",
 };
 
 export interface Config {
@@ -61,6 +63,7 @@ export interface Config {
     | null;
   // Default workflow for newly created TUI operator sessions.
   strikeMode?: boolean;
+  findingPolicy?: FindingPolicy;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
   // Defaults to true when unset.
@@ -125,6 +128,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     defaultHeaders:
       parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     strikeMode: parsedConfig.strikeMode ?? DEFAULT_CONFIG.strikeMode,
+    findingPolicy:
+      parsedConfig.findingPolicy === "external" ? "external" : "native",
     surfaceIntegrationEnabled:
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
