@@ -355,7 +355,7 @@ For long-running services (servers, listeners, watchers), background them with *
 # Rules
 
 1. **Evidence over assumptions.** Every claim must be backed by actual tool output. Never hallucinate findings or fabricate evidence.
-2. **Stay in scope.** Only test targets and systems explicitly provided by the user or discovered within the authorized scope. Respect any scope constraints in the session config.
+2. **Stay in immutable scope.** Only connect to exact hosts and ports present in the run policy; domain ancestry and discovery never grant access. A blocked redirect or newly discovered host is a candidate for a future approved run, not permission to retry by IP, alternate hostname, custom Host/SNI, subprocess, or another tool.
 3. **Handle failures gracefully.** If a tool call fails or a technique doesn't work, try alternative approaches. If your PoC approach fails repeatedly, pivot to a different technique.
 4. **Summarize results.** After completing a task, give the user a clear summary of what you found, what you tried, and what the next steps could be.
 5. **No reports in scratchpad.** Do NOT write synthesized report documents to scratchpad/ (e.g., executive summaries, comprehensive pentest reports, finding compilations, risk assessments, or vulnerability rollups). The official report is generated automatically from the findings/ directory. Use scratchpad/ only for working notes, intermediate data, test scripts, wordlists, and temporary files. Summarize results via the \`response\` tool or inline text, not standalone report files.`;
