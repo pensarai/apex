@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import type { FindingPolicy } from "../types";
 
 export const REPORT_ERROR_TOOL_NAME = "report_error" as const;
 
@@ -22,7 +23,14 @@ export type ReportedError = {
  * of a successful result it surfaces a blocking error so the caller can turn
  * the run into a failure (e.g. mark a scan endpoint failed with this message).
  */
-export function createReportErrorTool(onError: (error: ReportedError) => void) {
+export function createReportErrorTool(
+  onError: (error: ReportedError) => void,
+  findingPolicy: FindingPolicy = "native",
+) {
+  const vulnerabilityGuidance =
+    findingPolicy === "external"
+      ? "Do NOT use this for vulnerabilities (include them in your final response)"
+      : "Do NOT use this for vulnerabilities (use document_vulnerability)";
   return tool({
     description: `Report a blocking error that prevents you from completing the pentest, and END your run.
 
@@ -31,7 +39,7 @@ Call this ONLY when you genuinely cannot continue, for example:
 - The target is unreachable or responds in a way that makes testing impossible.
 - Some other runtime condition blocks you from carrying out the objectives.
 
-Do NOT use this for vulnerabilities (use document_vulnerability) or for normal completion (use response). Provide a clear, specific message describing exactly what blocked you — include the failing URL, status codes, or the auth step that failed where relevant — so it can be surfaced to the operator.`,
+${vulnerabilityGuidance} or for normal completion (use response). Provide a clear, specific message describing exactly what blocked you — include the failing URL, status codes, or the auth step that failed where relevant — so it can be surfaced to the operator.`,
     inputSchema: z.object({
       reason: ReportErrorReasonSchema.describe(
         "Coarse category of the blocking error.",

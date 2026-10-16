@@ -27,6 +27,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
   return superInputs[superInputs.length - 1] as {
     activeTools: string[];
     fileWorkspaceRoot?: string;
+    system?: string;
   };
 }
 
@@ -85,5 +86,11 @@ describe("CodeAgent stays a read-focused analysis agent", () => {
     expect(input.activeTools).not.toContain("document_endpoint");
     expect(input.activeTools).toContain("response");
     expect(input.activeTools).toContain("read_file");
+  });
+
+  it("does not tell an externally graded code child to use the native finding tool", () => {
+    const input = makeAgent({ findingPolicy: "external" });
+    expect(input.system).toContain("sink-first work");
+    expect(input.system).not.toContain("document_vulnerability");
   });
 });

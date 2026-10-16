@@ -107,6 +107,9 @@ export type Finding = Omit<
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan" | "fast-strike";
 
+/** Selects Apex's native finding judge or a caller-owned evaluation boundary. */
+export type FindingPolicy = "native" | "external";
+
 /** Structured authorization envelope for a multi-application System pentest. */
 export type SystemPentestScope = {
   systemId: string;
@@ -135,6 +138,9 @@ export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
  * by forgetting to list it in a hand-written constructor.
  */
 export interface AgentHooks {
+  /** External grading omits Apex's finding tool and leaves acceptance to the caller. */
+  findingPolicy?: FindingPolicy;
+
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
 
@@ -351,11 +357,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    *
    * Receives the completed `StreamTextResult` — at this point all lazy
    * properties (`.steps`, `.text`, `.response`, etc.) are resolved.
+   * When the response tool executes, the optional second argument is its
+   * schema-validated result. It is absent if no response was submitted.
    *
    * If omitted, `consume()` returns `void`.
    */
   resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
+    validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
   /** The subagent ID if this agent is a subagent */

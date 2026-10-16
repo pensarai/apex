@@ -301,6 +301,7 @@ pentest options:
   --task-driven             Enable task-driven architecture (experimental)
   --fast-strike            Single-operator fast strike: skip attack-surface/swarm
                            phases, one tight recon→exploit loop against the target
+  --external-findings      Return findings without Apex's in-run finding judge
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
   --header "Name: Value"   Custom HTTP header (repeatable)
@@ -366,6 +367,7 @@ async function runPentest() {
   const enableThinking = hasFlag("--extended-thinking");
   const taskDriven = hasFlag("--task-driven");
   const fastStrike = hasFlag("--fast-strike");
+  const externalFindings = hasFlag("--external-findings");
   const evidenceOutput = nativeRolloutEvidenceOutput();
 
   // Resolve and combine threat model + prompt
@@ -395,7 +397,7 @@ async function runPentest() {
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${externalFindings ? "\nFindings: external evaluation" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
@@ -424,26 +426,58 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
       const { bus: pentestBus, cleanup: wandbCleanup } =
         await createInstrumentedBus(session, model);
       try {
-        const { findings, findingsPath, pocsPath, reportPath } =
-          await runPentestAgent({
-            target,
-            ...(cwd ? { cwd } : {}),
-            session,
-            model,
-            enableThinking,
-            ...(fastStrike ? { fastStrike: true } : {}),
-            surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
-            authConfig: buildAuthConfig(pensarConfig),
-            eventBus: pentestBus,
-          });
+        const {
+          findings,
+          findingsPath,
+          pocsPath,
+          reportPath,
+          reportedFindings,
+          objectiveResults,
+          submissionJson,
+          solved,
+          summary,
+        } = await runPentestAgent({
+          target,
+          ...(cwd ? { cwd } : {}),
+          session,
+          model,
+          enableThinking,
+          ...(externalFindings ? { findingPolicy: "external" as const } : {}),
+          ...(fastStrike ? { fastStrike: true } : {}),
+          surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
+          authConfig: buildAuthConfig(pensarConfig),
+          eventBus: pentestBus,
+        });
 
-        console.log(`
+        if (externalFindings) {
+          console.log(`
+${sep}
+RESULTS
+${sep}
+Findings:  ${reportedFindings?.length ?? 0}
+Evaluation: external`);
+          console.log(
+            JSON.stringify(
+              {
+                reportedFindings: reportedFindings ?? [],
+                ...(objectiveResults ? { objectiveResults } : {}),
+                ...(submissionJson ? { submissionJson } : {}),
+                ...(solved === undefined ? {} : { solved }),
+                ...(summary === undefined ? {} : { summary }),
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
+        }
       } finally {
         await wandbCleanup();
       }

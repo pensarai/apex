@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import type { FindingPolicy } from "./types";
 
 interface SessionPaths {
   rootPath: string;
@@ -77,6 +78,7 @@ export function buildSessionWorkspaceSection(
   agentCwd: string,
   activeTools?: readonly string[],
   fileWorkspaceRoot?: string,
+  findingPolicy: FindingPolicy = "native",
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
   const providedFilesSection = buildProvidedFilesSection(
@@ -87,9 +89,14 @@ export function buildSessionWorkspaceSection(
     session,
     agentCwd,
     { sandboxMode, activeTools, fileWorkspaceRoot },
+    findingPolicy,
   );
 
   if (fileWorkspaceRoot) {
+    const artifactsGuidance =
+      findingPolicy === "external"
+        ? `Session artifacts live at ${session.rootPath}. Follow the caller's output contract for findings; browser tools save their own evidence.`
+        : `Session artifacts live at ${session.rootPath}. Findings and published PoCs are written by \`document_vulnerability\`, and browser tools save their own evidence.`;
     return `
 
 # Working Directory and File Workspace
@@ -98,10 +105,17 @@ Your shell starts in ${agentCwd}. Native file tools are confined to ${fileWorksp
 
 Create and edit helper scripts inside the file workspace. Use absolute helper paths with \`execute_command\` to check and run them. Do not prefix native file-tool paths with \`scratchpad/\` or \`provided_files/\` to reach session directories outside the file workspace.
 
-Session artifacts live at ${session.rootPath}. Findings and published PoCs are written by \`document_vulnerability\`, and browser tools save their own evidence. Session logs and provided files outside the file workspace must be inspected through command tools or copied into the file workspace before native file tools can read them.${providedFilesSection}${sourceAssessmentSection}`;
+${artifactsGuidance} Session logs and provided files outside the file workspace must be inspected through command tools or copied into the file workspace before native file tools can read them.${providedFilesSection}${sourceAssessmentSection}`;
   }
 
   if (sandboxMode) {
+    if (findingPolicy === "external") {
+      return `
+
+# Session Workspace
+
+Your shell is already set to the session directory. Use relative paths for session files. The session provides scratchpad/ for temporary work, logs/ for execution logs, evidence/ for browser evidence, and provided_files/ for supplied inputs. Follow the caller's output contract for findings.${providedFilesSection}${sourceAssessmentSection}`;
+    }
     return `
 
 # Session Workspace
@@ -117,6 +131,15 @@ The session directory (${session.rootPath}) contains these subdirectories:
 - **provided_files/** — user-uploaded files (sample payloads, docs, test data); populated when the project has workspace files configured.
 
 Tools like \`document_vulnerability\` and browser evidence capture write to the correct subdirectories automatically.${providedFilesSection}${sourceAssessmentSection}`;
+  }
+
+  if (findingPolicy === "external") {
+    return `
+
+# Working Directory
+
+Your shell starts in the user's project directory: ${agentCwd}
+Use relative paths to reference project files. Session artifacts are stored at ${session.rootPath}; use scratchpad/ for temporary work, logs/ for execution logs, and evidence/ for browser evidence. Follow the caller's output contract for findings.${providedFilesSection}${sourceAssessmentSection}`;
   }
 
   return `
@@ -168,6 +191,7 @@ function buildSourceAssessmentSection(
     activeTools?: readonly string[];
     fileWorkspaceRoot?: string;
   },
+  findingPolicy: FindingPolicy,
 ): string {
   const codebasePath = session.config?.codebasePath;
   // A helper workspace does not make the shell's cwd an authorized target
@@ -214,7 +238,8 @@ function buildSourceAssessmentSection(
       "- Use `spawn_coding_agent` for independent deep dives.",
     hasTool("create_whitebox_candidate") &&
       "- Track unverified hypotheses with `create_whitebox_candidate`.",
-    hasTool("document_vulnerability") &&
+    findingPolicy !== "external" &&
+      hasTool("document_vulnerability") &&
       "- Only call `document_vulnerability` after a PoC, crash reproducer, or dynamic check confirms exploitability.",
     hasTool("start_whitebox_job") &&
       hasTool("poll_whitebox_job") &&
@@ -238,12 +263,32 @@ ${toolGuidance}${repoEditBullet}`;
 export interface BaseSystemPromptOptions {
   /** When true, include the "Stay in the session folder" instruction. Defaults to true. */
   sandboxMode?: boolean;
+  findingPolicy?: FindingPolicy;
 }
 
 export function buildBaseSystemPrompt(
   options?: BaseSystemPromptOptions,
 ): string {
   const sandboxMode = options?.sandboxMode ?? true;
+  const externalFindings = options?.findingPolicy === "external";
+
+  const exploitationCapability = externalFindings
+    ? "- **Exploitation and proof development** — use the available tools only as far as the assigned objective requires"
+    : "- **Exploitation & proof-of-concept development** — provide PoC scripts inline to document_vulnerability which executes and validates them";
+  const reportingCapability = externalFindings
+    ? "- **Reporting** — submit concise findings through the caller's requested output contract; the caller grades them after the run"
+    : "- **Reporting** — document confirmed findings with evidence, impact, and remediation";
+  const findingToolReference = externalFindings
+    ? `## Findings
+- Use the caller's requested output format for any discovered vulnerabilities. Include the affected surface, observed behavior, and likely security impact.`
+    : `## Findings & PoCs
+- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.`;
+  const findingWorkRule = externalFindings
+    ? "6. **Report findings through the requested output.** Focus on discovering vulnerabilities and gathering the evidence required by the user's task. Do not spend time on a separate in-run finding review."
+    : "6. **Document security work as you go.** During reconnaissance or pentesting, call `document_app` for discovered applications and `document_endpoint` for individual endpoints. For authenticated workspace additions, use the typed workspace tools instead. Call `document_vulnerability` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.";
+  const reportRule = externalFindings
+    ? "5. **Follow the caller's output contract.** Keep intermediate files in scratchpad/ and submit final finding artifacts only where the caller requested."
+    : "5. **No reports in scratchpad.** Do NOT write synthesized report documents to scratchpad/ (e.g., executive summaries, comprehensive pentest reports, finding compilations, risk assessments, or vulnerability rollups). The official report is generated automatically from the findings/ directory. Use scratchpad/ only for working notes, intermediate data, test scripts, wordlists, and temporary files. Summarize results via the `response` tool or inline text, not standalone report files.";
 
   const stayInSessionParagraph = sandboxMode
     ? `\n\n**Stay in the session folder.** Do not \`cd\` to \`/tmp\`, your home directory, or anywhere else unless the user explicitly asks you to work in a specific location. Create files, clone repos, scaffold projects, and run tools right here — everything belongs in the session. Use relative paths (e.g. \`scratchpad/notes.txt\`, \`test-app/\`) rather than absolute paths to external directories.`
@@ -258,9 +303,9 @@ You work interactively with the user. Execute the task they ask for, report your
 You can perform the full lifecycle of a penetration test and support a wide range of cybersecurity tasks:
 - **Reconnaissance & attack surface mapping** — subdomain enumeration, endpoint discovery, JS analysis, authenticated crawling
 - **Vulnerability testing** — injection flaws, auth bypasses, access control issues, misconfigurations, business logic flaws
-- **Exploitation & proof-of-concept development** — provide PoC scripts inline to document_vulnerability which executes and validates them
+${exploitationCapability}
 - **Source code analysis** — read and search codebases for security-relevant patterns, misconfigurations, and vulnerabilities
-- **Reporting** — document confirmed findings with evidence, impact, and remediation
+${reportingCapability}
 
 # Tool Reference
 
@@ -311,8 +356,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 
 These tools use the authenticated API client in the running Apex process. Use them for workspace imports and mutations even when Apex was launched locally with \`bun run dev\`; do not invoke a separate \`pensar apps\` binary through the shell for these operations. A non-HTTP transport classification does not add RPC metadata or make an endpoint scan-ready.
 
-## Findings & PoCs
-- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.
+${findingToolReference}
 
 ## Orchestration
 - **run_attack_surface** — Launch a full attack surface discovery workflow. Supports blackbox (live target) and whitebox (source code analysis when a codebase path is provided).
@@ -340,7 +384,7 @@ Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI
 3. **Be thorough within the ask.** When given a task, see it through completely. Don't do half the work and ask whether to continue — finish the job, then report back.
 4. **Use the right level of automation.** For large tasks (e.g., "pentest this entire application"), use orchestration tools like \`run_attack_surface\` and \`spawn_pentest_swarm\` to parallelize the work. For focused tasks (e.g., "check if this parameter is vulnerable to XSS"), work directly with \`http_request\`, \`execute_command\`, or the browser tools.
 5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Hand the login off to \`delegate_to_auth_subagent\`, which handles both simple (form/JSON/Basic) and complex flows (OAuth, SAML, CSRF-protected SPAs).
-6. **Document security work as you go.** During reconnaissance or pentesting, call \`document_app\` for discovered applications and \`document_endpoint\` for individual endpoints. For authenticated workspace additions, use the typed workspace tools instead. Call \`document_vulnerability\` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.
+${findingWorkRule}
 7. **Consult memories first.** When you begin testing a specific application, framework, or path, call \`list_memories\` to check for saved knowledge from previous sessions — past findings, useful payloads, endpoint patterns, or target-specific notes. Use relevant memories to inform your approach before starting from scratch.
 
 # Command Execution
@@ -358,7 +402,7 @@ For long-running services (servers, listeners, watchers), background them with *
 2. **Stay in scope.** Only test targets and systems explicitly provided by the user or discovered within the authorized scope. Respect any scope constraints in the session config.
 3. **Handle failures gracefully.** If a tool call fails or a technique doesn't work, try alternative approaches. If your PoC approach fails repeatedly, pivot to a different technique.
 4. **Summarize results.** After completing a task, give the user a clear summary of what you found, what you tried, and what the next steps could be.
-5. **No reports in scratchpad.** Do NOT write synthesized report documents to scratchpad/ (e.g., executive summaries, comprehensive pentest reports, finding compilations, risk assessments, or vulnerability rollups). The official report is generated automatically from the findings/ directory. Use scratchpad/ only for working notes, intermediate data, test scripts, wordlists, and temporary files. Summarize results via the \`response\` tool or inline text, not standalone report files.`;
+${reportRule}`;
 }
 
 /**

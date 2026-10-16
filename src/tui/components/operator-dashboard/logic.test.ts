@@ -6,12 +6,15 @@ import {
   type DashboardStatus,
   filterOperatorAutocomplete,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 
 // ---------------------------------------------------------------------------
@@ -126,6 +129,98 @@ describe("resolveOperatorStrikeMode", () => {
         resuming: true,
         persistedDefault: true,
       }),
+    ).toBe(false);
+  });
+});
+
+describe("resolveOperatorFindingPolicy", () => {
+  it("defaults new sessions to Apex finding review", () => {
+    expect(
+      resolveOperatorFindingPolicy({ resuming: false, strikeMode: true }),
+    ).toBe("native");
+  });
+
+  it("uses the saved preference for new Strike sessions", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("external");
+  });
+
+  it("lets an explicit workflow override the saved preference", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: true,
+        routeOverride: "native",
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+  });
+
+  it("restores the policy saved with a resumed Strike session", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: true,
+        savedSessionValue: "external",
+        persistedDefault: "native",
+      }),
+    ).toBe("external");
+  });
+
+  it("keeps legacy resumed sessions native despite a newer global preference", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+  });
+
+  it("keeps standard sessions native despite external preferences or overrides", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: false,
+        routeOverride: "external",
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: false,
+        savedSessionValue: "external",
+      }),
+    ).toBe("native");
+  });
+});
+
+describe("resolveActiveFindingPolicy", () => {
+  it("allows judge off only while the agent is in Fast Strike", () => {
+    expect(resolveActiveFindingPolicy("fast-strike", "external")).toBe(
+      "external",
+    );
+    expect(resolveActiveFindingPolicy("default", "external")).toBe("native");
+    expect(resolveActiveFindingPolicy("plan", "external")).toBe("native");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Queue navigation
+// ---------------------------------------------------------------------------
+
+describe("shouldHandleQueuedMessageKey", () => {
+  it("leaves queue navigation to the dashboard only when no dialog owns the keyboard", () => {
+    expect(shouldHandleQueuedMessageKey("running", 2, "", false)).toBe(true);
+    expect(shouldHandleQueuedMessageKey("running", 2, "", true)).toBe(false);
+    expect(
+      shouldHandleQueuedMessageKey("running", 2, " /advanced ", false),
     ).toBe(false);
   });
 });
@@ -621,6 +716,17 @@ describe("buildOperatorSystemPrompt", () => {
     );
     expect(prompt).toContain("extending a working script");
     expect(prompt).toContain("account for each viable primitive");
+  });
+
+  it("keeps Strike's research loop while leaving finding review to the caller", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "fast-strike", {
+      findingPolicy: "external",
+    });
+    expect(prompt).toContain("# Strike Mode");
+    expect(prompt).toContain("requested output format");
+    expect(prompt).not.toContain("document_vulnerability");
+    expect(prompt).not.toContain("document confirmed vulnerabilities");
+    expect(prompt).not.toContain("official report is generated automatically");
   });
 
   it("does not include Strike Mode instructions in the standard mode", () => {
