@@ -365,6 +365,86 @@ describe("spawned-agent usage callbacks", () => {
 });
 
 describe("auxiliary model events", () => {
+  it("persists prepared context instead of restoring a fitted-away prefix", async () => {
+    streamResponseCalls.length = 0;
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-fitted-history-"));
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        messages: [{ role: "user", content: "old large prefix" }],
+        session: { id: "ses_fitted_history", rootPath },
+        activeTools: [],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onContextPrepared: (context: {
+          messages: Array<{ role: string; content: unknown }>;
+          responseMessageOffset: number;
+        }) => void;
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      const firstStep = [
+        { role: "assistant", content: "first call" },
+        { role: "tool", content: "full first result" },
+      ];
+      const cachedSystem = {
+        role: "system",
+        content: "cached effective system prompt",
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
+      };
+      const historySystem = {
+        role: "system",
+        content: "caller-supplied history instruction",
+      };
+      call.onContextPrepared({
+        messages: [
+          cachedSystem,
+          cachedSystem,
+          historySystem,
+          { role: "user", content: "fitted prefix" },
+        ],
+        responseMessageOffset: 0,
+      });
+      await call.onStepFinish({
+        response: { id: "step-1", messages: firstStep },
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      const compacted = [
+        historySystem,
+        { role: "user", content: "fitted prefix" },
+        { role: "assistant", content: "first call" },
+        { role: "tool", content: "short first result" },
+      ];
+      call.onContextPrepared({
+        messages: [cachedSystem, cachedSystem, ...compacted],
+        responseMessageOffset: 2,
+      });
+      const secondStep = [
+        { role: "assistant", content: "second call" },
+        { role: "tool", content: "second result" },
+      ];
+      await call.onStepFinish({
+        response: {
+          id: "step-2",
+          messages: [...firstStep, ...secondStep],
+        },
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      expect(writer.latest).toEqual([...compacted, ...secondStep]);
+      writer.cancelTimer();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the last complete message snapshot while forwarding usage", async () => {
     streamResponseCalls.length = 0;
     traceRecordStepCalls.length = 0;
@@ -2810,6 +2890,11 @@ describe("trace identity and root IO", () => {
 describe("contextRecorder integration", () => {
   const streamTextChunk = { type: "text-delta", id: "t1", delta: "hi" };
   const CANONICAL = [
+    {
+      role: "system",
+      content: "cached effective system prompt",
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    },
     { role: "user", content: "recorded prompt" },
     { role: "assistant", content: "recorded answer" },
   ] as never[];
@@ -2878,14 +2963,13 @@ describe("contextRecorder integration", () => {
     expect(streamResponseCalls[0]?.inferenceRecorder).toBe(inferenceRecorder);
 
     const stepEvent = {
-      response: { id: "resp_1", messages: CANONICAL.slice(1) },
+      response: { id: "resp_1", messages: CANONICAL.slice(2) },
       usage: {},
     };
     await streamOpts.onStepFinish(stepEvent);
 
-    // Writer snapshot equals canonical latest() exactly — the step's
-    // response.messages are already part of the committed context, so the
-    // projection must not re-prepend a base or duplicate them.
+    // The cached system message is transport-only; it must not enter the
+    // transcript reloaded with a fresh system prompt on the next turn.
     const writer = agent["writer" as keyof typeof agent] as unknown as {
       waitForPendingWrites: () => Promise<void>;
       latest: unknown[] | null;
@@ -2898,6 +2982,9 @@ describe("contextRecorder integration", () => {
     await streamOpts.onFinish(finishEvent);
 
     expect(recorder.latest).toHaveBeenCalled();
-    expect((captured as unknown[]).length).toBe(CANONICAL.length);
+    expect(captured).toEqual(CANONICAL.slice(1));
+    expect(
+      JSON.parse(readFileSync(join(rootPath, "messages.json"), "utf8")),
+    ).toEqual(CANONICAL.slice(1));
   });
 });
