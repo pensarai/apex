@@ -387,7 +387,7 @@ describe("compaction observability", () => {
     ).toBe(true);
   });
 
-  it("preserves tool evidence omitted by the summarizer and links its actual request and response", async () => {
+  it("passes tool evidence to the summarizer and links its actual request and response", async () => {
     const summaryModel = model();
     state.model = summaryModel;
     const messages: ModelMessage[] = [
@@ -422,7 +422,7 @@ describe("compaction observability", () => {
     expect(summary.attributes["ai.prompt.messages"]).toContain(
       "continue researching",
     );
-    expect(summary.attributes["ai.prompt.messages"]).not.toContain(
+    expect(summary.attributes["ai.prompt.messages"]).toContain(
       "evidence evidence",
     );
     expect(summary.attributes["ai.response.text"]).toBe("A compact summary");

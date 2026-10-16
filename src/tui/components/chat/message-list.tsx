@@ -39,6 +39,7 @@ function getLoadingState(
   pendingToolName: string | null,
 ): LoadingState {
   if (hasPendingTool) {
+    if (pendingToolName === "summarize_conversation") return "compacting";
     if (pendingToolName && SUBAGENT_TOOLS.has(pendingToolName)) {
       return "waiting";
     }

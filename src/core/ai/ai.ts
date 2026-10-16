@@ -51,6 +51,9 @@ import {
 } from "./compactionTelemetry";
 import {
   estimateMessageTokens,
+  estimateTokens,
+  estimateToolsOverheadTokens,
+  type FitContextResult,
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
@@ -60,6 +63,7 @@ import {
   runWithInferenceRecorder,
 } from "./inference-attempt";
 import {
+  type ClaudeThinkingEffort,
   getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
@@ -74,6 +78,7 @@ import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
+  CompactionRejectedError,
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
@@ -136,11 +141,11 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 /**
  * Anthropic adaptive-thinking effort hint. Soft guidance for how much the model
- * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `max`
- * reasons hardest (`high` is the model default). Only meaningful for models that
- * support adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
+ * reasons (see AWS "adaptive thinking"): `low` minimizes thinking while
+ * `xhigh` and `max` allow progressively deeper work. Only meaningful for
+ * models that support adaptive thinking; ignored elsewhere.
  */
-export type ThinkingEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type ThinkingEffort = ClaudeThinkingEffort;
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-6.1-sol",
@@ -676,6 +681,43 @@ function createToolExecutionGate(): {
   };
 }
 
+class InStreamCompactionRequired extends Error {
+  constructor(readonly fitted: FitContextResult) {
+    super("In-stream compaction required before provider dispatch");
+  }
+}
+
+// Retry once after new tool output, then let fitting handle this turn.
+const MAX_PROACTIVE_SUMMARY_FAILURES = 2;
+
+function shouldSummarizeBeforeFitting(
+  messages: ModelMessage[],
+  contextWindow: number,
+  maxOutputTokens: number,
+  overheadTokens: number,
+  safetyMarginTokens: number,
+  system?: string,
+  toolChoice?: ToolChoice<ToolSet>,
+): boolean {
+  const historyBudget =
+    contextWindow -
+    maxOutputTokens -
+    overheadTokens -
+    safetyMarginTokens -
+    (system ? estimateTokens(system) : 0);
+  const estimatedHistoryTokens = estimateMessageTokens(messages);
+  // Forced-tool replays missed the summary cache; keep their fitted history path.
+  return (
+    historyBudget > 0 &&
+    messages.length > 2 &&
+    toolChoice !== "required" &&
+    typeof toolChoice !== "object" &&
+    estimatedHistoryTokens >=
+      Math.max(100_000, Math.floor(historyBudget * 0.8)) &&
+    estimatedHistoryTokens <= historyBudget
+  );
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -786,7 +828,10 @@ function wrapStreamWithErrorHandler(
 
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
-              const isCtxError = checkIfContextLengthError(error);
+              const isCtxError =
+                error instanceof InStreamCompactionRequired ||
+                error instanceof CompactionRejectedError ||
+                checkIfContextLengthError(error);
 
               // A latched persistence failure is terminal: retrying would
               // dispatch a turn whose context was never durably committed.
@@ -893,42 +938,50 @@ function wrapStreamWithErrorHandler(
               }
 
               if (isCtxError) {
-                let currentMessages: ModelMessage[] = messagesContainer.current;
-                try {
-                  const response = await originalStream.response;
-                  if (response.messages && response.messages.length > 0) {
-                    currentMessages = response.messages as ModelMessage[];
+                let currentMessages: ModelMessage[] =
+                  error instanceof InStreamCompactionRequired
+                    ? error.fitted.messages
+                    : messagesContainer.current;
+                if (!(error instanceof InStreamCompactionRequired)) {
+                  try {
+                    const response = await originalStream.response;
+                    if (response.messages && response.messages.length > 0) {
+                      currentMessages = response.messages as ModelMessage[];
+                    }
+                  } catch {
+                    // Fall back to container messages.
                   }
-                } catch {
-                  // Fall back to container messages.
                 }
 
-                const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                    opts.authConfig?.hoonifyModels,
-                  ),
-                  maxOutputTokens: getMaxOutputTokens(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                    opts.authConfig?.hoonifyModels,
-                  ),
-                  system: applySequentialToolCallPolicy(
-                    opts.system,
-                    opts.tools,
-                    opts.model,
-                  ),
-                  tools: opts.tools,
-                  sessionPath: opts.sessionPath,
-                  telemetry: {
-                    trigger: "context_overflow",
-                    model: opts.model,
-                    sessionId: opts.sessionId,
-                    restartDepth: opts._restartDepth,
-                    previous: opts._compaction?.last,
-                  },
-                });
+                const fitted =
+                  error instanceof InStreamCompactionRequired
+                    ? error.fitted
+                    : fitMessagesToContext(currentMessages, {
+                        contextWindow: getContextWindow(
+                          opts.model,
+                          opts.authConfig?.customProviders,
+                          opts.authConfig?.hoonifyModels,
+                        ),
+                        maxOutputTokens: getMaxOutputTokens(
+                          opts.model,
+                          opts.authConfig?.customProviders,
+                          opts.authConfig?.hoonifyModels,
+                        ),
+                        system: applySequentialToolCallPolicy(
+                          opts.system,
+                          opts.tools,
+                          opts.model,
+                        ),
+                        tools: opts.tools,
+                        sessionPath: opts.sessionPath,
+                        telemetry: {
+                          trigger: "context_overflow",
+                          model: opts.model,
+                          sessionId: opts.sessionId,
+                          restartDepth: opts._restartDepth,
+                          previous: opts._compaction?.last,
+                        },
+                      });
 
                 if (fitted.compaction && opts._compaction)
                   opts._compaction.last = fitted.compaction;
@@ -944,7 +997,11 @@ function wrapStreamWithErrorHandler(
                 // `MAX_RESTART_DEPTH` finally trips.
                 let postReactiveDepth = opts._restartDepth ?? 0;
 
-                if (fitted.fitsBudget && fitted.modified) {
+                if (
+                  !(error instanceof CompactionRejectedError) &&
+                  fitted.fitsBudget &&
+                  fitted.modified
+                ) {
                   if (!silent) {
                     log.warn(
                       `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
@@ -1017,12 +1074,19 @@ function wrapStreamWithErrorHandler(
                 }
 
                 try {
+                  if (error instanceof CompactionRejectedError) throw error;
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
                     {
                       ...opts,
                       _restartDepth: postReactiveDepth,
-                      _compactionTrigger: "context_overflow",
+                      _compactionTrigger:
+                        error instanceof InStreamCompactionRequired
+                          ? "proactive"
+                          : "context_overflow",
+                      _proactiveSummaryMayFit:
+                        error instanceof InStreamCompactionRequired &&
+                        error.fitted.fitsBudget,
                     },
                     model,
                   );
@@ -1030,7 +1094,7 @@ function wrapStreamWithErrorHandler(
                     yield chunk;
                   }
                 } catch (summarizeError) {
-                  // Only fall through to minimal-restart for context-length
+                  // Fall through to minimal restart for context or rejected-summary
                   // errors. For everything else — auth failures, network
                   // errors, abort signals, the typed terminal
                   // `ContextLengthExhaustedError`, or non-`Error` throws —
@@ -1043,7 +1107,10 @@ function wrapStreamWithErrorHandler(
                     (summarizeError instanceof Error &&
                       summarizeError.name === "AbortError") ||
                     opts.abortSignal?.aborted ||
-                    !checkIfContextLengthError(summarizeError)
+                    !(
+                      checkIfContextLengthError(summarizeError) ||
+                      summarizeError instanceof CompactionRejectedError
+                    )
                   ) {
                     throw summarizeError;
                   }
@@ -1279,12 +1346,19 @@ export type ReasoningProviderOptions = {
     effort?: ThinkingEffort;
   };
   bedrock?: {
-    reasoningConfig: {
-      type: "adaptive";
-      display: "summarized";
-      // Bedrock's channel for the adaptive effort hint (maps to Claude's
-      // output_config.effort). Omitted when no level requested.
-      maxReasoningEffort?: ThinkingEffort;
+    reasoningConfig:
+      | {
+          type: "adaptive";
+          display: "summarized";
+          // Bedrock's channel for the adaptive effort hint (maps to Claude's
+          // output_config.effort).
+          maxReasoningEffort?: ThinkingEffort;
+        }
+      | { type: "disabled" };
+    /** Explicitly forwarded for Anthropic because the Bedrock SDK currently
+     * drops reasoningConfig.type="disabled" instead of sending it. */
+    additionalModelRequestFields?: {
+      thinking: { type: "disabled" };
     };
   };
   openai?: OpenAIResponsesProviderOptions;
@@ -1360,8 +1434,8 @@ export function buildReasoningProviderOptions(
     enableThinking?: boolean;
     /**
      * Adaptive-thinking effort hint for Anthropic models that support it
-     * (Opus/Sonnet 4.6+). Ignored on models without adaptive support. When
-     * omitted the model uses its own default (`high`).
+     * Ignored on models without adaptive support. When omitted, models in the
+     * Claude capability registry use their documented provider default.
      */
     thinkingEffort?: ThinkingEffort | null;
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
@@ -1371,11 +1445,12 @@ export function buildReasoningProviderOptions(
   if (claude) {
     const provider = getModelInfo(model).provider;
     const thinking = !!opts.enableThinking || claude.alwaysOnThinking;
+    const effort = opts.thinkingEffort ?? claude.defaultEffort;
     if (provider === "openrouter") {
       return {
         openrouter: {
           reasoning: {
-            effort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+            effort: thinking ? effort : "none",
             enabled: thinking,
           },
         },
@@ -1385,19 +1460,38 @@ export function buildReasoningProviderOptions(
       return {
         openai: {
           forceReasoning: true,
-          reasoningEffort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+          reasoningEffort: thinking ? effort : "none",
           reasoningSummary: "auto",
         },
       };
     }
     return {
       anthropic: {
-        thinking:
-          opts.enableThinking || claude.alwaysOnThinking
-            ? { type: "adaptive", display: "summarized" }
-            : { type: "disabled" },
-        ...(opts.thinkingEffort ? { effort: opts.thinkingEffort } : {}),
+        thinking: thinking
+          ? { type: "adaptive", display: "summarized" }
+          : { type: "disabled" },
+        ...(thinking ? { effort } : {}),
       },
+      ...(provider === "bedrock"
+        ? {
+            bedrock: {
+              reasoningConfig: thinking
+                ? {
+                    type: "adaptive" as const,
+                    display: "summarized" as const,
+                    maxReasoningEffort: effort,
+                  }
+                : { type: "disabled" as const },
+              ...(!thinking
+                ? {
+                    additionalModelRequestFields: {
+                      thinking: { type: "disabled" as const },
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
   const useThinking =
@@ -1474,6 +1568,11 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** The fitted context and prior generated-message count for transcript writers. */
+  onContextPrepared?: (context: {
+    messages: ModelMessage[];
+    responseMessageOffset: number;
+  }) => void;
   /**
    * Deprecated host shim: fires only when a cache counter is `> 0`.
    * Apex internals read cache from {@link normalizeStepUsage} on the step.
@@ -1506,6 +1605,8 @@ export interface StreamResponseOpts {
   /** Shared only by continuations of this stream, never across agents. */
   _compaction?: { last?: CompactionLink };
   _compactionTrigger?: CompactionTrigger;
+  _proactiveSummaryMayFit?: boolean;
+  _proactiveSummaryFailures?: number;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1581,13 +1682,19 @@ function streamResponseWithinOperation(
     thinkingEffort,
     openAIReasoningEffort,
     sessionId,
+    sessionPath,
     contextRecorder,
+    onContextPrepared,
   } = opts;
 
-  // Recorded-run base, captured once at the first prepareStep of this
-  // streamText call; only used to reconstruct cumulative prefixes in
-  // onStepFinish (response.messages excludes the input base).
+  // response.messages accumulates generated steps after prepareStep rewrites
+  // provider context. The offset prevents transcript writers from appending
+  // older, pre-fit messages again.
   let recorderBase: ModelMessage[] | undefined;
+  let responseMessageLength = 0;
+  const estimatedOverheadTokens = estimateToolsOverheadTokens(tools) + 1_000;
+  let preparedInputEstimateTokens = 0;
+  let inputSafetyMarginTokens = 10_000;
 
   // Wrap onStepFinish to fire cache metrics and the usage callback for every
   // step. Must be async so that callers returning a Promise (persistence,
@@ -1596,6 +1703,18 @@ function streamResponseWithinOperation(
   // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     const stepUsage = normalizeStepUsage(step);
+    if (
+      preparedInputEstimateTokens > 0 &&
+      stepUsage.inputTokens > 0 &&
+      step.response?.id !== "summarization" &&
+      step.response?.id !== "tool-repair"
+    ) {
+      // Fixed system and tool overhead is already reserved by the fitter; calibrate only the remaining tokenization gap.
+      inputSafetyMarginTokens = Math.max(
+        inputSafetyMarginTokens,
+        stepUsage.inputTokens - preparedInputEstimateTokens + 10_000,
+      );
+    }
     // Canonical commit precedes every downstream use; the recorder latches
     // rejections (SDK notify() swallows them) until the next turn gate or
     // agent-side flush turns the latch into a stream failure.
@@ -1611,9 +1730,19 @@ function streamResponseWithinOperation(
         throw new Error("context recorder active without a committed base");
       }
       await contextRecorder.checkpoint({
-        messages: [...recorderBase, ...step.response.messages],
+        messages: [
+          ...recorderBase,
+          ...step.response.messages.slice(responseMessageLength),
+        ],
         system: effectiveSystem ?? null,
       });
+    }
+    if (
+      step.response?.id !== "summarization" &&
+      step.response?.id !== "tool-repair" &&
+      step.response?.messages
+    ) {
+      responseMessageLength = step.response.messages.length;
     }
     if (
       onCacheMetrics &&
@@ -1661,22 +1790,54 @@ function streamResponseWithinOperation(
     model,
   );
 
+  const contextWindow = getContextWindow(
+    model,
+    authConfig?.customProviders,
+    authConfig?.hoonifyModels,
+  );
+  const maxOutputTokens = getMaxOutputTokens(
+    model,
+    authConfig?.customProviders,
+    authConfig?.hoonifyModels,
+  );
+  if (
+    messages &&
+    !opts._proactiveSummaryFailures &&
+    shouldSummarizeBeforeFitting(
+      messages,
+      contextWindow,
+      maxOutputTokens,
+      estimatedOverheadTokens,
+      inputSafetyMarginTokens,
+      systemWithToolPolicy,
+      toolChoice,
+    )
+  ) {
+    return wrapStreamWithErrorHandler(
+      createSummarizationStream(
+        messages,
+        {
+          ...opts,
+          _compactionTrigger: "proactive",
+          _proactiveSummaryMayFit: true,
+        },
+        providerModel,
+      ),
+      { current: messages },
+      opts,
+      providerModel,
+      silent,
+    );
+  }
+
   // Proactive context fit: compact before the call. Reactive recovery
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-      ),
-      maxOutputTokens: getMaxOutputTokens(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-      ),
+      contextWindow,
+      maxOutputTokens,
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1723,7 +1884,11 @@ function streamResponseWithinOperation(
     return wrapStreamWithErrorHandler(
       createSummarizationStream(
         fittedMessages,
-        { ...opts, _compactionTrigger: "proactive" },
+        {
+          ...opts,
+          _compactionTrigger: "proactive",
+          _proactiveSummaryMayFit: false,
+        },
         providerModel,
       ),
       messagesContainer,
@@ -1818,28 +1983,82 @@ function streamResponseWithinOperation(
       // Awaiting inside prepareStep keeps streamResponse synchronous; the
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
-      prepareStep: async (opts) => {
-        if (contextRecorder) {
-          if (recorderBase === undefined) {
-            recorderBase = structuredClone(opts.messages);
+      prepareStep: async (step) => {
+        let stepMessages = step.messages;
+        if (step.stepNumber > 0) {
+          if (
+            (opts._proactiveSummaryFailures ?? 0) <
+              MAX_PROACTIVE_SUMMARY_FAILURES &&
+            shouldSummarizeBeforeFitting(
+              stepMessages,
+              contextWindow,
+              maxOutputTokens,
+              estimatedOverheadTokens,
+              inputSafetyMarginTokens,
+              effectiveSystem,
+              toolChoice,
+            )
+          ) {
+            messagesContainer.current = stepMessages;
+            throw new InStreamCompactionRequired({
+              messages: stepMessages,
+              estimatedInputTokens: estimateMessageTokens(stepMessages),
+              modified: false,
+              fitsBudget: true,
+            });
           }
+          const fitted = fitMessagesToContext(stepMessages, {
+            contextWindow,
+            maxOutputTokens,
+            system: effectiveSystem,
+            tools,
+            overheadTokens: estimatedOverheadTokens,
+            sessionPath,
+            safetyMarginTokens: inputSafetyMarginTokens,
+            telemetry: {
+              trigger: "proactive",
+              model,
+              sessionId,
+              restartDepth,
+              previous: compactionState.last,
+            },
+          });
+          if (fitted.compaction) compactionState.last = fitted.compaction;
+          stepMessages = fitted.messages;
+          if (!fitted.fitsBudget) {
+            messagesContainer.current = stepMessages;
+            throw new InStreamCompactionRequired(fitted);
+          }
+        }
+        if (contextRecorder) {
+          recorderBase = structuredClone(stepMessages);
           // Full logical context each turn — accepted step outputs must
           // survive into every later commit, and system is explicit (when
           // cached into messages, effectiveSystem is undefined → null).
           await contextRecorder.checkpoint({
-            messages: opts.messages,
+            messages: stepMessages,
             system: effectiveSystem ?? null,
           });
         }
         // Update the container with the latest messages
-        messagesContainer.current = opts.messages;
+        messagesContainer.current = stepMessages;
+        preparedInputEstimateTokens =
+          estimateMessageTokens(stepMessages) +
+          estimatedOverheadTokens +
+          (effectiveSystem ? estimateTokens(effectiveSystem) : 0);
+        onContextPrepared?.({
+          messages: stepMessages,
+          responseMessageOffset: responseMessageLength,
+        });
         // Mark the last message so the growing conversation caches incrementally
         if (cacheBreakpoint) {
           return {
-            messages: withCachedLastMessage(opts.messages, cacheBreakpoint),
+            messages: withCachedLastMessage(stepMessages, cacheBreakpoint),
           };
         }
-        return undefined;
+        return stepMessages === step.messages
+          ? undefined
+          : { messages: stepMessages };
       },
       onError: async ({ error }: { error: unknown }) => {
         // Never throw here: the SDK calls this inside its stream pipeline,
