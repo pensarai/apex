@@ -40,6 +40,17 @@ export function filterOperatorAutocomplete(
 
 export type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
+export function shouldHandleQueuedMessageKey(
+  status: DashboardStatus,
+  queuedCount: number,
+  inputValue: string,
+  dialogOpen: boolean,
+): boolean {
+  return (
+    !dialogOpen && status === "running" && queuedCount > 0 && !inputValue.trim()
+  );
+}
+
 export function resolveOperatorAgentMode(
   operatorMode: OperatorMode,
   strikeMode: boolean,
@@ -67,6 +78,7 @@ export function resolveOperatorStrikeMode({
 
 interface FindingPolicyResolutionInput {
   resuming: boolean;
+  strikeMode: boolean;
   savedSessionValue?: FindingPolicy;
   routeOverride?: FindingPolicy;
   persistedDefault?: FindingPolicy;
@@ -74,12 +86,21 @@ interface FindingPolicyResolutionInput {
 
 export function resolveOperatorFindingPolicy({
   resuming,
+  strikeMode,
   savedSessionValue,
   routeOverride,
   persistedDefault,
 }: FindingPolicyResolutionInput): FindingPolicy {
+  if (!strikeMode) return "native";
   if (resuming) return savedSessionValue ?? "native";
   return routeOverride ?? persistedDefault ?? "native";
+}
+
+export function resolveActiveFindingPolicy(
+  agentMode: AgentMode,
+  findingPolicy: FindingPolicy,
+): FindingPolicy {
+  return agentMode === "fast-strike" ? findingPolicy : "native";
 }
 
 export interface SubmitResult {

@@ -109,6 +109,7 @@ import {
   type DashboardStatus,
   filterOperatorAutocomplete,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
@@ -116,6 +117,7 @@ import {
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 import {
   createQueuedMessage,
@@ -212,6 +214,7 @@ export default function OperatorDashboard({
   const initialFindingPolicyRef = useRef(
     resolveOperatorFindingPolicy({
       resuming: !!sessionId,
+      strikeMode: initialStrikeModeRef.current,
       routeOverride: initialConfig?.findingPolicy,
       persistedDefault: config.data.findingPolicy,
     }),
@@ -374,6 +377,10 @@ export default function OperatorDashboard({
     operatorMode,
     strikeMode,
   );
+  const activeFindingPolicy = resolveActiveFindingPolicy(
+    agentMode,
+    findingPolicy,
+  );
   const requireApproval = operatorMode === "manual";
   // Plan mode review state
   const [approvedPlanContent, setApprovedPlanContent] = useState<string | null>(
@@ -440,15 +447,15 @@ export default function OperatorDashboard({
           const s = await sessions.get(sessionId);
           setSession(s);
           setSessionCwd(s.rootPath);
-          setStrikeMode(
-            resolveOperatorStrikeMode({
-              resuming: true,
-              savedSessionValue: s.config?.operatorSettings?.strikeMode,
-            }),
-          );
+          const resumedStrikeMode = resolveOperatorStrikeMode({
+            resuming: true,
+            savedSessionValue: s.config?.operatorSettings?.strikeMode,
+          });
+          setStrikeMode(resumedStrikeMode);
           setFindingPolicy(
             resolveOperatorFindingPolicy({
               resuming: true,
+              strikeMode: resumedStrikeMode,
               savedSessionValue: s.config?.operatorSettings?.findingPolicy,
             }),
           );
@@ -891,7 +898,7 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
-        findingPolicy,
+        findingPolicy: activeFindingPolicy,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
@@ -947,7 +954,7 @@ export default function OperatorDashboard({
               agentMode !== "plan" ? approvedPlanRef.current : null,
             taskDriven:
               session?.config?.taskDriven ?? initialConfig?.taskDriven,
-            findingPolicy,
+            findingPolicy: activeFindingPolicy,
           },
         );
 
@@ -1106,6 +1113,7 @@ export default function OperatorDashboard({
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
       findingPolicy,
+      activeFindingPolicy,
       route.data,
       setSessionCwd,
       skillsRegistry.buildCatalog,
@@ -1658,11 +1666,16 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    const dialogOpen =
+      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
     // Queue navigation: handle before general shortcuts
     if (
-      status === "running" &&
-      queuedMessages.length > 0 &&
-      !inputValue.trim()
+      shouldHandleQueuedMessageKey(
+        status,
+        queuedMessages.length,
+        inputValue,
+        dialogOpen,
+      )
     ) {
       if (key.name === "up") {
         key.preventDefault?.();
@@ -1789,9 +1802,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
     // Treat the questions form as a dialog so that dashboard-level shortcuts
     // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
-    const dialogOpen =
-      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
-
     // Ctrl+A to open subagent dialog (skip if another dialog is open)
     if (
       key.ctrl &&
@@ -1950,7 +1960,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         <box flexDirection="row" gap={2}>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
           {strikeMode && <text fg={colors.warning}>STRIKE</text>}
-          {findingPolicy === "external" && (
+          {activeFindingPolicy === "external" && (
             <text fg={colors.textMuted}>JUDGE OFF</text>
           )}
           {(session?.targets[0] || initialConfig?.target) && (

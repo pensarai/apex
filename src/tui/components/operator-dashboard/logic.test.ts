@@ -6,6 +6,7 @@ import {
   type DashboardStatus,
   filterOperatorAutocomplete,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
@@ -13,6 +14,7 @@ import {
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 
 // ---------------------------------------------------------------------------
@@ -133,13 +135,16 @@ describe("resolveOperatorStrikeMode", () => {
 
 describe("resolveOperatorFindingPolicy", () => {
   it("defaults new sessions to Apex finding review", () => {
-    expect(resolveOperatorFindingPolicy({ resuming: false })).toBe("native");
+    expect(
+      resolveOperatorFindingPolicy({ resuming: false, strikeMode: true }),
+    ).toBe("native");
   });
 
-  it("uses the saved preference for new sessions", () => {
+  it("uses the saved preference for new Strike sessions", () => {
     expect(
       resolveOperatorFindingPolicy({
         resuming: false,
+        strikeMode: true,
         persistedDefault: "external",
       }),
     ).toBe("external");
@@ -149,16 +154,18 @@ describe("resolveOperatorFindingPolicy", () => {
     expect(
       resolveOperatorFindingPolicy({
         resuming: false,
+        strikeMode: true,
         routeOverride: "native",
         persistedDefault: "external",
       }),
     ).toBe("native");
   });
 
-  it("restores the policy saved with a resumed session", () => {
+  it("restores the policy saved with a resumed Strike session", () => {
     expect(
       resolveOperatorFindingPolicy({
         resuming: true,
+        strikeMode: true,
         savedSessionValue: "external",
         persistedDefault: "native",
       }),
@@ -169,9 +176,52 @@ describe("resolveOperatorFindingPolicy", () => {
     expect(
       resolveOperatorFindingPolicy({
         resuming: true,
+        strikeMode: true,
         persistedDefault: "external",
       }),
     ).toBe("native");
+  });
+
+  it("keeps standard sessions native despite external preferences or overrides", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: false,
+        routeOverride: "external",
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: false,
+        savedSessionValue: "external",
+      }),
+    ).toBe("native");
+  });
+});
+
+describe("resolveActiveFindingPolicy", () => {
+  it("allows judge off only while the agent is in Fast Strike", () => {
+    expect(resolveActiveFindingPolicy("fast-strike", "external")).toBe(
+      "external",
+    );
+    expect(resolveActiveFindingPolicy("default", "external")).toBe("native");
+    expect(resolveActiveFindingPolicy("plan", "external")).toBe("native");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Queue navigation
+// ---------------------------------------------------------------------------
+
+describe("shouldHandleQueuedMessageKey", () => {
+  it("leaves queue navigation to the dashboard only when no dialog owns the keyboard", () => {
+    expect(shouldHandleQueuedMessageKey("running", 2, "", false)).toBe(true);
+    expect(shouldHandleQueuedMessageKey("running", 2, "", true)).toBe(false);
+    expect(
+      shouldHandleQueuedMessageKey("running", 2, " /advanced ", false),
+    ).toBe(false);
   });
 });
 

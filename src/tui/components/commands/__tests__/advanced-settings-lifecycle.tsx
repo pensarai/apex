@@ -5,6 +5,9 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import type { Config } from "../../../../core/config/config";
 
+const scenario = process.argv[2];
+assert.ok(scenario === "native" || scenario === "external");
+
 const saved: Partial<Config>[] = [];
 let closes = 0;
 mock.module(join(import.meta.dirname, "../../../context/config.tsx"), () => ({
@@ -49,18 +52,39 @@ try {
   assert.ok((await frame()).includes("Apex judge"));
   assert.deepEqual(saved, []);
 
+  await press("j");
+  assert.ok(!(await frame()).includes("Apex judge (default)"));
+
   await press("TAB");
   assert.ok((await frame()).includes("● Enabled"));
 
   await press("j");
-  assert.ok((await frame()).includes("Off (report findings only)"));
+  const findingSelectFrame = await frame();
+  assert.ok(
+    findingSelectFrame.includes("Off (report findings only)"),
+    findingSelectFrame,
+  );
   await press("ARROW_DOWN");
   await press("RETURN");
   assert.ok((await frame()).includes("Disabled ▾"));
   assert.deepEqual(saved, []);
 
+  if (scenario === "native") {
+    await press("TAB");
+    const strikeOffFrame = await frame();
+    assert.ok(strikeOffFrame.includes("○ Disabled"));
+    assert.ok(strikeOffFrame.includes("Apex judge"));
+    assert.ok(!strikeOffFrame.includes("Disabled ▾"));
+    await press("j");
+    assert.ok(!(await frame()).includes("Apex judge (default)"));
+  }
+
   await press("RETURN");
-  assert.deepEqual(saved, [{ strikeMode: true, findingPolicy: "external" }]);
+  assert.deepEqual(saved, [
+    scenario === "native"
+      ? { strikeMode: false, findingPolicy: "native" }
+      : { strikeMode: true, findingPolicy: "external" },
+  ]);
   assert.equal(closes, 1);
 } finally {
   await act(async () => setup.renderer.destroy());

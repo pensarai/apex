@@ -24,12 +24,13 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     config.data.strikeMode ?? false,
   );
   const [draftFindingPolicy, setDraftFindingPolicy] = useState<FindingPolicy>(
-    config.data.findingPolicy ?? "native",
+    config.data.strikeMode ? (config.data.findingPolicy ?? "native") : "native",
   );
   const [findingSelectOpen, setFindingSelectOpen] = useState(false);
   const [highlightedFindingIndex, setHighlightedFindingIndex] = useState(0);
 
   const openFindingSelect = useCallback(() => {
+    if (!draftStrikeMode) return;
     setHighlightedFindingIndex(
       Math.max(
         0,
@@ -39,7 +40,15 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
       ),
     );
     setFindingSelectOpen(true);
-  }, [draftFindingPolicy]);
+  }, [draftFindingPolicy, draftStrikeMode]);
+
+  const toggleStrikeMode = useCallback(() => {
+    if (draftStrikeMode) {
+      setDraftFindingPolicy("native");
+      setFindingSelectOpen(false);
+    }
+    setDraftStrikeMode(!draftStrikeMode);
+  }, [draftStrikeMode]);
 
   const saveSettings = useCallback(async () => {
     if (saving) return;
@@ -49,7 +58,7 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     try {
       await config.update({
         strikeMode: draftStrikeMode,
-        findingPolicy: draftFindingPolicy,
+        findingPolicy: draftStrikeMode ? draftFindingPolicy : "native",
       });
       onClose();
     } catch (cause) {
@@ -97,7 +106,7 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
 
     if (key.name === "tab") {
       key.preventDefault();
-      setDraftStrikeMode((enabled) => !enabled);
+      toggleStrikeMode();
       return;
     }
 
@@ -125,7 +134,9 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
           findingSelectOpen
             ? { key: "↑/↓", label: "Choose" }
             : { key: "Tab", label: "Strike" },
-          ...(!findingSelectOpen ? [{ key: "J", label: "Judge" }] : []),
+          ...(!findingSelectOpen && draftStrikeMode
+            ? [{ key: "J", label: "Judge" }]
+            : []),
         ]}
       >
         <box flexDirection="column" gap={1} overflow="hidden">
@@ -133,7 +144,7 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
             flexDirection="row"
             justifyContent="space-between"
             overflow="hidden"
-            onMouseDown={() => setDraftStrikeMode((enabled) => !enabled)}
+            onMouseDown={toggleStrikeMode}
           >
             <text fg={colors.text}>Strike Mode</text>
             <text fg={draftStrikeMode ? colors.warning : colors.textMuted}>
@@ -142,8 +153,7 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
           </box>
 
           <text fg={colors.textMuted}>
-            Use one focused operator for iterative vulnerability research.
-            Disables automatic discovery and agent fan-out.
+            Focused research; no auto-discovery or agent fan-out.
           </text>
 
           <box
@@ -152,15 +162,21 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
             overflow="hidden"
             onMouseDown={openFindingSelect}
           >
-            <text fg={colors.text}>Finding judge</text>
+            <text fg={draftStrikeMode ? colors.text : colors.textMuted}>
+              Finding judge
+            </text>
             <text
               fg={
-                draftFindingPolicy === "native"
-                  ? colors.primary
-                  : colors.warning
+                !draftStrikeMode
+                  ? colors.textMuted
+                  : draftFindingPolicy === "native"
+                    ? colors.primary
+                    : colors.warning
               }
             >
-              {draftFindingPolicy === "native" ? "Apex judge" : "Disabled"} ▾
+              {!draftStrikeMode
+                ? "Apex judge"
+                : `${draftFindingPolicy === "native" ? "Apex judge" : "Disabled"} ▾`}
             </text>
           </box>
 
@@ -197,12 +213,10 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
           )}
 
           <text fg={colors.textMuted}>
-            Disabled skips Apex's in-run finding judge and report. The TUI does
-            not invoke an external evaluator.
+            Judge off skips in-run review and report (Strike only).
           </text>
           <text fg={colors.textMuted}>
-            Applies to new operator sessions. Existing sessions keep their saved
-            settings.
+            New sessions only; TUI has no external evaluator.
           </text>
 
           {saving && <text fg={colors.textMuted}>Saving…</text>}
