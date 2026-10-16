@@ -6,7 +6,10 @@ import { act } from "react";
 import type { Config } from "../../../../core/config/config";
 
 const scenario = process.argv[2];
-assert.ok(scenario === "native" || scenario === "external");
+assert.ok(
+  scenario === "native" || scenario === "external" || scenario === "compact",
+);
+const compact = scenario === "compact";
 
 const saved: Partial<Config>[] = [];
 let closes = 0;
@@ -32,7 +35,11 @@ const setup = await testRender(
       <AdvancedSettings onClose={() => (closes += 1)} />
     </TerminalDimensionsProvider>
   </ThemeProvider>,
-  { width: 80, height: 24, exitOnCtrlC: false },
+  {
+    width: compact ? 60 : 80,
+    height: compact ? 18 : 24,
+    exitOnCtrlC: false,
+  },
 );
 
 const settle = async () => {
@@ -49,22 +56,50 @@ const press = async (key: string) => {
 };
 
 try {
-  assert.ok((await frame()).includes("Apex judge"));
+  const initialFrame = await frame();
+  assert.ok(initialFrame.includes("Strike Mode"), initialFrame);
+  assert.ok(initialFrame.includes("❯ Strike Mode"), initialFrame);
+  assert.ok(initialFrame.includes("Save settings"), initialFrame);
+  assert.ok(!initialFrame.includes("Finding judge"), initialFrame);
+  assert.ok(!initialFrame.includes("Judge off"), initialFrame);
   assert.deepEqual(saved, []);
 
-  await press("j");
-  assert.ok(!(await frame()).includes("Apex judge (default)"));
-
   await press("TAB");
-  assert.ok((await frame()).includes("● Enabled"));
+  const strikeOnFrame = await frame();
+  assert.ok(strikeOnFrame.includes("● Enabled"), strikeOnFrame);
+  assert.ok(strikeOnFrame.includes("❯ Strike Mode"), strikeOnFrame);
+  assert.ok(strikeOnFrame.includes("Finding judge"), strikeOnFrame);
+  assert.ok(strikeOnFrame.includes("Apex judge"), strikeOnFrame);
+  assert.ok(!strikeOnFrame.includes("[J]"), strikeOnFrame);
+  if (compact) {
+    assert.ok(strikeOnFrame.includes("Save settings"), strikeOnFrame);
+  }
 
   await press("j");
+  assert.ok(!(await frame()).includes("Off (report findings only)"));
+
+  await press("ARROW_DOWN");
+  const judgeFocusedFrame = await frame();
+  assert.ok(judgeFocusedFrame.includes("❯ Finding judge"), judgeFocusedFrame);
+  await press("RETURN");
   const findingSelectFrame = await frame();
+  if (compact) {
+    assert.ok(
+      findingSelectFrame.includes("Apex judge (default)"),
+      findingSelectFrame,
+    );
+    assert.ok(findingSelectFrame.includes("Save settings"), findingSelectFrame);
+  }
   assert.ok(
     findingSelectFrame.includes("Off (report findings only)"),
     findingSelectFrame,
   );
   await press("ARROW_DOWN");
+  const offFocusedFrame = await frame();
+  assert.ok(
+    offFocusedFrame.includes("❯ Off (report findings only)"),
+    offFocusedFrame,
+  );
   await press("RETURN");
   assert.ok((await frame()).includes("Disabled ▾"));
   assert.deepEqual(saved, []);
@@ -73,12 +108,25 @@ try {
     await press("TAB");
     const strikeOffFrame = await frame();
     assert.ok(strikeOffFrame.includes("○ Disabled"));
-    assert.ok(strikeOffFrame.includes("Apex judge"));
+    assert.ok(!strikeOffFrame.includes("Finding judge"), strikeOffFrame);
+    assert.ok(!strikeOffFrame.includes("Judge off"), strikeOffFrame);
     assert.ok(!strikeOffFrame.includes("Disabled ▾"));
-    await press("j");
-    assert.ok(!(await frame()).includes("Apex judge (default)"));
+    assert.ok(strikeOffFrame.includes("❯ Strike Mode"), strikeOffFrame);
   }
 
+  await press("ARROW_DOWN");
+  const saveFocusedFrame = await frame();
+  assert.ok(saveFocusedFrame.includes("❯ Save settings"), saveFocusedFrame);
+  await press("ARROW_UP");
+  const previousFocusedFrame = await frame();
+  assert.ok(
+    previousFocusedFrame.includes(
+      scenario === "native" ? "❯ Strike Mode" : "❯ Finding judge",
+    ),
+    previousFocusedFrame,
+  );
+  await press("ARROW_DOWN");
+  assert.ok((await frame()).includes("❯ Save settings"));
   await press("RETURN");
   assert.deepEqual(saved, [
     scenario === "native"
