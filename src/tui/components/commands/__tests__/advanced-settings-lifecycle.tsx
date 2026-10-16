@@ -81,6 +81,22 @@ try {
   await press("ARROW_DOWN");
   const judgeFocusedFrame = await frame();
   assert.ok(judgeFocusedFrame.includes("❯ Finding judge"), judgeFocusedFrame);
+  await press("TAB");
+  const judgeOffFrame = await frame();
+  assert.ok(judgeOffFrame.includes("❯ Finding judge"), judgeOffFrame);
+  assert.ok(judgeOffFrame.includes("● Enabled"), judgeOffFrame);
+  assert.ok(judgeOffFrame.includes("Disabled ▾"), judgeOffFrame);
+  assert.ok(
+    !judgeOffFrame.includes("Off (report findings only)"),
+    judgeOffFrame,
+  );
+  await press("TAB");
+  const judgeOnFrame = await frame();
+  assert.ok(judgeOnFrame.includes("❯ Finding judge"), judgeOnFrame);
+  assert.ok(judgeOnFrame.includes("● Enabled"), judgeOnFrame);
+  assert.ok(judgeOnFrame.includes("Apex judge ▾"), judgeOnFrame);
+  assert.deepEqual(saved, []);
+
   await press("RETURN");
   const findingSelectFrame = await frame();
   if (compact) {
@@ -105,6 +121,10 @@ try {
   assert.deepEqual(saved, []);
 
   if (scenario === "native") {
+    await press("ARROW_UP");
+    const strikeFocusedFrame = await frame();
+    assert.ok(strikeFocusedFrame.includes("❯ Strike Mode"), strikeFocusedFrame);
+    assert.ok(strikeFocusedFrame.includes("Disabled ▾"), strikeFocusedFrame);
     await press("TAB");
     const strikeOffFrame = await frame();
     assert.ok(strikeOffFrame.includes("○ Disabled"));
@@ -117,6 +137,23 @@ try {
   await press("ARROW_DOWN");
   const saveFocusedFrame = await frame();
   assert.ok(saveFocusedFrame.includes("❯ Save settings"), saveFocusedFrame);
+  await press("TAB");
+  const afterSaveTabFrame = await frame();
+  assert.ok(afterSaveTabFrame.includes("❯ Save settings"), afterSaveTabFrame);
+  assert.ok(
+    afterSaveTabFrame.includes(
+      scenario === "native" ? "○ Disabled" : "● Enabled",
+    ),
+    afterSaveTabFrame,
+  );
+  assert.ok(
+    scenario === "native"
+      ? !afterSaveTabFrame.includes("Finding judge")
+      : afterSaveTabFrame.includes("Disabled ▾"),
+    afterSaveTabFrame,
+  );
+  assert.deepEqual(saved, []);
+  assert.equal(closes, 0);
   await press("ARROW_UP");
   const previousFocusedFrame = await frame();
   assert.ok(

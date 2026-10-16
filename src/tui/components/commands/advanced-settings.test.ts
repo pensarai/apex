@@ -4,10 +4,13 @@ import { expect, it } from "vitest";
 
 for (const scenario of [
   {
-    name: "hides and resets the judge when Strike is turned off",
+    name: "Tab toggles the focused Judge and resets it when Strike turns off",
     mode: "native",
   },
-  { name: "saves judge off through arrow navigation", mode: "external" },
+  {
+    name: "Tab on Save does not change Strike or Judge",
+    mode: "external",
+  },
   { name: "keeps judge choices and Save visible at 60x18", mode: "compact" },
 ] as const) {
   it(scenario.name, () => {

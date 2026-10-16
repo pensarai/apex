@@ -60,6 +60,14 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     setDraftStrikeMode(!draftStrikeMode);
   }, [draftStrikeMode]);
 
+  const toggleFindingPolicy = useCallback(() => {
+    if (!draftStrikeMode) return;
+    setDraftFindingPolicy((policy) =>
+      policy === "native" ? "external" : "native",
+    );
+    setFindingSelectOpen(false);
+  }, [draftStrikeMode]);
+
   const moveFocus = useCallback(
     (direction: number) => {
       const visibleSettings: FocusedSetting[] = draftStrikeMode
@@ -100,7 +108,8 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
   useKeyboard((key) => {
     if (key.name === "tab") {
       key.preventDefault();
-      toggleStrikeMode();
+      if (focusedSetting === "strike") toggleStrikeMode();
+      else if (focusedSetting === "judge") toggleFindingPolicy();
       return;
     }
 
@@ -162,7 +171,9 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
           findingSelectOpen
             ? { key: "↑/↓", label: "Choose" }
             : { key: "↑/↓", label: "Navigate" },
-          ...(dimensions.width >= 60 ? [{ key: "Tab", label: "Strike" }] : []),
+          ...(dimensions.width >= 60 && focusedSetting !== "save"
+            ? [{ key: "Tab", label: "Toggle" }]
+            : []),
         ]}
       >
         <box flexDirection="column" gap={compact ? 0 : 1} overflow="hidden">
