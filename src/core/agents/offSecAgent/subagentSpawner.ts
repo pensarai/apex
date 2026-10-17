@@ -103,6 +103,7 @@ export type SubagentSpec =
 export interface SpawnRuntime {
   session: SessionInfo;
   model: AIModel;
+  toolProtocol?: AgentHooks["toolProtocol"];
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   sandbox?: UnifiedSandbox;
@@ -357,6 +358,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
       backends: ctx.backends,
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
+      toolProtocol: ctx.toolProtocol,
       usageRecorder: ctx.usageRecorder,
       streamIdFactory: ctx.streamIdFactory,
     },
@@ -398,6 +400,7 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
@@ -424,6 +427,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     sandbox: ctx.sandbox,
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
@@ -449,6 +453,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     sandbox: ctx.sandbox,
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
@@ -475,6 +480,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         secretValues: ctx.secretValues,
         backends: ctx.backends,
         languageModelMiddleware: ctx.languageModelMiddleware,
+        toolProtocol: ctx.toolProtocol,
         usageRecorder: ctx.usageRecorder,
         streamIdFactory: ctx.streamIdFactory,
       }),
@@ -500,6 +506,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         thinkingEffort: ctx.thinkingEffort,
         openAIReasoningEffort: ctx.openAIReasoningEffort,
         languageModelMiddleware: ctx.languageModelMiddleware,
+        toolProtocol: ctx.toolProtocol,
         usageRecorder: ctx.usageRecorder,
         streamIdFactory: ctx.streamIdFactory,
       }),

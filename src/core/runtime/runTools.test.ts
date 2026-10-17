@@ -144,6 +144,8 @@ describe("tool policy classification", () => {
     ["list_tasks", "read_only"],
     ["http_request", "external_effect"],
     ["execute_command", "shell_state"],
+    ["exec", "shell_state"],
+    ["wait", "shell_state"],
     ["document_vulnerability", "local_mutation"],
     ["write_plan", "local_mutation"],
     ["create_task", "local_mutation"],

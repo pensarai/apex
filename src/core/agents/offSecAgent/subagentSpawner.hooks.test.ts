@@ -39,6 +39,7 @@ const streamIdFactory = (() => "sid") as unknown as StreamIdFactory;
 const runtime = {
   session: {} as SessionInfo,
   model: "test-model" as AIModel,
+  toolProtocol: "direct" as const,
   languageModelMiddleware: middleware,
   usageRecorder,
   streamIdFactory,
@@ -63,6 +64,7 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.authInput?.languageModelMiddleware).toBe(middleware);
     expect(mocks.authInput?.usageRecorder).toBe(usageRecorder);
     expect(mocks.authInput?.streamIdFactory).toBe(streamIdFactory);
+    expect(mocks.authInput?.toolProtocol).toBe("direct");
   });
 
   it("forwards middleware/usageRecorder/streamIdFactory through runJudgeChild", async () => {
@@ -82,6 +84,7 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.judgeCtx?.languageModelMiddleware).toBe(middleware);
     expect(mocks.judgeCtx?.usageRecorder).toBe(usageRecorder);
     expect(mocks.judgeCtx?.streamIdFactory).toBe(streamIdFactory);
+    expect(mocks.judgeCtx?.toolProtocol).toBe("direct");
   });
 
   it("passes the hooks through as unset when the runtime omits them", async () => {

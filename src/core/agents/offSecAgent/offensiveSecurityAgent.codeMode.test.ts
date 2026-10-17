@@ -1,0 +1,195 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type ToolExecutionOptions, type ToolSet, tool } from "ai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import type { CodeCellResult } from "../../code-mode";
+import { AgentEventBus } from "../../eventBus";
+import { ApprovalGate } from "../../operator";
+import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+import type { OffensiveSecurityAgentInput } from "./types";
+
+const observed = vi.hoisted(() => ({
+  requests: [] as { tools: ToolSet; activeTools: string[]; system: string }[],
+  streamError: undefined as Error | undefined,
+}));
+
+vi.mock("../../ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../ai")>()),
+  streamResponse: (request: (typeof observed.requests)[number]) => {
+    observed.requests.push(request);
+    return {
+      fullStream: (async function* () {
+        if (observed.streamError) throw observed.streamError;
+        yield { type: "start-step" };
+      })(),
+      response: Promise.resolve({ messages: [] }),
+    };
+  },
+}));
+
+const agents: OffensiveSecurityAgent[] = [];
+const roots: string[] = [];
+
+afterEach(async () => {
+  await Promise.allSettled(agents.splice(0).map((agent) => agent.consume()));
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true });
+  observed.requests.length = 0;
+  observed.streamError = undefined;
+});
+
+function makeAgent(options: Partial<OffensiveSecurityAgentInput<void>> = {}) {
+  const rootPath = mkdtempSync(join(tmpdir(), "apex-code-mode-agent-"));
+  roots.push(rootPath);
+  const agent = new OffensiveSecurityAgent({
+    prompt: "Compose the available tools",
+    model: "fixture-model",
+    toolProtocol: "schema-code",
+    activeTools: [],
+    session: {
+      id: "ses_code_mode",
+      rootPath,
+      targets: [],
+      scratchpadPath: join(rootPath, "scratchpad"),
+    },
+    ...options,
+  } as OffensiveSecurityAgentInput<void>);
+  agents.push(agent);
+  void agent.streamResult;
+  const request = observed.requests.at(-1);
+  if (!request) throw new Error("Agent did not create a stream");
+  return { agent, request };
+}
+
+async function execute(
+  tools: ToolSet,
+  name: string,
+  input: unknown,
+  options: ToolExecutionOptions = { toolCallId: "exec_test", messages: [] },
+) {
+  const implementation = tools[name].execute;
+  if (!implementation) throw new Error(`Missing execute for ${name}`);
+  const result = await implementation(input, options);
+  return JSON.parse(result as string) as CodeCellResult;
+}
+
+describe("agent code mode", () => {
+  it("exposes only selected capabilities and keeps injected contracts direct by default", async () => {
+    const echo = tool({
+      inputSchema: z.strictObject({ value: z.number() }),
+      execute: async ({ value }) => value * 2,
+    });
+    const submit = tool({
+      inputSchema: z.object({ done: z.boolean() }),
+      execute: async () => "done",
+    });
+    const { request } = makeAgent({
+      activeTools: ["echo", "submit"],
+      extraTools: { echo, submit, unavailable: echo },
+      nestedTools: ["echo"],
+    });
+    expect(request.activeTools).toEqual(["exec", "wait", "echo", "submit"]);
+    expect(request.tools.submit).toBe(submit);
+    expect(request.tools.echo).toBe(echo);
+    await expect(
+      request.tools.echo.execute?.(
+        { value: 21 },
+        {
+          toolCallId: "direct_echo",
+          messages: [],
+        },
+      ),
+    ).resolves.toBe(42);
+    const result = await execute(request.tools, "exec", {
+      code: 'text(ALL_TOOLS); text(await tools.call("echo", {value: 21})); try { await tools.call("unavailable", {value: 1}) } catch (e) { text(String(e)) }',
+    });
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain('["echo"]\n42');
+    expect(result.output).toContain("Capability is not available");
+    expect(request.system).toContain("Code execution interface");
+  });
+
+  it("uses existing approval behavior for both direct and nested calls", async () => {
+    const bus = new AgentEventBus();
+    const onResult = vi.fn();
+    bus.on("tool-result", onResult);
+    const gate = new ApprovalGate({ requireApproval: false });
+    const check = vi.spyOn(gate, "check");
+    const { request } = makeAgent({
+      activeTools: ["echo"],
+      extraTools: {
+        echo: tool({
+          inputSchema: z.strictObject({ value: z.number() }),
+          execute: async ({ value }) => value,
+        }),
+      },
+      nestedTools: ["echo"],
+      eventBus: bus,
+      approvalGate: gate,
+      streamIdFactory: (event) =>
+        event.kind === "tool-part" ? `part:${event.toolCallId}` : "message",
+    });
+    const result = await execute(request.tools, "exec", {
+      code: 'text(await tools.call("echo", {value: 42}))',
+    });
+    expect(result.output).toBe("42");
+    expect(check).toHaveBeenCalledWith("echo", "exec_test:nested:1", {
+      value: 42,
+    });
+    expect(onResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: "exec_test:nested:1",
+        partId: "part:exec_test:nested:1",
+        result: 42,
+      }),
+    );
+    await expect(
+      request.tools.echo.execute?.(
+        { value: 7 },
+        {
+          toolCallId: "direct_echo",
+          messages: [],
+        },
+      ),
+    ).resolves.toBe(7);
+    expect(check).toHaveBeenCalledWith("echo", "direct_echo", { value: 7 });
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("disposes yielded cells when the stream ends (failure: %s)", async (failure) => {
+    const completed = vi.fn();
+    const { agent, request } = makeAgent({ onCodeCellComplete: completed });
+    const initial = await execute(request.tools, "exec", {
+      code: "await new Promise(() => {})",
+      yield_time_ms: 5,
+    });
+    expect(initial.status).toBe("running");
+    if (failure) observed.streamError = new Error("provider disconnected");
+    if (failure)
+      await expect(agent.consume()).rejects.toThrow("provider disconnected");
+    else await agent.consume();
+    expect(completed).toHaveBeenCalledWith(
+      expect.objectContaining({ cellId: initial.cellId, status: "terminated" }),
+    );
+    await expect(
+      execute(request.tools, "exec", { code: "text(1)" }),
+    ).rejects.toThrow("disposed");
+  });
+
+  it("preserves the direct mode opt-out", () => {
+    const echo = tool({ inputSchema: z.object({}), execute: async () => "ok" });
+    const { request } = makeAgent({
+      toolProtocol: "direct",
+      activeTools: ["echo"],
+      extraTools: { echo },
+    });
+    expect(request.activeTools).toEqual(["echo"]);
+    expect(request.tools.echo).toBe(echo);
+    expect(request.system).not.toContain("Code execution interface");
+  });
+});

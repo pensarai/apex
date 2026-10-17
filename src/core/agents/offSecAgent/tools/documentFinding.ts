@@ -506,6 +506,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               thinkingEffort: ctx.thinkingEffort,
               openAIReasoningEffort: ctx.openAIReasoningEffort,
               languageModelMiddleware: ctx.languageModelMiddleware,
+              toolProtocol: ctx.toolProtocol,
               usageRecorder: ctx.usageRecorder,
               streamIdFactory: ctx.streamIdFactory,
             },
