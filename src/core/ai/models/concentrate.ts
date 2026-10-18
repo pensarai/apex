@@ -1,5 +1,11 @@
 import type { ModelInfo } from "../ai";
 
+// Concentrate does not route on max_output_tokens, so these use the lowest
+// ceiling among each slug's upstream providers.
+export const CONCENTRATE_MAX_OUTPUT_TOKENS: Readonly<Record<string, number>> = {
+  "concentrate:kimi-k3": 32_768,
+};
+
 // Curated from Concentrate's public model catalog. The local prefix keeps
 // gateway selections distinct from direct-provider models and is not sent.
 export const CONCENTRATE_MODELS: ModelInfo[] = [
@@ -164,6 +170,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     name: "Mistral Large 3",
     provider: "concentrate",
     contextLength: 256000,
+  },
+  {
+    id: "concentrate:kimi-k3",
+    name: "Kimi K3",
+    provider: "concentrate",
+    contextLength: 1048576,
   },
   {
     id: "concentrate:kimi-k2-thinking",
