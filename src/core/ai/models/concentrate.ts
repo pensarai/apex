@@ -178,6 +178,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     contextLength: 204800,
   },
   {
+    id: "concentrate:mimo-v2.6-pro",
+    name: "MiMo V2.6 Pro",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
     id: "concentrate:glm-5.3",
     name: "GLM-5.3",
     provider: "concentrate",

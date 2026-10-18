@@ -322,6 +322,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 256000,
   },
   {
+    id: "xiaomi/mimo-v2.6-pro",
+    name: "MiMo-V2.6-Pro",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
     id: "z-ai/glm-4.7-flash",
     name: "GLM 4.7 Flash",
     provider: "openrouter",

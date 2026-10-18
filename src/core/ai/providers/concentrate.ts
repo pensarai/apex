@@ -9,6 +9,10 @@ import { getClaudeCapabilities } from "../models";
 
 export const CONCENTRATE_BASE_URL = "https://api.concentrate.ai/v1";
 export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
+// Concentrate routes each reasoning effort only to upstreams that accept it.
+export const CONCENTRATE_REASONING_MODEL_IDS: ReadonlySet<string> = new Set([
+  "concentrate:mimo-v2.6-pro",
+]);
 
 const RETRYABLE_STATUSES = new Set([424, 429, 500, 503, 504]);
 
@@ -139,6 +143,7 @@ export function createConcentrateModel(
   return withConcentrateDefaults(
     concentrate.responses(upstreamModelId),
     modelId === CONCENTRATE_GLM_5_3_MODEL_ID ||
+      CONCENTRATE_REASONING_MODEL_IDS.has(modelId) ||
       /^gpt-6[.-]/.test(upstreamModelId) ||
       !!getClaudeCapabilities(modelId),
   );
