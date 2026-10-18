@@ -3,7 +3,10 @@ import type { z } from "zod";
 import { AgentRuntime } from "../../agentRuntime";
 import { type AgentDefinition, defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
-import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
+import {
+  CODE_AGENT_EXTERNAL_SYSTEM_PROMPT,
+  CODE_AGENT_SYSTEM_PROMPT,
+} from "./prompts";
 
 const CODE_AGENT_TOOLS: string[] = [
   "read_file",
@@ -91,7 +94,11 @@ export function codeAgentDefinition<TResult = void>(): AgentDefinition<
   return defineAgent<CodeAgentInput<TResult>, TResult>({
     name: "code-agent",
     role: "worker",
-    system: (opts) => opts.system ?? CODE_AGENT_SYSTEM_PROMPT,
+    system: (opts) =>
+      opts.system ??
+      (opts.findingPolicy === "external"
+        ? CODE_AGENT_EXTERNAL_SYSTEM_PROMPT
+        : CODE_AGENT_SYSTEM_PROMPT),
     activeTools: (opts) => {
       let activeTools = [...CODE_AGENT_TOOLS];
       if (opts.excludeTools?.length) {

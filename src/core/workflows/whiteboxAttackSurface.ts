@@ -298,6 +298,7 @@ export async function runWhiteboxAttackSurfaceApp(
             attackSurfaceRegistry,
           },
           runtime: {
+            findingPolicy: hooksForApp.findingPolicy,
             model,
             session,
             authConfig,

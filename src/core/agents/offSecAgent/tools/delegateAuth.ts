@@ -298,6 +298,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
         const result = await spawner.spawn<AuthenticationResult>({
           spec: { type: "authentication", target, authHints },
           runtime: {
+            findingPolicy: ctx.findingPolicy,
             session: ctx.session,
             model: ctx.model,
             authConfig: ctx.authConfig,

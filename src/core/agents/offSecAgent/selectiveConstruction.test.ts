@@ -289,6 +289,70 @@ describe("agent-level selective construction", () => {
     expect(Object.keys(streamTools())).toContain("custom_extra");
   });
 
+  it("external grading removes the finding tool before default-mode construction and extra-tool merge", () => {
+    const m = marker();
+    makeAgent(
+      baseInput({
+        findingPolicy: "external",
+        activeTools: [
+          "document_vulnerability",
+          "execute_command",
+          "http_request",
+          "spawn_pentest_agent",
+        ],
+        extraTools: {
+          document_vulnerability: {
+            description: "caller override",
+            inputSchema: {},
+            execute: async () => "should not run",
+          },
+        },
+      }) as never,
+    );
+
+    expect(constructedSince(m)).toEqual([
+      "execute_command",
+      "http_request",
+      "spawn_pentest_agent",
+    ]);
+    expect(streamTools()).not.toHaveProperty("document_vulnerability");
+    expect(streamTools()).toHaveProperty("spawn_pentest_agent");
+    expect(state.toolContexts.at(-1)).toMatchObject({
+      findingPolicy: "external",
+    });
+  });
+
+  it("external Fast Strike retains discovery tools while excluding the finding tool", () => {
+    const m = marker();
+    makeAgent(
+      baseInput({
+        mode: "fast-strike",
+        findingPolicy: "external",
+        activeTools: [],
+        responseSchema: { parse: () => {} },
+        extraTools: {
+          document_vulnerability: {
+            description: "caller override",
+            inputSchema: {},
+            execute: async () => "should not run",
+          },
+        },
+      }) as never,
+    );
+
+    expect(constructedSince(m)).not.toContain("document_vulnerability");
+    expect(streamTools()).not.toHaveProperty("document_vulnerability");
+    for (const name of [
+      "browser_navigate",
+      "http_request",
+      "execute_command",
+      "read_file",
+      "response",
+    ]) {
+      expect(streamTools()).toHaveProperty(name);
+    }
+  });
+
   it("fast-strike keeps a builtin extra override at its builtin position in the provider tool map", () => {
     // Baseline spread semantics: { ...builtinTools, ...extraTools } replaces
     // the value but KEEPS the builtin insertion position. A name-only merge

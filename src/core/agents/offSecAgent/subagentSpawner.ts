@@ -38,7 +38,12 @@ import type {
   TargetedPentestAgent,
 } from "../specialized/pentest/agent";
 import type { PlaywrightMcpSession, UnifiedSandbox } from "./tools";
-import type { AgentHooks, StreamIdFactory, SystemPentestScope } from "./types";
+import type {
+  AgentHooks,
+  FindingPolicy,
+  StreamIdFactory,
+  SystemPentestScope,
+} from "./types";
 
 /** Registry key selecting which child agent {@link SubagentSpawner.spawn} builds. */
 export type SubagentType =
@@ -101,6 +106,7 @@ export type SubagentSpec =
  * @public Consumed by Console's durable subagent runtime.
  */
 export interface SpawnRuntime {
+  findingPolicy?: FindingPolicy;
   session: SessionInfo;
   model: AIModel;
   authConfig?: AIAuthConfig;
@@ -354,6 +360,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     openAIReasoningEffort: ctx.openAIReasoningEffort,
     display: ctx.display,
     hooks: {
+      findingPolicy: ctx.findingPolicy,
       backends: ctx.backends,
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
@@ -374,6 +381,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
 const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
   const { CodeAgent } = await import("../specialized/codeAgent/agent");
   const agent = new CodeAgent({
+    findingPolicy: ctx.findingPolicy,
     codebasePath: spec.codebasePath,
     objective: spec.objective,
     system: spec.system,
@@ -412,6 +420,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     "../specialized/whiteboxAttackSurface"
   );
   const agent = new WhiteboxAttackSurfaceAgent({
+    findingPolicy: ctx.findingPolicy,
     codebasePath: spec.codebasePath,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
     model: ctx.model,
@@ -438,6 +447,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     "../specialized/attackSurface/blackboxAgent"
   );
   const agent = new BlackboxAttackSurfaceAgent({
+    findingPolicy: ctx.findingPolicy,
     target: spec.target,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
     model: ctx.model,
@@ -462,6 +472,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
   return {
     run: () =>
       runAuthenticationAgent({
+        findingPolicy: ctx.findingPolicy,
         target: spec.target,
         authHints: spec.authHints,
         session: ctx.session,

@@ -29,6 +29,7 @@ import {
   type AgentMode,
   ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
+  type FindingPolicy,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../core/agents/offSecAgent";
@@ -108,12 +109,15 @@ import {
   type DashboardStatus,
   filterOperatorAutocomplete,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 import {
   createQueuedMessage,
@@ -159,6 +163,7 @@ export default function OperatorDashboard({
     target?: string;
     operatorMode?: OperatorMode;
     strikeMode?: boolean;
+    findingPolicy?: FindingPolicy;
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
@@ -206,6 +211,17 @@ export default function OperatorDashboard({
     }),
   );
   const [strikeMode, setStrikeMode] = useState(initialStrikeModeRef.current);
+  const initialFindingPolicyRef = useRef(
+    resolveOperatorFindingPolicy({
+      resuming: !!sessionId,
+      strikeMode: initialStrikeModeRef.current,
+      routeOverride: initialConfig?.findingPolicy,
+      persistedDefault: config.data.findingPolicy,
+    }),
+  );
+  const [findingPolicy, setFindingPolicy] = useState(
+    initialFindingPolicyRef.current,
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
@@ -361,6 +377,10 @@ export default function OperatorDashboard({
     operatorMode,
     strikeMode,
   );
+  const activeFindingPolicy = resolveActiveFindingPolicy(
+    agentMode,
+    findingPolicy,
+  );
   const requireApproval = operatorMode === "manual";
   // Plan mode review state
   const [approvedPlanContent, setApprovedPlanContent] = useState<string | null>(
@@ -427,10 +447,16 @@ export default function OperatorDashboard({
           const s = await sessions.get(sessionId);
           setSession(s);
           setSessionCwd(s.rootPath);
-          setStrikeMode(
-            resolveOperatorStrikeMode({
+          const resumedStrikeMode = resolveOperatorStrikeMode({
+            resuming: true,
+            savedSessionValue: s.config?.operatorSettings?.strikeMode,
+          });
+          setStrikeMode(resumedStrikeMode);
+          setFindingPolicy(
+            resolveOperatorFindingPolicy({
               resuming: true,
-              savedSessionValue: s.config?.operatorSettings?.strikeMode,
+              strikeMode: resumedStrikeMode,
+              savedSessionValue: s.config?.operatorSettings?.findingPolicy,
             }),
           );
 
@@ -516,6 +542,7 @@ export default function OperatorDashboard({
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           setStrikeMode(initialStrikeModeRef.current);
+          setFindingPolicy(initialFindingPolicyRef.current);
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
           const requireApproval = newMode === "manual";
@@ -871,6 +898,7 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
+        findingPolicy: activeFindingPolicy,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
@@ -926,6 +954,7 @@ export default function OperatorDashboard({
               agentMode !== "plan" ? approvedPlanRef.current : null,
             taskDriven:
               session?.config?.taskDriven ?? initialConfig?.taskDriven,
+            findingPolicy: activeFindingPolicy,
           },
         );
 
@@ -945,6 +974,7 @@ export default function OperatorDashboard({
               requireApproval,
               enableSuggestions: true,
               strikeMode,
+              findingPolicy,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -1082,6 +1112,8 @@ export default function OperatorDashboard({
       initialConfig?.headers,
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
+      findingPolicy,
+      activeFindingPolicy,
       route.data,
       setSessionCwd,
       skillsRegistry.buildCatalog,
@@ -1634,11 +1666,16 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    const dialogOpen =
+      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
     // Queue navigation: handle before general shortcuts
     if (
-      status === "running" &&
-      queuedMessages.length > 0 &&
-      !inputValue.trim()
+      shouldHandleQueuedMessageKey(
+        status,
+        queuedMessages.length,
+        inputValue,
+        dialogOpen,
+      )
     ) {
       if (key.name === "up") {
         key.preventDefault?.();
@@ -1765,9 +1802,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
     // Treat the questions form as a dialog so that dashboard-level shortcuts
     // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
-    const dialogOpen =
-      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
-
     // Ctrl+A to open subagent dialog (skip if another dialog is open)
     if (
       key.ctrl &&
@@ -1926,6 +1960,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         <box flexDirection="row" gap={2}>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
           {strikeMode && <text fg={colors.warning}>STRIKE</text>}
+          {activeFindingPolicy === "external" && (
+            <text fg={colors.textMuted}>JUDGE OFF</text>
+          )}
           {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>

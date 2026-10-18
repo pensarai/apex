@@ -63,11 +63,13 @@ export interface AgentDefinition<
   /** Extra tools this definition injects, merged on top of `opts.extraTools`. */
   extraTools?: (opts: TOpts, state: TState) => ToolSet | undefined;
 
-  /** Produces `consume()`'s typed result from the finished stream. */
+  /** Produces `consume()`'s typed result from the finished stream and, when
+   * the response tool executes, its schema-validated result. */
   resolveResult?: (
     opts: TOpts,
     state: TState,
     streamResult: StreamTextResult<ToolSet, never>,
+    validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
   /** Target URL/host, when this definition derives one instead of taking it verbatim from `opts`. */
