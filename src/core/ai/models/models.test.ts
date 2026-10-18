@@ -377,6 +377,41 @@ describe("open-weight gateway models", () => {
       contextLength: 262_144,
       maxOutputTokens: 32_768,
     },
+    {
+      id: "deepseek/deepseek-v4.1-flash-1017",
+      name: "DeepSeek V4.1 Flash 1017",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 384_000,
+    },
+    {
+      id: "deepseek/deepseek-v4-pro-0813",
+      name: "DeepSeek V4 Pro 0813",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 384_000,
+    },
+    {
+      id: "concentrate:deepseek-v4-1-flash",
+      name: "DeepSeek V4.1 Flash",
+      provider: "concentrate",
+      contextLength: 1_000_000,
+      maxOutputTokens: 32_768,
+    },
+    {
+      id: "concentrate:deepseek-v4-1-flash-1017",
+      name: "DeepSeek V4.1 Flash 1017",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:deepseek-v4-pro-0813",
+      name: "DeepSeek V4 Pro 0813",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 384_000,
+    },
   ])("registers $id with its gateway limits", ({
     id,
     maxOutputTokens,
@@ -391,6 +426,9 @@ describe("open-weight gateway models", () => {
     "concentrate:kimi-k3",
     "concentrate:qwen3.8-max",
     "concentrate:qwen3.8-27b",
+    "concentrate:deepseek-v4-1-flash",
+    "concentrate:deepseek-v4-1-flash-1017",
+    "concentrate:deepseek-v4-pro-0813",
   ])("offers every effort Concentrate can route for %s", (id) => {
     expect(modelSupportsOpenAIReasoning(id)).toBe(true);
     expect(getOpenAIReasoningEfforts(id)).toEqual([

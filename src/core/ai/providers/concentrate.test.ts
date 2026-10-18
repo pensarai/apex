@@ -84,6 +84,9 @@ describe("createConcentrateModel", () => {
     "kimi-k3",
     "qwen3.8-max",
     "qwen3.8-27b",
+    "deepseek-v4-1-flash",
+    "deepseek-v4-1-flash-1017",
+    "deepseek-v4-pro-0813",
   ])("forces reasoning on the %s Responses request", async (slug) => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>

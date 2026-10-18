@@ -241,8 +241,8 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 131_072;
   }
 
-  // V4.1 Flash's larger output window must precede the legacy DeepSeek fallback.
-  if (modelId.includes("deepseek-v4.1-flash")) {
+  // DeepSeek V4's larger output window must precede the legacy DeepSeek fallback.
+  if (/deepseek-v4[.-]/.test(modelId)) {
     return 384_000;
   }
 
