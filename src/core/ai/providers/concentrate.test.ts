@@ -82,6 +82,8 @@ describe("createConcentrateModel", () => {
   it.each([
     "mimo-v2.6-pro",
     "kimi-k3",
+    "qwen3.8-max",
+    "qwen3.8-27b",
   ])("forces reasoning on the %s Responses request", async (slug) => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>

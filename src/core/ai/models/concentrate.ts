@@ -4,6 +4,8 @@ import type { ModelInfo } from "../ai";
 // ceiling among each slug's upstream providers.
 export const CONCENTRATE_MAX_OUTPUT_TOKENS: Readonly<Record<string, number>> = {
   "concentrate:kimi-k3": 32_768,
+  "concentrate:qwen3.8-max": 32_768,
+  "concentrate:qwen3.8-27b": 32_768,
 };
 
 // Curated from Concentrate's public model catalog. The local prefix keeps
@@ -158,6 +160,18 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     name: "Gemini 2.5 Pro",
     provider: "concentrate",
     contextLength: 1000000,
+  },
+  {
+    id: "concentrate:qwen3.8-max",
+    name: "Qwen3.8 Max",
+    provider: "concentrate",
+    contextLength: 256000,
+  },
+  {
+    id: "concentrate:qwen3.8-27b",
+    name: "Qwen3.8 27B",
+    provider: "concentrate",
+    contextLength: 262144,
   },
   {
     id: "concentrate:deepseek-v3-2",

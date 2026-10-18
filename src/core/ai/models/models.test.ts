@@ -342,6 +342,41 @@ describe("open-weight gateway models", () => {
       contextLength: 1_048_576,
       maxOutputTokens: 32_768,
     },
+    {
+      id: "qwen/qwen3.8-max-0902",
+      name: "Qwen3.8 Max (0902)",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "qwen/qwen3.8-27b",
+      name: "Qwen3.8 27B",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "qwen/qwen3.8-flash",
+      name: "Qwen3.8 Flash",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:qwen3.8-max",
+      name: "Qwen3.8 Max",
+      provider: "concentrate",
+      contextLength: 256_000,
+      maxOutputTokens: 32_768,
+    },
+    {
+      id: "concentrate:qwen3.8-27b",
+      name: "Qwen3.8 27B",
+      provider: "concentrate",
+      contextLength: 262_144,
+      maxOutputTokens: 32_768,
+    },
   ])("registers $id with its gateway limits", ({
     id,
     maxOutputTokens,
@@ -354,6 +389,8 @@ describe("open-weight gateway models", () => {
   it.each([
     "concentrate:mimo-v2.6-pro",
     "concentrate:kimi-k3",
+    "concentrate:qwen3.8-max",
+    "concentrate:qwen3.8-27b",
   ])("offers every effort Concentrate can route for %s", (id) => {
     expect(modelSupportsOpenAIReasoning(id)).toBe(true);
     expect(getOpenAIReasoningEfforts(id)).toEqual([
