@@ -12,6 +12,7 @@ export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
 // Concentrate routes each reasoning effort only to upstreams that accept it.
 export const CONCENTRATE_REASONING_MODEL_IDS: ReadonlySet<string> = new Set([
   "concentrate:mimo-v2.6-pro",
+  "concentrate:kimi-k3",
 ]);
 
 const RETRYABLE_STATUSES = new Set([424, 429, 500, 503, 504]);

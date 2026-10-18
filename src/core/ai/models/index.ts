@@ -17,7 +17,10 @@ export {
   getClaudeCapabilities,
 } from "./claude-capabilities";
 
-import { CONCENTRATE_MODELS } from "./concentrate";
+import {
+  CONCENTRATE_MAX_OUTPUT_TOKENS,
+  CONCENTRATE_MODELS,
+} from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
 // Bedrock Mantle (OpenAI Responses API) — curated manually.
@@ -103,6 +106,8 @@ export function getMaxOutputTokens(
 function lookupOutputBudgetByPattern(modelId: string): number {
   if (modelId === "chat-latest") return 128_000;
   if (getClaudeCapabilities(modelId)) return 128_000;
+  const concentrateBudget = CONCENTRATE_MAX_OUTPUT_TOKENS[modelId];
+  if (concentrateBudget) return concentrateBudget;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
   // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
   // digit.digit sequences to dashes so all Claude patterns match both forms.
@@ -223,6 +228,10 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   }
 
   if (modelId.includes("mimo-v2.6-pro")) {
+    return 131_072;
+  }
+
+  if (modelId.includes("kimi-k3")) {
     return 131_072;
   }
 

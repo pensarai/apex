@@ -328,6 +328,20 @@ describe("open-weight gateway models", () => {
       contextLength: 1_048_576,
       maxOutputTokens: 131_072,
     },
+    {
+      id: "moonshotai/kimi-k3",
+      name: "Kimi K3",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:kimi-k3",
+      name: "Kimi K3",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 32_768,
+    },
   ])("registers $id with its gateway limits", ({
     id,
     maxOutputTokens,
@@ -339,6 +353,7 @@ describe("open-weight gateway models", () => {
 
   it.each([
     "concentrate:mimo-v2.6-pro",
+    "concentrate:kimi-k3",
   ])("offers every effort Concentrate can route for %s", (id) => {
     expect(modelSupportsOpenAIReasoning(id)).toBe(true);
     expect(getOpenAIReasoningEfforts(id)).toEqual([
