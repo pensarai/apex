@@ -311,3 +311,44 @@ describe("OpenAI reasoning effort support", () => {
     );
   });
 });
+
+describe("open-weight gateway models", () => {
+  it.each([
+    {
+      id: "xiaomi/mimo-v2.6-pro",
+      name: "MiMo-V2.6-Pro",
+      provider: "openrouter",
+      contextLength: 1_050_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:mimo-v2.6-pro",
+      name: "MiMo V2.6 Pro",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+  ])("registers $id with its gateway limits", ({
+    id,
+    maxOutputTokens,
+    ...info
+  }) => {
+    expect(getModelInfo(id)).toMatchObject(info);
+    expect(getMaxOutputTokens(id)).toBe(maxOutputTokens);
+  });
+
+  it.each([
+    "concentrate:mimo-v2.6-pro",
+  ])("offers every effort Concentrate can route for %s", (id) => {
+    expect(modelSupportsOpenAIReasoning(id)).toBe(true);
+    expect(getOpenAIReasoningEfforts(id)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(normalizeOpenAIReasoningEffort(id)).toBe("medium");
+    expect(normalizeOpenAIReasoningEffort(id, "max")).toBe("max");
+  });
+});

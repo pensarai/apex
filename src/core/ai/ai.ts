@@ -73,7 +73,10 @@ import {
   runWithNativeRolloutOperation,
   withNativeRolloutEvidenceModel,
 } from "./native-rollout-evidence";
-import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
+import {
+  CONCENTRATE_GLM_5_3_MODEL_ID,
+  CONCENTRATE_REASONING_MODEL_IDS,
+} from "./providers/concentrate";
 import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
@@ -1248,7 +1251,12 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 }
 
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
-  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
+  if (
+    modelId === CONCENTRATE_GLM_5_3_MODEL_ID ||
+    CONCENTRATE_REASONING_MODEL_IDS.has(modelId)
+  ) {
+    return true;
+  }
   const { provider } = getModelInfo(modelId);
   if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
   modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
@@ -1267,6 +1275,9 @@ export function getOpenAIReasoningEfforts(
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
     return ["low", "high", "max"];
+  }
+  if (CONCENTRATE_REASONING_MODEL_IDS.has(modelId)) {
+    return ["low", "medium", "high", "xhigh", "max"];
   }
   if (/^concentrate:gpt-5\.4-(?:mini|nano)$/.test(modelId)) {
     return ["none", "low", "medium", "high"];

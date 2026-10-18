@@ -222,6 +222,10 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 131_072;
   }
 
+  if (modelId.includes("mimo-v2.6-pro")) {
+    return 131_072;
+  }
+
   // GLM 5 models ship a ~131K (128Ki) max-output window. Matching the family
   // keeps Bedrock and OpenRouter model IDs on the same budget.
   if (modelId.includes("glm-5")) {
