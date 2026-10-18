@@ -15,6 +15,9 @@ export const CONCENTRATE_REASONING_MODEL_IDS: ReadonlySet<string> = new Set([
   "concentrate:kimi-k3",
   "concentrate:qwen3.8-max",
   "concentrate:qwen3.8-27b",
+  "concentrate:deepseek-v4-1-flash",
+  "concentrate:deepseek-v4-1-flash-1017",
+  "concentrate:deepseek-v4-pro-0813",
 ]);
 
 const RETRYABLE_STATUSES = new Set([424, 429, 500, 503, 504]);

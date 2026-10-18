@@ -6,6 +6,8 @@ export const CONCENTRATE_MAX_OUTPUT_TOKENS: Readonly<Record<string, number>> = {
   "concentrate:kimi-k3": 32_768,
   "concentrate:qwen3.8-max": 32_768,
   "concentrate:qwen3.8-27b": 32_768,
+  "concentrate:deepseek-v4-1-flash": 32_768,
+  "concentrate:deepseek-v4-1-flash-1017": 131_072,
 };
 
 // Curated from Concentrate's public model catalog. The local prefix keeps
@@ -172,6 +174,24 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     name: "Qwen3.8 27B",
     provider: "concentrate",
     contextLength: 262144,
+  },
+  {
+    id: "concentrate:deepseek-v4-1-flash-1017",
+    name: "DeepSeek V4.1 Flash 1017",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
+    id: "concentrate:deepseek-v4-1-flash",
+    name: "DeepSeek V4.1 Flash",
+    provider: "concentrate",
+    contextLength: 1000000,
+  },
+  {
+    id: "concentrate:deepseek-v4-pro-0813",
+    name: "DeepSeek V4 Pro 0813",
+    provider: "concentrate",
+    contextLength: 1048576,
   },
   {
     id: "concentrate:deepseek-v3-2",
