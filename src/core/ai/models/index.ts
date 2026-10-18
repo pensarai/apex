@@ -251,6 +251,11 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 8_192;
   }
 
+  // Qwen3.8's first-party 131K output window must precede the Qwen fallback.
+  if (modelId.includes("qwen3.8")) {
+    return 131_072;
+  }
+
   // Qwen3 Coder ships a 16K max-output window over its 128K+ context. Match the
   // whole `qwen` family so future Bedrock/OpenRouter qwen ids don't silently
   // inherit the 4,096 default.

@@ -13,6 +13,8 @@ export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
 export const CONCENTRATE_REASONING_MODEL_IDS: ReadonlySet<string> = new Set([
   "concentrate:mimo-v2.6-pro",
   "concentrate:kimi-k3",
+  "concentrate:qwen3.8-max",
+  "concentrate:qwen3.8-27b",
 ]);
 
 const RETRYABLE_STATUSES = new Set([424, 429, 500, 503, 504]);

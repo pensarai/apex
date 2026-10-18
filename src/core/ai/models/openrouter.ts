@@ -256,6 +256,24 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 1048576,
   },
   {
+    id: "qwen/qwen3.8-max-0902",
+    name: "Qwen3.8 Max (0902)",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.8-27b",
+    name: "Qwen3.8 27B",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.8-flash",
+    name: "Qwen3.8 Flash",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
     id: "qwen/qwen3-8b",
     name: "Qwen 3 8B Thinking",
     provider: "openrouter",
