@@ -381,6 +381,7 @@ export async function generateThreatModelForEndpoint(
           backends: ctx.backends,
           languageModelMiddleware: ctx.languageModelMiddleware,
           usageRecorder: ctx.usageRecorder,
+          toolExecutionContext: ctx.toolExecutionContext,
           streamIdFactory: ctx.streamIdFactory,
         },
         parentBus: ctx.eventBus,

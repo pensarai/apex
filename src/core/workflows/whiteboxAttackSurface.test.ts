@@ -105,7 +105,7 @@ afterEach(() => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical", () => {
-  it("fans out per-app work through the same runWithBoundedConcurrency pool, once", async () => {
+  it("bounds per-app work and batches each app’s discovery children", async () => {
     const spy = vi.spyOn(concurrencyModule, "runWithBoundedConcurrency");
 
     await runWhiteboxAttackSurfaceWorkflow({
@@ -115,7 +115,9 @@ describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical"
       surfaceIntegrationEnabled: false,
     });
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1][0]).toHaveLength(2);
+    expect(spy.mock.calls[1][1]).toBe(2);
     const [items, concurrency] = spy.mock.calls[0];
     expect(items).toHaveLength(1);
     expect(concurrency).toBe(5);
@@ -193,6 +195,36 @@ describe("runWhiteboxAttackSurfaceWorkflow — custom seams", () => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — AgentHooks", () => {
+  it("inherits tool execution context in discovery child descriptors", async () => {
+    const sharedContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const appContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const childContexts: AgentHooks["toolExecutionContext"][] = [];
+    await runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: "test-model",
+      session,
+      surfaceIntegrationEnabled: false,
+      subagentSpawner: {
+        ...codeSpawner,
+        spawn: (request) => {
+          childContexts.push(request.runtime.toolExecutionContext);
+          return codeSpawner.spawn(request);
+        },
+      },
+      hooks: { toolExecutionContext: sharedContext },
+      seams: inProcessSeams({
+        hooksForItem: () => ({ toolExecutionContext: appContext }),
+      }),
+    });
+    expect(childContexts).toHaveLength(2);
+    expect(mocks.codeAgentInputs[0]?.toolExecutionContext).toBe(sharedContext);
+    expect(childContexts).toEqual([appContext, appContext]);
+  });
+
   it("reaches the Phase 1 apps-discovery agent with the caller's own AgentHooks object", async () => {
     const backends = {
       __sentinel: "backends",

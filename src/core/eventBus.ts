@@ -365,6 +365,7 @@ export class AgentEventBus {
         break;
       }
       case "tool-result": {
+        if (chunk.preliminary) break;
         const tr = chunk as {
           toolCallId: string;
           toolName: string;

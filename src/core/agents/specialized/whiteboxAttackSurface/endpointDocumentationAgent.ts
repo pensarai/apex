@@ -19,7 +19,9 @@ import { scopedLogger } from "../../../util/lazyLogger";
 import type { AgentHooks } from "../../offSecAgent";
 import {
   inProcessSubagentSpawner,
+  type SpawnOptions,
   type SubagentSpawner,
+  spawnBatch,
 } from "../../offSecAgent/subagentSpawner";
 import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
 import {
@@ -199,9 +201,9 @@ This agent is responsible for **exactly one** endpoint. Do not document other en
 // Per-endpoint agent runner
 // ---------------------------------------------------------------------------
 
-async function runEndpointDocumentationAgent(
+function endpointDocumentationSpawnOptions(
   opts: EndpointDocumentationInput,
-): Promise<boolean> {
+): SpawnOptions<DiscoverySummary> {
   const {
     codebasePath,
     app,
@@ -220,8 +222,6 @@ async function runEndpointDocumentationAgent(
     thinkingEffort,
     projectThreatModel,
     parentSubagentId,
-    agentLimiter,
-    subagentSpawner,
     hooks,
     mintChildId,
   } = opts;
@@ -237,64 +237,51 @@ async function runEndpointDocumentationAgent(
     frameworks,
   });
 
-  const spawner = subagentSpawner ?? inProcessSubagentSpawner;
-  const spawnChild = () =>
-    spawner.spawn<DiscoverySummary>({
-      spec: {
-        type: "code",
-        codebasePath,
-        objective,
-        system: WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
-        // Hard-exclude tools an endpoint documentation agent must never use:
-        // - document_app: Phase 1 owns app discovery.
-        // - list_files / grep: route enumeration is surface's job; without this,
-        //   soft prompt guidance gets overridden by the model's discovery instinct
-        //   and the agent orients-first, looking like a discovery pass.
-        excludeTools: ["document_app", "list_files", "grep"],
-        responseSchema: DiscoverySummarySchema,
-        projectThreatModel,
-        attackSurfaceRegistry,
-      },
-      runtime: {
-        findingPolicy: hooks?.findingPolicy,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        enableThinking,
-        thinkingEffort,
-        openAIReasoningEffort,
-        onStepFinish,
-        onCacheMetrics,
-        backends: hooks?.backends,
-        sandbox: hooks?.sandbox,
-        languageModelMiddleware: hooks?.languageModelMiddleware,
-        usageRecorder: hooks?.usageRecorder,
-        streamIdFactory: hooks?.streamIdFactory,
-      },
-      subagentId,
-      subagentName: displayName,
-      parentBus: eventBus,
-      parentSubagentId,
-      lifecycleInput: {
-        app: app.name,
-        type: "endpointDocumentation",
-        method: displayMethod,
-        path: endpoint.path,
-      },
-    });
-
-  try {
-    await (agentLimiter ? agentLimiter(spawnChild) : spawnChild());
-    return true;
-  } catch (error) {
-    log.error(
-      `"${subagentId}" FAILED`,
-      error instanceof Error ? error : undefined,
-      { error: String(error) },
-    );
-    return false;
-  }
+  return {
+    spec: {
+      type: "code",
+      codebasePath,
+      objective,
+      system: WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
+      // Hard-exclude tools an endpoint documentation agent must never use:
+      // - document_app: Phase 1 owns app discovery.
+      // - list_files / grep: route enumeration is surface's job; without this,
+      //   soft prompt guidance gets overridden by the model's discovery instinct
+      //   and the agent orients-first, looking like a discovery pass.
+      excludeTools: ["document_app", "list_files", "grep"],
+      responseSchema: DiscoverySummarySchema,
+      projectThreatModel,
+      attackSurfaceRegistry,
+    },
+    runtime: {
+      findingPolicy: hooks?.findingPolicy,
+      model,
+      session,
+      authConfig,
+      abortSignal,
+      enableThinking,
+      thinkingEffort,
+      openAIReasoningEffort,
+      onStepFinish,
+      onCacheMetrics,
+      backends: hooks?.backends,
+      sandbox: hooks?.sandbox,
+      languageModelMiddleware: hooks?.languageModelMiddleware,
+      usageRecorder: hooks?.usageRecorder,
+      toolExecutionContext: hooks?.toolExecutionContext,
+      streamIdFactory: hooks?.streamIdFactory,
+    },
+    subagentId,
+    subagentName: displayName,
+    parentBus: eventBus,
+    parentSubagentId,
+    lifecycleInput: {
+      app: app.name,
+      type: "endpointDocumentation",
+      method: displayMethod,
+      path: endpoint.path,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,15 +296,29 @@ export async function runAppEndpointDocumentation(
 
   const spawner = opts.subagentSpawner ?? inProcessSubagentSpawner;
 
-  let anyFailed = false;
-  await spawner.spawnMany(
-    endpoints,
-    async (endpoint) => {
-      const ok = await runEndpointDocumentationAgent({ ...shared, endpoint });
-      if (!ok) anyFailed = true;
-    },
-    { concurrency: ENDPOINT_DOCUMENTATION_CONCURRENCY },
+  const requests = endpoints.map((endpoint) =>
+    endpointDocumentationSpawnOptions({ ...shared, endpoint }),
   );
+  const results = await spawnBatch(
+    spawner,
+    requests,
+    {
+      concurrency: ENDPOINT_DOCUMENTATION_CONCURRENCY,
+      abortSignal: opts.abortSignal,
+    },
+    opts.agentLimiter,
+  );
+  let anyFailed = false;
+  for (const [index, result] of results.entries()) {
+    if (result.status === "rejected") {
+      anyFailed = true;
+      log.error(
+        `"${requests[index]!.subagentId}" FAILED`,
+        result.reason instanceof Error ? result.reason : undefined,
+        { error: String(result.reason) },
+      );
+    }
+  }
 
   // Surface per-endpoint failure to the workflow so per-app status reflects
   // it. Each endpoint already emits its own subagent-complete (failed); this

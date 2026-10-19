@@ -122,6 +122,7 @@ export interface SpawnRuntime {
   secretValues?: string[];
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   usageRecorder?: UsageRecorder;
+  toolExecutionContext?: AgentHooks["toolExecutionContext"];
   streamIdFactory?: StreamIdFactory;
   /**
    * Step-usage + cache-metric callbacks forwarded to spawned workers. The inline
@@ -197,6 +198,18 @@ export interface SubagentSpawner {
    */
   spawn<TResult = unknown>(opts: SpawnOptions<TResult>): Promise<TResult>;
 
+  /** Opt in only when spawnBatch holds opts.limiter for each child's entire execution. */
+  supportsBatchLimiter?: boolean;
+
+  spawnBatch?<TResult>(
+    requests: readonly SpawnOptions<TResult>[],
+    opts: {
+      concurrency: number;
+      abortSignal?: AbortSignal;
+      limiter?: <T>(run: () => Promise<T>) => Promise<T>;
+    },
+  ): Promise<PromiseSettledResult<TResult>[]>;
+
   /**
    * Run a fan-out with bounded concurrency. Unifies the `pLimit` /
    * `runWithBoundedConcurrency` / sequential mechanisms behind one `concurrency`
@@ -207,6 +220,44 @@ export interface SubagentSpawner {
     worker: (item: TItem, index: number) => Promise<TResult>,
     opts: { concurrency: number; abortSignal?: AbortSignal },
   ): Promise<(TResult | null)[]>;
+}
+
+export async function spawnBatch<TResult>(
+  spawner: SubagentSpawner,
+  requests: readonly SpawnOptions<TResult>[],
+  opts: { concurrency: number; abortSignal?: AbortSignal },
+  limiter?: <T>(run: () => Promise<T>) => Promise<T>,
+): Promise<PromiseSettledResult<TResult>[]> {
+  if (spawner.spawnBatch) {
+    if (limiter && !spawner.supportsBatchLimiter) {
+      throw new Error(
+        "Batch spawner must support the shared child limiter before scheduling limited batches",
+      );
+    }
+    return spawner.spawnBatch(requests, { ...opts, limiter });
+  }
+  const results = await spawner.spawnMany(
+    requests,
+    async (request) => {
+      try {
+        const run = () => spawner.spawn(request);
+        return {
+          status: "fulfilled",
+          value: await (limiter ? limiter(run) : run()),
+        } as const;
+      } catch (reason) {
+        return { status: "rejected", reason } as const;
+      }
+    },
+    opts,
+  );
+  return results.map((result) => {
+    if (result === null) {
+      opts.abortSignal?.throwIfAborted();
+      throw new Error("Subagent batch lost a result");
+    }
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +416,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
+      toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
     },
     seams: inProcessSeams(),
@@ -407,6 +459,7 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     onCacheMetrics: ctx.onCacheMetrics,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -434,6 +487,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -460,6 +514,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -487,6 +542,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         backends: ctx.backends,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
+        toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
       }),
   };
@@ -512,6 +568,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         openAIReasoningEffort: ctx.openAIReasoningEffort,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
+        toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
       }),
   };

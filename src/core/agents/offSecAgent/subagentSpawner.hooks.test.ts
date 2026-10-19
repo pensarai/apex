@@ -29,12 +29,16 @@ import type { AIModel, UsageRecorder } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import type { SessionInfo } from "../../session";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
-import type { StreamIdFactory } from "./types";
+import type { StreamIdFactory, ToolExecutionContext } from "./types";
 
 // Sentinels: only referential identity is asserted, so shapes are irrelevant.
 const middleware = { __sentinel: "mw" } as unknown as LanguageModelMiddleware;
 const usageRecorder = { __sentinel: "usage" } as unknown as UsageRecorder;
 const streamIdFactory = (() => "sid") as unknown as StreamIdFactory;
+
+const toolExecutionContext: ToolExecutionContext = {
+  run: (_call, execute) => execute(),
+};
 
 const runtime = {
   session: {} as SessionInfo,
@@ -42,6 +46,7 @@ const runtime = {
   languageModelMiddleware: middleware,
   usageRecorder,
   streamIdFactory,
+  toolExecutionContext,
 };
 
 afterEach(() => {
@@ -52,7 +57,7 @@ afterEach(() => {
 });
 
 describe("subagentSpawner durable-hook forwarding", () => {
-  it("forwards middleware/usageRecorder/streamIdFactory through runAuthChild", async () => {
+  it("forwards durability hooks through runAuthChild", async () => {
     await inProcessSubagentSpawner.spawn({
       spec: { type: "authentication", target: "https://example.com" },
       runtime,
@@ -63,9 +68,10 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.authInput?.languageModelMiddleware).toBe(middleware);
     expect(mocks.authInput?.usageRecorder).toBe(usageRecorder);
     expect(mocks.authInput?.streamIdFactory).toBe(streamIdFactory);
+    expect(mocks.authInput?.toolExecutionContext).toBe(toolExecutionContext);
   });
 
-  it("forwards middleware/usageRecorder/streamIdFactory through runJudgeChild", async () => {
+  it("forwards durability hooks through runJudgeChild", async () => {
     await inProcessSubagentSpawner.spawn({
       spec: {
         type: "finding-judge",
@@ -82,6 +88,7 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.judgeCtx?.languageModelMiddleware).toBe(middleware);
     expect(mocks.judgeCtx?.usageRecorder).toBe(usageRecorder);
     expect(mocks.judgeCtx?.streamIdFactory).toBe(streamIdFactory);
+    expect(mocks.judgeCtx?.toolExecutionContext).toBe(toolExecutionContext);
   });
 
   it("passes the hooks through as unset when the runtime omits them", async () => {
@@ -98,5 +105,6 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.authInput?.languageModelMiddleware).toBeUndefined();
     expect(mocks.authInput?.usageRecorder).toBeUndefined();
     expect(mocks.authInput?.streamIdFactory).toBeUndefined();
+    expect(mocks.authInput?.toolExecutionContext).toBeUndefined();
   });
 });
