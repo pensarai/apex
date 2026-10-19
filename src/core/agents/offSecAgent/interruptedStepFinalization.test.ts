@@ -73,6 +73,57 @@ function setup(overrides?: {
 // ---------------------------------------------------------------------------
 
 describe("createInterruptedStepFinalizer", () => {
+  it.each([
+    false,
+    true,
+  ])("keeps one result per streamed call on interruption (final=%s)", async (completed) => {
+    const { finalize } = setup();
+    const tracker = new ToolLifecycleTracker();
+    tracker.observePart({
+      type: "tool-call",
+      toolCallId: "tc-stream",
+      toolName: "probe",
+    });
+    tracker.observePart({
+      type: "tool-result",
+      toolCallId: "tc-stream",
+      toolName: "probe",
+      output: "partial",
+      preliminary: true,
+    });
+    if (completed) {
+      tracker.observePart({
+        type: "tool-result",
+        toolCallId: "tc-stream",
+        toolName: "probe",
+        output: { type: "text", value: "final" },
+        preliminary: false,
+      });
+    }
+    await finalize({ snapshot: tracker.snapshot(), reason: "interrupted" });
+    const written = JSON.parse(readFileSync(path(), "utf-8")) as ModelMessage[];
+    expect(written.at(-2)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: "tc-stream" }],
+    });
+    expect(written.at(-1)).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "tc-stream",
+          toolName: "probe",
+          output: completed
+            ? { type: "text", value: "final" }
+            : {
+                type: "error-text",
+                value: "Tool execution aborted: interrupted",
+              },
+        },
+      ],
+    });
+  });
+
   it("provider error: closes open tools, persists a valid transcript, resolves", async () => {
     const emitted: Array<Record<string, unknown>> = [];
     const { bus, finalize, writer } = setup();

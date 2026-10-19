@@ -4,6 +4,7 @@ import { MockLanguageModelV3 } from "ai/test";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import { wrapToolExecutionContext } from "./toolExecutionContext";
+import { ToolLifecycleTracker } from "./toolLifecycle";
 
 it("establishes context before tool work and preserves concurrent tool identities", async () => {
   const scope = new AsyncLocalStorage<string>();
@@ -110,8 +111,14 @@ it("streams preliminary and final outputs through the real SDK under host contex
     }),
   });
   const results = [];
+  const tracker = new ToolLifecycleTracker();
   for await (const part of streamText({ model, tools, prompt: "probe" })
     .fullStream) {
+    tracker.observePart(part);
+    if (part.type === "tool-result" && part.preliminary) {
+      expect(tracker.snapshot().completedResults).toHaveLength(0);
+      expect(tracker.inFlightTools.has("stream-call")).toBe(true);
+    }
     if (part.type === "tool-result")
       results.push({
         output: part.output,
@@ -120,6 +127,14 @@ it("streams preliminary and final outputs through the real SDK under host contex
     if (part.type === "error") throw part.error;
   }
   expect(calls).toEqual(["stream-call"]);
+  expect(tracker.snapshot().completedResults).toEqual([
+    {
+      type: "tool-result",
+      toolCallId: "stream-call",
+      toolName: "probe",
+      output: "done",
+    },
+  ]);
   expect(results).toEqual([
     { output: "working", preliminary: true },
     { output: "done", preliminary: true },

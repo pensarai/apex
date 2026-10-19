@@ -653,6 +653,7 @@ function createToolExecutionGate(): {
     type: string;
     toolCallId?: string;
     toolName?: string;
+    preliminary?: boolean;
   }) => void;
 } {
   let inFlight = 0;
@@ -661,6 +662,7 @@ function createToolExecutionGate(): {
   return {
     shouldEnforceIdleTimeout: () => inFlight === 0,
     observe: (chunk) => {
+      if (chunk.type === "tool-result" && chunk.preliminary) return;
       if (chunk.type === "tool-call") {
         if (chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName)) return;
         const id = chunk.toolCallId;
