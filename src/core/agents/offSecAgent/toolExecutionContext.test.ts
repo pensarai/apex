@@ -3,6 +3,7 @@ import { simulateReadableStream, streamText, type ToolSet } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
+import { AgentEventBus } from "../../eventBus";
 import { wrapToolExecutionContext } from "./toolExecutionContext";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 
@@ -63,20 +64,34 @@ async function collect(output: unknown): Promise<unknown[]> {
   return [await output];
 }
 
-it("streams preliminary and final outputs through the real SDK under host context", async () => {
+it.each([
+  "scalar",
+  "streaming",
+] as const)("keeps %s SDK progress out of completion events and recovery state", async (kind) => {
   const scope = new AsyncLocalStorage<string>();
   const calls: string[] = [];
   const tools = wrapToolExecutionContext(
     {
       probe: {
         inputSchema: z.object({}),
-        async *execute(_input, options) {
-          expect(scope.getStore()).toBe(options.toolCallId);
-          calls.push(options.toolCallId);
-          yield "working";
-          await new Promise((resolve) => setImmediate(resolve));
-          expect(scope.getStore()).toBe(options.toolCallId);
-          yield "done";
+        execute(_input, options) {
+          if (kind === "scalar") {
+            return (async () => {
+              expect(scope.getStore()).toBe(options.toolCallId);
+              calls.push(options.toolCallId);
+              await new Promise((resolve) => setImmediate(resolve));
+              expect(scope.getStore()).toBe(options.toolCallId);
+              return "done";
+            })();
+          }
+          return (async function* () {
+            expect(scope.getStore()).toBe(options.toolCallId);
+            calls.push(options.toolCallId);
+            yield "working";
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(scope.getStore()).toBe(options.toolCallId);
+            yield "done";
+          })();
         },
       },
     },
@@ -112,10 +127,19 @@ it("streams preliminary and final outputs through the real SDK under host contex
   });
   const results = [];
   const tracker = new ToolLifecycleTracker();
+  const bus = new AgentEventBus();
+  const completions: unknown[] = [];
+  bus.on("tool-result", (event) => completions.push(event));
   for await (const part of streamText({ model, tools, prompt: "probe" })
     .fullStream) {
     tracker.observePart(part);
+    bus.emitStreamPart(part, {
+      sessionId: "session",
+      messageId: "message",
+      toolPartId: () => "part",
+    });
     if (part.type === "tool-result" && part.preliminary) {
+      expect(completions).toHaveLength(0);
       expect(tracker.snapshot().completedResults).toHaveLength(0);
       expect(tracker.inFlightTools.has("stream-call")).toBe(true);
     }
@@ -136,9 +160,19 @@ it("streams preliminary and final outputs through the real SDK under host contex
     },
   ]);
   expect(results).toEqual([
-    { output: "working", preliminary: true },
+    ...(kind === "streaming" ? [{ output: "working", preliminary: true }] : []),
     { output: "done", preliminary: true },
     { output: "done", preliminary: false },
+  ]);
+  expect(completions).toEqual([
+    {
+      toolCallId: "stream-call",
+      toolName: "probe",
+      result: "done",
+      sessionId: "session",
+      messageId: "message",
+      partId: "part",
+    },
   ]);
   expect(scope.getStore()).toBeUndefined();
 });
