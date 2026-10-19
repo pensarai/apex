@@ -310,6 +310,7 @@ export async function runWhiteboxAttackSurfaceApp(
         sandbox: hooksForApp.sandbox,
         languageModelMiddleware: hooksForApp.languageModelMiddleware,
         usageRecorder: hooksForApp.usageRecorder,
+        toolExecutionContext: hooksForApp.toolExecutionContext,
         streamIdFactory: hooksForApp.streamIdFactory,
       },
       subagentId,

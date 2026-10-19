@@ -610,6 +610,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       emailAdapterFor: input.emailAdapterFor,
       languageModelMiddleware: input.languageModelMiddleware,
       usageRecorder: input.usageRecorder,
+      toolExecutionContext: input.toolExecutionContext,
       streamIdFactory: input.streamIdFactory,
     };
 

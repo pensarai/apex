@@ -308,6 +308,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
             backends: ctx.backends,
             languageModelMiddleware: ctx.languageModelMiddleware,
             usageRecorder: ctx.usageRecorder,
+            toolExecutionContext: ctx.toolExecutionContext,
             streamIdFactory: ctx.streamIdFactory,
           },
           parentBus: ctx.eventBus,

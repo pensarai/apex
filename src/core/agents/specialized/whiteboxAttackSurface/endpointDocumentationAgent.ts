@@ -268,6 +268,7 @@ function endpointDocumentationSpawnOptions(
       sandbox: hooks?.sandbox,
       languageModelMiddleware: hooks?.languageModelMiddleware,
       usageRecorder: hooks?.usageRecorder,
+      toolExecutionContext: hooks?.toolExecutionContext,
       streamIdFactory: hooks?.streamIdFactory,
     },
     subagentId,

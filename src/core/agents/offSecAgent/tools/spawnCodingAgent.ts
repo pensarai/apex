@@ -196,6 +196,7 @@ function codingSpawnOptions(
       openAIReasoningEffort: ctx.openAIReasoningEffort,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
+      toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
     },
     parentBus: ctx.eventBus,

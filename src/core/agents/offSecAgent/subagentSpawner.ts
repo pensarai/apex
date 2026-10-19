@@ -122,6 +122,7 @@ export interface SpawnRuntime {
   secretValues?: string[];
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   usageRecorder?: UsageRecorder;
+  toolExecutionContext?: AgentHooks["toolExecutionContext"];
   streamIdFactory?: StreamIdFactory;
   /**
    * Step-usage + cache-metric callbacks forwarded to spawned workers. The inline
@@ -401,6 +402,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
+      toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
     },
     seams: inProcessSeams(),
@@ -443,6 +445,7 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     onCacheMetrics: ctx.onCacheMetrics,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -470,6 +473,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -496,6 +500,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -523,6 +528,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         backends: ctx.backends,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
+        toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
       }),
   };
@@ -548,6 +554,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         openAIReasoningEffort: ctx.openAIReasoningEffort,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
+        toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
       }),
   };

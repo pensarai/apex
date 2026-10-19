@@ -23,6 +23,7 @@ import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSch
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type {
+  AgentHooks,
   FindingPolicy,
   StreamIdFactory,
   SystemPentestScope,
@@ -234,7 +235,7 @@ export type ToolContext = {
    * the agent builds its tools (`OffensiveSecurityAgentInput.subagentSpawner` ??
    * the in-process spawner), so it is always present here and tools never
    * re-default it; a durable runtime injects one that spawns child workflows
-   * instead. The three durable hooks below are inherited by every child the
+   * instead. The durable hooks below are inherited by every child the
    * spawner constructs.
    */
   subagentSpawner: SubagentSpawner;
@@ -260,6 +261,8 @@ export type ToolContext = {
    * `pensar-managed` inbox). Unset → the config-driven factory.
    */
   emailAdapterFor?: EmailAdapterResolver;
+
+  toolExecutionContext?: AgentHooks["toolExecutionContext"];
 
   /** Provider middleware inherited by spawned children. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];

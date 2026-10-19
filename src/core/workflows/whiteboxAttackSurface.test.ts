@@ -195,6 +195,36 @@ describe("runWhiteboxAttackSurfaceWorkflow — custom seams", () => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — AgentHooks", () => {
+  it("inherits tool execution context in discovery child descriptors", async () => {
+    const sharedContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const appContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const childContexts: AgentHooks["toolExecutionContext"][] = [];
+    await runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: "test-model",
+      session,
+      surfaceIntegrationEnabled: false,
+      subagentSpawner: {
+        ...codeSpawner,
+        spawn: (request) => {
+          childContexts.push(request.runtime.toolExecutionContext);
+          return codeSpawner.spawn(request);
+        },
+      },
+      hooks: { toolExecutionContext: sharedContext },
+      seams: inProcessSeams({
+        hooksForItem: () => ({ toolExecutionContext: appContext }),
+      }),
+    });
+    expect(childContexts).toHaveLength(2);
+    expect(mocks.codeAgentInputs[0]?.toolExecutionContext).toBe(sharedContext);
+    expect(childContexts).toEqual([appContext, appContext]);
+  });
+
   it("reaches the Phase 1 apps-discovery agent with the caller's own AgentHooks object", async () => {
     const backends = {
       __sentinel: "backends",
