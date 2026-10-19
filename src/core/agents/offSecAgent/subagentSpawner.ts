@@ -198,9 +198,16 @@ export interface SubagentSpawner {
    */
   spawn<TResult = unknown>(opts: SpawnOptions<TResult>): Promise<TResult>;
 
+  /** Opt in only when spawnBatch holds opts.limiter for each child's entire execution. */
+  supportsBatchLimiter?: boolean;
+
   spawnBatch?<TResult>(
     requests: readonly SpawnOptions<TResult>[],
-    opts: { concurrency: number; abortSignal?: AbortSignal },
+    opts: {
+      concurrency: number;
+      abortSignal?: AbortSignal;
+      limiter?: <T>(run: () => Promise<T>) => Promise<T>;
+    },
   ): Promise<PromiseSettledResult<TResult>[]>;
 
   /**
@@ -221,7 +228,14 @@ export async function spawnBatch<TResult>(
   opts: { concurrency: number; abortSignal?: AbortSignal },
   limiter?: <T>(run: () => Promise<T>) => Promise<T>,
 ): Promise<PromiseSettledResult<TResult>[]> {
-  if (spawner.spawnBatch) return spawner.spawnBatch(requests, opts);
+  if (spawner.spawnBatch) {
+    if (limiter && !spawner.supportsBatchLimiter) {
+      throw new Error(
+        "Batch spawner must support the shared child limiter before scheduling limited batches",
+      );
+    }
+    return spawner.spawnBatch(requests, { ...opts, limiter });
+  }
   const results = await spawner.spawnMany(
     requests,
     async (request) => {

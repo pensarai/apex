@@ -15,15 +15,19 @@ vi.mock("../../../ai", async (importOriginal) => {
     streamResponse: (opts: {
       tools: Record<
         string,
-        { execute: (input: unknown, options: unknown) => Promise<unknown> }
+        {
+          execute: (input: unknown, options: unknown) => AsyncIterable<unknown>;
+        }
       >;
     }) => ({
       fullStream: (async function* () {
         yield { type: "start-step" };
-        await opts.tools.read_file.execute(
+        for await (const output of opts.tools.read_file.execute(
           { path: "/repo/handler.ts", toolCallDescription: "Read handler" },
           { toolCallId: "child-read", messages: [] },
-        );
+        )) {
+          yield { type: "tool-result", output };
+        }
       })(),
       response: Promise.resolve({ messages: [] }),
     }),
