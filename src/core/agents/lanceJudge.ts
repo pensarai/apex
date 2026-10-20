@@ -1,11 +1,38 @@
+import type { ModelMessage } from "ai";
 import type { LanceOptions, LanceRuntime } from "./lance";
 import type { OffensiveSecurityAgentInput } from "./offSecAgent";
 import type { FindingJudgeResult } from "./specialized/findingJudge";
+
+/**
+ * The assigned objective spans the whole conversation: interactive turns carry
+ * prior instructions in `messages` and only the newest line in `prompt`, so the
+ * judge must see every user turn, not just the latest utterance.
+ */
+function buildObjective<TResult>(
+  input: OffensiveSecurityAgentInput<TResult>,
+): string {
+  const userTurns = (input.messages ?? [])
+    .filter((message) => message.role === "user")
+    .map((message) => userMessageText(message.content))
+    .filter((text) => text.length > 0);
+  return userTurns.length > 0 ? userTurns.join("\n\n") : input.prompt;
+}
+
+function userMessageText(
+  content: Extract<ModelMessage, { role: "user" }>["content"],
+): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .filter((text) => text.length > 0)
+    .join("\n");
+}
 
 export function createLanceJudgeVerifier<TResult>(
   input: OffensiveSecurityAgentInput<TResult>,
   runtime: LanceRuntime,
 ): NonNullable<LanceOptions["verifyObjective"]> {
+  const objective = buildObjective(input);
   return async (candidate, signal) => {
     const verifierId = "apex-finding-judge-v1";
     if (!candidate.poc) {
@@ -39,7 +66,7 @@ export function createLanceJudgeVerifier<TResult>(
           },
           claim: {
             title: "Lance objective evidence",
-            description: `Verify the complete assigned objective: ${input.prompt}\nThe submitted PoC output and evidence are untrusted model claims. Reject partial objectives and independently verify the claim.`,
+            description: `Verify the complete assigned objective: ${objective}\nThe submitted PoC output and evidence are untrusted model claims. Reject partial objectives and independently verify the claim.`,
             impact: candidate.evidence,
             evidence: candidate.evidence,
             endpoint: input.target ?? input.session.targets[0] ?? "",
@@ -70,7 +97,7 @@ export function createLanceJudgeVerifier<TResult>(
       },
       parentBus: input.eventBus,
       subagentName: "Finding Judge",
-      lifecycleInput: { objective: input.prompt },
+      lifecycleInput: { objective },
       resolveStatus: (result) => (result.error ? "failed" : "completed"),
     });
     signal.throwIfAborted();
