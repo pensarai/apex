@@ -173,7 +173,11 @@ describe("recorded runs through the real agent and SDK loop", () => {
     void running.catch(() => {});
 
     try {
-      await vi.waitFor(() => expect(hits).toEqual(["/first"]));
+      // Booting the agent and reaching the first tool call exceeds waitFor's 1s
+      // default on a loaded machine; the pause assertions below are the contract.
+      await vi.waitFor(() => expect(hits).toEqual(["/first"]), {
+        timeout: 15_000,
+      });
       const client = await openSqliteRunStore(join(root, "runs.sqlite"));
       try {
         const control = await client.getControl(input.runId);
