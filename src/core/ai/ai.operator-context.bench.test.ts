@@ -41,6 +41,33 @@ const usage = {
   outputTokens: { total: 5, text: 5, reasoning: undefined },
 };
 
+// Compaction streams now, so the summarizer answers on doStream alongside the
+// resumed agent turn; its request carries the compaction instruction.
+function isSummaryCall(options: { prompt: unknown }): boolean {
+  return JSON.stringify(options.prompt).includes("Compact this conversation");
+}
+
+function summaryStream(text: string) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        ...(text
+          ? [
+              { type: "text-start", id: "s" },
+              { type: "text-delta", id: "s", delta: text },
+              { type: "text-end", id: "s" },
+            ]
+          : []),
+        {
+          type: "finish",
+          finishReason: { unified: "stop", raw: "stop" },
+          usage,
+        },
+      ] as LanguageModelV3StreamPart[],
+    }),
+  };
+}
+
 it("measures a synthetic long tool loop through the real stream and context paths", async () => {
   const sessionPath = mkdtempSync(join(tmpdir(), "apex-context-bench-"));
   const providerInputTokens: number[] = [];
@@ -56,6 +83,11 @@ it("measures a synthetic long tool loop through the real stream and context path
 
   state.model = new MockLanguageModelV3({
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        summaryPrompts.push(JSON.stringify(options.prompt));
+        return summaryStream("Synthetic progress: continue.");
+      }
       providerInputTokens.push(
         estimateMessageTokens(options.prompt as ModelMessage[]),
       );
@@ -87,18 +119,6 @@ it("measures a synthetic long tool loop through the real stream and context path
         stream: simulateReadableStream({
           chunks: chunks as LanguageModelV3StreamPart[],
         }),
-      };
-    },
-    doGenerate: async (options) => {
-      summaryCalls++;
-      summaryPrompts.push(JSON.stringify(options.prompt));
-      return {
-        content: [
-          { type: "text" as const, text: "Synthetic progress: continue." },
-        ],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
       };
     },
   });
@@ -212,19 +232,12 @@ it.each([
   let resumedPrompt = "";
   let summaryCount = 0;
   state.model = new MockLanguageModelV3({
-    doGenerate: async (options) => {
-      summaryCount++;
-      summaryPrompt = JSON.stringify(options.prompt);
-      return {
-        content: [
-          { type: "text" as const, text: "The first source is source-0." },
-        ],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
-      };
-    },
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCount++;
+        summaryPrompt = JSON.stringify(options.prompt);
+        return summaryStream("The first source is source-0.");
+      }
       resumedPrompt = JSON.stringify(options.prompt);
       return {
         stream: simulateReadableStream({
@@ -324,19 +337,13 @@ it.each([
   let skipped = false;
   const onSummarized = vi.fn();
   state.model = new MockLanguageModelV3({
-    doGenerate: async () => {
-      summaryCalls++;
-      return {
-        content:
-          summaryKind === "empty"
-            ? []
-            : [{ type: "text" as const, text: "s".repeat(540_000) }],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
-      };
-    },
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        return summaryStream(
+          summaryKind === "empty" ? "" : "s".repeat(540_000),
+        );
+      }
       resumedPrompt = JSON.stringify(options.prompt);
       return {
         stream: simulateReadableStream({
@@ -431,25 +438,14 @@ it("retries proactive compaction after a new tool result", async () => {
   let retryPrompt = "";
   const onSummarized = vi.fn();
   state.model = new MockLanguageModelV3({
-    doGenerate: async (options) => {
-      summaryCalls++;
-      if (summaryCalls === 3) retryPrompt = JSON.stringify(options.prompt);
-      return {
-        content:
-          summaryCalls < 3
-            ? []
-            : [
-                {
-                  type: "text" as const,
-                  text: "The first source is source-0.",
-                },
-              ],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
-      };
-    },
-    doStream: async () => {
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        if (summaryCalls === 3) retryPrompt = JSON.stringify(options.prompt);
+        return summaryStream(
+          summaryCalls < 3 ? "" : "The first source is source-0.",
+        );
+      }
       const call = providerCalls++;
       return {
         stream: simulateReadableStream({
@@ -557,33 +553,32 @@ it("retries an oversized summary with fitted history", async () => {
   ];
   const summaryInputs: number[] = [];
   state.model = new MockLanguageModelV3({
-    doGenerate: async (options) => {
-      const input = estimateMessageTokens(options.prompt as ModelMessage[]);
-      summaryInputs.push(input);
-      if (input > 140_000 || summaryInputs.length === 2) {
-        throw new Error(`prompt is too long: ${input} tokens > 140000 maximum`);
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        const input = estimateMessageTokens(options.prompt as ModelMessage[]);
+        summaryInputs.push(input);
+        if (input > 140_000 || summaryInputs.length === 2) {
+          throw new Error(
+            `prompt is too long: ${input} tokens > 140000 maximum`,
+          );
+        }
+        return summaryStream("Bounded summary.");
       }
       return {
-        content: [{ type: "text" as const, text: "Bounded summary." }],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "done" },
+            { type: "text-end", id: "done" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ] as LanguageModelV3StreamPart[],
+        }),
       };
     },
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          { type: "text-start", id: "done" },
-          { type: "text-delta", id: "done", delta: "done" },
-          { type: "text-end", id: "done" },
-          {
-            type: "finish",
-            finishReason: { unified: "stop", raw: "stop" },
-            usage,
-          },
-        ] as LanguageModelV3StreamPart[],
-      }),
-    }),
   });
 
   try {
@@ -657,34 +652,33 @@ it("tries shortened summary history even when the retry budget is too small", as
 
   const summaryInputs: number[] = [];
   state.model = new MockLanguageModelV3({
-    doGenerate: async (options) => {
-      summaryInputs.push(
-        estimateMessageTokens(options.prompt as ModelMessage[]),
-      );
-      if (summaryInputs.length === 1) {
-        throw new Error("prompt is too long: maximum context length exceeded");
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryInputs.push(
+          estimateMessageTokens(options.prompt as ModelMessage[]),
+        );
+        if (summaryInputs.length === 1) {
+          throw new Error(
+            "prompt is too long: maximum context length exceeded",
+          );
+        }
+        return summaryStream("Kept the request.");
       }
       return {
-        content: [{ type: "text" as const, text: "Kept the request." }],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "done" },
+            { type: "text-end", id: "done" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ] as LanguageModelV3StreamPart[],
+        }),
       };
     },
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          { type: "text-start", id: "done" },
-          { type: "text-delta", id: "done", delta: "done" },
-          { type: "text-end", id: "done" },
-          {
-            type: "finish",
-            finishReason: { unified: "stop", raw: "stop" },
-            usage,
-          },
-        ] as LanguageModelV3StreamPart[],
-      }),
-    }),
   });
 
   try {
@@ -727,33 +721,39 @@ it.each([
   let toolExecutions = 0;
   let resumedPrompt = "";
   state.model = new MockLanguageModelV3({
-    doGenerate: async () => {
-      summaryAttempts++;
-      return summaryAttempts === 1
-        ? {
-            content: [
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryAttempts++;
+        if (summaryAttempts > 1) return summaryStream("Continue safely.");
+        return {
+          stream: simulateReadableStream({
+            chunks: [
               ...(firstResponse === "partial-text"
-                ? [{ type: "text" as const, text: "Incomplete summary." }]
+                ? [
+                    { type: "text-start", id: "s" },
+                    {
+                      type: "text-delta",
+                      id: "s",
+                      delta: "Incomplete summary.",
+                    },
+                    { type: "text-end", id: "s" },
+                  ]
                 : []),
               {
-                type: "tool-call" as const,
+                type: "tool-call",
                 toolCallId: "summary-probe",
                 toolName: "probe",
                 input: "{}",
               },
-            ],
-            finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },
-            usage,
-            warnings: [],
-          }
-        : {
-            content: [{ type: "text" as const, text: "Continue safely." }],
-            finishReason: { unified: "stop" as const, raw: "stop" },
-            usage,
-            warnings: [],
-          };
-    },
-    doStream: async (options) => {
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ] as LanguageModelV3StreamPart[],
+          }),
+        };
+      }
       resumedPrompt = JSON.stringify(options.prompt);
       return {
         stream: simulateReadableStream({
@@ -832,6 +832,10 @@ it("fits code-heavy tool history before reported provider usage reaches the cont
 
   state.model = new MockLanguageModelV3({
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        return summaryStream("Continue inspection.");
+      }
       const estimated = estimateMessageTokens(options.prompt as ModelMessage[]);
       const observed = estimated * 2 + 500;
       if (observed > contextLimit) {
@@ -877,15 +881,6 @@ it("fits code-heavy tool history before reported provider usage reaches the cont
         stream: simulateReadableStream({
           chunks: chunks as LanguageModelV3StreamPart[],
         }),
-      };
-    },
-    doGenerate: async () => {
-      summaryCalls++;
-      return {
-        content: [{ type: "text" as const, text: "Continue inspection." }],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
       };
     },
   });
@@ -956,6 +951,10 @@ it("does not count system and tool overhead twice when calibrating", async () =>
 
   state.model = new MockLanguageModelV3({
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        return summaryStream("Continue.");
+      }
       const observed =
         estimateMessageTokens(options.prompt as ModelMessage[]) +
         estimateToolsOverheadTokens(tools) +
@@ -996,15 +995,6 @@ it("does not count system and tool overhead twice when calibrating", async () =>
         stream: simulateReadableStream({
           chunks: chunks as LanguageModelV3StreamPart[],
         }),
-      };
-    },
-    doGenerate: async () => {
-      summaryCalls++;
-      return {
-        content: [{ type: "text" as const, text: "Continue." }],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
       };
     },
   });
@@ -1056,6 +1046,10 @@ it("continues an in-stream turn when its proactive summary is rejected", async (
   let resumedPrompt = "";
   state.model = new MockLanguageModelV3({
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        return summaryStream("");
+      }
       const call = providerCalls++;
       if (call > 0) resumedPrompt = JSON.stringify(options.prompt);
       return {
@@ -1086,15 +1080,6 @@ it("continues an in-stream turn when its proactive summary is rejected", async (
                   },
                 ] as LanguageModelV3StreamPart[]),
         }),
-      };
-    },
-    doGenerate: async () => {
-      summaryCalls++;
-      return {
-        content: [],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
       };
     },
   });
@@ -1145,6 +1130,10 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
   const onSummarized = vi.fn();
   state.model = new MockLanguageModelV3({
     doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        summaryCalls++;
+        return summaryStream("");
+      }
       const call = providerCalls++;
       if (call > 0) resumedPrompt = JSON.stringify(options.prompt);
       return {
@@ -1170,15 +1159,6 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
                   },
                 ] as LanguageModelV3StreamPart[]),
         }),
-      };
-    },
-    doGenerate: async () => {
-      summaryCalls++;
-      return {
-        content: [],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage,
-        warnings: [],
       };
     },
   });
@@ -1233,25 +1213,27 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
 it("contains a context error from an in-stream summary", async () => {
   let providerCalls = 0;
   state.model = new MockLanguageModelV3({
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          {
-            type: "tool-call",
-            toolCallId: `probe-${providerCalls++}`,
-            toolName: "probe",
-            input: JSON.stringify({ q: TOOL_INPUT }),
-          },
-          {
-            type: "finish",
-            finishReason: { unified: "tool-calls", raw: "tool_calls" },
-            usage,
-          },
-        ] as LanguageModelV3StreamPart[],
-      }),
-    }),
-    doGenerate: async () => {
-      throw new Error("prompt is too long: 999999 tokens > 20000 maximum");
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        throw new Error("prompt is too long: 999999 tokens > 20000 maximum");
+      }
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            {
+              type: "tool-call",
+              toolCallId: `probe-${providerCalls++}`,
+              toolName: "probe",
+              input: JSON.stringify({ q: TOOL_INPUT }),
+            },
+            {
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage,
+            },
+          ] as LanguageModelV3StreamPart[],
+        }),
+      };
     },
   });
 

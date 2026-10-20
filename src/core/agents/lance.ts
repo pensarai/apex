@@ -344,10 +344,16 @@ export class LanceRuntime {
     },
     wrapStream: async ({ doStream }) => {
       this.start();
+      const compacting = this.compactionContext.getStore() === true;
       if (this.terminal || this.completion)
-        this.violation("post_terminal_work", "model_request");
+        this.violation(
+          "post_terminal_work",
+          compacting ? "compaction_model_request" : "model_request",
+        );
       this.checkAgent();
-      return this.recordStream(doStream, "agent");
+      // Compaction streams, so generate-vs-stream no longer tells the two apart;
+      // the compaction context does.
+      return this.recordStream(doStream, compacting ? "compaction" : "agent");
     },
   };
 
@@ -389,7 +395,7 @@ export class LanceRuntime {
     doStream: Parameters<
       NonNullable<LanguageModelMiddleware["wrapStream"]>
     >[0]["doStream"],
-    source: "agent" | "judge",
+    source: "agent" | "judge" | "compaction",
   ) {
     if (source === "judge" && this.terminal)
       this.violation("post_terminal_work", "judge_model_request");
