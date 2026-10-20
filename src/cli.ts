@@ -299,6 +299,9 @@ pentest options:
   --model <model>          AI model (default: auto-selected from configured provider)
   --extended-thinking       Enable extended thinking for supported models
   --task-driven             Enable task-driven architecture (experimental)
+  --lance                 Minimal offensive-capability mode (requires --prompt)
+  --timeout-ms <ms>        Lance budget (default: 900000)
+  --deadline-at <epoch-ms> Lance absolute harness deadline
   --fast-strike            Single-operator fast strike: skip attack-surface/swarm
                            phases, one tight recon→exploit loop against the target
   --external-findings      Return findings without Apex's in-run finding judge
@@ -355,7 +358,6 @@ Custom inference:
 // ---------------------------------------------------------------------------
 
 async function runPentest() {
-  const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
 
@@ -367,6 +369,14 @@ async function runPentest() {
   const enableThinking = hasFlag("--extended-thinking");
   const taskDriven = hasFlag("--task-driven");
   const fastStrike = hasFlag("--fast-strike");
+  const lance = hasFlag("--lance");
+  if (lance && (fastStrike || taskDriven || threatModelRaw)) {
+    throw new Error(
+      "Lance cannot be combined with Strike, task-driven, or threat-model workflows",
+    );
+  }
+  if (lance && !promptRaw)
+    throw new Error("Lance requires a specific objective via --prompt");
   const externalFindings = hasFlag("--external-findings");
   const evidenceOutput = nativeRolloutEvidenceOutput();
 
@@ -394,14 +404,14 @@ async function runPentest() {
 
   const sep = "=".repeat(60);
   console.log(`${sep}
-PENTEST ORCHESTRATION
+${lance ? "LANCE" : "PENTEST ORCHESTRATION"}
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
 Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${externalFindings ? "\nFindings: external evaluation" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
-    name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
+    name: lance ? "Lance" : cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
     config: {
       ...(cwd ? { codebasePath: cwd } : {}),
@@ -415,6 +425,30 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
     },
   });
   console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
+
+  if (lance) {
+    const { runCliLance } = await import("./cli/lance");
+    await runCliLance({
+      prompt: resolvedPrompt!,
+      model,
+      target,
+      session,
+      enableThinking,
+      authConfig: buildAuthConfig(pensarConfig),
+      findingPolicy: externalFindings ? "external" : pensarConfig.findingPolicy,
+      lance: {
+        ...(getArg("--timeout-ms")
+          ? { timeoutMs: Number(getArg("--timeout-ms")) }
+          : {}),
+        ...(getArg("--deadline-at")
+          ? { deadlineAt: Number(getArg("--deadline-at")) }
+          : {}),
+      },
+    });
+    return;
+  }
+
+  const { runPentestAgent } = await import("./core/api/blackboxPentest");
 
   const { runWithCliNativeRolloutEvidence } = await import(
     "./cli/native-rollout-evidence"

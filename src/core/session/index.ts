@@ -96,6 +96,7 @@ const OperatorSettingsObject = z.object({
   enableSuggestions: z.boolean().default(true),
   /** Run the top-level operator as a focused solo researcher without orchestration tools. */
   strikeMode: z.boolean().optional(),
+  lanceMode: z.boolean().optional(),
   findingPolicy: z.enum(["native", "external"]).optional(),
 });
 
@@ -1005,6 +1006,9 @@ export async function updateOperatorSettings(
     if (settings.enableSuggestions !== undefined) {
       session.config.operatorSettings.enableSuggestions =
         settings.enableSuggestions;
+    }
+    if (settings.lanceMode !== undefined) {
+      session.config.operatorSettings.lanceMode = settings.lanceMode;
     }
     if (settings.strikeMode !== undefined) {
       session.config.operatorSettings.strikeMode = settings.strikeMode;

@@ -843,6 +843,11 @@ function wrapStreamWithErrorHandler(
                 error instanceof InStreamCompactionRequired ||
                 error instanceof CompactionRejectedError ||
                 checkIfContextLengthError(error);
+              if (
+                opts.primaryModelOnly &&
+                (!opts.runContextCompaction || !isCtxError)
+              )
+                throw error;
 
               // A latched persistence failure is terminal: retrying would
               // dispatch a turn whose context was never durably committed.
@@ -1117,6 +1122,7 @@ function wrapStreamWithErrorHandler(
                   // auth failure would burn an extra cycle that fails
                   // identically.
                   if (
+                    opts.primaryModelOnly ||
                     summarizeError instanceof ContextLengthExhaustedError ||
                     (summarizeError instanceof Error &&
                       summarizeError.name === "AbortError") ||
@@ -1562,6 +1568,12 @@ export interface CacheMetrics {
 }
 
 export interface StreamResponseOpts {
+  /** Disables model repair and general recovery; compaction requires explicit admission. */
+  primaryModelOnly?: boolean;
+  runContextCompaction?: <T>(work: () => Promise<T>) => Promise<T>;
+  /** Session-local working state restored after compaction. */
+  getContinuationContext?: () => string;
+  onInvalidToolCall?: (name: string) => void;
   prompt: string;
   system?: string;
   model: AIModel;
@@ -1629,6 +1641,7 @@ export interface StreamResponseOpts {
   _compactionTrigger?: CompactionTrigger;
   _proactiveSummaryMayFit?: boolean;
   _proactiveSummaryFailures?: number;
+  _initialPrompt?: string;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1668,6 +1681,7 @@ function streamResponseWithinOperation(
   // map. Re-entry is identity (`activeTools` already consumed).
   opts = {
     ...opts,
+    _initialPrompt: opts._initialPrompt ?? opts.prompt,
     _compaction: compactionState,
     // `activeTools` is authoritative for advertisement and execution: a tool
     // (including `response`) is exposed only when the caller lists it, so the
@@ -1824,6 +1838,7 @@ function streamResponseWithinOperation(
   );
   if (
     messages &&
+    (!opts.primaryModelOnly || opts.runContextCompaction) &&
     !opts._proactiveSummaryFailures &&
     shouldSummarizeBeforeFitting(
       messages,
@@ -1890,6 +1905,8 @@ function streamResponseWithinOperation(
   // an overflow inside the summarization call itself escapes uncaught while
   // the equivalent post-streamText path (line ~880) recovers.
   if (proactiveFitFailed && fittedMessages) {
+    if (opts.primaryModelOnly && !opts.runContextCompaction)
+      throw new Error("Lance context budget exhausted");
     if (!silent) {
       log.warn(
         `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
@@ -2082,6 +2099,7 @@ function streamResponseWithinOperation(
         let stepMessages = step.messages;
         if (step.stepNumber > 0) {
           if (
+            (!opts.primaryModelOnly || opts.runContextCompaction) &&
             (opts._proactiveSummaryFailures ?? 0) <
               MAX_PROACTIVE_SUMMARY_FAILURES &&
             shouldSummarizeBeforeFitting(
@@ -2156,6 +2174,7 @@ function streamResponseWithinOperation(
           : { messages: stepMessages };
       },
       onError: async ({ error }: { error: unknown }) => {
+        if (opts.primaryModelOnly) return;
         // Never throw here: the SDK calls this inside its stream pipeline,
         // and a thrown callback kills the pipeline's terminal lifecycle —
         // the root generation span never ends and nothing exports. Return
@@ -2190,6 +2209,8 @@ function streamResponseWithinOperation(
         tools,
         error,
       }) => {
+        opts.onInvalidToolCall?.(toolCall.toolName);
+        if (opts.primaryModelOnly) return null;
         // [response-debug] Log when repair fires for `response` (streamed args failed Zod validation), bypassing `silent`.
         if (RESPONSE_DEBUG && toolCall.toolName === RESPONSE_TOOL_NAME) {
           const raw = toolCall.input;
@@ -2400,6 +2421,11 @@ function streamResponseWithinOperation(
   } catch (error) {
     // Check if the error is related to context length
     const isContextLengthError = checkIfContextLengthError(error);
+    if (
+      opts.primaryModelOnly &&
+      (!opts.runContextCompaction || !isContextLengthError)
+    )
+      throw error;
     const outerErrorMessage =
       error instanceof Error ? error.message : String(error);
 

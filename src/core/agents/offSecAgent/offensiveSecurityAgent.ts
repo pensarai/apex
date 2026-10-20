@@ -8,7 +8,7 @@ import type {
   TextStreamPart,
   ToolSet,
 } from "ai";
-import { hasToolCall } from "ai";
+import { hasToolCall, stepCountIs } from "ai";
 import { normalizeStepUsage, streamResponse } from "../../ai";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import { newMessageId, newPartId } from "../../id/id";
@@ -25,6 +25,8 @@ import { ApprovalDeniedError } from "../../operator";
 import type { RunContextRecorder } from "../../runtime/runContext";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
+import { LANCE_CONFIG, LANCE_SYSTEM_PROMPT, LanceRuntime } from "../lance";
+import { createLanceJudgeVerifier } from "../lanceJudge";
 import {
   createInterruptedStepFinalizer,
   type FinalizeInterruptedStepInput,
@@ -425,6 +427,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     let session = input.session;
     if (!session) {
       session = await createSession({
+        ...(input.mode === "lance" ? { name: "Lance" } : {}),
         targets: input.target ? [input.target] : [],
         config: input.sessionConfig,
         model: input.model,
@@ -446,7 +449,65 @@ export class OffensiveSecurityAgent<TResult = void> {
     return this.subagentId ?? this._session.id;
   }
 
+  readonly lanceRuntime?: LanceRuntime;
+  private lanceModel?: string;
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    if (
+      input.mode === "lance" &&
+      !input.lance?.interactive &&
+      existsSync(join(input.session.rootPath, "lance-result.json"))
+    ) {
+      throw new Error("This Lance attempt is terminal; use a new session");
+    }
+    if (input.mode === "lance") {
+      if (
+        input.extraTools ||
+        input.responseSchema ||
+        input.subagentSpawner ||
+        input.system ||
+        input.resolveResult ||
+        input.subagentId
+      ) {
+        throw new Error(
+          "Lance does not permit tool, prompt, response, or spawner overrides",
+        );
+      }
+      const lanceOptions = { ...input.lance };
+      this.lanceRuntime = new LanceRuntime(
+        lanceOptions,
+        input.abortSignal,
+        input.session.rootPath,
+      );
+      if (input.findingPolicy === "native" && !lanceOptions.verifyObjective) {
+        lanceOptions.verificationSource = "apex_judge";
+        lanceOptions.verifyObjective = createLanceJudgeVerifier(
+          input,
+          this.lanceRuntime,
+        );
+      }
+      this.lanceModel = input.model;
+      const middleware = input.languageModelMiddleware;
+      input = {
+        ...input,
+        system: LANCE_SYSTEM_PROMPT,
+        abortSignal: this.lanceRuntime.signal,
+        subagentSpawner: this.lanceRuntime.spawner,
+        languageModelMiddleware: [
+          this.lanceRuntime.middleware,
+          ...(Array.isArray(middleware)
+            ? middleware
+            : middleware
+              ? [middleware]
+              : []),
+        ],
+        stopWhen: [
+          () => this.lanceRuntime!.terminal,
+          stepCountIs(LANCE_CONFIG.maxSteps),
+        ],
+        skillsRegistry: undefined,
+      };
+    }
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
@@ -634,7 +695,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     let activeTools = (input.activeTools as string[]).filter(
       passesEmailSmsGates,
     );
-    if (input.mode === "plan") {
+    if (input.mode === "lance") {
+      activeTools = [...LANCE_CONFIG.tools];
+    } else if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
       activeTools = activeTools.filter((t) => planSet.has(t));
     } else if (input.mode === "fast-strike") {
@@ -688,6 +751,25 @@ export class OffensiveSecurityAgent<TResult = void> {
       ? { ...builtinTools, ...extraTools }
       : { ...builtinTools };
 
+    if (this.lanceRuntime) {
+      const runtime = this.lanceRuntime;
+      tools = Object.fromEntries(
+        Object.entries(tools).map(([name, definition]) => [
+          name,
+          {
+            ...definition,
+            execute: async (
+              args: unknown,
+              options: Parameters<NonNullable<typeof definition.execute>>[1],
+            ) => {
+              runtime.checkAgent();
+              return definition.execute!(args, options);
+            },
+          },
+        ]),
+      );
+    }
+
     // Only approved calls may reach the execution journal.
     if (input.toolExecutionRecorder) {
       tools = wrapRecordedTools(tools, input.toolExecutionRecorder);
@@ -699,7 +781,13 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         input.approvalGate,
         AGENT_PAUSE_TOOLS,
+        this.lanceRuntime?.signal,
       );
+    }
+
+    if (this.lanceRuntime) {
+      tools = this.lanceRuntime.tools(tools);
+      activeTools = Object.keys(tools);
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
@@ -868,9 +956,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Only agents whose tools can execute commands, touch files, or run
     // PoCs get a runtime probe — for anyone else the facts are noise and the
     // probe is a wasted subprocess.
-    this.probesRuntime = activeTools.some((name) =>
-      RUNTIME_CAPABLE_TOOL_NAMES.has(name),
-    );
+    this.probesRuntime =
+      input.mode !== "lance" &&
+      activeTools.some((name) => RUNTIME_CAPABLE_TOOL_NAMES.has(name));
 
     // -- Init record + stream --------------------------------------------------
     // Created by async initialization (streamReady) so the AI SDK telemetry
@@ -884,7 +972,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       // so the hash is stable across runs with identical prompt versions. No
       // step record can precede this init line: steps only originate from the
       // stream created below.
-      const baseWithFacts = assembleBaseSystemPrompt(facts);
+      const baseWithFacts =
+        input.mode === "lance"
+          ? LANCE_SYSTEM_PROMPT
+          : assembleBaseSystemPrompt(facts);
       traceWriter.writeInit({
         model: input.model,
         systemPrompt: baseWithFacts,
@@ -892,11 +983,30 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionId: input.session.id,
         target: input.target,
       });
+      this.lanceRuntime?.start();
+      const continuation = this.lanceRuntime?.continuationContext();
       return streamResponse({
-        prompt: input.prompt,
-        system: baseWithFacts + workspaceSection,
+        prompt: continuation
+          ? `${input.prompt}\n\n${continuation}`
+          : input.prompt,
+        system:
+          input.mode === "lance"
+            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}`
+            : baseWithFacts + workspaceSection,
+        primaryModelOnly: input.mode === "lance",
+        _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
+        runContextCompaction: this.lanceRuntime?.runContextCompaction,
+        getContinuationContext: this.lanceRuntime?.continuationContext,
+        onInvalidToolCall: (name) => {
+          if (this.lanceRuntime && !activeTools.includes(name)) {
+            this.lanceRuntime.violation("forbidden_tool", name);
+          }
+        },
         model: input.model,
-        messages: input.messages,
+        messages:
+          continuation && input.messages
+            ? [...input.messages, { role: "user", content: continuation }]
+            : input.messages,
         tools,
         activeTools,
         stopWhen,
@@ -910,6 +1020,9 @@ export class OffensiveSecurityAgent<TResult = void> {
             messages: [...context.messages],
             responseMessageOffset: context.responseMessageOffset,
           };
+          if (this.lanceRuntime) {
+            this.writer.setLatest(persistedMessages(context.messages));
+          }
         },
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
@@ -919,6 +1032,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
+          this.lanceRuntime?.stepFinished();
           const auxiliaryModelEvent =
             event.response.id === "summarization" ||
             event.response.id === "tool-repair";
@@ -1084,6 +1198,21 @@ export class OffensiveSecurityAgent<TResult = void> {
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
   async consume(): Promise<TResult> {
+    if (!this.lanceRuntime) return this.consumeRun();
+    this.lanceRuntime.start();
+    let error: unknown;
+    try {
+      return await this.consumeRun();
+    } catch (cause) {
+      error = cause;
+      return undefined as TResult;
+    } finally {
+      this.lanceRuntime.finish(error);
+      this.lanceRuntime.persist(this.session.rootPath, this.lanceModel!);
+    }
+  }
+
+  private async consumeRun(): Promise<TResult> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
@@ -1241,6 +1370,13 @@ export class OffensiveSecurityAgent<TResult = void> {
             }
             return result;
           } catch (err) {
+            if (this.lanceRuntime?.terminal) {
+              span.setAttribute(
+                "pensar.lance.outcome",
+                this.lanceRuntime.metrics(this.lanceModel!).outcome,
+              );
+              throw err;
+            }
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);
             span.setStatus({ code: SpanStatusCode.ERROR });
@@ -1595,6 +1731,7 @@ function wrapToolsWithApprovalGate(
   tools: ToolSet,
   gate: ApprovalGate,
   exemptToolNames?: Set<string>,
+  signal?: AbortSignal,
 ): ToolSet {
   const wrapped: ToolSet = {};
 
@@ -1623,7 +1760,15 @@ function wrapToolsWithApprovalGate(
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         log.debug(`${name} (${toolCallId}): checking`);
+        const cancelApproval = () => {
+          for (const pending of gate.getPendingApprovals()) {
+            if (pending.toolCallId === String(toolCallId))
+              gate.deny(pending.id);
+          }
+        };
         try {
+          signal?.throwIfAborted();
+          signal?.addEventListener("abort", cancelApproval, { once: true });
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
@@ -1631,6 +1776,8 @@ function wrapToolsWithApprovalGate(
             return { blocked: true, reason: "Denied by operator" };
           }
           throw err;
+        } finally {
+          signal?.removeEventListener("abort", cancelApproval);
         }
         log.debug(`${name} (${toolCallId}): approved, executing`);
 
