@@ -163,4 +163,26 @@ describe("Lance shared harness integration", () => {
     expect(args.sandbox.execute).not.toHaveBeenCalled();
     agent.lanceRuntime!.finish();
   });
+
+  it("keeps compaction out of the agent step limit while retaining usage callbacks", async () => {
+    const onStepFinish = vi.fn();
+    const agent = new OffensiveSecurityAgent({ ...input(), onStepFinish });
+    await agent.streamReady();
+    const onStep = observed.streams[0].onStepFinish!;
+    const event = (id: string) =>
+      ({
+        response: { id, messages: [] },
+        usage: { inputTokens: 2, outputTokens: 1 },
+      }) as unknown as Parameters<typeof onStep>[0];
+    for (let index = 0; index < LANCE_CONFIG.maxSteps - 1; index++) {
+      await onStep(event(`agent-${index}`));
+    }
+    await onStep(event("summarization"));
+    await onStep(event("tool-repair"));
+    expect(agent.lanceRuntime!.terminal).toBe(false);
+    expect(onStepFinish).toHaveBeenCalledTimes(LANCE_CONFIG.maxSteps + 1);
+    await onStep(event("agent-final"));
+    expect(agent.lanceRuntime!.metrics("fixture").outcome).toBe("step_limit");
+    await agent.consume();
+  });
 });

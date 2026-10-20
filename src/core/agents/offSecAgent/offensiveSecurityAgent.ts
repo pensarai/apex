@@ -1032,7 +1032,6 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
-          this.lanceRuntime?.stepFinished();
           const auxiliaryModelEvent =
             event.response.id === "summarization" ||
             event.response.id === "tool-repair";
@@ -1044,6 +1043,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             return;
           }
 
+          this.lanceRuntime?.stepFinished();
           const canonical =
             input.contextRecorder?.latest() ??
             legacyMessages(event.response.messages);

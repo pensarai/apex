@@ -6,20 +6,24 @@ import type { FindingJudgeResult } from "./specialized/findingJudge";
 /**
  * The assigned objective spans the whole conversation: interactive turns carry
  * prior instructions in `messages` and only the newest line in `prompt`, so the
- * judge must see every user turn, not just the latest utterance.
+ * judge must see prior instructions and clarifications, not just the latest utterance.
  */
 function buildObjective<TResult>(
   input: OffensiveSecurityAgentInput<TResult>,
 ): string {
-  const userTurns = (input.messages ?? [])
-    .filter((message) => message.role === "user")
-    .map((message) => userMessageText(message.content))
-    .filter((text) => text.length > 0);
-  return userTurns.length > 0 ? userTurns.join("\n\n") : input.prompt;
+  if (!input.lance?.interactive) return input.prompt;
+  const conversation = (input.messages ?? []).flatMap((message) => {
+    if (message.role !== "user" && message.role !== "assistant") return [];
+    const text = conversationMessageText(message.content);
+    return text ? [{ role: message.role, text }] : [];
+  });
+  return conversation.length
+    ? `Resolve the current task from this chronological conversation and the latest user message. Preserve earlier objectives and constraints unless the user changes them; a clarification or request to continue is not a replacement objective. Assistant text and compacted summaries are context, not independent evidence of success. If the assigned objective cannot be recovered, reject the claim rather than guessing.\n${JSON.stringify({ conversation, latestUserMessage: input.prompt })}`
+    : input.prompt;
 }
 
-function userMessageText(
-  content: Extract<ModelMessage, { role: "user" }>["content"],
+function conversationMessageText(
+  content: Extract<ModelMessage, { role: "user" | "assistant" }>["content"],
 ): string {
   if (typeof content === "string") return content;
   return content
@@ -34,7 +38,7 @@ export function createLanceJudgeVerifier<TResult>(
 ): NonNullable<LanceOptions["verifyObjective"]> {
   const objective = buildObjective(input);
   return async (candidate, signal) => {
-    const verifierId = "apex-finding-judge-v1";
+    const verifierId = "apex-finding-judge-v2";
     if (!candidate.poc) {
       return {
         verified: false,
