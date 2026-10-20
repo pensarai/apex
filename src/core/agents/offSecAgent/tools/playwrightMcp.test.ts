@@ -664,6 +664,27 @@ describe("createBrowserTools — shared session reuse", () => {
     );
   });
 
+  it("blocks service workers when request headers require refreshing", async () => {
+    const session = new PlaywrightMcpSession({
+      engine: "chrome",
+      headerPolicy: {
+        allowedHosts: ["example.com"],
+        headers: {},
+        targetHeaderProvider: {
+          endpoint: "https://console.example/headers",
+          token: "run-jwt",
+        },
+      },
+    }) as unknown as {
+      buildMcpLaunch(id: string): Promise<{
+        cfg: { browser: { contextOptions: { serviceWorkers: string } } };
+      }>;
+    };
+    const { cfg } = await session.buildMcpLaunch("test");
+    expect(cfg.browser.contextOptions.serviceWorkers).toBe("block");
+    expect(JSON.stringify(cfg)).not.toContain("run-jwt");
+  });
+
   it("captureStorageState returns null when the session has never connected", async () => {
     const session = new PlaywrightMcpSession();
     expect(session.isConnected()).toBe(false);

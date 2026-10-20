@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
+import { resolveEffectiveHeadersAsync } from "../../../http/targetHeaders";
 import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
@@ -366,7 +366,7 @@ COMMON TESTING PATTERNS:
         // here, and a method-override header can be injected by the session
         // layer, so classifying before this point (or on agent headers alone)
         // would miss those.
-        const effectiveHeaders = resolveEffectiveHeaders(
+        const effectiveHeaders = await resolveEffectiveHeadersAsync(
           resolverSessionFromCtx(ctx),
           url,
           headers,

@@ -35,7 +35,10 @@ import {
   fetchWithScopedRedirects,
   TargetRedirectError,
 } from "../../http/redirects";
-import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
+import {
+  resolveEffectiveHeadersAsync,
+  targetFetch,
+} from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
 import {
@@ -287,7 +290,7 @@ export function LocalBackends(
         method: req.method ?? "GET",
         url: req.url,
         body: req.body,
-        headers: resolveEffectiveHeaders(
+        headers: await resolveEffectiveHeadersAsync(
           resolverSessionFromCtx(ctx),
           req.url,
           req.headers,
@@ -691,8 +694,10 @@ async function fetchReadable(
         signal: combinedSignal,
         redirect: "follow",
       },
-      (hopUrl) =>
-        mergeBaselineHeaders(resolveEffectiveHeaders(session, hopUrl)),
+      async (hopUrl) =>
+        mergeBaselineHeaders(
+          await resolveEffectiveHeadersAsync(session, hopUrl),
+        ),
     );
 
     if (!response.ok) {

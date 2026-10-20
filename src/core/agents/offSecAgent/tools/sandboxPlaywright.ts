@@ -389,6 +389,7 @@ const fs = require('fs');
   try {
     context = await firefox.launchPersistentContext('/tmp/pw-user-data', {
       ...__camou,
+      ...${JSON.stringify(headerPolicy?.targetHeaderProvider ? { serviceWorkers: "block" } : {})},
       // Layer memory prefs over Camoufox's fingerprint prefs (ours win); see
       // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
       // fan-out that otherwise costs ~3 GB across the run.

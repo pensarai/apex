@@ -492,10 +492,18 @@ export class PlaywrightMcpSession {
     this.headerPolicy =
       headerPolicy &&
       headerPolicy.allowedHosts.length > 0 &&
-      Object.keys(headerPolicy.headers).length > 0
+      (Object.keys(headerPolicy.headers).length > 0 ||
+        headerPolicy.targetHeaderProvider)
         ? {
             allowedHosts: [...headerPolicy.allowedHosts],
             headers: { ...headerPolicy.headers },
+            ...(headerPolicy.targetHeaderProvider
+              ? {
+                  targetHeaderProvider: {
+                    ...headerPolicy.targetHeaderProvider,
+                  },
+                }
+              : {}),
           }
         : undefined;
   }
@@ -626,6 +634,9 @@ export class PlaywrightMcpSession {
               args: ["--disable-dev-shm-usage"],
             },
             contextOptions: {
+              ...(this.headerPolicy?.targetHeaderProvider
+                ? { serviceWorkers: "block" }
+                : {}),
               ...(viewport ? { viewport } : {}),
             },
           },
@@ -657,6 +668,9 @@ export class PlaywrightMcpSession {
       cfg: {
         browser: {
           browserName: "firefox",
+          ...(this.headerPolicy?.targetHeaderProvider
+            ? { contextOptions: { serviceWorkers: "block" } }
+            : {}),
           launchOptions: {
             executablePath: camou.executablePath,
             args: camou.args,

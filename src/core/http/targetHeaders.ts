@@ -10,6 +10,10 @@ import {
   type RedirectFetchResult,
 } from "./redirects";
 import {
+  type TargetHeaderProvider,
+  targetProviderHeaders,
+} from "./targetHeaderProvider";
+import {
   getSessionAllowedHosts,
   isHostInScope,
   isUrlInSessionScope,
@@ -22,6 +26,7 @@ export interface ResolverSession {
   readonly targets?: ReadonlyArray<string>;
   readonly config?: {
     readonly headers?: HeaderRecord;
+    readonly targetHeaderProvider?: TargetHeaderProvider;
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
     };
@@ -104,6 +109,36 @@ export function resolveEffectiveHeaders(
   return out;
 }
 
+async function sessionWithCurrentHeaders(
+  session: ResolverSession,
+): Promise<ResolverSession> {
+  const provider = session.config?.targetHeaderProvider;
+  if (!provider) return session;
+  const headers = await targetProviderHeaders(provider);
+  return {
+    ...session,
+    credentialManager: {
+      listCredentialsWithHeaders: () => [
+        ...(session.credentialManager?.listCredentialsWithHeaders?.() ?? []),
+        { tokens: { customHeaders: headers } },
+      ],
+    },
+  };
+}
+
+export async function resolveEffectiveHeadersAsync(
+  session: ResolverSession,
+  url: string,
+  requestOverrides?: HeaderRecord,
+): Promise<HeaderRecord> {
+  if (!isUrlInSessionScope(url, session)) return requestOverrides ?? {};
+  return resolveEffectiveHeaders(
+    await sessionWithCurrentHeaders(session),
+    url,
+    requestOverrides,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Browser-safe header filtering
 // ---------------------------------------------------------------------------
@@ -161,7 +196,7 @@ export function targetFetch(
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const { headers: _headers, ...requestInit } = init ?? {};
   return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) =>
-    resolveEffectiveHeaders(
+    resolveEffectiveHeadersAsync(
       session,
       hopUrl,
       context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
@@ -601,4 +636,20 @@ export function applyHeadersToShellCommand(
     status: "injected",
     tool,
   };
+}
+
+export async function applyHeadersToShellCommandAsync(
+  command: string,
+  session: ResolverSession,
+  commandHosts: ReadonlyArray<string>,
+  platform?: "posix" | "windows",
+): Promise<ApplyShellResult> {
+  const allowed = getSessionAllowedHosts(session);
+  const inScope = commandHosts.some((host) => isHostInScope(host, allowed));
+  return applyHeadersToShellCommand(
+    command,
+    inScope ? await sessionWithCurrentHeaders(session) : session,
+    commandHosts,
+    platform,
+  );
 }
