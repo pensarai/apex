@@ -34,7 +34,11 @@ describe("Lance's optional Apex judge", () => {
         | undefined,
     };
     const runtime = new LanceRuntime(options);
-    options.verifyObjective = createLanceJudgeVerifier(input, runtime);
+    const toolExecutionContext = { run: vi.fn() };
+    options.verifyObjective = createLanceJudgeVerifier(
+      { ...input, toolExecutionContext },
+      runtime,
+    );
     const tools = runtime.tools({});
     await Promise.resolve(
       tools.submit_objective.execute!(candidate, {
@@ -55,6 +59,7 @@ describe("Lance's optional Apex judge", () => {
         runtime: expect.objectContaining({
           abortSignal: runtime.signal,
           languageModelMiddleware: [runtime.judgeMiddleware],
+          toolExecutionContext,
         }),
       }),
     );

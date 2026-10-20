@@ -22,6 +22,8 @@ bun src/cli.ts pentest --lance --target http://localhost:8080 \
 
 `--deadline-at <epoch-ms>` lets a harness include process startup in its deadline. Lance rejects combinations with `--fast-strike`, `--task-driven`, or `--threat-model`. Normal authorization and session header configuration still apply.
 
+The CLI also honors `--native-rollout-evidence <directory>` for opt-in model-boundary evidence capture, using the same capture and manifest contract as other headless modes.
+
 The public API accepts a trusted harness verifier:
 
 ```ts

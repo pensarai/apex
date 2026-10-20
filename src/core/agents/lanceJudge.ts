@@ -65,6 +65,7 @@ export function createLanceJudgeVerifier<TResult>(
               : []),
         ],
         usageRecorder: input.usageRecorder,
+        toolExecutionContext: input.toolExecutionContext,
         streamIdFactory: input.streamIdFactory,
       },
       parentBus: input.eventBus,
