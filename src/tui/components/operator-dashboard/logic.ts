@@ -54,7 +54,9 @@ export function shouldHandleQueuedMessageKey(
 export function resolveOperatorAgentMode(
   operatorMode: OperatorMode,
   strikeMode: boolean,
+  lanceMode = false,
 ): AgentMode {
+  if (lanceMode) return "lance";
   if (operatorMode === "plan") return "plan";
   return strikeMode ? "fast-strike" : "default";
 }
@@ -79,6 +81,7 @@ export function resolveOperatorStrikeMode({
 interface FindingPolicyResolutionInput {
   resuming: boolean;
   strikeMode: boolean;
+  lanceMode?: boolean;
   savedSessionValue?: FindingPolicy;
   routeOverride?: FindingPolicy;
   persistedDefault?: FindingPolicy;
@@ -87,11 +90,12 @@ interface FindingPolicyResolutionInput {
 export function resolveOperatorFindingPolicy({
   resuming,
   strikeMode,
+  lanceMode,
   savedSessionValue,
   routeOverride,
   persistedDefault,
 }: FindingPolicyResolutionInput): FindingPolicy {
-  if (!strikeMode) return "native";
+  if (!strikeMode && !lanceMode) return "native";
   if (resuming) return savedSessionValue ?? "native";
   return routeOverride ?? persistedDefault ?? "native";
 }
@@ -100,7 +104,9 @@ export function resolveActiveFindingPolicy(
   agentMode: AgentMode,
   findingPolicy: FindingPolicy,
 ): FindingPolicy {
-  return agentMode === "fast-strike" ? findingPolicy : "native";
+  return agentMode === "fast-strike" || agentMode === "lance"
+    ? findingPolicy
+    : "native";
 }
 
 export interface SubmitResult {

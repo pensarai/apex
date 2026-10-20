@@ -96,6 +96,7 @@ export type SubagentSpec =
   | {
       type: "finding-judge";
       judgeInput: FindingJudgeInput;
+      waitForDrain?: boolean;
       target?: string;
     };
 
@@ -553,6 +554,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
   return {
     run: () =>
       judgeFinding(spec.judgeInput, {
+        waitForDrain: spec.waitForDrain,
         model: ctx.model,
         session: ctx.session,
         authConfig: ctx.authConfig,

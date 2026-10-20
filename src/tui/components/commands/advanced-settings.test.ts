@@ -3,8 +3,13 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 for (const scenario of [
+  { name: "selects Lance and independently enables its judge", mode: "lance" },
   {
-    name: "Tab toggles the focused Judge and resets it when Strike turns off",
+    name: "keeps the Lance selector, judge, and Save visible at 60x18",
+    mode: "lance-compact",
+  },
+  {
+    name: "preserves the judge setting while cycling execution modes",
     mode: "native",
   },
   {
@@ -12,6 +17,7 @@ for (const scenario of [
     mode: "external",
   },
   { name: "keeps judge choices and Save visible at 60x18", mode: "compact" },
+  { name: "restores a saved Lance judge preference", mode: "resume-lance" },
 ] as const) {
   it(scenario.name, () => {
     const result = spawnSync(

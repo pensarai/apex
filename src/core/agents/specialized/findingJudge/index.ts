@@ -52,6 +52,7 @@ export type FindingJudgeRuntimeContext = Pick<
   subagentId?: string;
   /** Human-readable label for readable OTel span names. Defaults to "Finding Judge". */
   subagentName?: string;
+  waitForDrain?: boolean;
 };
 
 /**
@@ -90,6 +91,7 @@ export async function judgeFinding(
     });
 
     const result = await agent.consume();
+    if (ctx.waitForDrain) await agent.drained;
     if (!result) {
       throw new Error("Finding judge agent finished without a response.");
     }

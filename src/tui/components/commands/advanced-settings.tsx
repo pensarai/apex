@@ -1,5 +1,6 @@
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
+import { LANCE_DESCRIPTION } from "../../../core/agents/lance";
 import type { FindingPolicy } from "../../../core/agents/offSecAgent";
 import { useConfig } from "../../context/config";
 import { Dialog } from "../../context/dialog";
@@ -7,16 +8,29 @@ import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import DialogLayout from "../dialog-layout";
 
+const MODES = [
+  {
+    value: "standard",
+    label: "Standard",
+    description: "Full Apex assessment workflow.",
+  },
+  {
+    value: "strike",
+    label: "Strike",
+    description: "Focused research; no auto-discovery or agent fan-out.",
+  },
+  { value: "lance", label: "Lance", description: LANCE_DESCRIPTION },
+] as const;
+type ExecutionMode = (typeof MODES)[number]["value"];
+type FocusedSetting = "mode" | "judge" | "save";
 const FINDING_POLICIES: { value: FindingPolicy; label: string }[] = [
-  { value: "native", label: "Apex judge (default)" },
-  { value: "external", label: "Off (report findings only)" },
+  { value: "native", label: "Enabled (Apex judge)" },
+  { value: "external", label: "Disabled" },
 ];
 
 interface AdvancedSettingsProps {
   onClose: () => void;
 }
-
-type FocusedSetting = "strike" | "judge" | "save";
 
 export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
   const { colors } = useTheme();
@@ -25,74 +39,75 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
   const config = useConfig();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draftStrikeMode, setDraftStrikeMode] = useState(
-    config.data.strikeMode ?? false,
+  const [draftMode, setDraftMode] = useState<ExecutionMode>(
+    config.data.lanceMode
+      ? "lance"
+      : config.data.strikeMode
+        ? "strike"
+        : "standard",
   );
   const [draftFindingPolicy, setDraftFindingPolicy] = useState<FindingPolicy>(
-    config.data.strikeMode ? (config.data.findingPolicy ?? "native") : "native",
+    config.data.findingPolicy ?? "native",
   );
-  const [findingSelectOpen, setFindingSelectOpen] = useState(false);
-  const [highlightedFindingIndex, setHighlightedFindingIndex] = useState(0);
-  const [focusedSetting, setFocusedSetting] =
-    useState<FocusedSetting>("strike");
+  const [openSelect, setOpenSelect] = useState<"mode" | "judge" | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [focusedSetting, setFocusedSetting] = useState<FocusedSetting>("mode");
+  const selectedMode = MODES.find((mode) => mode.value === draftMode)!;
+  const judgeAvailable = draftMode !== "standard";
+  const choices = openSelect === "mode" ? MODES : FINDING_POLICIES;
 
-  const openFindingSelect = useCallback(() => {
-    if (!draftStrikeMode) return;
-    setHighlightedFindingIndex(
-      Math.max(
-        0,
-        FINDING_POLICIES.findIndex(
-          (option) => option.value === draftFindingPolicy,
-        ),
-      ),
-    );
-    setFindingSelectOpen(true);
-  }, [draftFindingPolicy, draftStrikeMode]);
-
-  const toggleStrikeMode = useCallback(() => {
-    if (draftStrikeMode) {
-      setDraftFindingPolicy("native");
-      setFindingSelectOpen(false);
-      setFocusedSetting((focused) =>
-        focused === "judge" ? "strike" : focused,
+  const toggleFocused = () => {
+    if (focusedSetting === "mode") {
+      setDraftMode(
+        MODES[
+          (MODES.findIndex((mode) => mode.value === draftMode) + 1) %
+            MODES.length
+        ]!.value,
+      );
+    } else if (focusedSetting === "judge") {
+      setDraftFindingPolicy((policy) =>
+        policy === "native" ? "external" : "native",
       );
     }
-    setDraftStrikeMode(!draftStrikeMode);
-  }, [draftStrikeMode]);
-
-  const toggleFindingPolicy = useCallback(() => {
-    if (!draftStrikeMode) return;
-    setDraftFindingPolicy((policy) =>
-      policy === "native" ? "external" : "native",
+    setOpenSelect(null);
+  };
+  const openChoices = (setting: "mode" | "judge") => {
+    setFocusedSetting(setting);
+    setHighlightedIndex(
+      setting === "mode"
+        ? MODES.findIndex((mode) => mode.value === draftMode)
+        : FINDING_POLICIES.findIndex(
+            (policy) => policy.value === draftFindingPolicy,
+          ),
     );
-    setFindingSelectOpen(false);
-  }, [draftStrikeMode]);
-
-  const moveFocus = useCallback(
-    (direction: number) => {
-      const visibleSettings: FocusedSetting[] = draftStrikeMode
-        ? ["strike", "judge", "save"]
-        : ["strike", "save"];
-      setFocusedSetting((focused) => {
-        const currentIndex = Math.max(0, visibleSettings.indexOf(focused));
-        const nextIndex =
-          (currentIndex + direction + visibleSettings.length) %
-          visibleSettings.length;
-        return visibleSettings[nextIndex] ?? "strike";
-      });
-    },
-    [draftStrikeMode],
-  );
-
+    setOpenSelect(setting);
+  };
+  const selectChoice = (index: number) => {
+    if (openSelect === "mode") setDraftMode(MODES[index]!.value);
+    else setDraftFindingPolicy(FINDING_POLICIES[index]!.value);
+    setOpenSelect(null);
+  };
+  const moveFocus = (direction: number) => {
+    const settings: FocusedSetting[] = judgeAvailable
+      ? ["mode", "judge", "save"]
+      : ["mode", "save"];
+    setFocusedSetting(
+      (focused) =>
+        settings[
+          (settings.indexOf(focused) + direction + settings.length) %
+            settings.length
+        ]!,
+    );
+  };
   const saveSettings = useCallback(async () => {
     if (saving) return;
-
     setSaving(true);
     setError(null);
     try {
       await config.update({
-        strikeMode: draftStrikeMode,
-        findingPolicy: draftStrikeMode ? draftFindingPolicy : "native",
+        strikeMode: draftMode === "strike",
+        lanceMode: draftMode === "lance",
+        findingPolicy: draftFindingPolicy,
       });
       onClose();
     } catch (cause) {
@@ -103,74 +118,75 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
       );
       setSaving(false);
     }
-  }, [config, draftFindingPolicy, draftStrikeMode, onClose, saving]);
+  }, [config, draftMode, draftFindingPolicy, onClose, saving]);
 
   useKeyboard((key) => {
     if (key.name === "tab") {
       key.preventDefault();
-      if (focusedSetting === "strike") toggleStrikeMode();
-      else if (focusedSetting === "judge") toggleFindingPolicy();
+      toggleFocused();
       return;
     }
-
-    if (findingSelectOpen) {
+    if (openSelect) {
       key.preventDefault();
-
-      if (key.name === "escape") {
-        setFindingSelectOpen(false);
-        return;
-      }
-
-      if (key.name === "up" || key.name === "down") {
+      if (key.name === "escape") setOpenSelect(null);
+      else if (key.name === "up" || key.name === "down") {
         const direction = key.name === "up" ? -1 : 1;
-        setHighlightedFindingIndex(
-          (index) =>
-            (index + direction + FINDING_POLICIES.length) %
-            FINDING_POLICIES.length,
+        setHighlightedIndex(
+          (index) => (index + direction + choices.length) % choices.length,
         );
-        return;
-      }
-
-      if (key.name === "return") {
-        const selected = FINDING_POLICIES[highlightedFindingIndex];
-        if (selected) setDraftFindingPolicy(selected.value);
-        setFindingSelectOpen(false);
-      }
+      } else if (key.name === "return") selectChoice(highlightedIndex);
       return;
     }
-
     if (key.name === "escape") {
       key.preventDefault();
       onClose();
-      return;
-    }
-
-    if (key.name === "up" || key.name === "down") {
+    } else if (key.name === "up" || key.name === "down") {
       key.preventDefault();
       moveFocus(key.name === "up" ? -1 : 1);
-      return;
-    }
-
-    if (key.name === "return") {
+    } else if (key.name === "return") {
       key.preventDefault();
-      if (focusedSetting === "strike") toggleStrikeMode();
-      else if (focusedSetting === "judge") openFindingSelect();
-      else void saveSettings();
+      if (focusedSetting === "save") void saveSettings();
+      else openChoices(focusedSetting);
     }
   });
+
+  const choiceList = (setting: "mode" | "judge") =>
+    openSelect === setting && (
+      <box flexDirection="column" overflow="hidden">
+        {choices.map((choice, index) => (
+          <box
+            key={choice.value}
+            flexDirection="row"
+            paddingLeft={1}
+            overflow="hidden"
+            backgroundColor={
+              index === highlightedIndex ? colors.backgroundSelected : undefined
+            }
+            onMouseDown={() => selectChoice(index)}
+          >
+            <text
+              fg={index === highlightedIndex ? colors.primary : colors.text}
+            >
+              {index === highlightedIndex ? "❯ " : "  "}
+              {choice.label}
+            </text>
+          </box>
+        ))}
+      </box>
+    );
 
   return (
     <Dialog size="medium" onClose={onClose}>
       <DialogLayout
         title="Advanced Settings"
-        escLabel={findingSelectOpen ? "back" : "close"}
+        escLabel={openSelect ? "back" : "close"}
         footerActions={[
-          findingSelectOpen
-            ? { key: "Enter", label: "Select", variant: "primary" }
-            : { key: "Enter", label: "Activate", variant: "primary" },
-          findingSelectOpen
-            ? { key: "↑/↓", label: "Choose" }
-            : { key: "↑/↓", label: "Navigate" },
+          {
+            key: "Enter",
+            label: openSelect ? "Select" : "Activate",
+            variant: "primary",
+          },
+          { key: "↑/↓", label: openSelect ? "Choose" : "Navigate" },
           ...(dimensions.width >= 60 && focusedSetting !== "save"
             ? [{ key: "Tab", label: "Toggle" }]
             : []),
@@ -182,46 +198,33 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
             justifyContent="space-between"
             overflow="hidden"
             backgroundColor={
-              focusedSetting === "strike" && !findingSelectOpen
+              focusedSetting === "mode" && !openSelect
                 ? colors.backgroundSelected
                 : undefined
             }
-            onMouseDown={() => {
-              setFocusedSetting("strike");
-              toggleStrikeMode();
-            }}
+            onMouseDown={() => openChoices("mode")}
           >
-            <text
-              fg={focusedSetting === "strike" ? colors.primary : colors.text}
-            >
-              {focusedSetting === "strike" ? "❯ " : "  "}Strike Mode
+            <text fg={focusedSetting === "mode" ? colors.primary : colors.text}>
+              {focusedSetting === "mode" ? "❯ " : "  "}Mode
             </text>
-            <text fg={draftStrikeMode ? colors.warning : colors.textMuted}>
-              {draftStrikeMode ? "● Enabled" : "○ Disabled"}
-            </text>
+            <text fg={colors.primary}>{selectedMode.label} ▾</text>
           </box>
-
-          {!compact && (
-            <text fg={colors.textMuted}>
-              Focused research; no auto-discovery or agent fan-out.
-            </text>
+          {choiceList("mode")}
+          {(!compact || !openSelect) && (
+            <text fg={colors.textMuted}>{selectedMode.description}</text>
           )}
-
-          {draftStrikeMode && (
+          {judgeAvailable && (
             <>
               <box
                 flexDirection="row"
                 justifyContent="space-between"
                 overflow="hidden"
                 backgroundColor={
-                  focusedSetting === "judge" && !findingSelectOpen
+                  focusedSetting === "judge" && !openSelect
                     ? colors.backgroundSelected
                     : undefined
                 }
-                onMouseDown={() => {
-                  setFocusedSetting("judge");
-                  openFindingSelect();
-                }}
+                onMouseDown={() => openChoices("judge")}
               >
                 <text
                   fg={focusedSetting === "judge" ? colors.primary : colors.text}
@@ -235,61 +238,30 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
                       : colors.warning
                   }
                 >
-                  {draftFindingPolicy === "native" ? "Apex judge" : "Disabled"}
-                  {" ▾"}
+                  {draftFindingPolicy === "native" ? "Apex judge" : "Disabled"}{" "}
+                  ▾
                 </text>
               </box>
-
-              {findingSelectOpen && (
-                <box flexDirection="column" overflow="hidden">
-                  {FINDING_POLICIES.map((option, index) => {
-                    const highlighted = index === highlightedFindingIndex;
-                    return (
-                      <box
-                        key={option.value}
-                        flexDirection="row"
-                        paddingLeft={1}
-                        paddingRight={1}
-                        overflow="hidden"
-                        backgroundColor={
-                          highlighted ? colors.backgroundSelected : undefined
-                        }
-                        onMouseDown={() => {
-                          setDraftFindingPolicy(option.value);
-                          setFindingSelectOpen(false);
-                        }}
-                      >
-                        <text fg={highlighted ? colors.primary : colors.text}>
-                          {highlighted ? "❯ " : "  "}
-                          {option.label}
-                        </text>
-                        {draftFindingPolicy === option.value && (
-                          <text fg={colors.primary}> ✓</text>
-                        )}
-                      </box>
-                    );
-                  })}
-                </box>
-              )}
-
+              {choiceList("judge")}
               {!compact && (
-                <>
-                  <text fg={colors.textMuted}>
-                    Judge off skips in-run review and report.
-                  </text>
-                  <text fg={colors.textMuted}>
-                    New sessions only; TUI has no external evaluator.
-                  </text>
-                </>
+                <text fg={colors.textMuted}>
+                  When enabled, Apex's separate judge verifies submitted
+                  evidence.
+                </text>
               )}
             </>
           )}
-
+          {!openSelect && (
+            <text fg={colors.textMuted}>
+              New sessions only.
+              {draftMode === "lance" ? " Lance has a 15-minute budget." : ""}
+            </text>
+          )}
           <box
             flexDirection="row"
             overflow="hidden"
             backgroundColor={
-              focusedSetting === "save" && !findingSelectOpen
+              focusedSetting === "save" && !openSelect
                 ? colors.backgroundSelected
                 : undefined
             }
@@ -302,7 +274,6 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
               {focusedSetting === "save" ? "❯ " : "  "}Save settings
             </text>
           </box>
-
           {saving && <text fg={colors.textMuted}>Saving…</text>}
           {error && <text fg={colors.error}>{error}</text>}
         </box>

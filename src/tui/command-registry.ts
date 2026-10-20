@@ -235,6 +235,7 @@ export const commands: CommandConfig[] = [
             requireApproval: false,
             target: flags.target,
             strikeMode: false,
+            lanceMode: false,
             sandbox: true,
             headers: resolveHeadersFromFlags(flags),
           },
@@ -374,6 +375,7 @@ export const commands: CommandConfig[] = [
         initialConfig: {
           requireApproval: true,
           strikeMode: false,
+          lanceMode: false,
         },
         initialSkill: {
           slug: "threat-model",

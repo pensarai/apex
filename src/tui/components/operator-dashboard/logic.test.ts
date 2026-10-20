@@ -202,7 +202,24 @@ describe("resolveOperatorFindingPolicy", () => {
 });
 
 describe("resolveActiveFindingPolicy", () => {
-  it("allows judge off only while the agent is in Fast Strike", () => {
+  it("preserves the judge toggle in Strike and Lance", () => {
+    expect(resolveActiveFindingPolicy("lance", "external")).toBe("external");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: false,
+        lanceMode: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("external");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: false,
+        lanceMode: true,
+        savedSessionValue: "external",
+      }),
+    ).toBe("external");
     expect(resolveActiveFindingPolicy("fast-strike", "external")).toBe(
       "external",
     );
@@ -857,3 +874,9 @@ describe("resolveInputFocused", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+it("keeps Lance independent of Strike and planning", () => {
+  expect(resolveOperatorAgentMode("manual", false, true)).toBe("lance");
+  expect(resolveOperatorAgentMode("auto", true, true)).toBe("lance");
+  expect(resolveOperatorAgentMode("plan", false, true)).toBe("lance");
+});

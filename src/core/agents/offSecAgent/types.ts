@@ -105,7 +105,7 @@ export type Finding = Omit<
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 /** Agent operating mode that controls which tools are available. */
-export type AgentMode = "default" | "plan" | "fast-strike";
+export type AgentMode = "default" | "plan" | "fast-strike" | "lance";
 
 /** Selects Apex's native finding judge or a caller-owned evaluation boundary. */
 export type FindingPolicy = "native" | "external";
@@ -218,6 +218,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * @default "default"
    */
   mode?: AgentMode;
+  lance?: import("../lance").LanceOptions;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
