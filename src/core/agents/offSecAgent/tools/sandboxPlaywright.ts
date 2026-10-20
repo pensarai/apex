@@ -395,7 +395,11 @@ const fs = require('fs');
       // fan-out that otherwise costs ~3 GB across the run.
       firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
     });
-    ${headerRoute}
+    try {
+      ${headerRoute}
+    } catch {
+      throw new Error('Browser header route installation failed');
+    }
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
 
@@ -475,10 +479,17 @@ const fs = require('fs');
   const envPrefix = installDirOverride
     ? `CAMOUFOX_INSTALL_DIR=${installDirOverride} `
     : "";
-  const result = await sandbox.execute(
-    `echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_action.js && ${envPrefix}node ${SANDBOX_PW_DIR}/pw_action.js`,
-    { timeout },
-  );
+  const result = await sandbox
+    .execute(
+      `echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_action.js && ${envPrefix}node ${SANDBOX_PW_DIR}/pw_action.js`,
+      { timeout },
+    )
+    .catch((error: unknown) => {
+      if (headerPolicy?.targetHeaderProvider) {
+        throw new Error("Playwright script execution failed");
+      }
+      throw error;
+    });
 
   const stdout = result.stdout || "";
   const match = stdout.match(
@@ -488,6 +499,9 @@ const fs = require('fs');
   );
 
   if (!match) {
+    if (headerPolicy?.targetHeaderProvider) {
+      throw new Error("Playwright script execution failed");
+    }
     if (!result.success) {
       throw new Error(
         `Playwright script failed: ${result.stderr || stdout || "unknown error"}`,

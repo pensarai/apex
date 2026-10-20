@@ -263,6 +263,36 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     expect(request.arguments.code).not.toContain("extraHTTPHeaders");
   });
 
+  it.each([
+    "result",
+    "transport",
+  ])("fails closed without exposing credentials on a route setup %s error", async (failure) => {
+    const session = new PlaywrightMcpSession({
+      headerPolicy: {
+        allowedHosts: ["example.com"],
+        headers: {},
+        targetHeaderProvider: {
+          endpoint: "https://console.example/headers",
+          token: "secret-run-jwt",
+        },
+      },
+    });
+    const callTool = vi.fn(async () => {
+      if (failure === "transport")
+        throw new Error("generated code: secret-run-jwt");
+      return {
+        isError: true,
+        content: [{ type: "text", text: "generated code: secret-run-jwt" }],
+      };
+    });
+    const internal = session as unknown as {
+      installHeaderRoute(client: { callTool: typeof callTool }): Promise<void>;
+    };
+    await expect(internal.installHeaderRoute({ callTool })).rejects.toThrow(
+      /^Browser header route installation failed$/,
+    );
+  });
+
   it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {
     const session = new PlaywrightMcpSession({
       headless: true,

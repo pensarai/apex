@@ -89,6 +89,39 @@ describe("SandboxBrowserBackend", () => {
     );
   });
 
+  it.each([
+    "stderr",
+    "transport",
+  ])("does not expose provider code from a script %s failure", async (failure) => {
+    const { sandbox } = makeFakeSandbox({ success: true });
+    vi.mocked(sandbox.execute).mockImplementation(async (command) => {
+      if (!command.includes("pw_action.js")) return ok();
+      if (failure === "transport")
+        throw new Error("script source: secret-run-jwt");
+      return {
+        success: false,
+        stdout: "",
+        stderr: "script source: secret-run-jwt",
+        exitCode: 1,
+      };
+    });
+    const ctx = makeCtx(sandbox, rootPath);
+    ctx.session.config = {
+      targetHeaderProvider: {
+        endpoint: "https://console.example/headers",
+        token: "secret-run-jwt",
+      },
+    };
+    const backend = SandboxBrowserBackend(ctx);
+    await expect(
+      backend.navigate("https://target.example/dashboard"),
+    ).resolves.toEqual({
+      success: false,
+      error: "Playwright script execution failed",
+      url: "https://target.example/dashboard",
+    });
+  });
+
   it("navigates through the sandbox and never calls the host network", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { sandbox, commands } = makeFakeSandbox({
