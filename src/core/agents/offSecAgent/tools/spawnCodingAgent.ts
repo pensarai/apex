@@ -194,6 +194,7 @@ function codingSpawnOptions(
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
+      reasoning: ctx.reasoning,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
       toolExecutionContext: ctx.toolExecutionContext,

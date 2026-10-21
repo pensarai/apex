@@ -37,6 +37,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "enableThinking"
   | "thinkingEffort"
   | "openAIReasoningEffort"
+  | "reasoning"
   | "languageModelMiddleware"
   | "usageRecorder"
   | "streamIdFactory"
@@ -84,6 +85,7 @@ export async function judgeFinding(
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
+      reasoning: ctx.reasoning,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
       toolExecutionContext: ctx.toolExecutionContext,

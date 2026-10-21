@@ -10,6 +10,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
@@ -119,6 +120,7 @@ export interface SpawnRuntime {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   environmentVariables?: Record<string, string>;
   secretValues?: string[];
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
@@ -299,6 +301,7 @@ export interface SpawnedPentestWorkerInput {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   display?: string;
   /** The caller's own {@link AgentHooks} — `backends` is the caller's object. */
   hooks: AgentHooks;
@@ -343,6 +346,7 @@ export async function runSpawnedPentestWorker(
     enableThinking: input.enableThinking,
     thinkingEffort: input.thinkingEffort,
     openAIReasoningEffort: input.openAIReasoningEffort,
+    reasoning: input.reasoning,
     display: input.display,
     ...hooks,
     abortSignal:
@@ -410,6 +414,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     enableThinking: ctx.enableThinking,
     thinkingEffort: ctx.thinkingEffort,
     openAIReasoningEffort: ctx.openAIReasoningEffort,
+    reasoning: ctx.reasoning,
     display: ctx.display,
     hooks: {
       findingPolicy: ctx.findingPolicy,
@@ -455,6 +460,7 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     enableThinking: ctx.enableThinking,
     thinkingEffort: ctx.thinkingEffort,
     openAIReasoningEffort: ctx.openAIReasoningEffort,
+    reasoning: ctx.reasoning,
     display: ctx.display,
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
@@ -568,6 +574,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         enableThinking: ctx.enableThinking,
         thinkingEffort: ctx.thinkingEffort,
         openAIReasoningEffort: ctx.openAIReasoningEffort,
+        reasoning: ctx.reasoning,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
         toolExecutionContext: ctx.toolExecutionContext,

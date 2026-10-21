@@ -69,5 +69,14 @@ export {
   stringifyCanonicalJson,
   toJsonValue,
 } from "./native-rollout-evidence";
+export {
+  getReasoningCapabilities,
+  getReasoningChoices,
+  REASONING_SETTINGS,
+  type ReasoningCapabilities,
+  type ReasoningEffort,
+  type ReasoningSetting,
+  validateReasoningSetting,
+} from "./reasoning";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";

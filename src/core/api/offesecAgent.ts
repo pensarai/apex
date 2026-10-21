@@ -4,8 +4,9 @@ import {
   OffensiveSecurityAgent,
   type OffensiveSecurityAgentInput,
 } from "../agents/offSecAgent";
+import { validateReasoningSetting } from "../ai";
 import { startAgentExecution } from "../runtime/agentExecution";
-import type { SessionInfo } from "../session";
+import { type SessionInfo, sessions } from "../session";
 
 export interface RunAgentResult {
   streamResult: StreamTextResult<ToolSet, never>;
@@ -28,6 +29,32 @@ export async function runOffensiveSecurityAgent(
     onSessionReady?: (session: SessionInfo) => void;
   },
 ): Promise<RunAgentResult> {
+  const saved = input.session?.config?.modelReasoning;
+  const reasoning =
+    input.reasoning ??
+    (saved?.model === input.model ? saved.setting : undefined);
+  if (reasoning !== undefined) {
+    validateReasoningSetting(
+      input.model,
+      reasoning,
+      input.authConfig?.customProviders,
+    );
+    input = { ...input, reasoning };
+    if (
+      input.session &&
+      !input.subagentId &&
+      (saved?.model !== input.model || saved.setting !== reasoning)
+    ) {
+      input = {
+        ...input,
+        session: await sessions.updateModelReasoning(
+          input.session.id,
+          input.model,
+          reasoning,
+        ),
+      };
+    }
+  }
   const agent = input.session
     ? new OffensiveSecurityAgent(input as OffensiveSecurityAgentInput)
     : await OffensiveSecurityAgent.create(input as CreateAgentInput);

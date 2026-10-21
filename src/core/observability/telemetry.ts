@@ -35,6 +35,7 @@ export interface CreateAiTelemetryInput {
   operation: AiTelemetryOperation;
   sessionId?: string;
   compaction?: { traceId: string; spanId: string };
+  reasoning?: { requested: string; parameters: string };
 }
 
 /**
@@ -52,6 +53,10 @@ export function createAiTelemetrySettings(
   const recordPayloads = shouldRecordAiPayloads();
   const metadata: Record<string, string> = {};
   if (input.sessionId) metadata.sessionId = input.sessionId;
+  if (input.reasoning) {
+    metadata.reasoningRequested = input.reasoning.requested;
+    metadata.reasoningParameters = input.reasoning.parameters;
+  }
   if (input.operation === "apex.agent.stream")
     metadata.compactionTelemetryVersion = "1";
   if (input.compaction) {

@@ -20,6 +20,7 @@ import {
   type AIAuthConfig,
   type AIModel,
   generateObjectResponse,
+  type ReasoningSetting,
   type UsageRecorder,
 } from "../../../ai";
 
@@ -61,6 +62,7 @@ export interface CVSSScorerResult {
 
 /** Per-run model-call hooks forwarded to the scorer's structured-output call. */
 export interface CVSSScorerHooks {
+  reasoning?: ReasoningSetting;
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   usageRecorder?: UsageRecorder;
 }
@@ -387,6 +389,7 @@ export async function scoreFindingWithCVSS(
   // Generate structured CVSS metrics using AI
   const assessment = await generateObjectResponse({
     model,
+    reasoning: hooks?.reasoning,
     schema: CVSSMetricsOutputSchema,
     prompt,
     system: CVSS_SCORER_SYSTEM_PROMPT,

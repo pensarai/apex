@@ -429,7 +429,16 @@ export class OffensiveSecurityAgent<TResult = void> {
       session = await createSession({
         ...(input.mode === "lance" ? { name: "Lance" } : {}),
         targets: input.target ? [input.target] : [],
-        config: input.sessionConfig,
+        config:
+          input.reasoning === undefined
+            ? input.sessionConfig
+            : {
+                ...input.sessionConfig,
+                modelReasoning: {
+                  model: input.model,
+                  setting: input.reasoning,
+                },
+              },
         model: input.model,
         authConfig: input.authConfig,
         userMessage: input.prompt,
@@ -653,6 +662,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       enableThinking: input.enableThinking,
       thinkingEffort: input.thinkingEffort,
       openAIReasoningEffort: input.openAIReasoningEffort,
+      reasoning: input.reasoning,
       surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
@@ -1090,6 +1100,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
+        reasoning: input.reasoning,
         silent: true,
       });
     };

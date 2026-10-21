@@ -44,6 +44,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
@@ -145,6 +146,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
   enableThinking?: boolean;
   /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
@@ -211,6 +213,7 @@ export interface WhiteboxAttackSurfaceAppInput {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   projectThreatModel?: string;
@@ -253,6 +256,7 @@ export async function runWhiteboxAttackSurfaceApp(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -304,6 +308,7 @@ export async function runWhiteboxAttackSurfaceApp(
         enableThinking,
         thinkingEffort,
         openAIReasoningEffort,
+        reasoning,
         onStepFinish,
         onCacheMetrics,
         backends: hooksForApp.backends,
@@ -397,6 +402,7 @@ export async function runWhiteboxAttackSurfaceApp(
           onStepFinish,
           onCacheMetrics,
           openAIReasoningEffort,
+          reasoning,
           enableThinking,
           thinkingEffort,
           projectThreatModel,
@@ -458,6 +464,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     domains,
@@ -536,6 +543,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     responseSchema: input.incremental
@@ -685,6 +693,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -1417,6 +1426,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
+    reasoning: input.reasoning,
     enableThinking: input.enableThinking,
     thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,

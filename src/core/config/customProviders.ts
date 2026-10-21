@@ -22,10 +22,25 @@ const customModelSchema = z
     reasoningEffort: z
       .enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"])
       .optional(),
+    supportedReasoningEfforts: z
+      .array(
+        z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]),
+      )
+      .nonempty()
+      .optional(),
   })
   .refine((model) => model.maxOutputTokens < model.contextLength, {
     message: "maxOutputTokens must be smaller than contextLength",
-  });
+  })
+  .refine(
+    (model) =>
+      !model.supportedReasoningEfforts ||
+      !model.reasoningEffort ||
+      model.supportedReasoningEfforts.includes(model.reasoningEffort),
+    {
+      message: "reasoningEffort must be one of supportedReasoningEfforts",
+    },
+  );
 
 const customProviderBaseSchema = z.strictObject({
   name: z.string().trim().min(1).optional(),
@@ -104,7 +119,11 @@ const customProviderSchema = customProviderBaseSchema.superRefine(
           path: ["requestBody"],
           message: "requestBody is only supported for Chat Completions",
         });
-    } else if (provider.models.some((model) => model.reasoningEffort)) {
+    } else if (
+      provider.models.some(
+        (model) => model.reasoningEffort || model.supportedReasoningEfforts,
+      )
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["models"],

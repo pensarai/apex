@@ -507,6 +507,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               enableThinking: ctx.enableThinking,
               thinkingEffort: ctx.thinkingEffort,
               openAIReasoningEffort: ctx.openAIReasoningEffort,
+              reasoning: ctx.reasoning,
               languageModelMiddleware: ctx.languageModelMiddleware,
               usageRecorder: ctx.usageRecorder,
               toolExecutionContext: ctx.toolExecutionContext,
@@ -629,6 +630,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               ctx.abortSignal,
               ctx.session.id,
               {
+                reasoning: ctx.reasoning,
                 languageModelMiddleware: ctx.languageModelMiddleware,
                 usageRecorder: ctx.usageRecorder,
               },

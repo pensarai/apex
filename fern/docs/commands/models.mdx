@@ -139,13 +139,13 @@ When you open `/models`, you'll see:
 
 When you haven't explicitly selected a model, Apex automatically uses the flagship model for your highest-priority configured provider:
 
-| Provider    | Default Model                |
-| ----------- | ---------------------------- |
-| Pensar      | Claude Opus 4.6 (Pensar)    |
-| Anthropic   | Claude Opus 4.6              |
-| OpenAI      | GPT 5.5                      |
-| Google      | Gemini 3.1 Pro Preview       |
-| OpenRouter  | Claude Opus 4.6 (OpenRouter) |
+| Provider   | Default Model                |
+| ---------- | ---------------------------- |
+| Pensar     | Claude Opus 4.6 (Pensar)     |
+| Anthropic  | Claude Opus 4.6              |
+| OpenAI     | GPT 5.5                      |
+| Google     | Gemini 3.1 Pro Preview       |
+| OpenRouter | Claude Opus 4.6 (OpenRouter) |
 
 This also applies to the headless CLI commands (`pensar pentest`, `pensar targeted-pentest`) when the `--model` flag is not provided.
 
@@ -169,13 +169,36 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
   <Step title="Navigate">Use `↑/↓` arrows to browse available models</Step>
   <Step title="Select">Press `[Enter]` to select the highlighted model</Step>
   <Step title="Confirm">
-    The interface closes and your selected model is now active
+    Adjust effort or thinking if available, then press Enter on the selected
+    model again to close
   </Step>
 </Steps>
 
-## OpenAI Reasoning Effort
+## Effort and Extended Thinking
 
-When GPT 5.5 or another supported OpenAI reasoning model is selected, the model picker shows a **Reasoning Effort** control. Press `[Space]` on that row to cycle the effort level. GPT 5.5 supports `none`, `low`, `medium`, `high`, and `xhigh`; Apex defaults to `medium`.
+The selected model determines which control appears:
+
+- **Effort** shows only levels known to be supported by that model and provider.
+- **Extended Thinking** appears when a model supports on/off control instead.
+- Models with unknown capabilities use their defaults without an adjustable control.
+
+Select a model, then press **←/→** to cycle its settings, even while the search
+box has focus. Press **Enter** on a provider to expand or collapse it, or on the
+selected model again to close the picker. Preferences are saved separately for
+each model/provider, and sessions retain their selected setting when resumed
+with the same model.
+
+**Default** uses the known model default. Where thinking is mandatory, Apex does
+not offer an off setting. A level such as `high` has provider-specific meaning;
+it is not a fixed token budget or a prediction of cost.
+
+Headless commands also accept `--effort <level>` (or `--effort default`). Models
+with a thinking toggle support `--extended-thinking` and
+`--no-extended-thinking`. Invalid combinations fail before an inference request.
+
+```sh
+pensar -p "Review the current changes" --model gpt-6.1-sol --effort low
+```
 
 ## Model Comparison
 
@@ -252,13 +275,21 @@ When GPT 5.5 or another supported OpenAI reasoning model is selected, the model 
 ## Related Commands
 
 <CardGroup cols={2}>
-  <Card title="/providers" icon="plug" href="/apex/tui-slash-commands/providers">
+  <Card
+    title="/providers"
+    icon="plug"
+    href="/apex/tui-slash-commands/providers"
+  >
     Configure AI provider API keys
   </Card>
   <Card title="/pentest" icon="play" href="/apex/tui-slash-commands/pentest">
     Start testing with your selected model
   </Card>
-  <Card title="/help" icon="circle-question" href="/apex/tui-slash-commands/help">
+  <Card
+    title="/help"
+    icon="circle-question"
+    href="/apex/tui-slash-commands/help"
+  >
     View all available commands
   </Card>
 </CardGroup>

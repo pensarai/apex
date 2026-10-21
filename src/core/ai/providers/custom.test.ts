@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { CustomProviders } from "../../config/customProviders";
 import {
+  buildReasoningProviderOptions,
   generateObjectResponse,
   getContextWindow,
   streamResponse,
@@ -145,6 +146,37 @@ describe("custom inference", () => {
     expect(getMaxOutputTokens(responsesModelId, responsesProviders)).toBe(
       32_000,
     );
+  });
+
+  it("uses the runtime effort instead of the configured Responses default", async () => {
+    vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      responsesCompletion("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const providers: CustomProviders = {
+      responses: {
+        ...responsesProviders.responses,
+        models: [
+          {
+            ...responsesProviders.responses.models[0],
+            supportedReasoningEfforts: ["low", "xhigh"],
+          },
+        ],
+      },
+    };
+    await getProviderModel(responsesModelId, {
+      customProviders: providers,
+    }).doGenerate({
+      prompt: [],
+      providerOptions: buildReasoningProviderOptions(responsesModelId, {
+        reasoning: "low",
+        customProviders: providers,
+      }),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      reasoning: { effort: "low" },
+    });
   });
 
   it("omits reasoning when the Responses model has no effort setting", async () => {
