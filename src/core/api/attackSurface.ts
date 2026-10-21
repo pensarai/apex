@@ -77,6 +77,7 @@ async function runWhiteboxAttackSurface(
     enableThinking: input.enableThinking,
     thinkingEffort: input.thinkingEffort,
     openAIReasoningEffort: input.openAIReasoningEffort,
+    reasoning: input.reasoning,
   });
 
   console.log(

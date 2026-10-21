@@ -115,6 +115,9 @@ function convertToResponsesFormat(
     stream: true,
   };
 
+  const reasoningEffort = options.providerOptions?.openai?.reasoningEffort;
+  if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
+
   if (instructions) {
     body.instructions = instructions;
   }
@@ -381,9 +384,13 @@ function convertToAnthropicFormat(
     // Anthropic rejects temperature when thinking is enabled
     delete body.temperature;
   } else if (thinking?.type === "adaptive") {
-    body.thinking = { type: "adaptive" };
+    body.thinking = { type: "adaptive", display: "summarized" };
     delete body.temperature;
+  } else if (thinking?.type === "disabled") {
+    body.thinking = { type: "disabled" };
   }
+  if (anthropicOpts?.effort)
+    body.output_config = { effort: anthropicOpts.effort };
 
   // Convert tool choice
   if (options.toolChoice) {

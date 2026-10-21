@@ -6,6 +6,10 @@ import {
 } from "../agents/offSecAgent";
 import { startAgentExecution } from "../runtime/agentExecution";
 import type { SessionInfo } from "../session";
+import {
+  persistRootReasoningOverride,
+  resolveRootReasoning,
+} from "./reasoning";
 
 export interface RunAgentResult {
   streamResult: StreamTextResult<ToolSet, never>;
@@ -28,6 +32,9 @@ export async function runOffensiveSecurityAgent(
     onSessionReady?: (session: SessionInfo) => void;
   },
 ): Promise<RunAgentResult> {
+  const resolved = resolveRootReasoning(input);
+  const persisted = persistRootReasoningOverride(input);
+  input = persisted ? { ...resolved, session: await persisted } : resolved;
   const agent = input.session
     ? new OffensiveSecurityAgent(input as OffensiveSecurityAgentInput)
     : await OffensiveSecurityAgent.create(input as CreateAgentInput);

@@ -387,6 +387,7 @@ describe("model-call helpers", () => {
       {
         prompt: "resume",
         model: "z-ai/glm-5.3",
+        reasoning: "low",
         silent: true,
       },
       mockState.model,
@@ -397,6 +398,7 @@ describe("model-call helpers", () => {
       mockState.model.doStreamCalls.find(isSummaryCall)?.providerOptions,
     ).toEqual({
       openrouter: {
+        reasoning: { effort: "low", enabled: true },
         provider: {
           only: ["z-ai"],
           allow_fallbacks: false,
@@ -435,11 +437,17 @@ describe("model-call helpers", () => {
   it("keeps GLM streaming pinned to Z.ai", async () => {
     mockState.model = oneStepTextModel();
     await drain(
-      streamResponse({ prompt: "hi", model: "z-ai/glm-5.2", silent: true }),
+      streamResponse({
+        prompt: "hi",
+        model: "z-ai/glm-5.2",
+        reasoning: "xhigh",
+        silent: true,
+      }),
     );
 
     expect(mockState.model.doStreamCalls[0]?.providerOptions).toEqual({
       openrouter: {
+        reasoning: { effort: "xhigh", enabled: true },
         provider: {
           only: ["z-ai"],
           allow_fallbacks: false,
@@ -452,12 +460,14 @@ describe("model-call helpers", () => {
     mockState.model = generateModel();
     await generateObjectResponse({
       model: "z-ai/glm-5.2",
+      reasoning: "xhigh",
       schema: z.object({ result: z.string() }),
       prompt: "hi",
     });
 
     expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
       openrouter: {
+        reasoning: { effort: "xhigh", enabled: true },
         provider: {
           order: ["z-ai"],
           allow_fallbacks: true,
@@ -473,6 +483,7 @@ describe("model-call helpers", () => {
       streamResponse({
         prompt: "hi",
         model: "z-ai/glm-5.3",
+        reasoning: "low",
         silent: true,
         tools: {
           probe: {
@@ -487,6 +498,7 @@ describe("model-call helpers", () => {
 
     expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
       openrouter: {
+        reasoning: { effort: "low", enabled: true },
         provider: {
           only: ["z-ai"],
           allow_fallbacks: false,

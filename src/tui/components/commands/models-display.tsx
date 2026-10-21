@@ -25,7 +25,8 @@ export default function ModelsDisplay() {
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
-  const { model, setModel, isModelUserSelected } = useAgent();
+  const { model, setModel, isModelUserSelected, reasoning, setReasoning } =
+    useAgent();
 
   const goHome = () => {
     route.navigate({
@@ -93,6 +94,8 @@ export default function ModelsDisplay() {
           onConfigUpdate={config.update}
           focused={true}
           isModelUserSelected={isModelUserSelected}
+          reasoning={reasoning}
+          onReasoningChange={setReasoning}
         />
       </box>
 
@@ -101,6 +104,9 @@ export default function ModelsDisplay() {
         <DialogControls
           controls={[
             { key: "Enter", label: "Confirm", variant: "primary" },
+            ...(reasoning !== undefined
+              ? [{ key: "←/→", label: "Change Reasoning" }]
+              : []),
             { key: "Ctrl+P", label: "Connect Provider" },
             { key: "Esc", label: "Go Back" },
           ]}

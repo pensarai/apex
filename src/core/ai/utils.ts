@@ -32,6 +32,7 @@ import {
   buildOpenRouterProviderOptions,
   buildReasoningProviderOptions,
   getContextWindow,
+  mergeProviderOptions,
   recordContextRestart,
   type StreamResponseOpts,
   streamResponse,
@@ -431,10 +432,6 @@ async function summarizeConversation(
     ...summaryBase,
     { role: "user", content: summaryInstruction },
   ];
-  const summaryProviderOptions = {
-    ...buildReasoningProviderOptions(opts.model, opts),
-    ...buildOpenRouterProviderOptions(opts.model),
-  };
   const summaryOutputTokens = Math.min(
     8_192,
     getMaxOutputTokens(
@@ -442,6 +439,14 @@ async function summarizeConversation(
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
     ),
+  );
+  const summaryProviderOptions = mergeProviderOptions(
+    buildReasoningProviderOptions(opts.model, {
+      ...opts,
+      customProviders: opts.authConfig?.customProviders,
+      maxOutputTokens: summaryOutputTokens,
+    }),
+    buildOpenRouterProviderOptions(opts.model),
   );
   // Streamed rather than generated in one shot: a non-streaming request returns no
   // response headers until the whole summary exists, which is indistinguishable from
@@ -480,6 +485,10 @@ async function summarizeConversation(
       },
       experimental_telemetry: createAiTelemetrySettings({
         operation: "apex.context.summarize",
+        reasoning: {
+          requested: opts.reasoning ?? "legacy-default",
+          parameters: JSON.stringify(summaryProviderOptions ?? {}),
+        },
         sessionId: opts.sessionId,
         compaction: compaction?.link,
       }),

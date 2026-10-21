@@ -21,6 +21,7 @@ import type {
   CacheMetrics,
   InferenceRecorder,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
@@ -481,6 +482,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
@@ -613,6 +615,7 @@ export interface SpecializedAgentInput extends AgentHooks {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for

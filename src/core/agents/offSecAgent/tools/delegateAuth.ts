@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { getModelSettings } from "../../../ai";
 import { CredentialManager } from "../../../credentials";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
@@ -300,8 +301,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           runtime: {
             findingPolicy: ctx.findingPolicy,
             session: ctx.session,
-            model: ctx.model,
-            authConfig: ctx.authConfig,
+            ...getModelSettings(ctx),
             abortSignal: ctx.abortSignal,
             environmentVariables: ctx.environmentVariables,
             secretValues: ctx.secretValues,

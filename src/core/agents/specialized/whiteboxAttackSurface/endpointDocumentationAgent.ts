@@ -3,6 +3,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
 } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
@@ -69,6 +70,7 @@ interface SharedAgentOptions {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   projectThreatModel?: string;
@@ -218,6 +220,7 @@ function endpointDocumentationSpawnOptions(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -262,6 +265,7 @@ function endpointDocumentationSpawnOptions(
       enableThinking,
       thinkingEffort,
       openAIReasoningEffort,
+      reasoning,
       onStepFinish,
       onCacheMetrics,
       backends: hooks?.backends,

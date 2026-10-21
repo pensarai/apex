@@ -1,3 +1,4 @@
+import { getSavedReasoning } from "../../../core/cli/reasoning";
 /**
  * Operator Dashboard
  *
@@ -36,8 +37,6 @@ import {
 import {
   buildAuthConfig,
   getContextWindow,
-  modelSupportsOpenAIReasoning,
-  modelSupportsThinking,
   normalizeStepUsage,
 } from "../../../core/ai";
 import {
@@ -183,8 +182,8 @@ export default function OperatorDashboard({
     usageStore,
     markExecuted,
     setSessionCwd,
-    reasoningEnabled,
-    openAIReasoningEffort,
+    reasoning: preferredReasoning,
+    setReasoning,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -457,6 +456,32 @@ export default function OperatorDashboard({
       gate.off("approval-resolved", onApprovalResolved);
     };
   }, []);
+
+  const restoredReasoningSession = useRef<string | null>(null);
+  const savedReasoning = session?.config?.modelReasoning;
+  const restoredPreference =
+    savedReasoning?.model === model.id
+      ? getSavedReasoning(model.id, {
+          customProviders: config.data.customProviders,
+          modelReasoning: { [model.id]: savedReasoning.setting },
+        })
+      : undefined;
+  // An auto-started resumed turn can precede the preference write completing.
+  const reasoning =
+    session && restoredReasoningSession.current !== session.id
+      ? (restoredPreference ?? preferredReasoning)
+      : preferredReasoning;
+  useEffect(() => {
+    if (!session || restoredReasoningSession.current === session.id) return;
+    if (
+      restoredPreference !== undefined &&
+      restoredPreference !== preferredReasoning
+    ) {
+      setReasoning(restoredPreference);
+    } else {
+      restoredReasoningSession.current = session.id;
+    }
+  }, [session, restoredPreference, preferredReasoning, setReasoning]);
 
   // Load existing session or initialise operator state for a new one.
   // New sessions are created lazily by the agent on the first runAgent call.
@@ -931,10 +956,7 @@ export default function OperatorDashboard({
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
-        enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
-        openAIReasoningEffort: modelSupportsOpenAIReasoning(model.id)
-          ? openAIReasoningEffort
-          : undefined,
+        reasoning,
         surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         promptInjectionLibrarySource:
           initialConfig?.promptInjectionLibrarySource ??
@@ -1163,8 +1185,7 @@ export default function OperatorDashboard({
       skillsRegistry.buildCatalog,
       requireApproval,
       skillsRegistry,
-      reasoningEnabled,
-      openAIReasoningEffort,
+      reasoning,
       usageStore,
       markExecuted,
     ],

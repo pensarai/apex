@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import { getModelSettings } from "../../../ai";
 import { createLogger } from "../../../logger/structured";
 import { collectCommand } from "../../../tools/backends/collectCommand";
 import {
@@ -499,14 +500,10 @@ CRITICAL RULES — READ BEFORE CALLING:
             spec: { type: "finding-judge", judgeInput, target: ctx.target },
             runtime: {
               session: ctx.session,
-              model: ctx.model!,
-              authConfig: ctx.authConfig,
+              ...getModelSettings(ctx),
               abortSignal: ctx.abortSignal,
               sandbox: ctx.sandbox,
               backends: ctx.backends,
-              enableThinking: ctx.enableThinking,
-              thinkingEffort: ctx.thinkingEffort,
-              openAIReasoningEffort: ctx.openAIReasoningEffort,
               languageModelMiddleware: ctx.languageModelMiddleware,
               usageRecorder: ctx.usageRecorder,
               toolExecutionContext: ctx.toolExecutionContext,
@@ -629,6 +626,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               ctx.abortSignal,
               ctx.session.id,
               {
+                reasoning: ctx.reasoning,
                 languageModelMiddleware: ctx.languageModelMiddleware,
                 usageRecorder: ctx.usageRecorder,
               },
