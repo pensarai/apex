@@ -60,14 +60,12 @@ function model() {
 
 const SUMMARIZE_FN = "apex.context.summarize";
 
-// Summarization and the resumed agent turn both reach the model through doStream,
-// so a mock that must fail only the summary matches on its instruction.
+// Summary and resumed turn both arrive via doStream; the instruction separates them.
 function isSummaryCall(options: { prompt: unknown }): boolean {
   return JSON.stringify(options.prompt).includes("Compact this conversation");
 }
 
-// Located by telemetry functionId rather than span name, so it survives the
-// summarizer switching between streaming and one-shot generation.
+// By functionId, not span name, so it survives a streaming/one-shot switch.
 function summarySpan<
   T extends { name: string; attributes: Record<string, unknown> },
 >(spans: readonly T[]): T | undefined {
@@ -583,16 +581,12 @@ describe("compaction observability", () => {
   });
 
   it("rejects a summary whose stream errored but still resolved partial text", async () => {
-    // An in-stream provider error can still record a step, so `.text` resolves
-    // with partial output rather than rejecting. Resuming from a truncated
-    // summary would silently drop the context compaction claims to preserve.
+    // An error part resolves `.text` with partial output rather than rejecting.
     const partialFailure = new Error("provider dropped the summary mid-stream");
     const healthy = model();
     state.model = new MockLanguageModelV3({
       modelId: MODEL,
-      // Only the summary errors. The resumed turn succeeds, so the sole thing
-      // that can reject here is refusing the partial summary — without that,
-      // compaction resumes from truncated context and this test passes wrongly.
+      // Only the summary errors, so refusing it is the sole thing that can reject.
       doStream: async (options) =>
         isSummaryCall(options)
           ? {

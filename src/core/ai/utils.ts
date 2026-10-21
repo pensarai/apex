@@ -448,18 +448,14 @@ async function summarizeConversation(
     }),
     buildOpenRouterProviderOptions(opts.model),
   );
-  // Streamed rather than generated in one shot: a non-streaming request returns no
-  // response headers until the whole summary exists, which is indistinguishable from
-  // a hung connection to anything watching time-to-headers. Streaming also lets a
-  // genuine stall be caught between chunks. Resolved here so callers keep the
-  // one-shot result shape.
+  // Streamed: a one-shot request withholds headers for the whole generation, which
+  // reads as a hung connection. Resolved here so callers keep the one-shot shape.
   const generateSummary = async (
     history: ModelMessage[],
     toolChoiceOverride?: "none",
   ) => {
-    // streamText reports a provider failure as a stream part and then throws a
-    // generic AI_NoOutputGeneratedError. That would mask the context-length error
-    // the retry ladder below matches on, and a caller abort. Keep the real one.
+    // streamText masks the real failure as AI_NoOutputGeneratedError; the ladder
+    // below matches on the context-length error.
     let streamError: unknown;
     const result = streamText({
       model,
@@ -494,8 +490,7 @@ async function summarizeConversation(
       }),
     });
     try {
-      // Awaited together so a stream failure throws here rather than surfacing as
-      // an unobserved rejection on one of the other settled promises.
+      // Awaited together so no rejection goes unobserved.
       const [text, usage, finishReason, providerMetadata, toolCalls] =
         await Promise.all([
           result.text,
@@ -504,10 +499,8 @@ async function summarizeConversation(
           result.providerMetadata,
           result.toolCalls,
         ]);
-      // An in-stream provider error can still record a step, so the promises
-      // resolve with partial output instead of rejecting. The ladder below only
-      // rejects an empty summary, so a truncated one would silently become the
-      // compacted context.
+      // An error part still resolves these, with partial output; the ladder below
+      // only rejects an empty summary, so a truncated one would slip through.
       if (streamError !== undefined) throw streamError;
       return { text, usage, finishReason, providerMetadata, toolCalls };
     } catch (error) {
