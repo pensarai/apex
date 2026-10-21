@@ -472,6 +472,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "effort",
+    description: "Adjust model effort or extended thinking",
+    category: "Configuration",
+    handler: async (_args, ctx) => {
+      ctx.openModelDialog?.();
+    },
+  },
+  {
     name: "providers",
     description: "Manage AI providers and API keys",
     category: "Configuration",

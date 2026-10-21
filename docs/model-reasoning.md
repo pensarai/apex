@@ -7,7 +7,7 @@ An explicit unsupported selection fails locally before inference.
 
 ## Use
 
-Open `/models`, select a model, and use **←/→** to cycle its **Effort** or
+Open `/effort` or `/models`, select a model, and use **←/→** to cycle its **Effort** or
 **Extended Thinking** setting. The arrows work immediately, including while the
 search box has focus. Enter on a provider expands or collapses it; Enter on the
 selected model closes the picker. `default` uses the reviewed model default;

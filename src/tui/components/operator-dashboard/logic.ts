@@ -15,6 +15,7 @@ import type { AutocompleteOption } from "../shared";
 
 const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/models",
+  "/effort",
   "/login",
   "/themes",
   "/new",
@@ -186,7 +187,11 @@ export function routeCommand(
   const stripped = command.trim().replace(/^\/+/, "");
   const commandLower = stripped.toLowerCase();
 
-  if (commandLower === "models" || commandLower === "model") {
+  if (
+    commandLower === "models" ||
+    commandLower === "model" ||
+    commandLower === "effort"
+  ) {
     return { type: "show-models" };
   }
 

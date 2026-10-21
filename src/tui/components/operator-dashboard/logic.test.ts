@@ -26,6 +26,7 @@ const allOptions: AutocompleteOption[] = [
   { value: "/pentest", label: "/pentest", description: "Run a pentest" },
   { value: "/help", label: "/help", description: "Show help" },
   { value: "/models", label: "/models", description: "Switch model" },
+  { value: "/effort", label: "/effort", description: "Adjust model effort" },
   { value: "/skills", label: "/skills", description: "View skills" },
   {
     value: "/advanced",
@@ -39,10 +40,11 @@ const allOptions: AutocompleteOption[] = [
 // ---------------------------------------------------------------------------
 
 describe("filterOperatorAutocomplete", () => {
-  it("includes allowed commands (/models, /skills, /advanced)", () => {
+  it("includes allowed commands (/models, /effort, /skills, /advanced)", () => {
     const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).toContain("/models");
+    expect(values).toContain("/effort");
     expect(values).toContain("/skills");
     expect(values).toContain("/advanced");
   });
@@ -55,7 +57,7 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns only allowed commands", () => {
     const result = filterOperatorAutocomplete(allOptions);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(6);
   });
 
   it("preserves description on allowed commands", () => {
@@ -305,6 +307,17 @@ describe("routeCommand", () => {
 
   it("routes /MODELS (case-insensitive) to show-models", () => {
     expect(routeCommand("/MODELS", noSkill)).toEqual({ type: "show-models" });
+  });
+
+  it.each([
+    "/effort",
+    "/EFFORT",
+  ])("routes %s to the picker before resolving skills", (command) => {
+    const resolveSkill = vi.fn(() => "An effort skill");
+    expect(routeCommand(command, resolveSkill)).toEqual({
+      type: "show-models",
+    });
+    expect(resolveSkill).not.toHaveBeenCalled();
   });
 
   it("routes a skill command to run-skill with slug", () => {
