@@ -41,6 +41,7 @@ export type ReasoningInput = {
 export function resolveReasoningSetting(
   model: string,
   input: ReasoningInput & { customProviders?: CustomProviders },
+  defaults: "legacy" | "model" = "legacy",
 ): ReasoningSetting | undefined {
   if (input.reasoning !== undefined)
     return validateReasoningSetting(
@@ -54,6 +55,12 @@ export function resolveReasoningSetting(
     (cap.thinking || model.startsWith("anthropic/claude-")) &&
     cap.transport !== "google"
   ) {
+    if (
+      defaults === "model" &&
+      input.enableThinking === undefined &&
+      input.thinkingEffort == null
+    )
+      return "default";
     if (!input.enableThinking && !cap.alwaysOn)
       return cap.efforts.includes("none") ? "none" : "disabled";
     const effort =
@@ -70,6 +77,7 @@ export function resolveReasoningSetting(
   if (cap.transport === "google" || model.startsWith("custom:"))
     return undefined;
   const effort = input.openAIReasoningEffort;
+  if (defaults === "model" && effort == null) return "default";
   if (model === CONCENTRATE_GLM_5_3_MODEL_ID && effort)
     return effort === "none" || effort === "low"
       ? "low"
