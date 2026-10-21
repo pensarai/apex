@@ -23,18 +23,17 @@ export function getSavedReasoning(
   if (saved !== undefined)
     return getReasoningChoices(cap).includes(saved) ? saved : "default";
   if (cap.control === "none") return undefined;
-  if (
-    config.reasoningEnabled !== undefined ||
-    config.openAIReasoningEffort != null
-  )
-    return (
-      resolveReasoningSetting(model, {
+  return (
+    resolveReasoningSetting(
+      model,
+      {
         enableThinking: config.reasoningEnabled,
         openAIReasoningEffort: config.openAIReasoningEffort,
         customProviders: config.customProviders,
-      }) ?? "default"
-    );
-  return "default";
+      },
+      "model",
+    ) ?? "default"
+  );
 }
 
 export function resolveCliReasoning(

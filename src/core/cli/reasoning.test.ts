@@ -5,6 +5,37 @@ import { getSavedReasoning, resolveCliReasoning } from "./reasoning";
 
 describe("CLI reasoning selection", () => {
   it.each([
+    "claude-sonnet-4-5",
+    "claude-opus-5-5",
+    "anthropic/claude-opus-4.6",
+    "anthropic/claude-sonnet-4.5",
+  ])("ignores a leftover GPT preference when switching to %s", (model) => {
+    const reasoning = getSavedReasoning(model, {
+      openAIReasoningEffort: "high",
+    });
+    expect(reasoning).toBe("default");
+    expect(buildReasoningProviderOptions(model, { reasoning })).toEqual(
+      buildReasoningProviderOptions(model, {
+        reasoning: getSavedReasoning(model, {}),
+      }),
+    );
+  });
+  it.each([
+    true,
+    false,
+  ])("ignores a leftover Claude toggle (%s) when switching to GPT", (enabled) => {
+    const model = "gpt-6.1-sol";
+    expect(getSavedReasoning(model, { reasoningEnabled: enabled })).toBe(
+      "default",
+    );
+    expect(
+      getSavedReasoning(model, {
+        reasoningEnabled: enabled,
+        openAIReasoningEffort: "low",
+      }),
+    ).toBe("low");
+  });
+  it.each([
     ["concentrate:glm-5.3", "none", "low"],
     ["concentrate:glm-5.3", "minimal", "max"],
     ["concentrate:glm-5.3", "low", "low"],
