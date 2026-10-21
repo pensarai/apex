@@ -582,6 +582,43 @@ describe("compaction observability", () => {
     );
   });
 
+  it("rejects a summary whose stream errored but still resolved partial text", async () => {
+    // An in-stream provider error can still record a step, so `.text` resolves
+    // with partial output rather than rejecting. Resuming from a truncated
+    // summary would silently drop the context compaction claims to preserve.
+    const partialFailure = new Error("provider dropped the summary mid-stream");
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      // Only the summary errors. The resumed turn succeeds, so the sole thing
+      // that can reject here is refusing the partial summary — without that,
+      // compaction resumes from truncated context and this test passes wrongly.
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                  { type: "error", error: partialFailure },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "error", raw: "error" },
+                    usage,
+                  },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toBe(partialFailure);
+  });
+
   it("records summary cancellation without hiding the original error", async () => {
     const cancelled = new Error("cancelled");
     cancelled.name = "AbortError";

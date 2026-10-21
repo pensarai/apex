@@ -504,6 +504,11 @@ async function summarizeConversation(
           result.providerMetadata,
           result.toolCalls,
         ]);
+      // An in-stream provider error can still record a step, so the promises
+      // resolve with partial output instead of rejecting. The ladder below only
+      // rejects an empty summary, so a truncated one would silently become the
+      // compacted context.
+      if (streamError !== undefined) throw streamError;
       return { text, usage, finishReason, providerMetadata, toolCalls };
     } catch (error) {
       throw streamError ?? error;
