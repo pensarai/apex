@@ -17,6 +17,7 @@ import {
   fitMessagesToContext,
 } from "./contextManagement";
 import { createNativeRolloutEvidenceCapture } from "./native-rollout-evidence";
+import { parseResponsesSSE } from "./providers/pensarResponsesStream";
 
 const state: { model?: MockLanguageModelV3 } = {};
 vi.mock("./utils", async () => ({
@@ -671,6 +672,76 @@ describe("compaction observability", () => {
       state.model,
     );
     await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
+  });
+
+  it.each([
+    { terminal: undefined, reason: undefined, expected: "other" },
+    {
+      terminal: "response.incomplete",
+      reason: "content_filter",
+      expected: "content-filter",
+    },
+    {
+      terminal: "response.incomplete",
+      reason: "max_output_tokens",
+      expected: "length",
+    },
+    { terminal: "response.completed", reason: undefined, expected: "stop" },
+  ])("handles a Responses summary finishing with $expected", async ({
+    terminal,
+    reason,
+    expected,
+  }) => {
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: "openai.gpt-5.5",
+      doStream: async (options) => {
+        if (!isSummaryCall(options)) return healthy.doStream(options);
+        const events = [
+          { type: "response.output_text.delta", delta: "A compact summary" },
+          ...(terminal
+            ? [
+                {
+                  type: terminal,
+                  response: {
+                    status:
+                      terminal === "response.completed"
+                        ? "completed"
+                        : "incomplete",
+                    ...(reason ? { incomplete_details: { reason } } : {}),
+                  },
+                },
+              ]
+            : []),
+        ];
+        const sse = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                events
+                  .map(
+                    (event) =>
+                      `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+                  )
+                  .join(""),
+              ),
+            );
+            controller.close();
+          },
+        });
+        return { stream: parseResponsesSSE(sse, { idleTimeoutMs: 5_000 }) };
+      },
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: "pensar:openai.gpt-5.5", silent: true },
+      state.model,
+    );
+    if (expected === "stop") {
+      await expect(drain(stream)).resolves.toBeUndefined();
+    } else {
+      await expect(drain(stream)).rejects.toThrow(`finishReason: ${expected}`);
+    }
   });
 
   it("records summary cancellation without hiding the original error", async () => {
