@@ -4,9 +4,14 @@ import {
   parseCustomModelId,
   resolveCustomModel,
 } from "../config/customProviders";
+import type { OpenAIReasoningEffort, ThinkingEffort } from "./ai";
 import { getClaudeCapabilities, getModelInfo } from "./models";
 import openRouterReasoning from "./models/openrouter-reasoning.json";
-import { CONCENTRATE_REASONING_MODEL_IDS } from "./providers/concentrate";
+import {
+  CONCENTRATE_GLM_5_3_MODEL_ID,
+  CONCENTRATE_REASONING_MODEL_IDS,
+} from "./providers/concentrate";
+import type { AIAuthConfig } from "./utils";
 
 export const REASONING_SETTINGS = [
   "default",
@@ -25,6 +30,71 @@ export type ReasoningEffort = Exclude<
   ReasoningSetting,
   "default" | "enabled" | "disabled"
 >;
+
+export type ReasoningInput = {
+  reasoning?: ReasoningSetting;
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
+};
+
+export function resolveReasoningSetting(
+  model: string,
+  input: ReasoningInput & { customProviders?: CustomProviders },
+): ReasoningSetting | undefined {
+  if (input.reasoning !== undefined)
+    return validateReasoningSetting(
+      model,
+      input.reasoning,
+      input.customProviders,
+    );
+  const cap = getReasoningCapabilities(model, input.customProviders);
+  if (cap.control === "none") return undefined;
+  if (
+    (cap.thinking || model.startsWith("anthropic/claude-")) &&
+    cap.transport !== "google"
+  ) {
+    if (!input.enableThinking && !cap.alwaysOn)
+      return cap.efforts.includes("none") ? "none" : "disabled";
+    const effort =
+      input.thinkingEffort ??
+      getClaudeCapabilities(model)?.defaultEffort ??
+      cap.defaultEffort;
+    return effort && cap.efforts.includes(effort)
+      ? effort
+      : cap.control === "toggle"
+        ? "enabled"
+        : "default";
+  }
+  // Legacy controls did not override Google or custom endpoint defaults.
+  if (cap.transport === "google" || model.startsWith("custom:"))
+    return undefined;
+  const effort = input.openAIReasoningEffort;
+  if (model === CONCENTRATE_GLM_5_3_MODEL_ID && effort)
+    return effort === "none" || effort === "low"
+      ? "low"
+      : effort === "medium" || effort === "high"
+        ? "high"
+        : "max";
+  const value = effort === "ultra" ? "max" : effort;
+  return value && cap.efforts.includes(value)
+    ? value
+    : (cap.defaultEffort ?? "default");
+}
+
+export function getModelSettings(
+  input: ReasoningInput & { model?: string; authConfig?: AIAuthConfig },
+): { model: string; authConfig?: AIAuthConfig; reasoning?: ReasoningSetting } {
+  if (!input.model) throw new Error("Model settings require a model.");
+  return {
+    model: input.model,
+    authConfig: input.authConfig,
+    reasoning: resolveReasoningSetting(input.model, {
+      ...input,
+      customProviders: input.authConfig?.customProviders,
+    }),
+  };
+}
 
 type Transport = "openai" | "openrouter" | "anthropic" | "bedrock" | "google";
 export type ReasoningCapabilities = {

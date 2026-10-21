@@ -64,7 +64,6 @@ import {
 } from "./inference-attempt";
 import {
   type ClaudeThinkingEffort,
-  getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
@@ -80,6 +79,7 @@ import {
   getReasoningCapabilities,
   type ReasoningProviderOptions,
   type ReasoningSetting,
+  resolveReasoningSetting,
 } from "./reasoning";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
@@ -1238,19 +1238,13 @@ export function normalizeOpenAIReasoningEffort(
   modelId: string,
   effort?: OpenAIReasoningEffort | null,
 ): OpenAIReasoningEffort | undefined {
-  const cap = getReasoningCapabilities(modelId);
   if (!modelSupportsOpenAIReasoning(modelId)) return undefined;
-  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID && effort) {
-    return effort === "none" || effort === "low"
-      ? "low"
-      : effort === "medium" || effort === "high"
-        ? "high"
-        : "max";
-  }
-  const value = effort === "ultra" ? "max" : effort;
-  return value && cap.efforts.includes(value)
-    ? value
-    : (cap.defaultEffort as OpenAIReasoningEffort);
+  const setting = resolveReasoningSetting(modelId, {
+    openAIReasoningEffort: effort,
+  });
+  return setting === "default"
+    ? undefined
+    : (setting as OpenAIReasoningEffort | undefined);
 }
 
 export type { ReasoningProviderOptions } from "./reasoning";
@@ -1333,45 +1327,10 @@ export function buildReasoningProviderOptions(
     maxOutputTokens?: number;
   },
 ): ReasoningProviderOptions | undefined {
-  if (opts.reasoning !== undefined)
-    return buildModelReasoningOptions(model, opts.reasoning, opts);
-  const cap = getReasoningCapabilities(model, opts.customProviders);
-  if (cap.control === "none") return undefined;
-  if (
-    (cap.thinking || model.startsWith("anthropic/claude-")) &&
-    cap.transport !== "google"
-  ) {
-    const enabled = opts.enableThinking || cap.alwaysOn;
-    if (!enabled)
-      return buildModelReasoningOptions(
-        model,
-        cap.efforts.includes("none") ? "none" : "disabled",
-        opts,
-      );
-    const effort =
-      opts.thinkingEffort ??
-      getClaudeCapabilities(model)?.defaultEffort ??
-      cap.defaultEffort;
-    return buildModelReasoningOptions(
-      model,
-      effort && cap.efforts.includes(effort)
-        ? effort
-        : cap.control === "toggle"
-          ? "enabled"
-          : "default",
-      opts,
-    );
-  }
-  if (cap.transport === "google" || model.startsWith("custom:"))
-    return undefined;
-  return buildModelReasoningOptions(
-    model,
-    (normalizeOpenAIReasoningEffort(
-      model,
-      opts.openAIReasoningEffort,
-    ) as ReasoningSetting) ?? "default",
-    opts,
-  );
+  const setting = resolveReasoningSetting(model, opts);
+  return setting === undefined
+    ? undefined
+    : buildModelReasoningOptions(model, setting, opts);
 }
 
 /** Cache token metrics extracted from Anthropic providerMetadata */
