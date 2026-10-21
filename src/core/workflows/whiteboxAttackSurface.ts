@@ -197,7 +197,7 @@ interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
  * Explicit, serializable-by-the-caller input for {@link runWhiteboxAttackSurfaceApp}
  * — everything one app's Phase-2 worker reads, with no reads of
  * `runWhiteboxAttackSurfaceWorkflow`'s own local scope. A durable caller
- * rebuilds `hooks`, `seams`, `mintChildId` and `agentLimiter` on its own side
+ * rebuilds `hooks`, `seams` and `mintChildId` on its own side
  * and runs the app as a separate child workflow.
  */
 export interface WhiteboxAttackSurfaceAppInput {
@@ -222,8 +222,8 @@ export interface WhiteboxAttackSurfaceAppInput {
   umbrellaId: string;
   /** Mints IDs for discovery and per-endpoint documentation children. */
   mintChildId: (name: string) => string;
-  /** Bounds total concurrent CodeAgents across the whole workflow (Phase 1 + every app). */
-  agentLimiter: AgentConcurrencyLimiter;
+  /** In-process shared gate; durable spawners enforce their own batch concurrency. */
+  agentLimiter?: AgentConcurrencyLimiter;
   /** Fan-out spawner forwarded to `runAppEndpointDocumentation`'s own per-endpoint fan-out. */
   subagentSpawner?: SubagentSpawner;
   hooks: AgentHooks;
@@ -411,8 +411,13 @@ export async function runWhiteboxAttackSurfaceApp(
         await discoverPagesAndApi();
       }
     }
-  } catch {
+  } catch (error) {
     failed = true;
+    log.error(
+      `Phase 2: app "${app.name}" FAILED`,
+      error instanceof Error ? error : undefined,
+      { error: String(error), app: app.name },
+    );
   }
 
   eventBus?.emit("subagent-complete", {
