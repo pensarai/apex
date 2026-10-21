@@ -499,8 +499,8 @@ async function summarizeConversation(
           result.providerMetadata,
           result.toolCalls,
         ]);
-      // An error part still resolves these, with partial output; the ladder below
-      // only rejects an empty summary, so a truncated one would slip through.
+      // An error part still resolves these, with partial output; rethrowing keeps
+      // the real provider failure instead of the generic rejection below.
       if (streamError !== undefined) throw streamError;
       return { text, usage, finishReason, providerMetadata, toolCalls };
     } catch (error) {
@@ -598,9 +598,16 @@ async function summarizeConversation(
     await reportSummaryUsage(summaryResult);
   }
   const { text: summary } = summaryResult;
-  if (!summary.trim() || (summaryResult.toolCalls?.length ?? 0) > 0) {
+  // Anything but "stop" delivered partial text: "length" hit the output cap,
+  // "content-filter" was cut off, and a disconnect before the finish chunk
+  // surfaces as "other" (both ai's step default and the Pensar provider's).
+  if (
+    !summary.trim() ||
+    (summaryResult.toolCalls?.length ?? 0) > 0 ||
+    summaryResult.finishReason !== "stop"
+  ) {
     throw new CompactionRejectedError(
-      "Compaction returned no complete summary",
+      `Compaction returned no complete summary (finishReason: ${summaryResult.finishReason})`,
     );
   }
 

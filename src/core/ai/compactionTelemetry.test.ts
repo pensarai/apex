@@ -24,7 +24,9 @@ vi.mock("./utils", async () => ({
   getProviderModel: () => state.model,
 }));
 const { streamResponse } = await import("./ai");
-const { createSummarizationStream } = await import("./utils");
+const { CompactionRejectedError, createSummarizationStream } = await import(
+  "./utils"
+);
 
 const MODEL = "claude-haiku-4-5";
 const usage = {
@@ -611,6 +613,64 @@ describe("compaction observability", () => {
       state.model,
     );
     await expect(drain(stream)).rejects.toBe(partialFailure);
+  });
+
+  it("rejects a summary truncated at the output cap", async () => {
+    // finishReason "length" delivers partial text without an error part.
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      // Only the summary truncates, so refusing it is the sole thing that can reject.
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                  { type: "text-end", id: "s" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "length", raw: "max_tokens" },
+                    usage,
+                  },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
+  });
+
+  it("rejects a summary whose stream disconnected before the finish chunk", async () => {
+    // With output but no finish chunk, ai resolves the partial text, fires no
+    // error, and defaults finishReason to "other".
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
   });
 
   it("records summary cancellation without hiding the original error", async () => {
