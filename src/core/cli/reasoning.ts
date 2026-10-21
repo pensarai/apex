@@ -3,6 +3,7 @@ import {
   getReasoningChoices,
   type ReasoningEffort,
   type ReasoningSetting,
+  resolveReasoningSetting,
   validateReasoningSetting,
 } from "../ai";
 import type { Config } from "../config/config";
@@ -22,26 +23,17 @@ export function getSavedReasoning(
   if (saved !== undefined)
     return getReasoningChoices(cap).includes(saved) ? saved : "default";
   if (cap.control === "none") return undefined;
-  const claude = cap.thinking || model.startsWith("anthropic/claude-");
-  if (claude && cap.transport !== "google") {
-    if (config.reasoningEnabled === true)
-      return cap.control === "effort"
-        ? (cap.defaultEffort ?? "default")
-        : "enabled";
-    if (config.reasoningEnabled === false && cap.canDisable)
-      return cap.efforts.includes("none") ? "none" : "disabled";
-  }
-  const oldEffort =
-    config.openAIReasoningEffort === "ultra"
-      ? "max"
-      : config.openAIReasoningEffort;
   if (
-    !claude &&
-    cap.transport !== "google" &&
-    oldEffort &&
-    cap.efforts.includes(oldEffort)
+    config.reasoningEnabled !== undefined ||
+    config.openAIReasoningEffort != null
   )
-    return oldEffort;
+    return (
+      resolveReasoningSetting(model, {
+        enableThinking: config.reasoningEnabled,
+        openAIReasoningEffort: config.openAIReasoningEffort,
+        customProviders: config.customProviders,
+      }) ?? "default"
+    );
   return "default";
 }
 

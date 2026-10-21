@@ -30,12 +30,17 @@ flag overrides the saved preference. Supported legacy `reasoningEnabled` and
 `openAIReasoningEffort` preferences are read when no model-specific value exists;
 the old `ultra` alias becomes `max` where supported. Invalid saved preferences
 fall back to `default`. Legacy library inputs remain accepted, with `reasoning`
-taking precedence when supplied.
+taking precedence when supplied. Saved legacy preferences and library inputs use
+one compatibility conversion, including the historical Concentrate GLM effort
+remapping; unsupported explicit new selections are still rejected.
 
 Sessions persist `{ model, setting }` under `config.modelReasoning`. Resuming the
-same model restores the setting; a different model never inherits it. Workers
-receive the parent's setting. Streaming, structured output, tool repair, and
-compaction apply the same selection. Manual thinking budgets are bounded by the
+same model restores the setting through both generic and targeted-pentest APIs;
+an explicit `reasoning` overrides it. A different model falls back to legacy
+inputs and that model's compatibility defaults. Only an explicit root override
+updates an existing session's preference; compatibility defaults and delegated
+children do not rewrite it. Children receive the parent's canonical setting.
+Streaming, structured output, tool repair, and compaction apply the same selection. Manual thinking budgets are bounded by the
 actual output limit, including the smaller compaction limit. OTel generation
 metadata records `reasoningRequested` and `reasoningParameters` beside normal
 usage and latency data.
