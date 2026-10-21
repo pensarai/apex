@@ -8,11 +8,11 @@ import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   defaultSettingsMiddleware,
-  generateText,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
   simulateStreamingMiddleware,
+  streamText,
   type TextStreamPart,
   type ToolSet,
   wrapLanguageModel,
@@ -443,11 +443,20 @@ async function summarizeConversation(
       opts.authConfig?.hoonifyModels,
     ),
   );
-  const generateSummary = (
+  // Streamed rather than generated in one shot: a non-streaming request returns no
+  // response headers until the whole summary exists, which is indistinguishable from
+  // a hung connection to anything watching time-to-headers. Streaming also lets a
+  // genuine stall be caught between chunks. Resolved here so callers keep the
+  // one-shot result shape.
+  const generateSummary = async (
     history: ModelMessage[],
     toolChoiceOverride?: "none",
-  ) =>
-    generateText({
+  ) => {
+    // streamText reports a provider failure as a stream part and then throws a
+    // generic AI_NoOutputGeneratedError. That would mask the context-length error
+    // the retry ladder below matches on, and a caller abort. Keep the real one.
+    let streamError: unknown;
+    const result = streamText({
       model,
       providerOptions: summaryProviderOptions,
       system: cacheBreakpoint ? undefined : opts.system,
@@ -466,12 +475,31 @@ async function summarizeConversation(
             : (opts.toolChoice ?? "auto")),
       maxOutputTokens: summaryOutputTokens,
       abortSignal: opts.abortSignal,
+      onError: ({ error }) => {
+        streamError = error;
+      },
       experimental_telemetry: createAiTelemetrySettings({
         operation: "apex.context.summarize",
         sessionId: opts.sessionId,
         compaction: compaction?.link,
       }),
     });
+    try {
+      // Awaited together so a stream failure throws here rather than surfacing as
+      // an unobserved rejection on one of the other settled promises.
+      const [text, usage, finishReason, providerMetadata, toolCalls] =
+        await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.providerMetadata,
+          result.toolCalls,
+        ]);
+      return { text, usage, finishReason, providerMetadata, toolCalls };
+    } catch (error) {
+      throw streamError ?? error;
+    }
+  };
 
   const runSummary = (history: ModelMessage[], toolChoice?: "none") =>
     runWithNativeRolloutOperation(

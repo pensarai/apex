@@ -70,6 +70,12 @@ function stream(chunks: LanguageModelV3StreamPart[]) {
   };
 }
 
+// Compaction streams, so the summarizer reaches the model through doStream
+// alongside the agent's own turns; its request carries the compaction instruction.
+function isSummaryCall(options: { prompt: unknown }): boolean {
+  return JSON.stringify(options.prompt).includes("Compact this conversation");
+}
+
 describe("Lance with the real AI SDK loop", () => {
   it("keeps conversations open and waits for new user input after verified success", async () => {
     let turn = 0;
@@ -412,19 +418,26 @@ describe("Lance with the real AI SDK loop", () => {
   it("compacts repeatedly with the same model, restores the latest plan, and meters all work", async () => {
     let summaries = 0;
     let steps = 0;
-    const doGenerate = vi.fn(async () => ({
-      content: [
-        {
-          type: "text" as const,
-          text: `summary-${++summaries}: stay within example.test`,
-        },
-      ],
-      finishReason: { unified: "stop" as const, raw: "stop" },
-      usage,
-      warnings: [],
-    }));
-    const doStream = vi.fn(async () =>
-      stream(
+    const summaryToolChoices: unknown[] = [];
+    const doStream = vi.fn(async (options) => {
+      if (isSummaryCall(options)) {
+        summaryToolChoices.push(options.toolChoice);
+        return stream([
+          { type: "text-start", id: "s" },
+          {
+            type: "text-delta",
+            id: "s",
+            delta: `summary-${++summaries}: stay within example.test`,
+          },
+          { type: "text-end", id: "s" },
+          {
+            type: "finish",
+            finishReason: { unified: "stop", raw: "stop" },
+            usage,
+          },
+        ]);
+      }
+      return stream(
         ++steps === 1
           ? [
               { type: "text-start", id: "long" },
@@ -468,9 +481,9 @@ describe("Lance with the real AI SDK loop", () => {
                 usage,
               },
             ],
-      ),
-    );
-    state.model = new MockLanguageModelV3({ doStream, doGenerate });
+      );
+    });
+    state.model = new MockLanguageModelV3({ doStream });
     const running = agent({
       messages: [
         {
@@ -486,11 +499,14 @@ describe("Lance with the real AI SDK loop", () => {
       },
     });
     await running.consume();
-    expect(doGenerate).toHaveBeenCalledTimes(2);
-    expect(doStream).toHaveBeenCalledTimes(2);
-    for (const request of state.model.doGenerateCalls)
-      expect(request.toolChoice).toEqual({ type: "none" });
-    const continued = JSON.stringify(state.model.doStreamCalls[1].prompt);
+    const agentTurns = state.model.doStreamCalls.filter(
+      (request) => !isSummaryCall(request),
+    );
+    expect(summaries).toBe(2);
+    expect(agentTurns).toHaveLength(2);
+    for (const toolChoice of summaryToolChoices)
+      expect(toolChoice).toEqual({ type: "none" });
+    const continued = JSON.stringify(agentTurns[1].prompt);
     expect(continued).toContain("summary-2");
     expect(continued).not.toContain("summary-1");
     expect(continued).toContain("Verify the remaining hypothesis");
@@ -522,16 +538,20 @@ describe("Lance with the real AI SDK loop", () => {
   });
 
   it("cancels a stalled compaction before the deadline without resuming inference", async () => {
-    const doGenerate = vi.fn(() => new Promise<never>(() => {}));
-    const doStream = vi.fn();
-    state.model = new MockLanguageModelV3({ doGenerate, doStream });
+    const summaryCall = vi.fn();
+    const agentTurn = vi.fn();
+    const doStream = vi.fn((options) => {
+      (isSummaryCall(options) ? summaryCall : agentTurn)();
+      return new Promise<never>(() => {});
+    });
+    state.model = new MockLanguageModelV3({ doStream });
     const running = agent({
       messages: [{ role: "user", content: "history ".repeat(100_000) }],
       lance: { timeoutMs: 1500, shutdownReserveMs: 1200 },
     });
     await running.consume();
-    expect(doGenerate).toHaveBeenCalledTimes(1);
-    expect(doStream).not.toHaveBeenCalled();
+    expect(summaryCall).toHaveBeenCalledTimes(1);
+    expect(agentTurn).not.toHaveBeenCalled();
     expect(running.lanceRuntime!.metrics("m")).toMatchObject({
       outcome: "deadline_exhausted",
       compactionUsage: { requests: 1, usageComplete: false, costUsd: null },
@@ -540,18 +560,20 @@ describe("Lance with the real AI SDK loop", () => {
   });
 
   it("ends gracefully when compaction cannot fit, without a reset that discards progress", async () => {
-    const doGenerate = vi.fn(async () => {
+    const summaryCall = vi.fn();
+    const agentTurn = vi.fn();
+    const doStream = vi.fn(async (options) => {
+      (isSummaryCall(options) ? summaryCall : agentTurn)();
       throw new Error("maximum context length exceeded");
     });
-    const doStream = vi.fn();
-    state.model = new MockLanguageModelV3({ doGenerate, doStream });
+    state.model = new MockLanguageModelV3({ doStream });
     const running = agent({
       messages: [{ role: "user", content: "history ".repeat(100_000) }],
     });
     await running.consume();
-    expect(doGenerate.mock.calls.length).toBeGreaterThan(0);
-    expect(doGenerate.mock.calls.length).toBeLessThanOrEqual(8);
-    expect(doStream).not.toHaveBeenCalled();
+    expect(summaryCall.mock.calls.length).toBeGreaterThan(0);
+    expect(summaryCall.mock.calls.length).toBeLessThanOrEqual(8);
+    expect(agentTurn).not.toHaveBeenCalled();
     expect(running.lanceRuntime!.metrics("m").outcome).toBe(
       "context_exhausted",
     );
