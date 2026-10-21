@@ -148,7 +148,10 @@ describe("custom inference", () => {
     );
   });
 
-  it("uses the runtime effort instead of the configured Responses default", async () => {
+  it.each([
+    "default",
+    "low",
+  ] as const)("honors %s effort with a configured Responses default", async (reasoning) => {
     vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
     const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
       responsesCompletion("ok"),
@@ -170,13 +173,52 @@ describe("custom inference", () => {
     }).doGenerate({
       prompt: [],
       providerOptions: buildReasoningProviderOptions(responsesModelId, {
-        reasoning: "low",
+        reasoning,
         customProviders: providers,
       }),
     });
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
-      reasoning: { effort: "low" },
+      reasoning: { effort: reasoning === "default" ? "xhigh" : "low" },
     });
+  });
+
+  it.each([
+    "default",
+    "low",
+    "high",
+  ] as const)("sends %s effort when only supported Responses efforts are configured", async (reasoning) => {
+    vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      responsesCompletion("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const providers: CustomProviders = {
+      responses: {
+        ...responsesProviders.responses,
+        models: [
+          {
+            id: "org/reasoning-model",
+            contextLength: 200_000,
+            maxOutputTokens: 32_000,
+            supportedReasoningEfforts: ["low", "high"],
+          },
+        ],
+      },
+    };
+    await getProviderModel(responsesModelId, {
+      customProviders: providers,
+    }).doGenerate({
+      prompt: [],
+      providerOptions: buildReasoningProviderOptions(responsesModelId, {
+        reasoning,
+        customProviders: providers,
+      }),
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    if (reasoning === "default") expect(body).not.toHaveProperty("reasoning");
+    else expect(body.reasoning).toEqual({ effort: reasoning });
+    expect(body).not.toHaveProperty("forceReasoning");
   });
 
   it("omits reasoning when the Responses model has no effort setting", async () => {
