@@ -284,7 +284,6 @@ describe("OpenAI reasoning effort support", () => {
       "high",
       "xhigh",
       "max",
-      "ultra",
     ]);
     expect(modelSupportsOpenAIReasoning("gpt-5.6-terra")).toBe(true);
     expect(modelSupportsOpenAIReasoning("gpt-5.6-luna")).toBe(true);
@@ -297,17 +296,167 @@ describe("OpenAI reasoning effort support", () => {
     expect(modelSupportsOpenAIReasoning("o3-mini")).toBe(true);
   });
 
-  it("does not apply reasoning effort to unsupported GPT-5 variants", () => {
-    expect(modelSupportsOpenAIReasoning("gpt-5-nano")).toBe(false);
-    expect(modelSupportsOpenAIReasoning("gpt-5.1-codex-mini")).toBe(false);
-    expect(modelSupportsOpenAIReasoning("gpt-5.1-codex-max")).toBe(false);
-    expect(modelSupportsOpenAIReasoning("gpt-5.3-codex")).toBe(false);
-    expect(normalizeOpenAIReasoningEffort("gpt-5-nano")).toBeUndefined();
+  it("uses verified effort support for smaller and Codex models", () => {
+    expect(getOpenAIReasoningEfforts("gpt-5-nano")).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getOpenAIReasoningEfforts("gpt-5.1-codex-mini")).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getOpenAIReasoningEfforts("gpt-5.1-codex-max")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(getOpenAIReasoningEfforts("gpt-5.3-codex")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(modelSupportsOpenAIReasoning("gpt-future-99")).toBe(false);
   });
 
   it("defaults only supported reasoning models to medium", () => {
     expect(normalizeOpenAIReasoningEffort("gpt-5.5")).toBe(
       DEFAULT_OPENAI_REASONING_EFFORT,
     );
+  });
+});
+
+describe("open-weight gateway models", () => {
+  it.each([
+    {
+      id: "xiaomi/mimo-v2.6-pro",
+      name: "MiMo-V2.6-Pro",
+      provider: "openrouter",
+      contextLength: 1_050_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:mimo-v2.6-pro",
+      name: "MiMo V2.6 Pro",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "moonshotai/kimi-k3",
+      name: "Kimi K3",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:kimi-k3",
+      name: "Kimi K3",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 32_768,
+    },
+    {
+      id: "qwen/qwen3.8-max-0902",
+      name: "Qwen3.8 Max (0902)",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "qwen/qwen3.8-27b",
+      name: "Qwen3.8 27B",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "qwen/qwen3.8-flash",
+      name: "Qwen3.8 Flash",
+      provider: "openrouter",
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:qwen3.8-max",
+      name: "Qwen3.8 Max",
+      provider: "concentrate",
+      contextLength: 256_000,
+      maxOutputTokens: 32_768,
+    },
+    {
+      id: "concentrate:qwen3.8-27b",
+      name: "Qwen3.8 27B",
+      provider: "concentrate",
+      contextLength: 262_144,
+      maxOutputTokens: 32_768,
+    },
+    {
+      id: "deepseek/deepseek-v4.1-flash-1017",
+      name: "DeepSeek V4.1 Flash 1017",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 384_000,
+    },
+    {
+      id: "deepseek/deepseek-v4-pro-0813",
+      name: "DeepSeek V4 Pro 0813",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 384_000,
+    },
+    {
+      id: "concentrate:deepseek-v4-1-flash",
+      name: "DeepSeek V4.1 Flash",
+      provider: "concentrate",
+      contextLength: 1_000_000,
+      maxOutputTokens: 32_768,
+    },
+    {
+      id: "concentrate:deepseek-v4-1-flash-1017",
+      name: "DeepSeek V4.1 Flash 1017",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "concentrate:deepseek-v4-pro-0813",
+      name: "DeepSeek V4 Pro 0813",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 384_000,
+    },
+  ])("registers $id with its gateway limits", ({
+    id,
+    maxOutputTokens,
+    ...info
+  }) => {
+    expect(getModelInfo(id)).toMatchObject(info);
+    expect(getMaxOutputTokens(id)).toBe(maxOutputTokens);
+  });
+
+  it.each([
+    "concentrate:mimo-v2.6-pro",
+    "concentrate:kimi-k3",
+    "concentrate:qwen3.8-max",
+    "concentrate:qwen3.8-27b",
+    "concentrate:deepseek-v4-1-flash",
+    "concentrate:deepseek-v4-1-flash-1017",
+    "concentrate:deepseek-v4-pro-0813",
+  ])("offers every effort Concentrate can route for %s", (id) => {
+    expect(modelSupportsOpenAIReasoning(id)).toBe(true);
+    expect(getOpenAIReasoningEfforts(id)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(normalizeOpenAIReasoningEffort(id)).toBe("medium");
+    expect(normalizeOpenAIReasoningEffort(id, "max")).toBe("max");
   });
 });

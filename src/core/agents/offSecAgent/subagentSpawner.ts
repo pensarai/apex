@@ -10,10 +10,11 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
-import { runWithNativeRolloutSession } from "../../ai";
+import { getModelSettings, runWithNativeRolloutSession } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -38,7 +39,12 @@ import type {
   TargetedPentestAgent,
 } from "../specialized/pentest/agent";
 import type { PlaywrightMcpSession, UnifiedSandbox } from "./tools";
-import type { AgentHooks, StreamIdFactory, SystemPentestScope } from "./types";
+import type {
+  AgentHooks,
+  FindingPolicy,
+  StreamIdFactory,
+  SystemPentestScope,
+} from "./types";
 
 /** Registry key selecting which child agent {@link SubagentSpawner.spawn} builds. */
 export type SubagentType =
@@ -91,6 +97,7 @@ export type SubagentSpec =
   | {
       type: "finding-judge";
       judgeInput: FindingJudgeInput;
+      waitForDrain?: boolean;
       target?: string;
     };
 
@@ -101,6 +108,7 @@ export type SubagentSpec =
  * @public Consumed by Console's durable subagent runtime.
  */
 export interface SpawnRuntime {
+  findingPolicy?: FindingPolicy;
   session: SessionInfo;
   model: AIModel;
   authConfig?: AIAuthConfig;
@@ -112,10 +120,12 @@ export interface SpawnRuntime {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   environmentVariables?: Record<string, string>;
   secretValues?: string[];
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   usageRecorder?: UsageRecorder;
+  toolExecutionContext?: AgentHooks["toolExecutionContext"];
   streamIdFactory?: StreamIdFactory;
   /**
    * Step-usage + cache-metric callbacks forwarded to spawned workers. The inline
@@ -191,6 +201,18 @@ export interface SubagentSpawner {
    */
   spawn<TResult = unknown>(opts: SpawnOptions<TResult>): Promise<TResult>;
 
+  /** Opt in only when spawnBatch holds opts.limiter for each child's entire execution. */
+  supportsBatchLimiter?: boolean;
+
+  spawnBatch?<TResult>(
+    requests: readonly SpawnOptions<TResult>[],
+    opts: {
+      concurrency: number;
+      abortSignal?: AbortSignal;
+      limiter?: <T>(run: () => Promise<T>) => Promise<T>;
+    },
+  ): Promise<PromiseSettledResult<TResult>[]>;
+
   /**
    * Run a fan-out with bounded concurrency. Unifies the `pLimit` /
    * `runWithBoundedConcurrency` / sequential mechanisms behind one `concurrency`
@@ -201,6 +223,44 @@ export interface SubagentSpawner {
     worker: (item: TItem, index: number) => Promise<TResult>,
     opts: { concurrency: number; abortSignal?: AbortSignal },
   ): Promise<(TResult | null)[]>;
+}
+
+export async function spawnBatch<TResult>(
+  spawner: SubagentSpawner,
+  requests: readonly SpawnOptions<TResult>[],
+  opts: { concurrency: number; abortSignal?: AbortSignal },
+  limiter?: <T>(run: () => Promise<T>) => Promise<T>,
+): Promise<PromiseSettledResult<TResult>[]> {
+  if (spawner.spawnBatch) {
+    if (limiter && !spawner.supportsBatchLimiter) {
+      throw new Error(
+        "Batch spawner must support the shared child limiter before scheduling limited batches",
+      );
+    }
+    return spawner.spawnBatch(requests, { ...opts, limiter });
+  }
+  const results = await spawner.spawnMany(
+    requests,
+    async (request) => {
+      try {
+        const run = () => spawner.spawn(request);
+        return {
+          status: "fulfilled",
+          value: await (limiter ? limiter(run) : run()),
+        } as const;
+      } catch (reason) {
+        return { status: "rejected", reason } as const;
+      }
+    },
+    opts,
+  );
+  return results.map((result) => {
+    if (result === null) {
+      opts.abortSignal?.throwIfAborted();
+      throw new Error("Subagent batch lost a result");
+    }
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +301,7 @@ export interface SpawnedPentestWorkerInput {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   display?: string;
   /** The caller's own {@link AgentHooks} — `backends` is the caller's object. */
   hooks: AgentHooks;
@@ -272,9 +333,8 @@ export async function runSpawnedPentestWorker(
     role: spec.role,
     findingsRegistry: input.findingsRegistry,
     browserSession: input.browserSession,
-    model: input.model,
+    ...getModelSettings(input),
     session: input.session,
-    authConfig: input.authConfig,
     onStepFinish: input.onStepFinish,
     onCacheMetrics: input.onCacheMetrics,
     eventBus: input.eventBus,
@@ -282,9 +342,6 @@ export async function runSpawnedPentestWorker(
     subagentName: input.subagentName,
     environmentVariables: input.environmentVariables,
     secretValues: input.secretValues,
-    enableThinking: input.enableThinking,
-    thinkingEffort: input.thinkingEffort,
-    openAIReasoningEffort: input.openAIReasoningEffort,
     display: input.display,
     ...hooks,
     abortSignal:
@@ -336,9 +393,8 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     role: spec.role,
   };
   const workerInput: SpawnedPentestWorkerInput = {
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
@@ -349,15 +405,14 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     browserSession: spec.browserSession,
     environmentVariables: ctx.environmentVariables,
     secretValues: ctx.secretValues,
-    enableThinking: ctx.enableThinking,
-    thinkingEffort: ctx.thinkingEffort,
-    openAIReasoningEffort: ctx.openAIReasoningEffort,
     display: ctx.display,
     hooks: {
+      findingPolicy: ctx.findingPolicy,
       backends: ctx.backends,
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
+      toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
     },
     seams: inProcessSeams(),
@@ -374,6 +429,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
 const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
   const { CodeAgent } = await import("../specialized/codeAgent/agent");
   const agent = new CodeAgent({
+    findingPolicy: ctx.findingPolicy,
     codebasePath: spec.codebasePath,
     objective: spec.objective,
     system: spec.system,
@@ -382,23 +438,20 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     excludeTools: spec.excludeTools,
     projectThreatModel: spec.projectThreatModel,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
     sandbox: ctx.sandbox,
     backends: ctx.backends,
-    enableThinking: ctx.enableThinking,
-    thinkingEffort: ctx.thinkingEffort,
-    openAIReasoningEffort: ctx.openAIReasoningEffort,
     display: ctx.display,
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -412,11 +465,11 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     "../specialized/whiteboxAttackSurface"
   );
   const agent = new WhiteboxAttackSurfaceAgent({
+    findingPolicy: ctx.findingPolicy,
     codebasePath: spec.codebasePath,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
@@ -425,6 +478,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -438,11 +492,11 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     "../specialized/attackSurface/blackboxAgent"
   );
   const agent = new BlackboxAttackSurfaceAgent({
+    findingPolicy: ctx.findingPolicy,
     target: spec.target,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
@@ -450,6 +504,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
@@ -462,11 +517,11 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
   return {
     run: () =>
       runAuthenticationAgent({
+        findingPolicy: ctx.findingPolicy,
         target: spec.target,
         authHints: spec.authHints,
         session: ctx.session,
-        model: ctx.model,
-        authConfig: ctx.authConfig,
+        ...getModelSettings(ctx),
         abortSignal: ctx.abortSignal,
         eventBus: ctx.eventBus,
         subagentId: ctx.subagentId,
@@ -476,6 +531,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         backends: ctx.backends,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
+        toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
       }),
   };
@@ -486,9 +542,9 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
   return {
     run: () =>
       judgeFinding(spec.judgeInput, {
-        model: ctx.model,
+        waitForDrain: spec.waitForDrain,
+        ...getModelSettings(ctx),
         session: ctx.session,
-        authConfig: ctx.authConfig,
         abortSignal: ctx.abortSignal,
         eventBus: ctx.eventBus,
         subagentId: ctx.subagentId,
@@ -496,11 +552,9 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         sandbox: ctx.sandbox,
         backends: ctx.backends,
         target: spec.target,
-        enableThinking: ctx.enableThinking,
-        thinkingEffort: ctx.thinkingEffort,
-        openAIReasoningEffort: ctx.openAIReasoningEffort,
         languageModelMiddleware: ctx.languageModelMiddleware,
         usageRecorder: ctx.usageRecorder,
+        toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
       }),
   };

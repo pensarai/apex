@@ -169,6 +169,41 @@ describe("Strike Mode config", () => {
   });
 });
 
+describe("finding policy config", () => {
+  it("defaults to Apex finding review for new and legacy installations", async () => {
+    expect((await init()).findingPolicy).toBe("native");
+
+    writeFileSync(
+      path.join(homeDirectory, ".pensar", "config.json"),
+      JSON.stringify({ responsibleUseAccepted: true }),
+    );
+    expect((await get()).findingPolicy).toBe("native");
+  });
+
+  it("persists external evaluation across a fresh config load", async () => {
+    await init();
+    await update({ findingPolicy: "external" });
+
+    vi.resetModules();
+    const { get: getReloadedConfig } = await import("./config");
+    expect((await getReloadedConfig()).findingPolicy).toBe("external");
+
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    ) as { findingPolicy?: string };
+    expect(persisted.findingPolicy).toBe("external");
+  });
+
+  it("ignores an invalid stored policy", async () => {
+    await init();
+    writeFileSync(
+      path.join(homeDirectory, ".pensar", "config.json"),
+      JSON.stringify({ findingPolicy: "unknown" }),
+    );
+    expect((await get()).findingPolicy).toBe("native");
+  });
+});
+
 describe("recent model config", () => {
   it("persists model history across a fresh config load", async () => {
     await init();

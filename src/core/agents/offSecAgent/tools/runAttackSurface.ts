@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { getModelSettings } from "../../../ai";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
@@ -74,13 +75,14 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
               attackSurfaceRegistry: ctx.attackSurfaceRegistry,
             },
             runtime: {
+              findingPolicy: ctx.findingPolicy,
               session: ctx.session,
-              model: ctx.model,
-              authConfig: ctx.authConfig,
+              ...getModelSettings(ctx),
               abortSignal: ctx.abortSignal,
               backends: ctx.backends,
               languageModelMiddleware: ctx.languageModelMiddleware,
               usageRecorder: ctx.usageRecorder,
+              toolExecutionContext: ctx.toolExecutionContext,
               streamIdFactory: ctx.streamIdFactory,
             },
             parentBus: ctx.eventBus,
@@ -144,13 +146,14 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             attackSurfaceRegistry: ctx.attackSurfaceRegistry,
           },
           runtime: {
+            findingPolicy: ctx.findingPolicy,
             session: ctx.session,
-            model: ctx.model,
-            authConfig: ctx.authConfig,
+            ...getModelSettings(ctx),
             abortSignal: ctx.abortSignal,
             backends: ctx.backends,
             languageModelMiddleware: ctx.languageModelMiddleware,
             usageRecorder: ctx.usageRecorder,
+            toolExecutionContext: ctx.toolExecutionContext,
             streamIdFactory: ctx.streamIdFactory,
           },
           parentBus: ctx.eventBus,

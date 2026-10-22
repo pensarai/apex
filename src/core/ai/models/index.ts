@@ -17,7 +17,10 @@ export {
   getClaudeCapabilities,
 } from "./claude-capabilities";
 
-import { CONCENTRATE_MODELS } from "./concentrate";
+import {
+  CONCENTRATE_MAX_OUTPUT_TOKENS,
+  CONCENTRATE_MODELS,
+} from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
 // Bedrock Mantle (OpenAI Responses API) — curated manually.
@@ -103,6 +106,8 @@ export function getMaxOutputTokens(
 function lookupOutputBudgetByPattern(modelId: string): number {
   if (modelId === "chat-latest") return 128_000;
   if (getClaudeCapabilities(modelId)) return 128_000;
+  const concentrateBudget = CONCENTRATE_MAX_OUTPUT_TOKENS[modelId];
+  if (concentrateBudget) return concentrateBudget;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
   // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
   // digit.digit sequences to dashes so all Claude patterns match both forms.
@@ -222,20 +227,33 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 131_072;
   }
 
+  if (modelId.includes("mimo-v2.6-pro")) {
+    return 131_072;
+  }
+
+  if (modelId.includes("kimi-k3")) {
+    return 131_072;
+  }
+
   // GLM 5 models ship a ~131K (128Ki) max-output window. Matching the family
   // keeps Bedrock and OpenRouter model IDs on the same budget.
   if (modelId.includes("glm-5")) {
     return 131_072;
   }
 
-  // V4.1 Flash's larger output window must precede the legacy DeepSeek fallback.
-  if (modelId.includes("deepseek-v4.1-flash")) {
+  // DeepSeek V4's larger output window must precede the legacy DeepSeek fallback.
+  if (/deepseek-v4[.-]/.test(modelId)) {
     return 384_000;
   }
 
   // Keep the conservative 8K floor used by Bedrock's legacy DeepSeek models.
   if (modelId.includes("deepseek")) {
     return 8_192;
+  }
+
+  // Qwen3.8's first-party 131K output window must precede the Qwen fallback.
+  if (modelId.includes("qwen3.8")) {
+    return 131_072;
   }
 
   // Qwen3 Coder ships a 16K max-output window over its 128K+ context. Match the

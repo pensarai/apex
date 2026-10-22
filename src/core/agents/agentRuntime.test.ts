@@ -32,6 +32,7 @@ interface FakeOpts extends SpecializedAgentInput {
 
 function buildHooks() {
   return {
+    toolExecutionContext: { run: vi.fn() },
     backends: { fs: {}, command: {}, http: {}, browser: {}, inbox: {} },
     subagentSpawner: { spawnMany: vi.fn() },
     languageModelMiddleware: { wrapGenerate: vi.fn() },
@@ -175,6 +176,42 @@ describe("AgentRuntime — hook forwarding", () => {
 
     expect(constructorCalls[0]!.stopWhen).toBe(callerStopWhen);
   });
+
+  it("forwards an executed response tool's validated result to the definition resolver", () => {
+    constructorCalls.length = 0;
+    const opts: FakeOpts = {
+      model: "test-model" as AIModel,
+      // biome-ignore lint/suspicious/noExplicitAny: minimal SessionInfo stand-in
+      session: { rootPath: "/tmp", targets: [] } as any,
+      objective: "find a weakness",
+    };
+    const resolveResult = vi.fn(() => ({ reportedFindings: ["verified"] }));
+    const definition = defineAgent<FakeOpts, { reportedFindings: string[] }>({
+      name: "test-agent",
+      role: "worker",
+      prompt: (input) => input.objective,
+      activeTools: () => ["response"],
+      resolveResult,
+    });
+
+    new AgentRuntime(definition, opts);
+
+    const streamResult = { response: Promise.resolve({ messages: [] }) };
+    const validatedResponse = { reportedFindings: ["verified"] };
+    const forwarded = constructorCalls[0]?.resolveResult;
+    if (typeof forwarded !== "function") {
+      throw new Error("Missing forwarded result resolver");
+    }
+    expect(forwarded(streamResult, validatedResponse)).toEqual(
+      validatedResponse,
+    );
+    expect(resolveResult).toHaveBeenCalledWith(
+      opts,
+      undefined,
+      streamResult,
+      validatedResponse,
+    );
+  });
 });
 
 describe("assembleAgentHooks — compile-time completeness", () => {
@@ -190,6 +227,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
         "inferenceRecorder",
         "contextRecorder",
         "toolExecutionRecorder",
+        "toolExecutionContext",
         "usageRecorder",
         "streamIdFactory",
         "smsInbox",
@@ -197,6 +235,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
         "abortSignal",
         "extraTools",
         "sandbox",
+        "findingPolicy",
       ].sort(),
     );
   });
@@ -210,6 +249,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       inferenceRecorder: undefined,
       contextRecorder: undefined,
       toolExecutionRecorder: undefined,
+      toolExecutionContext: undefined,
       usageRecorder: undefined,
       streamIdFactory: undefined,
       smsInbox: undefined,
@@ -217,6 +257,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       abortSignal: undefined,
       extraTools: undefined,
       sandbox: undefined,
+      findingPolicy: undefined,
     };
     expectTypeOf(complete).toEqualTypeOf<RequiredAgentHooks>();
 
@@ -230,6 +271,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       inferenceRecorder: undefined,
       contextRecorder: undefined,
       toolExecutionRecorder: undefined,
+      toolExecutionContext: undefined,
       usageRecorder: undefined,
       streamIdFactory: undefined,
       smsInbox: undefined,

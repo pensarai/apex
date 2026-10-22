@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import { getModelSettings } from "../../../ai";
 import { createLogger } from "../../../logger/structured";
 import { collectCommand } from "../../../tools/backends/collectCommand";
 import {
@@ -11,7 +12,7 @@ import {
   resolveArtifactFs,
   resolveBackends,
   resolveScriptRunner,
-  SANDBOX_ARTIFACTS_ROOT,
+  sandboxArtifactsRoot,
 } from "../../../tools/backends/resolve";
 import type { WriteOpts, WriteResult } from "../../../tools/backends/types";
 import { scopedLogger } from "../../../util/lazyLogger";
@@ -200,18 +201,20 @@ function artifactPath(ctx: ToolContext, ...parts: string[]): string {
 }
 
 function artifactsRoot(ctx: ToolContext): string {
-  return isRealSandbox(ctx) ? SANDBOX_ARTIFACTS_ROOT : ctx.session.rootPath;
+  return isRealSandbox(ctx)
+    ? sandboxArtifactsRoot(ctx.session)
+    : ctx.session.rootPath;
 }
 
 function pocsRoot(ctx: ToolContext): string {
   return isRealSandbox(ctx)
-    ? `${SANDBOX_ARTIFACTS_ROOT}/pocs`
+    ? `${sandboxArtifactsRoot(ctx.session)}/pocs`
     : ctx.session.pocsPath;
 }
 
 function findingsRoot(ctx: ToolContext): string {
   return isRealSandbox(ctx)
-    ? `${SANDBOX_ARTIFACTS_ROOT}/findings`
+    ? `${sandboxArtifactsRoot(ctx.session)}/findings`
     : ctx.session.findingsPath;
 }
 
@@ -497,16 +500,13 @@ CRITICAL RULES — READ BEFORE CALLING:
             spec: { type: "finding-judge", judgeInput, target: ctx.target },
             runtime: {
               session: ctx.session,
-              model: ctx.model!,
-              authConfig: ctx.authConfig,
+              ...getModelSettings(ctx),
               abortSignal: ctx.abortSignal,
               sandbox: ctx.sandbox,
               backends: ctx.backends,
-              enableThinking: ctx.enableThinking,
-              thinkingEffort: ctx.thinkingEffort,
-              openAIReasoningEffort: ctx.openAIReasoningEffort,
               languageModelMiddleware: ctx.languageModelMiddleware,
               usageRecorder: ctx.usageRecorder,
+              toolExecutionContext: ctx.toolExecutionContext,
               streamIdFactory: ctx.streamIdFactory,
             },
             parentBus: ctx.eventBus,
@@ -626,6 +626,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               ctx.abortSignal,
               ctx.session.id,
               {
+                reasoning: ctx.reasoning,
                 languageModelMiddleware: ctx.languageModelMiddleware,
                 usageRecorder: ctx.usageRecorder,
               },

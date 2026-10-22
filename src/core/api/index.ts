@@ -8,6 +8,18 @@
 //    eliminate the split. The lint rule for module barriers exempts this.
 
 export type {
+  LanceMetrics,
+  LanceOptions,
+  ObjectiveCandidate,
+  ObjectiveVerification,
+} from "../agents/lance";
+export { LANCE_CONFIG, LANCE_DESCRIPTION } from "../agents/lance";
+export type {
+  FindingPolicy,
+  OffensiveSecurityAgentInput,
+} from "../agents/offSecAgent";
+export { EXTERNAL_FINDING_POLICY_CAPABILITY } from "../agents/offSecAgent";
+export type {
   CreateNativeRolloutEvidenceCaptureInput,
   NativeRolloutCaptureLimits,
   NativeRolloutCaptureReportV1,
@@ -46,6 +58,10 @@ export type {
   RunToolStore,
 } from "../runtime/runToolStore";
 export { openSqliteRunStore } from "../runtime/sqliteRunStore";
+export type {
+  PentestWorkflowInput,
+  PentestWorkflowResult,
+} from "../workflows/pentest";
 export type {
   AppDetail,
   ApplicationType,
@@ -166,6 +182,7 @@ export {
   listKnowledge,
   updateKnowledge,
 } from "./knowledge";
+export { type RunLanceInput, runLance } from "./lance";
 export { serveLocalRunWorker } from "./localWorker";
 export type {
   OffensiveSecurityAgentClientInput,

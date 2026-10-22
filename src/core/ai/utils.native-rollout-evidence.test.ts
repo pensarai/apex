@@ -2,6 +2,7 @@ import type {
   LanguageModelV3,
   LanguageModelV3CallOptions,
   LanguageModelV3GenerateResult,
+  LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,13 +14,19 @@ const mocks = vi.hoisted(() => {
   } = {};
   return {
     state,
-    generateText: vi.fn(async (input: { model: LanguageModelV3 }) => {
+    streamText: vi.fn((input: { model: LanguageModelV3 }) => {
       if (!state.callOptions) throw new Error("missing fixture call options");
-      await input.model.doGenerate(state.callOptions);
+      const called = input.model.doStream(state.callOptions);
       return {
-        text: "bounded summary",
-        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
-        providerMetadata: undefined,
+        text: called.then(() => "bounded summary"),
+        usage: called.then(() => ({
+          inputTokens: 2,
+          outputTokens: 1,
+          totalTokens: 3,
+        })),
+        finishReason: called.then(() => "stop"),
+        providerMetadata: called.then(() => undefined),
+        toolCalls: called.then(() => []),
       };
     }),
     streamResponse: vi.fn(() => {
@@ -41,12 +48,13 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
-  return { ...actual, generateText: mocks.generateText };
+  return { ...actual, streamText: mocks.streamText };
 });
 
 vi.mock("./ai", () => ({
   buildOpenRouterProviderOptions: vi.fn(() => undefined),
   buildReasoningProviderOptions: vi.fn(() => undefined),
+  mergeProviderOptions: vi.fn(() => undefined),
   recordContextRestart: vi.fn(async () => {}),
   streamResponse: mocks.streamResponse,
 }));
@@ -73,6 +81,10 @@ function generated(): LanguageModelV3GenerateResult {
   };
 }
 
+function streamed(): LanguageModelV3StreamResult {
+  return { stream: new ReadableStream({ start: (c) => c.close() }) };
+}
+
 function model(): LanguageModelV3 {
   return {
     specificationVersion: "v3",
@@ -80,7 +92,7 @@ function model(): LanguageModelV3 {
     modelId: "provider-model",
     supportedUrls: {},
     doGenerate: vi.fn(async () => generated()),
-    doStream: vi.fn(),
+    doStream: vi.fn(async () => streamed()),
   };
 }
 
@@ -126,7 +138,7 @@ describe("summarization native rollout evidence boundary", () => {
     });
     await capture.flush();
 
-    expect(mocks.generateText).toHaveBeenCalledOnce();
+    expect(mocks.streamText).toHaveBeenCalledOnce();
     expect(mocks.streamResponse).toHaveBeenCalledOnce();
     expect(envelopes.map((entry) => entry.operationKind)).toEqual([
       "context.summarize",

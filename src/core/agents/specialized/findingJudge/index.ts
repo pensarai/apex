@@ -37,9 +37,11 @@ export type FindingJudgeRuntimeContext = Pick<
   | "enableThinking"
   | "thinkingEffort"
   | "openAIReasoningEffort"
+  | "reasoning"
   | "languageModelMiddleware"
   | "usageRecorder"
   | "streamIdFactory"
+  | "toolExecutionContext"
 > & {
   model: AIModel;
   /**
@@ -51,6 +53,7 @@ export type FindingJudgeRuntimeContext = Pick<
   subagentId?: string;
   /** Human-readable label for readable OTel span names. Defaults to "Finding Judge". */
   subagentName?: string;
+  waitForDrain?: boolean;
 };
 
 /**
@@ -82,12 +85,15 @@ export async function judgeFinding(
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
+      reasoning: ctx.reasoning,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
+      toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
     });
 
     const result = await agent.consume();
+    if (ctx.waitForDrain) await agent.drained;
     if (!result) {
       throw new Error("Finding judge agent finished without a response.");
     }

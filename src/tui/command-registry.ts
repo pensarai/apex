@@ -235,6 +235,7 @@ export const commands: CommandConfig[] = [
             requireApproval: false,
             target: flags.target,
             strikeMode: false,
+            lanceMode: false,
             sandbox: true,
             headers: resolveHeadersFromFlags(flags),
           },
@@ -374,6 +375,7 @@ export const commands: CommandConfig[] = [
         initialConfig: {
           requireApproval: true,
           strikeMode: false,
+          lanceMode: false,
         },
         initialSkill: {
           slug: "threat-model",
@@ -464,6 +466,14 @@ export const commands: CommandConfig[] = [
   {
     name: "models",
     description: "Show available AI models",
+    category: "Configuration",
+    handler: async (_args, ctx) => {
+      ctx.openModelDialog?.();
+    },
+  },
+  {
+    name: "effort",
+    description: "Adjust model effort or extended thinking",
     category: "Configuration",
     handler: async (_args, ctx) => {
       ctx.openModelDialog?.();

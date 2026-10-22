@@ -8,11 +8,11 @@ import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   defaultSettingsMiddleware,
-  generateText,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
   simulateStreamingMiddleware,
+  streamText,
   type TextStreamPart,
   type ToolSet,
   wrapLanguageModel,
@@ -32,6 +32,7 @@ import {
   buildOpenRouterProviderOptions,
   buildReasoningProviderOptions,
   getContextWindow,
+  mergeProviderOptions,
   recordContextRestart,
   type StreamResponseOpts,
   streamResponse,
@@ -431,10 +432,6 @@ async function summarizeConversation(
     ...summaryBase,
     { role: "user", content: summaryInstruction },
   ];
-  const summaryProviderOptions = {
-    ...buildReasoningProviderOptions(opts.model, opts),
-    ...buildOpenRouterProviderOptions(opts.model),
-  };
   const summaryOutputTokens = Math.min(
     8_192,
     getMaxOutputTokens(
@@ -443,11 +440,28 @@ async function summarizeConversation(
       opts.authConfig?.hoonifyModels,
     ),
   );
-  const generateSummary = (
+  const summaryProviderOptions = mergeProviderOptions(
+    buildReasoningProviderOptions(opts.model, {
+      ...opts,
+      customProviders: opts.authConfig?.customProviders,
+      maxOutputTokens: summaryOutputTokens,
+    }),
+    buildOpenRouterProviderOptions(opts.model),
+  );
+  // Streamed rather than generated in one shot: a non-streaming request returns no
+  // response headers until the whole summary exists, which is indistinguishable from
+  // a hung connection to anything watching time-to-headers. Streaming also lets a
+  // genuine stall be caught between chunks. Resolved here so callers keep the
+  // one-shot result shape.
+  const generateSummary = async (
     history: ModelMessage[],
     toolChoiceOverride?: "none",
-  ) =>
-    generateText({
+  ) => {
+    // streamText reports a provider failure as a stream part and then throws a
+    // generic AI_NoOutputGeneratedError. That would mask the context-length error
+    // the retry ladder below matches on, and a caller abort. Keep the real one.
+    let streamError: unknown;
+    const result = streamText({
       model,
       providerOptions: summaryProviderOptions,
       system: cacheBreakpoint ? undefined : opts.system,
@@ -458,17 +472,54 @@ async function summarizeConversation(
       // A forced tool choice would force a tool call instead of a summary.
       toolChoice:
         toolChoiceOverride ??
-        (typeof opts.toolChoice === "object" && opts.toolChoice?.type === "tool"
-          ? "auto"
-          : (opts.toolChoice ?? "auto")),
+        (opts.primaryModelOnly
+          ? "none"
+          : typeof opts.toolChoice === "object" &&
+              opts.toolChoice?.type === "tool"
+            ? "auto"
+            : (opts.toolChoice ?? "auto")),
       maxOutputTokens: summaryOutputTokens,
       abortSignal: opts.abortSignal,
+      onError: ({ error }) => {
+        streamError = error;
+      },
       experimental_telemetry: createAiTelemetrySettings({
         operation: "apex.context.summarize",
+        reasoning: {
+          requested: opts.reasoning ?? "legacy-default",
+          parameters: JSON.stringify(summaryProviderOptions ?? {}),
+        },
         sessionId: opts.sessionId,
         compaction: compaction?.link,
       }),
     });
+    try {
+      // Awaited together so a stream failure throws here rather than surfacing as
+      // an unobserved rejection on one of the other settled promises.
+      const [text, usage, finishReason, providerMetadata, toolCalls] =
+        await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.providerMetadata,
+          result.toolCalls,
+        ]);
+      return { text, usage, finishReason, providerMetadata, toolCalls };
+    } catch (error) {
+      throw streamError ?? error;
+    }
+  };
+
+  const runSummary = (history: ModelMessage[], toolChoice?: "none") =>
+    runWithNativeRolloutOperation(
+      { operationKind: "context.summarize", sessionId: opts.sessionId },
+      () =>
+        opts.runContextCompaction
+          ? opts.runContextCompaction(() =>
+              generateSummary(history, toolChoice),
+            )
+          : generateSummary(history, toolChoice),
+    );
 
   const reportSummaryUsage = async (
     attempt: Awaited<ReturnType<typeof generateSummary>>,
@@ -532,10 +583,7 @@ async function summarizeConversation(
       ];
     }
     try {
-      summaryResult = await runWithNativeRolloutOperation(
-        { operationKind: "context.summarize", sessionId: opts.sessionId },
-        () => generateSummary(usedHistory),
-      );
+      summaryResult = await runSummary(usedHistory);
       break;
     } catch (error) {
       if (!checkIfContextLengthError(error)) throw error;
@@ -548,10 +596,7 @@ async function summarizeConversation(
     (summaryResult.toolCalls?.length ?? 0) > 0 ||
     !summaryResult.text.trim()
   ) {
-    summaryResult = await runWithNativeRolloutOperation(
-      { operationKind: "context.summarize", sessionId: opts.sessionId },
-      () => generateSummary(usedHistory, "none"),
-    );
+    summaryResult = await runSummary(usedHistory, "none");
     await reportSummaryUsage(summaryResult);
   }
   const { text: summary } = summaryResult;
@@ -564,17 +609,26 @@ async function summarizeConversation(
   // Preserve task state through summarization so the agent doesn't lose
   // track of its task progress after context compaction.
   const taskSummary = extractTaskSummaryFromMessages(messages);
-  const summaryWithTasks = taskSummary
-    ? `${summary}\n\nCurrent task state: ${taskSummary}`
-    : summary;
+  const summaryWithTasks = [
+    summary,
+    taskSummary ? `Current task state: ${taskSummary}` : "",
+    opts.getContinuationContext?.(),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   // For very long prompts, replace with just the summary instead of appending
-  const originalLength =
-    typeof opts.prompt === "string" ? opts.prompt.length : 0;
+  // Lance replaces prior summaries instead of appending them on every compaction.
+  const originalPrompt = opts.primaryModelOnly
+    ? (opts._initialPrompt ?? opts.prompt)
+    : opts.prompt;
+  const originalLength = originalPrompt.length;
   const enhancedPrompt =
     originalLength > 100000
       ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
-      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
+      : opts.primaryModelOnly
+        ? `${originalPrompt}\n\nContinue the task using this conversation summary. Later user corrections in the summary take precedence over the original request:\n${summaryWithTasks}`
+        : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
 
   if (
     opts._compactionTrigger === "proactive" &&
@@ -759,22 +813,28 @@ export function createSummarizationStream(
   // consumption path); these derived promises must not each reject unhandled —
   // derive them from a caught base so a failure resolves undefined here.
   const resumedForFields = resumedStreamPromise.catch(() => undefined);
+  const field = <K extends keyof StreamTextResult<ToolSet, never>>(key: K) => {
+    const value = resumedForFields.then<unknown>((stream) => stream?.[key]);
+    // The resumed stream can abort after compaction succeeded; fullStream owns that error.
+    void value.catch(() => {});
+    return value;
+  };
   return {
     fullStream: wrappedFullStream,
-    text: resumedForFields.then((s) => s?.text),
-    content: resumedForFields.then((s) => s?.content),
-    reasoning: resumedForFields.then((s) => s?.reasoning),
-    reasoningText: resumedForFields.then((s) => s?.reasoningText),
-    toolCalls: resumedForFields.then((s) => s?.toolCalls),
-    toolResults: resumedForFields.then((s) => s?.toolResults),
-    usage: resumedForFields.then((s) => s?.usage),
-    finishReason: resumedForFields.then((s) => s?.finishReason),
-    warnings: resumedForFields.then((s) => s?.warnings),
-    response: resumedForFields.then((s) => s?.response),
-    files: resumedForFields.then((s) => s?.files),
-    sources: resumedForFields.then((s) => s?.sources),
-    staticToolCalls: resumedForFields.then((s) => s?.staticToolCalls),
-    dynamicToolCalls: resumedForFields.then((s) => s?.dynamicToolCalls),
+    text: field("text"),
+    content: field("content"),
+    reasoning: field("reasoning"),
+    reasoningText: field("reasoningText"),
+    toolCalls: field("toolCalls"),
+    toolResults: field("toolResults"),
+    usage: field("usage"),
+    finishReason: field("finishReason"),
+    warnings: field("warnings"),
+    response: field("response"),
+    files: field("files"),
+    sources: field("sources"),
+    staticToolCalls: field("staticToolCalls"),
+    dynamicToolCalls: field("dynamicToolCalls"),
     pipeTextStreamToResponse: async (response: unknown, init?: unknown) => {
       const stream = await resumedStreamPromise;
       return stream.pipeTextStreamToResponse(

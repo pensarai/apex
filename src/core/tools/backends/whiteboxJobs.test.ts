@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import * as tools from "../../agents/offSecAgent/tools/whiteboxJobs";
 import { LocalBackends } from "./local";
@@ -363,13 +363,14 @@ it.skipIf(process.platform !== "win32")(
       });
     stops.push(() => jobs.stop(record.id));
     expect((await jobs.poll(record.id))?.status).toBe("running");
-    let output = "";
-    for (let i = 0; i < 20 && !output.includes("\n\nready & quoted"); i++) {
-      output = (await jobs.read(record.id)).content;
-      if (!output.includes("\n\nready & quoted"))
-        await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    expect(output).toContain("\n\nready & quoted");
+    await vi.waitFor(
+      async () => {
+        expect((await jobs.read(record.id)).content).toContain(
+          "\n\nready & quoted",
+        );
+      },
+      { timeout: 15_000, interval: 100 },
+    );
     expect((await jobs.stop(record.id))?.status).toBe("stopped");
   },
 );

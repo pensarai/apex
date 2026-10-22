@@ -18,11 +18,24 @@ import {
 } from "./seams";
 
 const mocks = vi.hoisted(() => ({
+  errorLog: vi.fn(),
   codeAgentInputs: [] as Array<Record<string, unknown>>,
   consumeImpl: null as
     | ((input: Record<string, unknown>) => Promise<unknown>)
     | null,
 }));
+
+vi.mock("../logger/structured", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../logger/structured")>();
+  return {
+    ...actual,
+    createLogger: (...args: Parameters<typeof actual.createLogger>) => {
+      const logger = actual.createLogger(...args);
+      logger.error = mocks.errorLog;
+      return logger;
+    },
+  };
+});
 
 vi.mock("../agents/specialized/codeAgent/agent", () => ({
   CodeAgent: class {
@@ -105,7 +118,7 @@ afterEach(() => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical", () => {
-  it("fans out per-app work through the same runWithBoundedConcurrency pool, once", async () => {
+  it("bounds per-app work and batches each app’s discovery children", async () => {
     const spy = vi.spyOn(concurrencyModule, "runWithBoundedConcurrency");
 
     await runWhiteboxAttackSurfaceWorkflow({
@@ -115,7 +128,9 @@ describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical"
       surfaceIntegrationEnabled: false,
     });
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1][0]).toHaveLength(2);
+    expect(spy.mock.calls[1][1]).toBe(2);
     const [items, concurrency] = spy.mock.calls[0];
     expect(items).toHaveLength(1);
     expect(concurrency).toBe(5);
@@ -193,6 +208,36 @@ describe("runWhiteboxAttackSurfaceWorkflow — custom seams", () => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — AgentHooks", () => {
+  it("inherits tool execution context in discovery child descriptors", async () => {
+    const sharedContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const appContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const childContexts: AgentHooks["toolExecutionContext"][] = [];
+    await runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: "test-model",
+      session,
+      surfaceIntegrationEnabled: false,
+      subagentSpawner: {
+        ...codeSpawner,
+        spawn: (request) => {
+          childContexts.push(request.runtime.toolExecutionContext);
+          return codeSpawner.spawn(request);
+        },
+      },
+      hooks: { toolExecutionContext: sharedContext },
+      seams: inProcessSeams({
+        hooksForItem: () => ({ toolExecutionContext: appContext }),
+      }),
+    });
+    expect(childContexts).toHaveLength(2);
+    expect(mocks.codeAgentInputs[0]?.toolExecutionContext).toBe(sharedContext);
+    expect(childContexts).toEqual([appContext, appContext]);
+  });
+
   it("reaches the Phase 1 apps-discovery agent with the caller's own AgentHooks object", async () => {
     const backends = {
       __sentinel: "backends",
@@ -276,6 +321,33 @@ describe("runWhiteboxAttackSurfaceApp — standalone, no runWhiteboxAttackSurfac
     expect(mocks.codeAgentInputs).toHaveLength(2);
     expect(mocks.codeAgentInputs[0]?.backends).toBe(backends);
     expect(mocks.codeAgentInputs[1]?.backends).toBe(backends);
+  });
+
+  it("logs the original batch admission error while preserving the failure result", async () => {
+    const failure = new Error("batch admission failed");
+    const failed = await runWhiteboxAttackSurfaceApp(app, 0, {
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      surfaceIntegrationEnabled: false,
+      isSingleAppRepo: true,
+      umbrellaId: "umbrella",
+      mintChildId: (name) => name,
+      hooks: {},
+      subagentSpawner: {
+        ...codeSpawner,
+        spawnBatch: async () => {
+          throw failure;
+        },
+      },
+      seams: inProcessSeams(),
+    });
+    expect(failed).toBe(true);
+    expect(mocks.errorLog).toHaveBeenCalledWith(
+      'Phase 2: app "web" FAILED',
+      failure,
+      { error: String(failure), app: "web" },
+    );
   });
 
   it("reports failure when a discovery agent throws, without throwing itself", async () => {

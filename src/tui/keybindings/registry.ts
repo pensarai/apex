@@ -120,6 +120,7 @@ export function createKeybindings(
       combo: "tab",
       description: "Next focusable item",
       fn: async () => {
+        if (stack.length > 0 || externalDialogOpen) return;
         setFocusIndex((prev) => (prev + 1) % navigableItems.length);
       },
     },
@@ -127,6 +128,7 @@ export function createKeybindings(
       combo: "shift+tab",
       description: "Previous focusable item",
       fn: async () => {
+        if (stack.length > 0 || externalDialogOpen) return;
         setFocusIndex(
           (prev) => (prev - 1 + navigableItems.length) % navigableItems.length,
         );

@@ -33,6 +33,7 @@ export interface LifecycleChunk {
   error?: unknown;
   result?: unknown;
   output?: unknown;
+  preliminary?: boolean;
 }
 
 export class ToolLifecycleTracker {
@@ -89,6 +90,7 @@ export class ToolLifecycleTracker {
         break;
       }
       case "tool-result":
+        if (chunk.preliminary) break;
         this.inFlight.delete(chunk.toolCallId as string);
         this.completed.push({
           type: "tool-result",

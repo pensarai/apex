@@ -497,6 +497,7 @@ function AppContent({
         requireApproval: false,
         target,
         strikeMode: false,
+        lanceMode: false,
         sandbox: isBlackbox,
         headers: sessionConfig.headers,
       },

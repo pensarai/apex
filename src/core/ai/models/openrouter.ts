@@ -184,8 +184,20 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 128000,
   },
   {
+    id: "deepseek/deepseek-v4.1-flash-1017",
+    name: "DeepSeek V4.1 Flash 1017",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "deepseek/deepseek-v4.1-flash",
     name: "DeepSeek V4.1 Flash",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
+    id: "deepseek/deepseek-v4-pro-0813",
+    name: "DeepSeek V4 Pro 0813",
     provider: "openrouter",
     contextLength: 1048576,
   },
@@ -223,7 +235,7 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     id: "moonshotai/kimi-k3",
     name: "Kimi K3",
     provider: "openrouter",
-    contextLength: 1000000,
+    contextLength: 1048576,
   },
   {
     id: "moonshot/kimi-k2-turbo",
@@ -254,6 +266,24 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Laguna S 2.1",
     provider: "openrouter",
     contextLength: 1048576,
+  },
+  {
+    id: "qwen/qwen3.8-max-0902",
+    name: "Qwen3.8 Max (0902)",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.8-27b",
+    name: "Qwen3.8 27B",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.8-flash",
+    name: "Qwen3.8 Flash",
+    provider: "openrouter",
+    contextLength: 1000000,
   },
   {
     id: "qwen/qwen3-8b",
@@ -320,6 +350,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Grok Code Fast 1",
     provider: "openrouter",
     contextLength: 256000,
+  },
+  {
+    id: "xiaomi/mimo-v2.6-pro",
+    name: "MiMo-V2.6-Pro",
+    provider: "openrouter",
+    contextLength: 1050000,
   },
   {
     id: "z-ai/glm-4.7-flash",

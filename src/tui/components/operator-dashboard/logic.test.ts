@@ -6,12 +6,15 @@ import {
   type DashboardStatus,
   filterOperatorAutocomplete,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +26,7 @@ const allOptions: AutocompleteOption[] = [
   { value: "/pentest", label: "/pentest", description: "Run a pentest" },
   { value: "/help", label: "/help", description: "Show help" },
   { value: "/models", label: "/models", description: "Switch model" },
+  { value: "/effort", label: "/effort", description: "Adjust model effort" },
   { value: "/skills", label: "/skills", description: "View skills" },
   {
     value: "/advanced",
@@ -36,10 +40,11 @@ const allOptions: AutocompleteOption[] = [
 // ---------------------------------------------------------------------------
 
 describe("filterOperatorAutocomplete", () => {
-  it("includes allowed commands (/models, /skills, /advanced)", () => {
+  it("includes allowed commands (/models, /effort, /skills, /advanced)", () => {
     const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).toContain("/models");
+    expect(values).toContain("/effort");
     expect(values).toContain("/skills");
     expect(values).toContain("/advanced");
   });
@@ -52,7 +57,7 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns only allowed commands", () => {
     const result = filterOperatorAutocomplete(allOptions);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(6);
   });
 
   it("preserves description on allowed commands", () => {
@@ -130,6 +135,115 @@ describe("resolveOperatorStrikeMode", () => {
   });
 });
 
+describe("resolveOperatorFindingPolicy", () => {
+  it("defaults new sessions to Apex finding review", () => {
+    expect(
+      resolveOperatorFindingPolicy({ resuming: false, strikeMode: true }),
+    ).toBe("native");
+  });
+
+  it("uses the saved preference for new Strike sessions", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("external");
+  });
+
+  it("lets an explicit workflow override the saved preference", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: true,
+        routeOverride: "native",
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+  });
+
+  it("restores the policy saved with a resumed Strike session", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: true,
+        savedSessionValue: "external",
+        persistedDefault: "native",
+      }),
+    ).toBe("external");
+  });
+
+  it("keeps legacy resumed sessions native despite a newer global preference", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+  });
+
+  it("keeps standard sessions native despite external preferences or overrides", () => {
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: false,
+        routeOverride: "external",
+        persistedDefault: "external",
+      }),
+    ).toBe("native");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: false,
+        savedSessionValue: "external",
+      }),
+    ).toBe("native");
+  });
+});
+
+describe("resolveActiveFindingPolicy", () => {
+  it("preserves the judge toggle in Strike and Lance", () => {
+    expect(resolveActiveFindingPolicy("lance", "external")).toBe("external");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: false,
+        strikeMode: false,
+        lanceMode: true,
+        persistedDefault: "external",
+      }),
+    ).toBe("external");
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: false,
+        lanceMode: true,
+        savedSessionValue: "external",
+      }),
+    ).toBe("external");
+    expect(resolveActiveFindingPolicy("fast-strike", "external")).toBe(
+      "external",
+    );
+    expect(resolveActiveFindingPolicy("default", "external")).toBe("native");
+    expect(resolveActiveFindingPolicy("plan", "external")).toBe("native");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Queue navigation
+// ---------------------------------------------------------------------------
+
+describe("shouldHandleQueuedMessageKey", () => {
+  it("leaves queue navigation to the dashboard only when no dialog owns the keyboard", () => {
+    expect(shouldHandleQueuedMessageKey("running", 2, "", false)).toBe(true);
+    expect(shouldHandleQueuedMessageKey("running", 2, "", true)).toBe(false);
+    expect(
+      shouldHandleQueuedMessageKey("running", 2, " /advanced ", false),
+    ).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // resolveSubmit
 // ---------------------------------------------------------------------------
@@ -193,6 +307,17 @@ describe("routeCommand", () => {
 
   it("routes /MODELS (case-insensitive) to show-models", () => {
     expect(routeCommand("/MODELS", noSkill)).toEqual({ type: "show-models" });
+  });
+
+  it.each([
+    "/effort",
+    "/EFFORT",
+  ])("routes %s to the picker before resolving skills", (command) => {
+    const resolveSkill = vi.fn(() => "An effort skill");
+    expect(routeCommand(command, resolveSkill)).toEqual({
+      type: "show-models",
+    });
+    expect(resolveSkill).not.toHaveBeenCalled();
   });
 
   it("routes a skill command to run-skill with slug", () => {
@@ -623,6 +748,17 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("account for each viable primitive");
   });
 
+  it("keeps Strike's research loop while leaving finding review to the caller", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "fast-strike", {
+      findingPolicy: "external",
+    });
+    expect(prompt).toContain("# Strike Mode");
+    expect(prompt).toContain("requested output format");
+    expect(prompt).not.toContain("document_vulnerability");
+    expect(prompt).not.toContain("document confirmed vulnerabilities");
+    expect(prompt).not.toContain("official report is generated automatically");
+  });
+
   it("does not include Strike Mode instructions in the standard mode", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "default");
     expect(prompt).not.toContain("# Strike Mode");
@@ -751,3 +887,9 @@ describe("resolveInputFocused", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+it("keeps Lance independent of Strike and planning", () => {
+  expect(resolveOperatorAgentMode("manual", false, true)).toBe("lance");
+  expect(resolveOperatorAgentMode("auto", true, true)).toBe("lance");
+  expect(resolveOperatorAgentMode("plan", false, true)).toBe("lance");
+});

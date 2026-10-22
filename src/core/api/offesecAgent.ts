@@ -6,10 +6,15 @@ import {
 } from "../agents/offSecAgent";
 import { startAgentExecution } from "../runtime/agentExecution";
 import type { SessionInfo } from "../session";
+import {
+  persistRootReasoningOverride,
+  resolveRootReasoning,
+} from "./reasoning";
 
 export interface RunAgentResult {
   streamResult: StreamTextResult<ToolSet, never>;
   session: SessionInfo;
+  lance?: import("../agents/lance").LanceMetrics;
 }
 
 /**
@@ -27,6 +32,9 @@ export async function runOffensiveSecurityAgent(
     onSessionReady?: (session: SessionInfo) => void;
   },
 ): Promise<RunAgentResult> {
+  const resolved = resolveRootReasoning(input);
+  const persisted = persistRootReasoningOverride(input);
+  input = persisted ? { ...resolved, session: await persisted } : resolved;
   const agent = input.session
     ? new OffensiveSecurityAgent(input as OffensiveSecurityAgentInput)
     : await OffensiveSecurityAgent.create(input as CreateAgentInput);
@@ -34,7 +42,13 @@ export async function runOffensiveSecurityAgent(
   input.onSessionReady?.(agent.session);
 
   await startAgentExecution(agent).result;
-  return { streamResult: agent.streamResult, session: agent.session };
+  return {
+    streamResult: agent.streamResult,
+    session: agent.session,
+    ...(agent.lanceRuntime
+      ? { lance: agent.lanceRuntime.metrics(input.model) }
+      : {}),
+  };
 }
 
 /** Either agent-input shape, minus the abort signal the client owns. */

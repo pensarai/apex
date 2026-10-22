@@ -1,3 +1,4 @@
+import { getSavedReasoning } from "../../../core/cli/reasoning";
 /**
  * Operator Dashboard
  *
@@ -29,14 +30,13 @@ import {
   type AgentMode,
   ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
+  type FindingPolicy,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../core/agents/offSecAgent";
 import {
   buildAuthConfig,
   getContextWindow,
-  modelSupportsOpenAIReasoning,
-  modelSupportsThinking,
   normalizeStepUsage,
 } from "../../../core/ai";
 import {
@@ -108,12 +108,15 @@ import {
   type DashboardStatus,
   filterOperatorAutocomplete,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 import {
   createQueuedMessage,
@@ -159,6 +162,8 @@ export default function OperatorDashboard({
     target?: string;
     operatorMode?: OperatorMode;
     strikeMode?: boolean;
+    lanceMode?: boolean;
+    findingPolicy?: FindingPolicy;
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
@@ -177,8 +182,8 @@ export default function OperatorDashboard({
     usageStore,
     markExecuted,
     setSessionCwd,
-    reasoningEnabled,
-    openAIReasoningEffort,
+    reasoning: preferredReasoning,
+    setReasoning,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -198,6 +203,11 @@ export default function OperatorDashboard({
   const { refocusPromptIfNoActiveEditor } = useFocus();
   const herdr = useHerdr();
   const { enabled: obfuscateEnabled } = useObfuscation();
+  const [lanceMode, setLanceMode] = useState(
+    sessionId
+      ? false
+      : (initialConfig?.lanceMode ?? config.data.lanceMode ?? false),
+  );
   const initialStrikeModeRef = useRef(
     resolveOperatorStrikeMode({
       resuming: !!sessionId,
@@ -206,18 +216,36 @@ export default function OperatorDashboard({
     }),
   );
   const [strikeMode, setStrikeMode] = useState(initialStrikeModeRef.current);
+  const initialFindingPolicyRef = useRef(
+    resolveOperatorFindingPolicy({
+      resuming: !!sessionId,
+      strikeMode: initialStrikeModeRef.current,
+      lanceMode,
+      routeOverride: initialConfig?.findingPolicy,
+      persistedDefault: config.data.findingPolicy,
+    }),
+  );
+  const [findingPolicy, setFindingPolicy] = useState(
+    initialFindingPolicyRef.current,
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(
       allAutocompleteOptions,
-    ).filter((option) => !strikeMode || option.value !== "/pentest");
+    ).filter(
+      (option) =>
+        (!strikeMode || option.value !== "/pentest") &&
+        (!lanceMode ||
+          !["/pentest", "/plan", "/skills"].includes(option.value)),
+    );
     const skillOptions = skillsRegistry
       .list()
       .filter(
         (skill) =>
-          !strikeMode ||
-          (skill.slug !== "pentest" && skill.slug !== "threat-model"),
+          !lanceMode &&
+          (!strikeMode ||
+            (skill.slug !== "pentest" && skill.slug !== "threat-model")),
       )
       .map((skill) => {
         const slug = `/${skill.slug}`;
@@ -235,7 +263,13 @@ export default function OperatorDashboard({
       },
     ];
     return [...commandOptions, ...operatorOnlyOptions, ...skillOptions];
-  }, [allAutocompleteOptions, skillsRegistry, skillsVersion, strikeMode]);
+  }, [
+    allAutocompleteOptions,
+    skillsRegistry,
+    skillsVersion,
+    strikeMode,
+    lanceMode,
+  ]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -360,6 +394,11 @@ export default function OperatorDashboard({
   const agentMode: AgentMode = resolveOperatorAgentMode(
     operatorMode,
     strikeMode,
+    lanceMode,
+  );
+  const activeFindingPolicy = resolveActiveFindingPolicy(
+    agentMode,
+    findingPolicy,
   );
   const requireApproval = operatorMode === "manual";
   // Plan mode review state
@@ -418,6 +457,32 @@ export default function OperatorDashboard({
     };
   }, []);
 
+  const restoredReasoningSession = useRef<string | null>(null);
+  const savedReasoning = session?.config?.modelReasoning;
+  const restoredPreference =
+    savedReasoning?.model === model.id
+      ? getSavedReasoning(model.id, {
+          customProviders: config.data.customProviders,
+          modelReasoning: { [model.id]: savedReasoning.setting },
+        })
+      : undefined;
+  // An auto-started resumed turn can precede the preference write completing.
+  const reasoning =
+    session && restoredReasoningSession.current !== session.id
+      ? (restoredPreference ?? preferredReasoning)
+      : preferredReasoning;
+  useEffect(() => {
+    if (!session || restoredReasoningSession.current === session.id) return;
+    if (
+      restoredPreference !== undefined &&
+      restoredPreference !== preferredReasoning
+    ) {
+      setReasoning(restoredPreference);
+    } else {
+      restoredReasoningSession.current = session.id;
+    }
+  }, [session, restoredPreference, preferredReasoning, setReasoning]);
+
   // Load existing session or initialise operator state for a new one.
   // New sessions are created lazily by the agent on the first runAgent call.
   useEffect(() => {
@@ -426,11 +491,22 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          setLanceMode(
+            existsSync(join(s.rootPath, "lance-result.json")) ||
+              (s.config?.operatorSettings?.lanceMode ?? false),
+          );
           setSessionCwd(s.rootPath);
-          setStrikeMode(
-            resolveOperatorStrikeMode({
+          const resumedStrikeMode = resolveOperatorStrikeMode({
+            resuming: true,
+            savedSessionValue: s.config?.operatorSettings?.strikeMode,
+          });
+          setStrikeMode(resumedStrikeMode);
+          setFindingPolicy(
+            resolveOperatorFindingPolicy({
               resuming: true,
-              savedSessionValue: s.config?.operatorSettings?.strikeMode,
+              strikeMode: resumedStrikeMode,
+              lanceMode: s.config?.operatorSettings?.lanceMode,
+              savedSessionValue: s.config?.operatorSettings?.findingPolicy,
             }),
           );
 
@@ -516,6 +592,7 @@ export default function OperatorDashboard({
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           setStrikeMode(initialStrikeModeRef.current);
+          setFindingPolicy(initialFindingPolicyRef.current);
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
           const requireApproval = newMode === "manual";
@@ -855,7 +932,9 @@ export default function OperatorDashboard({
         handlers: runEventProjections.handlers,
       });
 
-      const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
+      const skillsCatalog = lanceMode
+        ? undefined
+        : skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
         prompt: prompt ?? "",
@@ -871,14 +950,13 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
+        lance: lanceMode ? { interactive: true } : undefined,
+        findingPolicy: activeFindingPolicy,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
-        enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
-        openAIReasoningEffort: modelSupportsOpenAIReasoning(model.id)
-          ? openAIReasoningEffort
-          : undefined,
+        reasoning,
         surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         promptInjectionLibrarySource:
           initialConfig?.promptInjectionLibrarySource ??
@@ -905,34 +983,37 @@ export default function OperatorDashboard({
       try {
         let agentResult: RunAgentResult;
 
-        const systemPrompt = buildOperatorSystemPrompt(
-          initialConfig?.target,
-          operatorState,
-          agentMode,
-          {
-            requireApproval,
-            sandboxMode: !!initialConfig?.sandbox,
-            skillsCatalog,
-            planFilePath: sessionRef.current
-              ? getPlanFilePath(sessionRef.current.rootPath)
-              : undefined,
-            existingPlanContent:
-              agentMode === "plan" &&
-              planRejectedRef.current &&
-              sessionRef.current
-                ? readPlan(sessionRef.current.rootPath)
-                : null,
-            approvedPlanContent:
-              agentMode !== "plan" ? approvedPlanRef.current : null,
-            taskDriven:
-              session?.config?.taskDriven ?? initialConfig?.taskDriven,
-          },
-        );
+        const systemPrompt = lanceMode
+          ? undefined
+          : buildOperatorSystemPrompt(
+              initialConfig?.target,
+              operatorState,
+              agentMode,
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+                planFilePath: sessionRef.current
+                  ? getPlanFilePath(sessionRef.current.rootPath)
+                  : undefined,
+                existingPlanContent:
+                  agentMode === "plan" &&
+                  planRejectedRef.current &&
+                  sessionRef.current
+                    ? readPlan(sessionRef.current.rootPath)
+                    : null,
+                approvedPlanContent:
+                  agentMode !== "plan" ? approvedPlanRef.current : null,
+                taskDriven:
+                  session?.config?.taskDriven ?? initialConfig?.taskDriven,
+                findingPolicy: activeFindingPolicy,
+              },
+            );
 
         if (session) {
           agentResult = await agentClient.run({
             ...commonInput,
-            system: systemPrompt,
+            ...(lanceMode ? {} : { system: systemPrompt }),
             session,
           });
         } else {
@@ -945,6 +1026,8 @@ export default function OperatorDashboard({
               requireApproval,
               enableSuggestions: true,
               strikeMode,
+              lanceMode,
+              findingPolicy,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -960,7 +1043,7 @@ export default function OperatorDashboard({
           };
           agentResult = await agentClient.run({
             ...commonInput,
-            system: systemPrompt,
+            ...(lanceMode ? {} : { system: systemPrompt }),
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
@@ -975,6 +1058,18 @@ export default function OperatorDashboard({
           }
           setSession(created);
           setSessionCwd(created.rootPath);
+        }
+
+        const lanceResult = agentResult.lance;
+        if (lanceResult && lanceResult.outcome !== "awaiting_input") {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "system",
+              content: `Lance: ${lanceResult.outcome}. ${lanceResult.reason}`,
+              createdAt: new Date(),
+            },
+          ]);
         }
 
         // Sync conversationRef from the agent's persisted state.
@@ -1082,13 +1177,15 @@ export default function OperatorDashboard({
       initialConfig?.headers,
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
+      lanceMode,
+      findingPolicy,
+      activeFindingPolicy,
       route.data,
       setSessionCwd,
       skillsRegistry.buildCatalog,
       requireApproval,
       skillsRegistry,
-      reasoningEnabled,
-      openAIReasoningEffort,
+      reasoning,
       usageStore,
       markExecuted,
     ],
@@ -1365,6 +1462,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     async (command: string) => {
       const action = routeCommand(command, resolveSkillContent);
 
+      if (
+        lanceMode &&
+        ["run-skill", "show-plan", "execute-command"].includes(action.type)
+      ) {
+        addSystemMessage(
+          "Lance accepts direct objectives only. Start a new session to use production workflows.",
+        );
+        return;
+      }
       switch (action.type) {
         case "show-models":
           showModelPicker();
@@ -1449,6 +1555,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       addSystemMessage,
       handleHeadersSlash,
       strikeMode,
+      lanceMode,
     ],
   );
 
@@ -1634,11 +1741,16 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    const dialogOpen =
+      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
     // Queue navigation: handle before general shortcuts
     if (
-      status === "running" &&
-      queuedMessages.length > 0 &&
-      !inputValue.trim()
+      shouldHandleQueuedMessageKey(
+        status,
+        queuedMessages.length,
+        inputValue,
+        dialogOpen,
+      )
     ) {
       if (key.name === "up") {
         key.preventDefault?.();
@@ -1765,9 +1877,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
     // Treat the questions form as a dialog so that dashboard-level shortcuts
     // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
-    const dialogOpen =
-      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
-
     // Ctrl+A to open subagent dialog (skip if another dialog is open)
     if (
       key.ctrl &&
@@ -1925,7 +2034,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       >
         <box flexDirection="row" gap={2}>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
-          {strikeMode && <text fg={colors.warning}>STRIKE</text>}
+          {lanceMode ? (
+            <text fg={colors.warning}>LANCE</text>
+          ) : (
+            strikeMode && <text fg={colors.warning}>STRIKE</text>
+          )}
+          {activeFindingPolicy === "external" && (
+            <text fg={colors.textMuted}>JUDGE OFF</text>
+          )}
           {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>

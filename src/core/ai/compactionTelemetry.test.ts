@@ -45,7 +45,7 @@ function model() {
       stream: simulateReadableStream({
         chunks: [
           { type: "text-start", id: "t" },
-          { type: "text-delta", id: "t", delta: "Done" },
+          { type: "text-delta", id: "t", delta: "A compact summary" },
           { type: "text-end", id: "t" },
           {
             type: "finish",
@@ -56,6 +56,26 @@ function model() {
       }),
     }),
   });
+}
+
+const SUMMARIZE_FN = "apex.context.summarize";
+
+// Summarization and the resumed agent turn both reach the model through doStream,
+// so a mock that must fail only the summary matches on its instruction.
+function isSummaryCall(options: { prompt: unknown }): boolean {
+  return JSON.stringify(options.prompt).includes("Compact this conversation");
+}
+
+// Located by telemetry functionId rather than span name, so it survives the
+// summarizer switching between streaming and one-shot generation.
+function summarySpan<
+  T extends { name: string; attributes: Record<string, unknown> },
+>(spans: readonly T[]): T | undefined {
+  return spans.find(
+    (span) =>
+      span.name.endsWith(".doStream") &&
+      span.attributes["ai.telemetry.functionId"] === SUMMARIZE_FN,
+  );
 }
 
 async function drain(stream: { fullStream: AsyncIterable<unknown> }) {
@@ -193,10 +213,13 @@ describe("compaction observability", () => {
     await drain(stream);
     const spans = otel.getFinishedSpans();
     const compaction = requireSpan(spans, "apex.context.compact");
-    const summary = spans.find(
-      (span) => span.name === "ai.generateText.doGenerate",
+    const summary = summarySpan(spans);
+    const resumed = spans.find(
+      (span) =>
+        span.name === "ai.streamText" &&
+        span.attributes["ai.telemetry.functionId"] !== SUMMARIZE_FN,
     );
-    const resumed = requireSpan(spans, "ai.streamText");
+    if (!resumed) throw new Error("no resumed agent-turn span");
     expect(compaction?.attributes).toMatchObject({
       "apex.compaction.outcome": "completed",
       "pensar.session.id": "ses_child",
@@ -418,7 +441,8 @@ describe("compaction observability", () => {
       prompt: "original task",
       system: "research system",
     });
-    const summary = requireSpan(spans, "ai.generateText.doGenerate");
+    const summary = summarySpan(spans);
+    if (!summary) throw new Error("no summarizer model span");
     expect(summary.attributes["ai.prompt.messages"]).toContain(
       "continue researching",
     );
@@ -433,7 +457,8 @@ describe("compaction observability", () => {
       String(compact.attributes["apex.compaction.evidence.after.json"]),
     );
     expect(after.messages[0].content).toContain("A compact summary");
-    expect(summaryModel.doStreamCalls[0]?.prompt).toMatchObject([
+    // [0] is the summarization call; the resumed agent turn follows it.
+    expect(summaryModel.doStreamCalls[1]?.prompt).toMatchObject([
       { role: "system", content: after.system },
       {
         role: "user",
@@ -538,11 +563,30 @@ describe("compaction observability", () => {
     }
   });
 
+  it("summarizes over a stream, so a slow summary is never a silent connection", async () => {
+    // A one-shot summarization returns no response headers until the whole summary
+    // exists, which anything watching time-to-headers reads as a dead connection.
+    // Compaction became unreachable that way, so the call must stream.
+    const summaryModel = model();
+    state.model = summaryModel;
+    await drain(
+      createSummarizationStream(
+        [{ role: "user", content: "history" }],
+        { prompt: "continue", model: MODEL, silent: true },
+        summaryModel,
+      ),
+    );
+    expect(summaryModel.doGenerateCalls).toHaveLength(0);
+    expect(JSON.stringify(summaryModel.doStreamCalls[0]?.prompt)).toContain(
+      "Compact this conversation",
+    );
+  });
+
   it("records summary cancellation without hiding the original error", async () => {
     const cancelled = new Error("cancelled");
     cancelled.name = "AbortError";
     state.model = new MockLanguageModelV3({
-      doGenerate: async () => {
+      doStream: async () => {
         throw cancelled;
       },
     });
@@ -569,10 +613,10 @@ describe("compaction observability", () => {
     const normal = model();
     state.model = new MockLanguageModelV3({
       modelId: MODEL,
-      doGenerate: async () => {
-        throw new Error("context length exceeded");
-      },
-      doStream: (options) => normal.doStream(options),
+      doStream: (options) =>
+        isSummaryCall(options)
+          ? Promise.reject(new Error("context length exceeded"))
+          : normal.doStream(options),
     });
     await runWithAiPayloadCapture(true, () =>
       drain(
@@ -612,10 +656,18 @@ describe("compaction observability", () => {
         String(reset?.attributes["apex.compaction.evidence.after.json"]),
       )?.messages,
     ).toEqual([{ role: "user", content: "original task" }]);
+    // A resumed agent turn must carry the reset's span id. Summarizer attempts are
+    // `ai.streamText` spans too now, so they are excluded rather than assumed last.
     expect(
-      spans.find((span) => span.name === "ai.streamText")?.attributes[
-        "ai.telemetry.metadata.compactionSpanId"
-      ],
-    ).toBe(reset?.spanContext().spanId);
+      spans
+        .filter(
+          (span) =>
+            span.name === "ai.streamText" &&
+            span.attributes["ai.telemetry.functionId"] !== SUMMARIZE_FN,
+        )
+        .map(
+          (span) => span.attributes["ai.telemetry.metadata.compactionSpanId"],
+        ),
+    ).toContain(reset?.spanContext().spanId);
   });
 });

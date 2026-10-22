@@ -1,5 +1,15 @@
 import type { ModelInfo } from "../ai";
 
+// Concentrate does not route on max_output_tokens, so these use the lowest
+// ceiling among each slug's upstream providers.
+export const CONCENTRATE_MAX_OUTPUT_TOKENS: Readonly<Record<string, number>> = {
+  "concentrate:kimi-k3": 32_768,
+  "concentrate:qwen3.8-max": 32_768,
+  "concentrate:qwen3.8-27b": 32_768,
+  "concentrate:deepseek-v4-1-flash": 32_768,
+  "concentrate:deepseek-v4-1-flash-1017": 131_072,
+};
+
 // Curated from Concentrate's public model catalog. The local prefix keeps
 // gateway selections distinct from direct-provider models and is not sent.
 export const CONCENTRATE_MODELS: ModelInfo[] = [
@@ -154,6 +164,36 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     contextLength: 1000000,
   },
   {
+    id: "concentrate:qwen3.8-max",
+    name: "Qwen3.8 Max",
+    provider: "concentrate",
+    contextLength: 256000,
+  },
+  {
+    id: "concentrate:qwen3.8-27b",
+    name: "Qwen3.8 27B",
+    provider: "concentrate",
+    contextLength: 262144,
+  },
+  {
+    id: "concentrate:deepseek-v4-1-flash-1017",
+    name: "DeepSeek V4.1 Flash 1017",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
+    id: "concentrate:deepseek-v4-1-flash",
+    name: "DeepSeek V4.1 Flash",
+    provider: "concentrate",
+    contextLength: 1000000,
+  },
+  {
+    id: "concentrate:deepseek-v4-pro-0813",
+    name: "DeepSeek V4 Pro 0813",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
     id: "concentrate:deepseek-v3-2",
     name: "DeepSeek V3.2",
     provider: "concentrate",
@@ -166,6 +206,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     contextLength: 256000,
   },
   {
+    id: "concentrate:kimi-k3",
+    name: "Kimi K3",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
     id: "concentrate:kimi-k2-thinking",
     name: "Kimi K2 Thinking",
     provider: "concentrate",
@@ -176,6 +222,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     name: "MiniMax M2.7",
     provider: "concentrate",
     contextLength: 204800,
+  },
+  {
+    id: "concentrate:mimo-v2.6-pro",
+    name: "MiMo V2.6 Pro",
+    provider: "concentrate",
+    contextLength: 1048576,
   },
   {
     id: "concentrate:glm-5.3",

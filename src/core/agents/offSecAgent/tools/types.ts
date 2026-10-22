@@ -8,6 +8,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../../ai";
@@ -22,7 +23,12 @@ import type { ToolBackends } from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
-import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type {
+  AgentHooks,
+  FindingPolicy,
+  StreamIdFactory,
+  SystemPentestScope,
+} from "../types";
 import type { CallbackListenerRegistry } from "./callbackListener";
 import type { EmailAdapterResolver } from "./email/adapters";
 import type { PerCommandShell } from "./perCommandShell";
@@ -38,6 +44,7 @@ import type { SmsInbox } from "./smsInbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  findingPolicy?: FindingPolicy;
   attackSurfaceArtifactsPath?: string;
 
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
@@ -172,6 +179,7 @@ export type ToolContext = {
 
   /** OpenAI reasoning effort for GPT/o-series sub-agents. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the
@@ -229,7 +237,7 @@ export type ToolContext = {
    * the agent builds its tools (`OffensiveSecurityAgentInput.subagentSpawner` ??
    * the in-process spawner), so it is always present here and tools never
    * re-default it; a durable runtime injects one that spawns child workflows
-   * instead. The three durable hooks below are inherited by every child the
+   * instead. The durable hooks below are inherited by every child the
    * spawner constructs.
    */
   subagentSpawner: SubagentSpawner;
@@ -255,6 +263,8 @@ export type ToolContext = {
    * `pensar-managed` inbox). Unset → the config-driven factory.
    */
   emailAdapterFor?: EmailAdapterResolver;
+
+  toolExecutionContext?: AgentHooks["toolExecutionContext"];
 
   /** Provider middleware inherited by spawned children. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];

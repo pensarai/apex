@@ -21,6 +21,7 @@ import type {
   CacheMetrics,
   InferenceRecorder,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
@@ -105,7 +106,10 @@ export type Finding = Omit<
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 /** Agent operating mode that controls which tools are available. */
-export type AgentMode = "default" | "plan" | "fast-strike";
+export type AgentMode = "default" | "plan" | "fast-strike" | "lance";
+
+/** Selects Apex's native finding judge or a caller-owned evaluation boundary. */
+export type FindingPolicy = "native" | "external";
 
 /** Structured authorization envelope for a multi-application System pentest. */
 export type SystemPentestScope = {
@@ -134,7 +138,18 @@ export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
  * re-declaring the fields, so a specialized agent can no longer drop a hook
  * by forgetting to list it in a hand-written constructor.
  */
+export interface ToolExecutionContext {
+  run<T>(
+    call: { toolCallId: string; toolName: string },
+    execute: () => Promise<T>,
+  ): Promise<T>;
+}
+
 export interface AgentHooks {
+  /** External grading omits Apex's finding tool and leaves acceptance to the caller. */
+  findingPolicy?: FindingPolicy;
+
+  toolExecutionContext?: ToolExecutionContext;
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
 
@@ -204,6 +219,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * @default "default"
    */
   mode?: AgentMode;
+  lance?: import("../lance").LanceOptions;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -351,11 +367,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    *
    * Receives the completed `StreamTextResult` — at this point all lazy
    * properties (`.steps`, `.text`, `.response`, etc.) are resolved.
+   * When the response tool executes, the optional second argument is its
+   * schema-validated result. It is absent if no response was submitted.
    *
    * If omitted, `consume()` returns `void`.
    */
   resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
+    validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
   /** The subagent ID if this agent is a subagent */
@@ -463,6 +482,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
@@ -595,6 +615,7 @@ export interface SpecializedAgentInput extends AgentHooks {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for

@@ -20,18 +20,14 @@ interface ModelPickerDialogProps {
 export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
   const { colors } = useTheme();
   const config = useConfig();
-  const {
-    model,
-    setModel,
-    isModelUserSelected,
-    reasoningEnabled,
-    setReasoningEnabled,
-    openAIReasoningEffort,
-    setOpenAIReasoningEffort,
-  } = useAgent();
+  const { model, setModel, isModelUserSelected, reasoning, setReasoning } =
+    useAgent();
 
   const footerActions: FooterAction[] = [
-    { key: "Enter", label: "confirm", variant: "primary" },
+    { key: "Enter", label: "select / confirm", variant: "primary" },
+    ...(reasoning !== undefined
+      ? [{ key: "←/→", label: "change reasoning" }]
+      : []),
   ];
 
   const title = (
@@ -63,10 +59,8 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
             onConfigUpdate={config.update}
             focused={true}
             isModelUserSelected={isModelUserSelected}
-            reasoningEnabled={reasoningEnabled}
-            onReasoningToggle={setReasoningEnabled}
-            openAIReasoningEffort={openAIReasoningEffort}
-            onOpenAIReasoningEffortChange={setOpenAIReasoningEffort}
+            reasoning={reasoning}
+            onReasoningChange={setReasoning}
           />
         </box>
       </DialogLayout>

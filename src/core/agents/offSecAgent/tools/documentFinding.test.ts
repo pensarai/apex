@@ -1067,8 +1067,13 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
     ).toBe(outcome === "accepted");
   });
 
-  it("keeps sandbox artifacts POSIX even when host join uses Windows separators", async () => {
+  it.each([
+    undefined,
+    "/workspace/repo/endpoints/endpoint-a",
+  ])("keeps sandbox artifacts in the configured POSIX root %s", async (remoteFileWorkspaceRoot) => {
     const base = makeToolContext(rootPath);
+    base.session.config = { ...base.session.config, remoteFileWorkspaceRoot };
+    const artifactsRoot = `${remoteFileWorkspaceRoot ?? "/workspace/repo"}/.pensar`;
     const local = LocalBackends(base);
     const writes: string[] = [];
     const ctx = {
@@ -1106,15 +1111,15 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
       { toolCallId: "remote", messages: [] },
     );
     expect(result).toMatchObject({ success: true });
-    expect(writes).toContain("/workspace/repo/.pensar/pocs/poc_admin_data.sh");
+    expect(writes).toContain(`${artifactsRoot}/pocs/poc_admin_data.sh`);
     expect(
       writes.some(
         (path) =>
-          path.startsWith("/workspace/repo/.pensar/findings/") &&
+          path.startsWith(`${artifactsRoot}/findings/`) &&
           path.endsWith(".json"),
       ),
     ).toBe(true);
-    expect(writes).toContain("/workspace/repo/.pensar/findings-summary.md");
+    expect(writes).toContain(`${artifactsRoot}/findings-summary.md`);
     expect(writes.every((path) => !path.includes("\\"))).toBe(true);
   });
 

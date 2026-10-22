@@ -13,7 +13,7 @@ import type { SubagentSpawner } from "./offSecAgent/subagentSpawner";
 import type { EmailAdapterResolver } from "./offSecAgent/tools/email/adapters";
 import type { UnifiedSandbox } from "./offSecAgent/tools/sandbox";
 import type { SmsInbox } from "./offSecAgent/tools/smsInbox";
-import type { StreamIdFactory } from "./offSecAgent/types";
+import type { FindingPolicy, StreamIdFactory } from "./offSecAgent/types";
 
 /**
  * {@link AgentHooks} with every key required (value types keep their
@@ -23,6 +23,8 @@ import type { StreamIdFactory } from "./offSecAgent/types";
  * "dropping a hook is a type error".
  */
 export interface RequiredAgentHooks {
+  findingPolicy: FindingPolicy | undefined;
+  toolExecutionContext: AgentHooks["toolExecutionContext"];
   backends: ToolBackends | undefined;
   subagentSpawner: SubagentSpawner | undefined;
   languageModelMiddleware:
@@ -51,6 +53,8 @@ export interface RequiredAgentHooks {
  */
 export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
   return {
+    findingPolicy: opts.findingPolicy,
+    toolExecutionContext: opts.toolExecutionContext,
     backends: opts.backends,
     subagentSpawner: opts.subagentSpawner,
     languageModelMiddleware: opts.languageModelMiddleware,
@@ -101,7 +105,8 @@ export class AgentRuntime<
         definition.extraTools?.(opts, state),
       ),
       resolveResult: resolveResult
-        ? (streamResult) => resolveResult(opts, state, streamResult)
+        ? (streamResult, validatedResponse) =>
+            resolveResult(opts, state, streamResult, validatedResponse)
         : undefined,
       target: definition.target?.(opts, state) ?? opts.target,
       grpc: definition.grpc?.(opts, state) ?? opts.grpc,

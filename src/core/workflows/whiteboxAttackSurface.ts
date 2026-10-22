@@ -15,7 +15,9 @@ import { z } from "zod";
 import type { AgentHooks } from "../agents/offSecAgent";
 import {
   inProcessSubagentSpawner,
+  type SpawnOptions,
   type SubagentSpawner,
+  spawnBatch,
 } from "../agents/offSecAgent/subagentSpawner";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
@@ -42,6 +44,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
@@ -143,6 +146,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
   enableThinking?: boolean;
   /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
@@ -195,7 +199,7 @@ interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
  * Explicit, serializable-by-the-caller input for {@link runWhiteboxAttackSurfaceApp}
  * — everything one app's Phase-2 worker reads, with no reads of
  * `runWhiteboxAttackSurfaceWorkflow`'s own local scope. A durable caller
- * rebuilds `hooks`, `seams`, `mintChildId` and `agentLimiter` on its own side
+ * rebuilds `hooks`, `seams` and `mintChildId` on its own side
  * and runs the app as a separate child workflow.
  */
 export interface WhiteboxAttackSurfaceAppInput {
@@ -209,6 +213,7 @@ export interface WhiteboxAttackSurfaceAppInput {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   projectThreatModel?: string;
@@ -220,8 +225,8 @@ export interface WhiteboxAttackSurfaceAppInput {
   umbrellaId: string;
   /** Mints IDs for discovery and per-endpoint documentation children. */
   mintChildId: (name: string) => string;
-  /** Bounds total concurrent CodeAgents across the whole workflow (Phase 1 + every app). */
-  agentLimiter: AgentConcurrencyLimiter;
+  /** In-process shared gate; durable spawners enforce their own batch concurrency. */
+  agentLimiter?: AgentConcurrencyLimiter;
   /** Fan-out spawner forwarded to `runAppEndpointDocumentation`'s own per-endpoint fan-out. */
   subagentSpawner?: SubagentSpawner;
   hooks: AgentHooks;
@@ -251,6 +256,7 @@ export async function runWhiteboxAttackSurfaceApp(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -272,92 +278,105 @@ export async function runWhiteboxAttackSurfaceApp(
   const hooksForApp = resolveItemHooks(sharedHooks, seams, app, appIndex);
   let failed = false;
 
-  const spawnDiscoveryAgent = async (
+  const discoveryRequest = (
     type: DiscoveryTaskType,
     objective: string,
-  ): Promise<void> => {
+  ): SpawnOptions<DiscoverySummary> => {
     const subagentId = mintChildId(TASK_TYPE_LABELS[type]);
 
     log.debug(
       `Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
     );
 
-    const spawner = subagentSpawner ?? inProcessSubagentSpawner;
+    return {
+      spec: {
+        type: "code",
+        codebasePath,
+        objective,
+        system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+        excludeTools: ["document_app"],
+        responseSchema: DiscoverySummarySchema,
+        projectThreatModel,
+        attackSurfaceRegistry,
+      },
+      runtime: {
+        findingPolicy: hooksForApp.findingPolicy,
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        enableThinking,
+        thinkingEffort,
+        openAIReasoningEffort,
+        reasoning,
+        onStepFinish,
+        onCacheMetrics,
+        backends: hooksForApp.backends,
+        sandbox: hooksForApp.sandbox,
+        languageModelMiddleware: hooksForApp.languageModelMiddleware,
+        usageRecorder: hooksForApp.usageRecorder,
+        toolExecutionContext: hooksForApp.toolExecutionContext,
+        streamIdFactory: hooksForApp.streamIdFactory,
+      },
+      subagentId,
+      subagentName: TASK_TYPE_LABELS[type],
+      parentBus: eventBus,
+      parentSubagentId: appNodeId,
+      lifecycleInput: { app: app.name, type },
+    };
+  };
 
-    try {
-      await agentLimiter(() =>
-        spawner.spawn<DiscoverySummary>({
-          spec: {
-            type: "code",
-            codebasePath,
-            objective,
-            system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-            excludeTools: ["document_app"],
-            responseSchema: DiscoverySummarySchema,
-            projectThreatModel,
-            attackSurfaceRegistry,
-          },
-          runtime: {
-            model,
-            session,
-            authConfig,
-            abortSignal,
-            enableThinking,
-            thinkingEffort,
-            openAIReasoningEffort,
-            onStepFinish,
-            onCacheMetrics,
-            backends: hooksForApp.backends,
-            sandbox: hooksForApp.sandbox,
-            languageModelMiddleware: hooksForApp.languageModelMiddleware,
-            usageRecorder: hooksForApp.usageRecorder,
-            streamIdFactory: hooksForApp.streamIdFactory,
-          },
-          subagentId,
-          subagentName: TASK_TYPE_LABELS[type],
-          parentBus: eventBus,
-          parentSubagentId: appNodeId,
-          lifecycleInput: { app: app.name, type },
-        }),
-      );
-
-      log.debug(`Phase 2: agent "${subagentId}" completed`);
-    } catch (error) {
-      log.error(
-        `Phase 2: agent "${subagentId}" FAILED`,
-        error instanceof Error ? error : undefined,
-        { error: String(error) },
-      );
-
-      failed = true;
+  const spawnDiscoveryAgents = async (
+    requests: SpawnOptions<DiscoverySummary>[],
+  ) => {
+    const results = await spawnBatch(
+      subagentSpawner ?? inProcessSubagentSpawner,
+      requests,
+      {
+        concurrency: requests.length,
+        abortSignal,
+      },
+      agentLimiter,
+    );
+    for (const [index, result] of results.entries()) {
+      const subagentId = requests[index]!.subagentId;
+      if (result.status === "rejected") {
+        failed = true;
+        log.error(
+          `Phase 2: agent "${subagentId}" FAILED`,
+          result.reason instanceof Error ? result.reason : undefined,
+          { error: String(result.reason) },
+        );
+      } else {
+        log.debug(`Phase 2: agent "${subagentId}" completed`);
+      }
     }
   };
 
-  const spawnPagesAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "pages",
-      buildPagesDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnApiEndpointsAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "apiEndpoints",
-      buildApiEndpointsDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnCloudResourceAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "cloudResourceEndpoints",
-      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
-    );
+  const discoverPagesAndApi = () =>
+    spawnDiscoveryAgents([
+      discoveryRequest(
+        "pages",
+        buildPagesDiscoveryObjective(codebasePath, app),
+      ),
+      discoveryRequest(
+        "apiEndpoints",
+        buildApiEndpointsDiscoveryObjective(codebasePath, app),
+      ),
+    ]);
 
   try {
     if (NON_SERVICE_TYPES.includes(app.type)) {
       // Cloud resources: surface doesn't enumerate these — always fallback.
-      await spawnCloudResourceAgent();
+      await spawnDiscoveryAgents([
+        discoveryRequest(
+          "cloudResourceEndpoints",
+          buildCloudResourceEndpointsObjective(codebasePath, app, environments),
+        ),
+      ]);
     } else if (!surfaceIntegrationEnabled) {
       log.debug(`${app.name}: legacy (surfaceIntegrationEnabled=false)`);
-      await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+      await discoverPagesAndApi();
     } else {
       const surfaceResult = mapAppWithSurface(
         join(codebasePath, app.location),
@@ -383,6 +402,7 @@ export async function runWhiteboxAttackSurfaceApp(
           onStepFinish,
           onCacheMetrics,
           openAIReasoningEffort,
+          reasoning,
           enableThinking,
           thinkingEffort,
           projectThreatModel,
@@ -394,11 +414,16 @@ export async function runWhiteboxAttackSurfaceApp(
         });
       } else {
         log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
-        await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+        await discoverPagesAndApi();
       }
     }
-  } catch {
+  } catch (error) {
     failed = true;
+    log.error(
+      `Phase 2: app "${app.name}" FAILED`,
+      error instanceof Error ? error : undefined,
+      { error: String(error), app: app.name },
+    );
   }
 
   eventBus?.emit("subagent-complete", {
@@ -444,6 +469,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     domains,
@@ -522,6 +548,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     responseSchema: input.incremental
@@ -671,6 +698,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -1403,6 +1431,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
+    reasoning: input.reasoning,
     enableThinking: input.enableThinking,
     thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,

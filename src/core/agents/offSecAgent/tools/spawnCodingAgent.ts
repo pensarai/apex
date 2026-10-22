@@ -1,11 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { getModelSettings } from "../../../ai";
 import type { AssetRecord } from "../../../findings/attackSurfaceRegistry";
 import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
 } from "../../../whitebox";
-import type { SubagentSpawner } from "../subagentSpawner";
+import { type SpawnOptions, spawnBatch } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */
@@ -100,49 +101,46 @@ Returns an array of results with the text output from each agent.`,
 
       const spawner = ctx.subagentSpawner;
 
-      // Bounded fan-out via the spawner so each sub-agent inherits the OTel
-      // context. Errors are caught per task and returned inline, so results
-      // never contain null.
-      const settled = await spawner.spawnMany(
-        validatedTasks,
-        async (item, i) => {
-          try {
-            const output = await runSingleCodingAgent(
-              ctx,
-              spawner,
-              item.codebasePath,
-              item.objective,
-              i + 1,
-              item.name,
-              toolCallId,
-            );
-            return {
-              codebasePath: item.codebasePath,
-              objective: item.objective,
-              output,
-            };
-          } catch (err) {
-            return {
-              codebasePath: item.codebasePath,
-              objective: item.objective,
-              output: "",
-              error: err instanceof Error ? err.message : String(err),
-            };
-          }
-        },
+      const textOutputs = validatedTasks.map(() => "");
+      const settled = await spawnBatch(
+        spawner,
+        validatedTasks.map((item, index) =>
+          codingSpawnOptions(
+            ctx,
+            item.codebasePath,
+            item.objective,
+            item.name,
+            toolCallId,
+            (text) => {
+              textOutputs[index] += text;
+            },
+          ),
+        ),
         { concurrency: DEFAULT_CONCURRENCY },
       );
-
-      const results = settled.filter(
-        (
-          r,
-        ): r is {
-          codebasePath: string;
-          objective: string;
-          output: string;
-          error?: string;
-        } => r !== null,
-      );
+      const results = [];
+      for (const [index, item] of validatedTasks.entries()) {
+        const result = settled[index]!;
+        try {
+          if (result.status === "rejected") throw result.reason;
+          if (result.value?.surface?.length && ctx.attackSurfaceRegistry) {
+            for (const asset of result.value.surface) {
+              await ctx.attackSurfaceRegistry.register(asset);
+            }
+          }
+          results.push({
+            ...item,
+            output: result.value?.text ?? textOutputs[index]!,
+            error: undefined,
+          });
+        } catch (error) {
+          results.push({
+            ...item,
+            output: "",
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
       const failedTasks = results.filter((r) => r.error);
 
@@ -165,7 +163,7 @@ Returns an array of results with the text output from each agent.`,
 }
 
 // ---------------------------------------------------------------------------
-// Internal: run a single CodeAgent
+// Child request
 // ---------------------------------------------------------------------------
 
 /** The slice of a durable CodeAgent child's returned value the parent folds. */
@@ -174,33 +172,28 @@ interface CodingChildResult {
   text?: string;
 }
 
-async function runSingleCodingAgent(
+function codingSpawnOptions(
   ctx: ToolContext,
-  spawner: SubagentSpawner,
   codebasePath: string,
   objective: string,
-  _agentIndex: number,
   name: string,
   parentToolCallId: string,
-): Promise<string> {
-  let textOutput = "";
-
-  const result = await spawner.spawn<CodingChildResult | undefined>({
+  onText: (text: string) => void,
+): SpawnOptions<CodingChildResult | undefined> {
+  return {
     spec: { type: "code", codebasePath, objective },
     runtime: {
+      findingPolicy: ctx.findingPolicy,
       session: ctx.session,
-      model: ctx.model!,
-      authConfig: ctx.authConfig,
+      ...getModelSettings(ctx),
       abortSignal: ctx.abortSignal,
       sandbox: ctx.sandbox,
       backends: ctx.backends,
       environmentVariables: ctx.environmentVariables,
       secretValues: ctx.secretValues,
-      enableThinking: ctx.enableThinking,
-      thinkingEffort: ctx.thinkingEffort,
-      openAIReasoningEffort: ctx.openAIReasoningEffort,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
+      toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
     },
     parentBus: ctx.eventBus,
@@ -212,18 +205,8 @@ async function runSingleCodingAgent(
     stampChildSessionId: true,
     beforeConsume: (childBus) => {
       childBus.on("text-delta", (d) => {
-        textOutput += d.text;
+        onText(d.text);
       });
     },
-  });
-
-  // Durable children return their surface by value (in-process children return
-  // void); fold it into the parent registry so dedup-in-parent closes.
-  if (result?.surface?.length && ctx.attackSurfaceRegistry) {
-    for (const asset of result.surface) {
-      await ctx.attackSurfaceRegistry.register(asset);
-    }
-  }
-
-  return result?.text ?? textOutput;
+  };
 }

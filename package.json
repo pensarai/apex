@@ -329,6 +329,7 @@
     "format:check": "biome check && prettier --check \"**/*.{md,yml,yaml}\"",
     "generate:ascii": "bun run scripts/generate-ascii-art.ts",
     "generate:models": "bun run scripts/generate-models.ts",
+    "generate:reasoning": "bun run scripts/sync-reasoning-capabilities.ts",
     "knip": "knip",
     "lint": "biome lint src/",
     "lint:fix": "biome lint --write src/",
@@ -344,5 +345,5 @@
     "tsc": "tsc --noEmit"
   },
   "type": "module",
-  "version": "2.6.1"
+  "version": "2.7.0"
 }

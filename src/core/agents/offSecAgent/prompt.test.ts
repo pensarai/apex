@@ -70,3 +70,49 @@ describe("buildBaseSystemPrompt workspace management", () => {
     );
   });
 });
+
+describe("external finding policy prompts", () => {
+  const session = {
+    rootPath: "/tmp/apex-external-prompt",
+    findingsPath: "/tmp/apex-external-prompt/findings",
+    pocsPath: "/tmp/apex-external-prompt/pocs",
+    scratchpadPath: "/tmp/apex-external-prompt/scratchpad",
+    logsPath: "/tmp/apex-external-prompt/logs",
+  };
+
+  it("keeps exploration guidance without directing an unavailable finding tool", () => {
+    const prompt = buildBaseSystemPrompt({ findingPolicy: "external" });
+    expect(prompt).toContain("Source code analysis");
+    expect(prompt).toContain("caller grades them after the run");
+    expect(prompt).not.toContain("document_vulnerability");
+    expect(prompt).not.toContain("published PoCs");
+  });
+
+  it.each([
+    [session.rootPath, undefined],
+    ["/project", undefined],
+    ["/project", "/tmp/apex-external-prompt/helpers"],
+  ])("uses the caller's finding contract for cwd %s", (cwd, fileWorkspaceRoot) => {
+    const prompt = buildSessionWorkspaceSection(
+      session,
+      cwd,
+      ["execute_command", "read_file"],
+      fileWorkspaceRoot,
+      "external",
+    );
+    expect(prompt).toContain("caller's output contract");
+    expect(prompt).not.toContain("document_vulnerability");
+  });
+
+  it("keeps source guidance policy-safe even when tool names are not supplied", () => {
+    const prompt = buildSessionWorkspaceSection(
+      { ...session, config: { codebasePath: "/project" } },
+      "/project",
+      undefined,
+      undefined,
+      "external",
+    );
+    expect(prompt).toContain("Source Code Assessment");
+    expect(prompt).not.toContain("document_vulnerability");
+  });
+});
