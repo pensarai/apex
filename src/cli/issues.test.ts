@@ -29,7 +29,7 @@ async function captureRequest(args: string[]) {
       request = {
         method: req.method,
         url: req.url,
-        body: JSON.parse(Buffer.concat(chunks).toString("utf-8")),
+        body: JSON.parse(Buffer.concat(chunks).toString("utf-8") || "{}"),
       };
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true, issue: {} }));
@@ -86,6 +86,22 @@ describe("pensar issues CLI", () => {
     expect(status).toBe(0);
     expect(stdout).toContain("pensar issues — Manage security issues");
     expect(stderr).toBe("");
+  });
+
+  it.each([
+    "VULN-000123",
+    "11111111-1111-4111-8111-111111111111",
+  ])("launches a retest for %s through the existing API", async (issueId) => {
+    const request = await captureRequest(["retest", issueId]);
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe(`/issues/${issueId}/retest`);
+    expect(request.body).toEqual({});
+  });
+
+  it("requires an issue ID to launch a retest", () => {
+    const { status, stderr } = runIssues(["retest"]);
+    expect(status).toBe(1);
+    expect(stderr).toContain("Usage: pensar issues retest <issueId>");
   });
 
   it("documents the close disposition on update", () => {
