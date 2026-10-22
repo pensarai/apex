@@ -148,10 +148,10 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe(
-          "Base URL / domain this application is associated with. Only provide this if you can deterministically derive it from evidence — source code, IaC, config, Known Domains list, or live discovery. " +
+          "Base URL / domain this application is associated with. Use only URLs deterministically derived from evidence — source code, IaC, config, Known Domains list, or live discovery. During live recon with an HTTP(S) target, this is required for web_application, api, and full_stack apps; use the specific discovered host, not the primary target by default. Outside live recon, omit this field if no domain can be derived. " +
             // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${stage} shown to the model as example prompt text
             "Substituting a known environment/stage name into an IaC template IS deterministic (e.g. IaC defines '${stage}-bucket' and environments include 'production' → 'https://production-bucket.s3.amazonaws.com' is valid). " +
-            "Do NOT invent domains with no supporting evidence — if no domain can be derived, omit this field. " +
+            "Do NOT invent domains with no supporting evidence. " +
             "Must be a full URL with scheme when provided. " +
             "For web apps/APIs: the public URL (e.g., 'https://api.example.com'). " +
             "For S3 buckets: 'https://{ACTUAL-BUCKET-NAME}.s3.amazonaws.com' — you MUST include the real bucket name from IaC, NOT 'https://s3.amazonaws.com'. " +
@@ -169,16 +169,32 @@ Each application creates a JSON file in the apps directory for tracking and anal
         ),
     }),
     execute: async (input) => {
+      const targetOrigin = ctx.target
+        ? validateDomainUrl(ctx.target).origin
+        : null;
+      if (
+        !input.domain &&
+        targetOrigin &&
+        ["web_application", "api", "full_stack"].includes(input.appType)
+      ) {
+        return {
+          success: false,
+          error: "missing_domain",
+          message: `domain is required for ${input.appType} apps during live recon. Use "${targetOrigin}" if this is the primary target app, otherwise the subdomain/host URL you found it on.`,
+        };
+      }
+
       if (input.domain) {
         const domainCheck = validateDomainUrl(input.domain);
-        if (!domainCheck.valid) {
+        if (!domainCheck.valid || !domainCheck.origin) {
           return {
             success: false,
             error: "invalid_domain",
-            message: domainCheck.error!,
+            message:
+              domainCheck.error ?? "Domain must be a full URL with scheme.",
           };
         }
-        input = { ...input, domain: domainCheck.origin! };
+        input = { ...input, domain: domainCheck.origin };
       }
 
       if (!ctx.attackSurfaceArtifactsPath && !existsSync(baseAppsPath)) {
