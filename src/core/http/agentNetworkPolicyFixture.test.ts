@@ -9,10 +9,9 @@ describe("agent network policy fixture compatibility", () => {
     );
 
     for (const testCase of fixture.scopeCases) {
-      expect(
-        isHostInScope(testCase.host, allowedHosts),
-        testCase.host,
-      ).toBe(testCase.allowed);
+      expect(isHostInScope(testCase.host, allowedHosts), testCase.host).toBe(
+        testCase.allowed,
+      );
     }
   });
 
