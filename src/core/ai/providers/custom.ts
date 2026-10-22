@@ -41,7 +41,9 @@ export function createCustomModel(
                 ...params.providerOptions?.openai,
                 // Unlisted model IDs need this to send reasoning.effort.
                 forceReasoning: true,
-                reasoningEffort: model.reasoningEffort,
+                reasoningEffort:
+                  params.providerOptions?.openai?.reasoningEffort ??
+                  model.reasoningEffort,
               },
             },
           }),

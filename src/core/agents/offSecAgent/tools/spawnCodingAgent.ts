@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { getModelSettings } from "../../../ai";
 import type { AssetRecord } from "../../../findings/attackSurfaceRegistry";
 import {
   resolvePathWithinCodebaseRoot,
@@ -184,16 +185,12 @@ function codingSpawnOptions(
     runtime: {
       findingPolicy: ctx.findingPolicy,
       session: ctx.session,
-      model: ctx.model!,
-      authConfig: ctx.authConfig,
+      ...getModelSettings(ctx),
       abortSignal: ctx.abortSignal,
       sandbox: ctx.sandbox,
       backends: ctx.backends,
       environmentVariables: ctx.environmentVariables,
       secretValues: ctx.secretValues,
-      enableThinking: ctx.enableThinking,
-      thinkingEffort: ctx.thinkingEffort,
-      openAIReasoningEffort: ctx.openAIReasoningEffort,
       languageModelMiddleware: ctx.languageModelMiddleware,
       usageRecorder: ctx.usageRecorder,
       toolExecutionContext: ctx.toolExecutionContext,

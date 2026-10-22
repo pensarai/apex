@@ -208,7 +208,7 @@ function NormalInputAreaInner({
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
 >) {
   const { colors, theme, mode: colorMode } = useTheme();
-  const { model } = useAgent();
+  const { model, reasoning } = useAgent();
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
@@ -296,7 +296,7 @@ function NormalInputAreaInner({
       {mode === "operator" && operatorMode && (
         <OperatorModeBar
           operatorMode={operatorMode}
-          modelName={model.name}
+          modelName={reasoning ? `${model.name} · ${reasoning}` : model.name}
           providerName={providerDisplayName(model.provider)}
         />
       )}

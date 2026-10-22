@@ -1,0 +1,219 @@
+{
+  "source": "https://openrouter.ai/api/v1/models",
+  "reviewedAt": "2026-10-21",
+  "models": {
+    "anthropic/claude-haiku-5.5": {
+      "mandatory": false,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low", "none"],
+      "default_effort": "medium"
+    },
+    "anthropic/claude-sonnet-5.5": {
+      "mandatory": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low"],
+      "default_effort": "high"
+    },
+    "anthropic/claude-opus-5.5": {
+      "mandatory": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low"],
+      "default_effort": "high"
+    },
+    "anthropic/claude-fable-5.1": {
+      "mandatory": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low"],
+      "default_effort": "high"
+    },
+    "anthropic/claude-opus-5": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low", "none"],
+      "default_effort": "high"
+    },
+    "anthropic/claude-sonnet-5": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low", "none"],
+      "default_effort": "high"
+    },
+    "anthropic/claude-fable-5": {
+      "mandatory": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low"],
+      "default_effort": "high"
+    },
+    "openai/gpt-6.1-sol": {
+      "mandatory": true,
+      "default_enabled": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low"],
+      "default_effort": "medium"
+    },
+    "openai/gpt-6-luna": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low", "none"],
+      "default_effort": "medium"
+    },
+    "openai/gpt-6-sol": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low", "none"],
+      "default_effort": "medium"
+    },
+    "openai/gpt-6-astra": {
+      "mandatory": true,
+      "default_enabled": true,
+      "supported_efforts": ["max", "xhigh", "high", "medium", "low"],
+      "default_effort": "medium"
+    },
+    "openai/gpt-5.5-pro": {
+      "mandatory": true,
+      "supported_efforts": ["xhigh", "high", "medium"],
+      "default_effort": "medium"
+    },
+    "openai/gpt-5.4-nano": {
+      "mandatory": false,
+      "default_enabled": false,
+      "supported_efforts": ["xhigh", "high", "medium", "low", "none"],
+      "default_effort": "medium"
+    },
+    "openai/gpt-5.4-mini": {
+      "mandatory": false,
+      "default_enabled": false,
+      "supported_efforts": ["xhigh", "high", "medium", "low", "none"],
+      "default_effort": "medium"
+    },
+    "anthropic/claude-haiku-4.5": {
+      "mandatory": false
+    },
+    "anthropic/claude-sonnet-4.5": {
+      "mandatory": false
+    },
+    "anthropic/claude-sonnet-4": null,
+    "anthropic/claude-opus-4": null,
+    "anthropic/claude-opus-4.6": {
+      "mandatory": false,
+      "default_enabled": false,
+      "supported_efforts": ["max", "high", "medium", "low", "none"],
+      "default_effort": "high",
+      "supports_max_tokens": true
+    },
+    "anthropic/claude-opus-4.5": {
+      "mandatory": false
+    },
+    "anthropic/claude-3.5-sonnet": null,
+    "openai/gpt-4o": null,
+    "openai/gpt-4o-mini": null,
+    "openai/o1": {
+      "mandatory": true
+    },
+    "google/gemini-2.0-flash-exp:free": null,
+    "google/gemini-2.0-flash-thinking-exp:free": null,
+    "google/gemini-pro-1.5": null,
+    "google/gemini-3-pro-preview": null,
+    "meta-llama/llama-3.3-70b-instruct": null,
+    "meta-llama/llama-3.1-405b-instruct": null,
+    "deepseek/deepseek-v4.1-flash-1017": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "high", "low", "none"],
+      "default_effort": "high"
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "high", "low", "none"],
+      "default_effort": "high"
+    },
+    "deepseek/deepseek-v4-pro-0813": {
+      "mandatory": false,
+      "supported_efforts": ["max", "high", "low", "none"],
+      "default_effort": "high"
+    },
+    "deepseek/deepseek-chat": null,
+    "deepseek/deepseek-r1": null,
+    "mistralai/mistral-large-2512": null,
+    "moonshotai/kimi-k2-thinking": {
+      "mandatory": true,
+      "default_enabled": true
+    },
+    "moonshotai/kimi-k2.7-code": {
+      "mandatory": true,
+      "default_enabled": true
+    },
+    "moonshotai/kimi-k3": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "high", "low", "none"],
+      "default_effort": "max"
+    },
+    "moonshot/kimi-k2-turbo": null,
+    "moonshot/kimi-k2-chat": null,
+    "minimax/minimax-m2": {
+      "mandatory": true
+    },
+    "minimax/minimax-m3": {
+      "mandatory": false
+    },
+    "poolside/laguna-s-2.1": {
+      "mandatory": false,
+      "default_enabled": true
+    },
+    "qwen/qwen3.8-max-0902": {
+      "mandatory": true,
+      "default_enabled": true,
+      "supported_efforts": ["xhigh", "high", "medium", "low", "minimal"],
+      "default_effort": "xhigh"
+    },
+    "qwen/qwen3.8-27b": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["xhigh", "medium", "low", "none"],
+      "default_effort": "xhigh"
+    },
+    "qwen/qwen3.8-flash": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supports_max_tokens": true
+    },
+    "qwen/qwen3-8b": null,
+    "qwen/qwen3-14b": {
+      "mandatory": false
+    },
+    "qwen/qwen3-32b": {
+      "mandatory": false
+    },
+    "qwen/qwen3-30b-a3b-thinking-2507": null,
+    "nvidia/nemotron-3-nano-30b-a3b:free": null,
+    "nvidia/nemotron-3-nano-30b-a3b": {
+      "mandatory": false
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["high", "medium", "none"],
+      "default_effort": "high",
+      "supports_max_tokens": true
+    },
+    "arcee-ai/trinity-mini:free": null,
+    "arcee-ai/trinity-mini": null,
+    "x-ai/grok-4.1-fast:free": null,
+    "x-ai/grok-code-fast-1": null,
+    "xiaomi/mimo-v2.6-pro": {
+      "mandatory": false
+    },
+    "z-ai/glm-4.7-flash": {
+      "mandatory": false,
+      "default_enabled": true
+    },
+    "z-ai/glm-5.2": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["xhigh", "high", "none"],
+      "default_effort": "high"
+    },
+    "z-ai/glm-5.3": {
+      "mandatory": true,
+      "default_enabled": true,
+      "supported_efforts": ["max", "high", "low"],
+      "default_effort": "max"
+    }
+  }
+}
