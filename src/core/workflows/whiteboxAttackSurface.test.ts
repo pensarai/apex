@@ -18,11 +18,24 @@ import {
 } from "./seams";
 
 const mocks = vi.hoisted(() => ({
+  errorLog: vi.fn(),
   codeAgentInputs: [] as Array<Record<string, unknown>>,
   consumeImpl: null as
     | ((input: Record<string, unknown>) => Promise<unknown>)
     | null,
 }));
+
+vi.mock("../logger/structured", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../logger/structured")>();
+  return {
+    ...actual,
+    createLogger: (...args: Parameters<typeof actual.createLogger>) => {
+      const logger = actual.createLogger(...args);
+      logger.error = mocks.errorLog;
+      return logger;
+    },
+  };
+});
 
 vi.mock("../agents/specialized/codeAgent/agent", () => ({
   CodeAgent: class {
@@ -308,6 +321,33 @@ describe("runWhiteboxAttackSurfaceApp — standalone, no runWhiteboxAttackSurfac
     expect(mocks.codeAgentInputs).toHaveLength(2);
     expect(mocks.codeAgentInputs[0]?.backends).toBe(backends);
     expect(mocks.codeAgentInputs[1]?.backends).toBe(backends);
+  });
+
+  it("logs the original batch admission error while preserving the failure result", async () => {
+    const failure = new Error("batch admission failed");
+    const failed = await runWhiteboxAttackSurfaceApp(app, 0, {
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      surfaceIntegrationEnabled: false,
+      isSingleAppRepo: true,
+      umbrellaId: "umbrella",
+      mintChildId: (name) => name,
+      hooks: {},
+      subagentSpawner: {
+        ...codeSpawner,
+        spawnBatch: async () => {
+          throw failure;
+        },
+      },
+      seams: inProcessSeams(),
+    });
+    expect(failed).toBe(true);
+    expect(mocks.errorLog).toHaveBeenCalledWith(
+      'Phase 2: app "web" FAILED',
+      failure,
+      { error: String(failure), app: "web" },
+    );
   });
 
   it("reports failure when a discovery agent throws, without throwing itself", async () => {
