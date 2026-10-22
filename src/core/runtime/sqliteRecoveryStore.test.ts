@@ -268,8 +268,11 @@ describe("per-run execution lock", () => {
 import { acquireLocalRunLock } from ${JSON.stringify(join(import.meta.dirname, "localRunLock.ts"))};
 const [dbPath, runId] = process.argv.slice(2);
 const lock = await acquireLocalRunLock(runId, dbPath);
+globalThis.heldLock = lock;
 console.log("held");
+// Bun 1.4+ exits after module evaluation if only an empty timer is pending.
 setInterval(() => {}, 1000);
+await new Promise<never>(() => {});
 `,
     );
 
@@ -278,18 +281,34 @@ setInterval(() => {}, 1000);
     });
     holdChildren.push(child);
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("holder produced no marker")),
-        20000,
-      );
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("holder produced no marker"));
+      }, 20000);
       child.stdout!.on("data", (chunk: Buffer) => {
+        if (settled) return;
         if (chunk.toString().includes("held")) {
+          settled = true;
           clearTimeout(timer);
           resolve();
         }
       });
-      child.on("error", reject);
+      child.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("exit", (code, signal) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(`holder exited ${code ?? signal} before holding`));
+      });
     });
+    expect(child.exitCode).toBeNull();
 
     // Live executor: acquisition refuses.
     await expect(acquireLocalRunLock("run_lock_proc", dbPath)).rejects.toThrow(
