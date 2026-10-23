@@ -7,7 +7,6 @@ import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
   type PromptInjectionLibrary,
-  type PromptInjectionRef,
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
@@ -121,10 +120,15 @@ const httpRequestInputSchema = z.object({
       'HTTP headers as a JSON-encoded object string, e.g. \'{"Content-Type": "application/json", "Authorization": "Bearer token"}\'',
     ),
   body: z
-    .union([z.string(), promptInjectionRefSchema])
+    .union([
+      z.string(),
+      promptInjectionRefSchema,
+      z.record(z.string(), z.unknown()),
+      z.array(z.unknown()),
+    ])
     .optional()
     .describe(
-      "Request body (for POST, PUT, PATCH). To use a hidden prompt-injection payload, pass a PromptInjectionRef object instead of raw payload text.",
+      "Request body (for POST, PUT, PATCH). JSON objects and arrays are serialized as JSON. Strings are sent verbatim: use a string for malformed JSON, duplicate keys, prototype-pollution payloads, or any exact-byte test. To use a hidden prompt-injection payload, pass a PromptInjectionRef object instead of raw payload text.",
     ),
   followRedirects: z
     .boolean()
@@ -152,8 +156,6 @@ const httpRequestInputSchema = z.object({
       "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')",
     ),
 });
-
-type HttpRequestBody = string | PromptInjectionRef | undefined;
 
 /**
  * Check if a value contains any PromptInjectionRef (recursively).
@@ -353,12 +355,10 @@ COMMON TESTING PATTERNS:
           : EMPTY_PROMPT_INJECTION_LIBRARY;
 
         headers = resolvePromptInjectionRefs(headers, library);
-        resolvedBody =
-          body === undefined
-            ? undefined
-            : String(
-                resolvePromptInjectionRefs(body as HttpRequestBody, library),
-              );
+        const resolved = resolvePromptInjectionRefs(body, library);
+        const isJsonBody =
+          resolved !== undefined && typeof resolved !== "string";
+        resolvedBody = isJsonBody ? JSON.stringify(resolved) : resolved;
 
         // Enforce the destructive-action guard on the fully resolved body and
         // the EFFECTIVE headers (agent-supplied + session/credential headers
@@ -371,6 +371,15 @@ COMMON TESTING PATTERNS:
           url,
           headers,
         );
+        if (
+          isJsonBody &&
+          !Object.keys(effectiveHeaders).some(
+            (name) => name.toLowerCase() === "content-type",
+          )
+        ) {
+          headers["Content-Type"] = "application/json";
+          effectiveHeaders["Content-Type"] = "application/json";
+        }
         assertHttpActionAllowed(
           { method, url, body: resolvedBody, headers: effectiveHeaders },
           ctx,
