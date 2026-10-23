@@ -20,52 +20,54 @@ jobs:
             const team = [
               'joshkotrous',
               'yuvanesh-ux',
-              'kyleryan',
+              'kylejryan',
               'jorgeraad',
             ];
 
-            const author = context.payload.pull_request.user.login;
-            const eligible = team.filter((m) => m !== author);
+            const author = context.payload.pull_request.user.login.toLowerCase();
+            const eligible = team.filter((m) => m.toLowerCase() !== author);
             if (eligible.length === 0) return;
 
-            const { data: recentPRs } = await github.rest.pulls.list({
+            // Balance on pending requests, not reviews already submitted, so
+            // clearing your queue does not earn you the next PR as well.
+            const { data: openPRs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'all',
+              state: 'open',
               sort: 'created',
               direction: 'desc',
-              per_page: 10,
+              per_page: 100,
             });
 
-            const reviewCounts = Object.fromEntries(eligible.map((m) => [m, 0]));
+            const pendingLoad = Object.fromEntries(eligible.map((m) => [m, 0]));
 
-            for (const pr of recentPRs) {
+            for (const pr of openPRs) {
               if (pr.number === context.payload.pull_request.number) continue;
-              const { data: reviews } = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: pr.number,
-              });
-              const seen = new Set();
-              for (const review of reviews) {
-                if (review.user.login in reviewCounts && !seen.has(review.user.login)) {
-                  reviewCounts[review.user.login]++;
-                  seen.add(review.user.login);
-                }
+              for (const requested of pr.requested_reviewers || []) {
+                const login = requested.login;
+                if (!login) continue;
+                const match = eligible.find((m) => m.toLowerCase() === login.toLowerCase());
+                if (match) pendingLoad[match]++;
               }
             }
 
-            core.info('Review counts: ' + JSON.stringify(reviewCounts));
+            core.info('Pending review load: ' + JSON.stringify(pendingLoad));
 
-            const reviewer = eligible.reduce((min, m) =>
-              reviewCounts[m] < reviewCounts[min] ? m : min
-            );
+            const sorted = [...eligible].sort((a, b) => pendingLoad[a] - pendingLoad[b]);
 
-            await github.rest.pulls.requestReviewers({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              reviewers: [reviewer],
-            });
+            for (const reviewer of sorted) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  reviewers: [reviewer],
+                });
+                core.info(`Assigned ${reviewer} to PR #${context.payload.pull_request.number}`);
+                return;
+              } catch (err) {
+                core.warning(`Could not request review from ${reviewer}: ${err.message}`);
+              }
+            }
 
-            core.info(`Assigned ${reviewer} to PR #${context.payload.pull_request.number}`);
+            core.warning('No eligible reviewer could be assigned');
