@@ -241,6 +241,12 @@ const SessionConfigObject = z.object({
    * `src/core/http/targetHeaders.ts`, not directly by tools.
    */
   headers: SessionHeadersRecord.optional(),
+  targetHeaderProvider: z
+    .object({
+      endpoint: z.url().refine((value) => /^https?:/.test(value)),
+      token: z.string().min(1),
+    })
+    .optional(),
   /** @deprecated Pass flat `headers` instead. Normalized at input boundaries. */
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),

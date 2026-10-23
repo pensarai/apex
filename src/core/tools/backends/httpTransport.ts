@@ -13,7 +13,10 @@ import {
   resolveRedirectUrl,
   sanitizeRedirectHeaders,
 } from "../../http/redirects";
-import { resolveEffectiveHeaders, shellQuote } from "../../http/targetHeaders";
+import {
+  resolveEffectiveHeadersAsync,
+  shellQuote,
+} from "../../http/targetHeaders";
 import { isUrlInSessionScope } from "../../http/targetScope";
 
 const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
@@ -190,7 +193,7 @@ export async function requestSandboxHttp(
     }
 
     const mergedHeaders = sanitizeRedirectHeaders(
-      resolveEffectiveHeaders(
+      await resolveEffectiveHeadersAsync(
         session,
         currentUrl,
         redirectCount === 0 || isUrlInSessionScope(currentUrl, session)

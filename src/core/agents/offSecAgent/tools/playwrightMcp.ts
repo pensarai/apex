@@ -492,10 +492,18 @@ export class PlaywrightMcpSession {
     this.headerPolicy =
       headerPolicy &&
       headerPolicy.allowedHosts.length > 0 &&
-      Object.keys(headerPolicy.headers).length > 0
+      (Object.keys(headerPolicy.headers).length > 0 ||
+        headerPolicy.targetHeaderProvider)
         ? {
             allowedHosts: [...headerPolicy.allowedHosts],
             headers: { ...headerPolicy.headers },
+            ...(headerPolicy.targetHeaderProvider
+              ? {
+                  targetHeaderProvider: {
+                    ...headerPolicy.targetHeaderProvider,
+                  },
+                }
+              : {}),
           }
         : undefined;
   }
@@ -626,6 +634,9 @@ export class PlaywrightMcpSession {
               args: ["--disable-dev-shm-usage"],
             },
             contextOptions: {
+              ...(this.headerPolicy?.targetHeaderProvider
+                ? { serviceWorkers: "block" }
+                : {}),
               ...(viewport ? { viewport } : {}),
             },
           },
@@ -657,6 +668,9 @@ export class PlaywrightMcpSession {
       cfg: {
         browser: {
           browserName: "firefox",
+          ...(this.headerPolicy?.targetHeaderProvider
+            ? { contextOptions: { serviceWorkers: "block" } }
+            : {}),
           launchOptions: {
             executablePath: camou.executablePath,
             args: camou.args,
@@ -676,16 +690,23 @@ export class PlaywrightMcpSession {
 
   private async installHeaderRoute(client: Client): Promise<void> {
     if (!this.headerPolicy) return;
-    await withTimeout(
-      client.callTool({
-        name: "browser_run_code",
-        arguments: {
-          code: browserHeaderRouteFunction(this.headerPolicy),
-        },
-      }),
-      MCP_TOOL_CALL_TIMEOUT_MS,
-      "Browser header route installation timed out",
-    );
+    try {
+      const result = await withTimeout(
+        client.callTool({
+          name: "browser_run_code",
+          arguments: {
+            code: browserHeaderRouteFunction(this.headerPolicy),
+          },
+        }),
+        MCP_TOOL_CALL_TIMEOUT_MS,
+        "Browser header route installation timed out",
+      );
+      if (result.isError)
+        throw new Error("Browser header route installation failed");
+    } catch {
+      // MCP errors can echo the generated code, including the provider token.
+      throw new Error("Browser header route installation failed");
+    }
   }
 
   /**

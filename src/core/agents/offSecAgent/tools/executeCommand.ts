@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { tool } from "ai";
 import { z } from "zod";
-import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import { applyHeadersToShellCommandAsync } from "../../../http/targetHeaders";
 import {
   getPromptInjectionLibrary,
   type PromptInjectionLibrary,
@@ -458,7 +458,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // declared platform decides whether it applies.
       const backends = resolveBackends(ctx);
       const cmdHosts = extractHostsFromCommand(command);
-      const inject = applyHeadersToShellCommand(
+      const inject = await applyHeadersToShellCommandAsync(
         command,
         resolverSessionFromCtx(ctx),
         cmdHosts,

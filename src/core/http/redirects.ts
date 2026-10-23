@@ -79,7 +79,10 @@ export function sanitizeRedirectHeaders(
 export async function fetchWithScopedRedirects(
   initialUrl: string,
   init: Omit<RequestInit, "headers">,
-  headersForUrl: (url: string, context: RedirectHeaderContext) => HeaderRecord,
+  headersForUrl: (
+    url: string,
+    context: RedirectHeaderContext,
+  ) => HeaderRecord | Promise<HeaderRecord>,
 ): Promise<RedirectFetchResult> {
   const redirectMode = init.redirect ?? "follow";
   let currentUrl = new URL(initialUrl).toString();
@@ -90,7 +93,7 @@ export async function fetchWithScopedRedirects(
 
   for (let redirectCount = 0; ; redirectCount++) {
     const headers = sanitizeRedirectHeaders(
-      headersForUrl(currentUrl, { redirectCount, bodyDropped }),
+      await headersForUrl(currentUrl, { redirectCount, bodyDropped }),
       { redirectCount, bodyDropped },
     );
     const response = await fetch(currentUrl, {
