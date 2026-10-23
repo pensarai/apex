@@ -11,7 +11,10 @@
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import type {
+  LanguageModelV3Prompt,
+  LanguageModelV3StreamPart,
+} from "@ai-sdk/provider";
 import {
   type ModelMessage,
   simulateReadableStream,
@@ -33,11 +36,13 @@ const state: {
   summaries: number;
   providerTools: Array<Array<string | undefined>>;
   generated: string[];
+  repairPrompts: LanguageModelV3Prompt[];
 } = vi.hoisted(() => ({
   model: null,
   summaries: 0,
   providerTools: [],
   generated: [],
+  repairPrompts: [],
 }));
 
 vi.mock("./utils", async () => {
@@ -139,7 +144,8 @@ function mockModel(spec: MockModelSpec): MockLanguageModelV3 {
         }),
       };
     },
-    doGenerate: async () => {
+    doGenerate: async (options) => {
+      state.repairPrompts.push(options.prompt);
       state.generated.push(spec.repairOutput ?? "{}");
       return {
         content: [{ type: "text", text: spec.repairOutput ?? "{}" }],
@@ -343,6 +349,7 @@ describe("effective toolset budgeting (real catalog, real SDK)", () => {
     state.summaries = 0;
     state.providerTools = [];
     state.generated = [];
+    state.repairPrompts = [];
   });
 
   afterEach(() => {
@@ -464,6 +471,7 @@ describe("effective toolset advertisement and execution", () => {
     state.summaries = 0;
     state.providerTools = [];
     state.generated = [];
+    state.repairPrompts = [];
   });
 
   afterEach(() => {
@@ -590,11 +598,28 @@ describe("effective toolset advertisement and execution", () => {
       }),
     );
     expect(state.generated).toEqual(['{"q":"repaired"}']);
+    const repairMessage = state.repairPrompts[0]?.find(
+      (message) => message.role === "user",
+    );
+    const repairText = repairMessage?.content.find(
+      (part) => part.type === "text",
+    );
+    expect(repairText?.type).toBe("text");
+    if (repairText?.type !== "text") throw new Error("Missing repair prompt");
+    const schemaText = repairText.text
+      .split("The tool accepts the following schema:\n")[1]
+      ?.split("\nError encountered:")[0];
+    expect(JSON.parse(schemaText ?? "null")).toMatchObject({
+      type: "object",
+      properties: { q: { type: "string" } },
+      required: ["q"],
+    });
     expect(executions.a).toBe(1);
     const repairedCall = repairedParts.find((p) => p.type === "tool-call");
     expect((repairedCall?.input as { q?: string })?.q).toBe("repaired");
 
     state.generated = [];
+    state.repairPrompts = [];
     executions.a = 0;
     state.providerTools = [];
     state.model = mockModel({

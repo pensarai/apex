@@ -2044,7 +2044,7 @@ function streamResponseWithinOperation(
             return null;
           }
 
-          const jsonSchema = inputSchema({ toolName: toolCall.toolName });
+          const jsonSchema = await inputSchema({ toolName: toolCall.toolName });
 
           // Bound input + schema so the repair call can't itself overflow.
           const rawInput = toolCall.input;
