@@ -492,7 +492,11 @@ vi.mock("./tools", () => ({
   sessionHasSmsPasswordless: () => false,
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
-  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
+  resolveBrowserHeaderPolicy: () => ({
+    allowedHosts: [],
+    allowedPorts: [],
+    headers: {},
+  }),
   CallbackListenerRegistry: class {
     async stopAll() {
       return [];

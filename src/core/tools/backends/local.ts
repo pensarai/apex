@@ -31,10 +31,13 @@ import { SandboxBrowserBackend } from "../../agents/offSecAgent/tools/sandboxPla
 import { resolverSessionFromCtx } from "../../agents/offSecAgent/tools/scopeGuard";
 import { HttpSmsInbox } from "../../agents/offSecAgent/tools/smsInbox";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
+import { postPensarWebSearch } from "../../agents/offSecAgent/tools/webSearch";
 import {
-  fetchWithScopedRedirects,
+  redirectRequest,
+  sanitizeRedirectHeaders,
   TargetRedirectError,
 } from "../../http/redirects";
+import { verifyLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
@@ -60,6 +63,7 @@ import type {
   GlobResult,
   GrepQuery,
   GrepResult,
+  HttpMethod,
   HttpOpts,
   HttpRequest,
   HttpResponse,
@@ -86,10 +90,9 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function mergeBaselineHeaders(resolved: HeaderRecord): HeaderRecord {
+function readabilityRequestHeaders(resolved: HeaderRecord): HeaderRecord {
   const present = new Set(Object.keys(resolved).map((k) => k.toLowerCase()));
-  const out: HeaderRecord = { ...resolved };
-  out["User-Agent"] = GETPAGE_USER_AGENT;
+  const out: HeaderRecord = { "User-Agent": GETPAGE_USER_AGENT };
   for (const [name, value] of Object.entries(BASELINE_FALLBACK_HEADERS)) {
     if (!present.has(name.toLowerCase())) out[name] = value;
   }
@@ -279,25 +282,28 @@ export function LocalBackends(
     },
   };
 
+  async function authorizeHttp(req: HttpRequest): Promise<void> {
+    await checkPolicy("http", "request", {
+      method: req.method ?? "GET",
+      url: req.url,
+      body: req.body,
+      headers: resolveEffectiveHeaders(
+        resolverSessionFromCtx(ctx),
+        req.url,
+        req.headers,
+      ),
+      extract: req.extract,
+      fetchToken: req.fetchToken,
+    });
+  }
+
   const http: ToolBackends["http"] = {
     async request(req: HttpRequest, o?: HttpOpts): Promise<HttpResponse> {
-      // The destructive guard must see session/credential headers too, since
-      // targetFetch merges them in before sending.
-      await checkPolicy("http", "request", {
-        method: req.method ?? "GET",
-        url: req.url,
-        body: req.body,
-        headers: resolveEffectiveHeaders(
-          resolverSessionFromCtx(ctx),
-          req.url,
-          req.headers,
-        ),
-        extract: req.extract,
-      });
+      await authorizeHttp(req);
       if (req.extract === "readability") {
-        return fetchReadable(ctx, req.url, o);
+        return fetchReadable(ctx, req.url, req.fetchToken, o, authorizeHttp);
       }
-      return fetchStandard(ctx, req, o);
+      return fetchStandard(ctx, req, o, authorizeHttp);
     },
   };
 
@@ -546,46 +552,177 @@ async function* runCommand(
 // http.request
 // ---------------------------------------------------------------------------
 
+type AuthorizeHttp = (req: HttpRequest) => Promise<void>;
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+function redirectedHttpRequest(
+  req: HttpRequest,
+  status: number,
+  url: string,
+): HttpRequest {
+  const redirected = redirectRequest(status, req.method ?? "GET", req.body);
+  return {
+    ...req,
+    url,
+    method: redirected.method as HttpMethod,
+    body: redirected.body,
+    headers: sanitizeRedirectHeaders(req.headers ?? {}, {
+      redirectCount: 1,
+      bodyDropped: redirected.bodyDropped,
+    }),
+  };
+}
+
+function responseHeader(
+  headers: Record<string, string>,
+  name: string,
+): string | undefined {
+  const canonical = name.toLowerCase();
+  return Object.entries(headers).find(
+    ([header]) => header.toLowerCase() === canonical,
+  )?.[1];
+}
+
+async function fetchTargetWithRedirects(
+  ctx: ToolContext,
+  initialRequest: HttpRequest,
+  signal: AbortSignal,
+  authorize: AuthorizeHttp,
+): Promise<{
+  response: Response;
+  url: string;
+  redirected: boolean;
+  redirectChain: string[];
+}> {
+  let request = initialRequest;
+  let redirected = false;
+  const redirectChain = [initialRequest.url];
+
+  for (let redirectCount = 0; ; redirectCount++) {
+    const { response } = await targetFetch(
+      resolverSessionFromCtx(ctx),
+      request.url,
+      {
+        method: request.method ?? "GET",
+        headers: request.headers,
+        body: request.body || undefined,
+        redirect: "manual",
+        signal,
+      },
+    );
+    if (!request.followRedirects || !REDIRECT_STATUSES.has(response.status)) {
+      return { response, url: request.url, redirected, redirectChain };
+    }
+    if (redirectCount >= 9) {
+      response.body?.cancel().catch(() => {});
+      throw new Error("Too many redirects (maximum 10)");
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      return { response, url: request.url, redirected, redirectChain };
+    }
+
+    response.body?.cancel().catch(() => {});
+    const next = redirectedHttpRequest(
+      request,
+      response.status,
+      new URL(location, request.url).toString(),
+    );
+    await authorize(next);
+    request = next;
+    redirected = true;
+    redirectChain.push(next.url);
+  }
+}
+
+async function fetchSandboxWithRedirects(
+  ctx: ToolContext,
+  initialRequest: HttpRequest,
+  o: HttpOpts | undefined,
+  authorize: AuthorizeHttp,
+): Promise<HttpResponse> {
+  const startedAt = Date.now();
+  let request = initialRequest;
+  let redirected = false;
+
+  for (let redirectCount = 0; ; redirectCount++) {
+    const elapsed = Date.now() - startedAt;
+    if (o?.timeoutMs !== undefined && elapsed >= o.timeoutMs) {
+      const error = new Error(`Request timeout after ${o.timeoutMs}ms`);
+      error.name = "AbortError";
+      throw error;
+    }
+    const timeout =
+      o?.timeoutMs === undefined ? undefined : o.timeoutMs - elapsed;
+    const response = await requestSandboxHttp(
+      { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
+      {
+        url: request.url,
+        method: request.method ?? "GET",
+        headers: request.headers,
+        body: request.body,
+        followRedirects: false,
+        timeout,
+      },
+    );
+    if (
+      !request.followRedirects ||
+      !response.capture.complete ||
+      !REDIRECT_STATUSES.has(response.status)
+    ) {
+      return { ...response, url: request.url, redirected };
+    }
+    if (redirectCount >= 9) {
+      throw new Error("Too many redirects (maximum 10)");
+    }
+    const location = responseHeader(response.headers, "location");
+    if (!location) return { ...response, url: request.url, redirected };
+
+    const next = redirectedHttpRequest(
+      request,
+      response.status,
+      new URL(location, request.url).toString(),
+    );
+    await authorize(next);
+    request = next;
+    redirected = true;
+  }
+}
+
 async function fetchStandard(
   ctx: ToolContext,
   req: HttpRequest,
-  o?: HttpOpts,
+  o: HttpOpts | undefined,
+  authorize: AuthorizeHttp,
 ): Promise<HttpResponse> {
   const method = req.method ?? "GET";
   const headers = req.headers ?? {};
   const timeout = o?.timeoutMs;
-  if (ctx.sandbox) {
-    return requestSandboxHttp(
-      { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
-      {
-        url: req.url,
-        method,
-        headers,
-        body: req.body,
-        followRedirects: req.followRedirects ?? false,
-        timeout,
-      },
-    );
-  }
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
+    if (ctx.sandbox) {
+      return await fetchSandboxWithRedirects(
+        ctx,
+        { ...req, method },
+        o,
+        authorize,
+      );
+    }
+
     const timeoutController = new AbortController();
     if (timeout !== undefined)
       timeoutId = setTimeout(() => timeoutController.abort(), timeout);
     const combinedSignal = o?.abortSignal
       ? AbortSignal.any([o.abortSignal, timeoutController.signal])
       : timeoutController.signal;
-    const { response, redirectChain } = await targetFetch(
-      resolverSessionFromCtx(ctx),
-      req.url,
-      {
-        method,
-        headers,
-        body: req.body || undefined,
-        redirect: req.followRedirects ? "follow" : "manual",
-        signal: combinedSignal,
-      },
+    const fetched = await fetchTargetWithRedirects(
+      ctx,
+      { ...req, method, headers },
+      combinedSignal,
+      authorize,
     );
+    const { response, redirectChain } = fetched;
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       responseHeaders[key] = value;
@@ -621,7 +758,7 @@ async function fetchStandard(
       statusText: response.statusText,
       headers: responseHeaders,
       body: read.text,
-      url: response.url,
+      url: fetched.url,
       redirected: redirectChain.length > 1,
       ...(redirectChain.length > 1 ? { redirectChain } : {}),
       error,
@@ -669,10 +806,64 @@ async function fetchStandard(
   }
 }
 
+async function fetchBrokeredResearch(
+  url: string,
+  fetchToken: string,
+  signal: AbortSignal,
+): Promise<{
+  response: Response;
+  url: string;
+  redirected: boolean;
+  redirectChain: string[];
+}> {
+  if (verifyLocalResearchFetchToken(fetchToken, url)) {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      signal,
+    });
+    return {
+      response,
+      url,
+      redirected: false,
+      redirectChain: [url],
+    };
+  }
+
+  const result = await postPensarWebSearch({ url, fetchToken }, signal);
+  if (!result.ok) {
+    throw new Error(
+      "External documents require the Console research broker configuration",
+    );
+  }
+  const broker = result.response;
+  if (!broker.ok) {
+    throw new Error(
+      `Research broker rejected the document: HTTP ${broker.status}`,
+    );
+  }
+  const document = (await broker.json()) as {
+    url: string;
+    contentType: string;
+    body: string;
+  };
+  return {
+    response: new Response(document.body, {
+      status: 200,
+      headers: { "content-type": document.contentType },
+    }),
+    url: document.url,
+    redirected: document.url !== url,
+    redirectChain: document.url === url ? [url] : [url, document.url],
+  };
+}
+
 async function fetchReadable(
   ctx: ToolContext,
   url: string,
-  o?: HttpOpts,
+  fetchToken: string | undefined,
+  o: HttpOpts | undefined,
+  authorize: AuthorizeHttp,
 ): Promise<HttpResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(
@@ -683,23 +874,29 @@ async function fetchReadable(
     ? AbortSignal.any([o.abortSignal, controller.signal])
     : controller.signal;
   try {
-    const session = resolverSessionFromCtx(ctx);
-    const { response, redirectChain } = await fetchWithScopedRedirects(
-      url,
-      {
-        method: "GET",
-        signal: combinedSignal,
-        redirect: "follow",
-      },
-      (hopUrl) =>
-        mergeBaselineHeaders(resolveEffectiveHeaders(session, hopUrl)),
-    );
+    const fetched = fetchToken
+      ? await fetchBrokeredResearch(url, fetchToken, combinedSignal)
+      : await fetchTargetWithRedirects(
+          ctx,
+          {
+            url,
+            method: "GET",
+            headers: readabilityRequestHeaders(
+              resolveEffectiveHeaders(resolverSessionFromCtx(ctx), url),
+            ),
+            followRedirects: true,
+            extract: "readability",
+          },
+          combinedSignal,
+          authorize,
+        );
+    const { response, redirectChain } = fetched;
 
     if (!response.ok) {
       response.body?.cancel().catch(() => {});
       return {
         success: false,
-        url: response.url,
+        url: fetched.url,
         status: response.status,
         statusText: response.statusText,
         headers: {},
@@ -719,7 +916,7 @@ async function fetchReadable(
       response.body?.cancel().catch(() => {});
       return {
         success: false,
-        url: response.url,
+        url: fetched.url,
         status: response.status,
         statusText: response.statusText,
         headers: {},
@@ -761,7 +958,7 @@ async function fetchReadable(
               : errMessage(read.cause);
       return {
         success: false,
-        url: response.url,
+        url: fetched.url,
         title,
         status: response.status,
         statusText: response.statusText,
@@ -779,7 +976,7 @@ async function fetchReadable(
       ...(previewTruncated
         ? { contentTruncated: true, stopReason: "content-limit" as const }
         : {}),
-      url: response.url,
+      url: fetched.url,
       title,
       status: response.status,
       statusText: response.statusText,

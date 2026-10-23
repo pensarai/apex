@@ -1072,7 +1072,8 @@ describe("required-header policy on redirected shell commands", () => {
     expect(result.success).toBe(true);
     expect(captured).toContain(`-H "X-API-Key: abc"`);
     // Everything except the injected flags must survive byte-for-byte.
-    expect(captured.endsWith("-s https://example.com/api 2>&1")).toBe(true);
+    expect(captured).toContain("-s https://example.com/api 2>&1");
+    expect(captured).toMatch(/--max-redirs 0$/);
   });
 
   it("rejection message offers the supported literal 2>&1 form", async () => {
