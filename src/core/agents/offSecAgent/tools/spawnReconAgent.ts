@@ -1,7 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { parseTargetUrl } from "../../../../util/url";
 import { getModelSettings } from "../../../ai";
 import { type SpawnOptions, spawnBatch } from "../subagentSpawner";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent recon workers. */
@@ -69,6 +71,33 @@ Returns an array of results with each worker's text output.`,
           message: "spawn_recon_agent requires a model in the tool context.",
           results: [],
         };
+      }
+
+      // Fail closed on every task target BEFORE any worker is minted. A task's
+      // `target` becomes the child's scope root, so it must be parseable and
+      // inside the PARENT scope — otherwise a model- or injection-supplied
+      // origin would widen the child's allowed hosts.
+      for (const item of tasks) {
+        if (item.target === undefined) continue;
+        if (parseTargetUrl(item.target) === null) {
+          return {
+            success: false,
+            message: `spawn_recon_agent rejected: task "${item.name}" has an unparseable "target" (received ${JSON.stringify(item.target)}). Pass an authorized origin or omit it — do NOT invent or substitute a target.`,
+            results: [],
+          };
+        }
+        try {
+          assertUrlInScope(item.target, ctx);
+        } catch (error) {
+          if (error instanceof ScopeViolationError) {
+            return {
+              success: false,
+              message: `spawn_recon_agent rejected task "${item.name}": ${error.message}`,
+              results: [],
+            };
+          }
+          throw error;
+        }
       }
 
       const total = tasks.length;
