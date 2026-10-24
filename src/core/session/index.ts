@@ -278,6 +278,22 @@ const SessionConfigObject = z.object({
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   codebasePath: z.string().optional(),
+  /**
+   * Repositories the owning workspace has connected. The generalized
+   * attack-surface agent's `clone_repository` tool only clones a repository
+   * present in this allowlist, so a target that serves attacker-controlled
+   * content cannot coerce the agent into cloning an arbitrary URL.
+   */
+  connectedRepositories: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        url: z.string(),
+        defaultBranch: z.string().optional(),
+      }),
+    )
+    .optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
   /** SMTP config for outbound email (direct SMTP or Resend via SMTP) */

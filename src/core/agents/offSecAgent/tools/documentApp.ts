@@ -144,6 +144,24 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe("Additional notes or observations about the application"),
+      businessLogic: z
+        .string()
+        .optional()
+        .describe(
+          "App-level business logic analysis: what the application does, its primary actors, the sensitive data and operations it handles, and the trust boundaries. Fuse what was observed on the wire with what was read in the mapped source repository. Markdown.",
+        ),
+      threatModel: z
+        .string()
+        .optional()
+        .describe(
+          "App-level threat model: attacker profiles, the most relevant attack vectors for this application, and an overall risk assessment. This replaces per-endpoint threat modeling — reason about the application as a whole. Markdown.",
+        ),
+      objectives: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "App-level pentest objectives: concrete, testable hypotheses a pentester should pursue against this application, ordered by priority. Each is a self-contained objective string.",
+        ),
       domain: z
         .string()
         .optional()
@@ -234,6 +252,9 @@ Each application creates a JSON file in the apps directory for tracking and anal
         appName: input.appName,
         appType: input.appType,
         domain: input.domain,
+        businessLogic: input.businessLogic,
+        threatModel: input.threatModel,
+        objectives: input.objectives,
         filepath,
         message: `Application '${input.appName}' documented successfully`,
       };
