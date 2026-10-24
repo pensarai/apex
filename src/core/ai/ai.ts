@@ -1264,7 +1264,7 @@ export function mergeProviderOptions(
 
 export type OpenRouterProviderOptions = {
   openrouter?: {
-    provider:
+    provider?:
       | {
           only: ["z-ai"];
           allow_fallbacks: false;
@@ -1274,6 +1274,7 @@ export type OpenRouterProviderOptions = {
           allow_fallbacks: true;
           require_parameters: true;
         };
+    cache_control?: { type: "ephemeral" };
   };
 };
 
@@ -1281,9 +1282,26 @@ function isZaiPinnedModel(model: AIModel): boolean {
   return model === "z-ai/glm-5.2" || model === "z-ai/glm-5.3";
 }
 
+/**
+ * Anthropic caching engages only on an explicit `cache_control` marker, and
+ * OpenRouter takes it as a request-level directive rather than the per-message
+ * breakpoint `cacheBreakpointFor` emits for the native and Bedrock paths. With
+ * no marker the whole prompt is re-processed every step, which is how every
+ * `anthropic/*` id ran at a 0% cache hit rate. Other OpenRouter authors are
+ * left alone: Z.AI caches implicitly and the directive is Anthropic-only.
+ */
+function isAnthropicOpenRouterModel(model: AIModel): boolean {
+  return model.startsWith("anthropic/");
+}
+
+const ANTHROPIC_OPENROUTER_CACHE: OpenRouterProviderOptions = {
+  openrouter: { cache_control: { type: "ephemeral" } },
+};
+
 export function buildOpenRouterProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
+  if (isAnthropicOpenRouterModel(model)) return ANTHROPIC_OPENROUTER_CACHE;
   if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
@@ -1304,6 +1322,7 @@ export function buildOpenRouterProviderOptions(
 export function buildOpenRouterStructuredProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
+  if (isAnthropicOpenRouterModel(model)) return ANTHROPIC_OPENROUTER_CACHE;
   if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
