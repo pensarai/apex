@@ -19,6 +19,13 @@ export interface GeneralizedAttackSurfaceAgentInput
   extends SpecializedAgentInput {
   /** The origin to map — a domain, IP address, or URL. */
   target: string;
+  /**
+   * Tool names to drop from the orchestrator roster. A host whose runtime
+   * cannot yet back a capability (e.g. durable multi-repo clone or durable
+   * recon-worker fan-out) excludes those tools so the agent never calls a tool
+   * the environment can't fulfill.
+   */
+  excludeTools?: string[];
 }
 
 /** Typed result returned by {@link GeneralizedAttackSurfaceAgent.consume}. */
@@ -53,7 +60,11 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
     return { target: opts.target, subagentFolder };
   },
   system: () => GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
-  activeTools: () => [...GENERALIZED_ATTACK_SURFACE_TOOLS],
+  activeTools: (opts) => {
+    if (!opts.excludeTools?.length) return [...GENERALIZED_ATTACK_SURFACE_TOOLS];
+    const excluded = new Set(opts.excludeTools);
+    return GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t));
+  },
   stopWhen: () => [
     hasToolCall("create_attack_surface_report"),
     stepCountIs(10_000),

@@ -68,6 +68,17 @@ describe("generalized attack-surface agent definition", () => {
     expect(tools).toEqual(GENERALIZED_ATTACK_SURFACE_TOOLS);
   });
 
+  it("drops excluded tools (host without durable clone/fan-out)", () => {
+    const tools = generalizedAttackSurfaceDefinition.activeTools(
+      { excludeTools: ["spawn_recon_agent", "clone_repository"] } as never,
+      {} as never,
+    );
+    expect(tools).not.toContain("spawn_recon_agent");
+    expect(tools).not.toContain("clone_repository");
+    expect(tools).toContain("document_app");
+    expect(tools).toContain("execute_command");
+  });
+
   it("builds a prompt that names the origin and connected repos", () => {
     const prompt = buildGeneralizedAttackSurfacePrompt(
       "https://app.example.com",
