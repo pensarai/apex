@@ -52,9 +52,8 @@ They are organised into categories:
   - "framework" — framework-specific notes (e.g. Rails tricks, Django patterns)
   - "general"   — catch-all (default when category is omitted)
 
-IMPORTANT: Before adding a new memory, always use list_memories first to check
-for existing memories that overlap with what you intend to save. If a relevant
-memory already exists, reuse it rather than creating a duplicate. This keeps the memory store clean and avoids conflicting entries.
+Prefer record_learning, which merges a similar existing entry instead of appending.
+If you use this tool, search_knowledge first and skip the write when a match exists.
 
 Use this to record reusable techniques, target-specific notes, credential
 patterns, useful payloads, or any information worth remembering for future

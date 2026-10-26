@@ -6,6 +6,7 @@ import {
   type Memory,
 } from "../../../memory";
 import type { ToolContext } from "./types";
+import { TOOL_OUTPUT_MAX_BYTES } from "./toolOutput";
 
 const getMemoryInputSchema = z.object({
   category: z
@@ -52,10 +53,14 @@ with the category and id from that listing to fetch full content.`,
             memory: null,
           };
         }
+        const content =
+          Buffer.byteLength(memory.content) > TOOL_OUTPUT_MAX_BYTES
+            ? `${memory.content.slice(0, TOOL_OUTPUT_MAX_BYTES)}\n[truncated]`
+            : memory.content;
         return {
           success: true,
           error: "",
-          memory,
+          memory: { ...memory, content },
         };
       } catch (err: unknown) {
         return {

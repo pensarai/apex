@@ -351,7 +351,10 @@ export function getContextWindow(
     return resolveHoonifyModel(modelId, hoonifyModels).contextLength;
   if (parseCustomModelId(modelId))
     return resolveCustomModel(modelId, customProviders).model.contextLength;
-  return getModelInfo(modelId).contextLength ?? 200_000;
+  const length = getModelInfo(modelId).contextLength ?? 200_000;
+  // GLM's 1M window never trips compaction, so a large prefix is re-read all session.
+  if (modelId.startsWith("z-ai/glm")) return Math.min(length, 200_000);
+  return length;
 }
 
 function checkIfRateLimitError(error: unknown): boolean {

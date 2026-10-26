@@ -39,6 +39,26 @@ export interface MemoryOperationContext {
   toolCallId: string;
 }
 
+export interface MemorySearchHit {
+  id: string;
+  title: string;
+  snippet: string;
+  category: string;
+}
+
+export interface RecordLearningInput {
+  kind:
+    | "technique_worked"
+    | "technique_failed"
+    | "target_fact"
+    | "false_positive"
+    | "directive";
+  title: string;
+  content: string;
+  applicationId?: string;
+  endpointPath?: string;
+}
+
 export interface MemoryBackend {
   add(input: AddMemoryInput, context?: MemoryOperationContext): Promise<Memory>;
   list(
@@ -50,6 +70,15 @@ export interface MemoryBackend {
     id: string,
     context?: MemoryOperationContext,
   ): Promise<Memory | null>;
+  search?(
+    query: string,
+    options?: { applicationId?: string; endpointPath?: string },
+    context?: MemoryOperationContext,
+  ): Promise<MemorySearchHit[]>;
+  recordLearning?(
+    input: RecordLearningInput,
+    context?: MemoryOperationContext,
+  ): Promise<{ id: string; reinforced: boolean }>;
 }
 
 const memoryBackend = new AsyncLocalStorage<MemoryBackend>();
@@ -276,4 +305,39 @@ export async function listMemories(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
   return summaries;
+}
+
+export async function searchMemories(
+  query: string,
+  options?: { applicationId?: string; endpointPath?: string },
+  context?: MemoryOperationContext,
+): Promise<MemorySearchHit[]> {
+  const backend = memoryBackend.getStore();
+  if (backend?.search) return backend.search(query, options, context);
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const memories = await listMemories(undefined, context);
+  return memories
+    .filter((memory) =>
+      terms.some((term) => memory.title.toLowerCase().includes(term)),
+    )
+    .slice(0, 8)
+    .map((memory) => ({
+      id: memory.id,
+      title: memory.title,
+      snippet: memory.title,
+      category: memory.category,
+    }));
+}
+
+export async function recordLearning(
+  input: RecordLearningInput,
+  context?: MemoryOperationContext,
+): Promise<{ id: string; reinforced: boolean }> {
+  const backend = memoryBackend.getStore();
+  if (backend?.recordLearning) return backend.recordLearning(input, context);
+  const memory = await addMemory(
+    { title: input.title, content: input.content, tags: [input.kind] },
+    context,
+  );
+  return { id: memory.id, reinforced: false };
 }

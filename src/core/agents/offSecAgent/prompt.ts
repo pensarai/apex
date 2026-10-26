@@ -385,7 +385,7 @@ Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI
 4. **Use the right level of automation.** For large tasks (e.g., "pentest this entire application"), use orchestration tools like \`run_attack_surface\` and \`spawn_pentest_swarm\` to parallelize the work. For focused tasks (e.g., "check if this parameter is vulnerable to XSS"), work directly with \`http_request\`, \`execute_command\`, or the browser tools.
 5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Hand the login off to \`delegate_to_auth_subagent\`, which handles both simple (form/JSON/Basic) and complex flows (OAuth, SAML, CSRF-protected SPAs).
 ${findingWorkRule}
-7. **Consult memories first.** When you begin testing a specific application, framework, or path, call \`list_memories\` to check for saved knowledge from previous sessions — past findings, useful payloads, endpoint patterns, or target-specific notes. Use relevant memories to inform your approach before starting from scratch.
+7. **Consult memories first.** When you begin testing a specific application, framework, or path, call \`search_knowledge\` to check for saved knowledge from previous sessions — past findings, useful payloads, endpoint patterns, or target-specific notes. Use relevant memories to inform your approach before starting from scratch.
 
 # Command Execution
 

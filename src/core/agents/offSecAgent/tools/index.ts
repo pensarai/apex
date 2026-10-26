@@ -246,6 +246,8 @@ import { grep } from "./grep";
 import { httpRequest } from "./httpRequest";
 import { listFiles } from "./listFiles";
 import { listMemories } from "./listMemories";
+import { recordLearning } from "./recordLearning";
+import { searchKnowledge } from "./searchKnowledge";
 import { listPromptInjections } from "./listPromptInjections";
 import { listTasksTool } from "./listTasks";
 import { probeAuthEndpoints } from "./probeAuthEndpoints";
@@ -405,6 +407,8 @@ const TOOL_REGISTRY = [
   { name: "add_memory", factory: addMemory },
   { name: "list_memories", factory: listMemories },
   { name: "get_memory", factory: getMemory },
+  { name: "search_knowledge", factory: searchKnowledge },
+  { name: "record_learning", factory: recordLearning },
 
   // Prompt-injection test catalog (safe metadata only; no raw payloads)
   { name: "list_prompt_injections", factory: listPromptInjections },
@@ -654,6 +658,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Memory
   "add_memory",
   "list_memories",
+  "search_knowledge",
+  "record_learning",
   "get_memory",
   // Prompt-injection testing
   "list_prompt_injections",
@@ -756,6 +762,8 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Memory
   "add_memory",
   "list_memories",
+  "search_knowledge",
+  "record_learning",
   "get_memory",
   // Prompt-injection testing (safe metadata only)
   "list_prompt_injections",
