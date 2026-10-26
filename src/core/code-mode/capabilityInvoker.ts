@@ -54,7 +54,7 @@ type Repetition = {
   count: number;
 };
 
-type StatefulLane = "shell" | "browser" | "workspace" | "contract";
+type StatefulLane = "shell" | "browser" | "workspace";
 
 function statefulLaneFor(toolName: string): StatefulLane | undefined {
   if (toolName === "execute_command") return "shell";
@@ -62,13 +62,6 @@ function statefulLaneFor(toolName: string): StatefulLane | undefined {
     return "workspace";
   }
   if (toolName.startsWith("browser_")) return "browser";
-  if (
-    ["document_vulnerability", "checkpoint_state", "response"].includes(
-      toolName,
-    )
-  ) {
-    return "contract";
-  }
   return undefined;
 }
 
@@ -79,10 +72,7 @@ function laneConflictMessage(lane: StatefulLane): string {
   if (lane === "browser") {
     return "Browser operations are single-lane across exec cells and direct calls; await the active browser operation.";
   }
-  if (lane === "workspace") {
-    return "Workspace writes are single-lane across exec cells and direct calls; await the active write.";
-  }
-  return "Console contract tools are single-lane across exec cells and direct calls; await the active contract call.";
+  return "Workspace writes are single-lane across exec cells and direct calls; await the active write.";
 }
 
 function stableSerialize(value: unknown): string {

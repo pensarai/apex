@@ -28,6 +28,47 @@ function createInvoker(
 }
 
 describe("CanonicalCapabilityInvoker", () => {
+  it("allows sibling contract tools to execute concurrently", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const execute = async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return "ok";
+    };
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: {
+        response: tool({
+          inputSchema: z.object({ result: z.string() }),
+          execute,
+        }),
+        document_vulnerability: tool({
+          inputSchema: z.object({ title: z.string() }),
+          execute,
+        }),
+      },
+      allowedTools: [],
+      eventBus: new AgentEventBus(),
+      sessionId: "session",
+      getMessageId: () => "message",
+    });
+
+    await Promise.all([
+      invoker.tools.response.execute?.(
+        { result: "done" },
+        { toolCallId: "response", messages: [] },
+      ),
+      invoker.tools.document_vulnerability.execute?.(
+        { title: "finding" },
+        { toolCallId: "finding", messages: [] },
+      ),
+    ]);
+
+    expect(maxActive).toBe(2);
+  });
+
   it.each([
     "complete",
     "return",
