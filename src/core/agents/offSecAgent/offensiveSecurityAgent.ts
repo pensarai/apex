@@ -925,7 +925,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       tools = createCodeModeTools(
         runtimeProfile.protocol,
         this.codeModeRuntime,
-        canonicalTools,
+        invoker.tools,
         direct,
       );
       if (input.toolExecutionRecorder) {
@@ -1846,6 +1846,10 @@ function wrapToolsWithApprovalGate(
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+        const approvalSignal: AbortSignal | undefined =
+          signal && options?.abortSignal
+            ? AbortSignal.any([signal, options.abortSignal])
+            : (signal ?? options?.abortSignal);
         log.debug(`${name} (${toolCallId}): checking`);
         const cancelApproval = () => {
           for (const pending of gate.getPendingApprovals()) {
@@ -1854,9 +1858,10 @@ function wrapToolsWithApprovalGate(
           }
         };
         try {
-          signal?.throwIfAborted();
-          signal?.addEventListener("abort", cancelApproval, { once: true });
-          options?.abortSignal?.throwIfAborted();
+          approvalSignal?.throwIfAborted();
+          approvalSignal?.addEventListener("abort", cancelApproval, {
+            once: true,
+          });
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
@@ -1865,11 +1870,11 @@ function wrapToolsWithApprovalGate(
           }
           throw err;
         } finally {
-          signal?.removeEventListener("abort", cancelApproval);
+          approvalSignal?.removeEventListener("abort", cancelApproval);
         }
         log.debug(`${name} (${toolCallId}): approved, executing`);
 
-        options?.abortSignal?.throwIfAborted();
+        approvalSignal?.throwIfAborted();
         const result = await originalExecute(args, options);
         log.debug(`${name} (${toolCallId}): execute finished`);
         return result;

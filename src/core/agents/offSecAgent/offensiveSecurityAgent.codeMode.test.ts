@@ -75,7 +75,155 @@ async function execute(
   return JSON.parse(result as string) as CodeCellResult;
 }
 
+async function executeDirect(tools: ToolSet, name: string) {
+  const implementation = tools[name].execute;
+  if (!implementation) throw new Error(`Missing execute for ${name}`);
+  const result = implementation({}, { toolCallId: "direct", messages: [] });
+  if (result && typeof result === "object" && Symbol.asyncIterator in result) {
+    let output: unknown;
+    for await (const value of result) output = value;
+    return output;
+  }
+  return result;
+}
+
 describe("agent code mode", () => {
+  it.each(
+    [
+      ["execute_command", "execute_command"],
+      ["browser_navigate", "browser_snapshot"],
+      ["create_file", "update_file"],
+      ["update_file", "apply_patch"],
+      ["apply_patch", "create_file"],
+    ].flatMap(([first, second]) =>
+      [true, false].map((nestedFirst) => ({ first, second, nestedFirst })),
+    ),
+  )("prevents overlapping $first / $second calls (nested first: $nestedFirst)", async ({
+    first,
+    second,
+    nestedFirst,
+  }) => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = () => {};
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const effect = vi.fn(async () => {
+      if (effect.mock.calls.length === 1) {
+        started();
+        await held;
+      }
+      return "ok";
+    });
+    const names = [...new Set([first, second])];
+    const { request } = makeAgent({
+      activeTools: names,
+      extraTools: Object.fromEntries(
+        names.map((name) => [
+          name,
+          tool({
+            inputSchema: z.object({}),
+            execute: effect,
+          }),
+        ]),
+      ),
+      nestedTools: names,
+    });
+    let cell: CodeCellResult | undefined;
+    let direct: Promise<unknown> | undefined;
+    try {
+      if (nestedFirst) {
+        cell = await execute(request.tools, "exec", {
+          code: `text(await tools.call(${JSON.stringify(first)}, {}))`,
+          yield_time_ms: 0,
+        });
+        expect(cell.status).toBe("running");
+      } else {
+        direct = executeDirect(request.tools, first);
+      }
+      await ready;
+      if (nestedFirst) {
+        await expect(executeDirect(request.tools, second)).rejects.toThrow(
+          "single-lane",
+        );
+      } else {
+        const blocked = await execute(request.tools, "exec", {
+          code: `await tools.call(${JSON.stringify(second)}, {})`,
+        });
+        expect(blocked.status).toBe("failed");
+        expect(blocked.output).toContain("single-lane");
+      }
+      expect(effect).toHaveBeenCalledOnce();
+    } finally {
+      release();
+      await direct;
+      if (cell?.status === "running") {
+        await execute(request.tools, "wait", { cell_id: cell.cellId });
+      }
+    }
+    await expect(executeDirect(request.tools, second)).resolves.toBe("ok");
+    expect(effect).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "terminate",
+    "abort",
+  ])("cancels a pending nested approval on %s", async (cancel) => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      decisionTimeoutMs: undefined,
+    });
+    const effect = vi.fn(async () => "executed");
+    const controller = new AbortController();
+    let requested = () => {};
+    const approvalReady = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    gate.once("approval-needed", requested);
+    const { request } = makeAgent({
+      activeTools: ["echo"],
+      extraTools: {
+        echo: tool({ inputSchema: z.object({}), execute: effect }),
+      },
+      nestedTools: ["echo"],
+      approvalGate: gate,
+    });
+    try {
+      const cell = await execute(
+        request.tools,
+        "exec",
+        {
+          code: 'await tools.call("echo", {})',
+          yield_time_ms: 0,
+        },
+        {
+          toolCallId: "awaiting_approval",
+          messages: [],
+          abortSignal: controller.signal,
+        },
+      );
+      expect(cell.status).toBe("running");
+      await approvalReady;
+      const [approval] = gate.getPendingApprovals();
+      expect(approval.toolCallId).toBe("awaiting_approval:nested:1");
+      if (cancel === "abort") controller.abort("cancelled");
+      const result = await execute(request.tools, "wait", {
+        cell_id: cell.cellId,
+        terminate: cancel === "terminate",
+      });
+      expect(result.status).toBe("terminated");
+      expect(gate.getPendingApprovals()).toEqual([]);
+      expect(effect).not.toHaveBeenCalled();
+      expect(gate.getActionHistory()).toMatchObject([{ decision: "denied" }]);
+      expect(() => gate.approve(approval.id)).toThrow("No pending approval");
+    } finally {
+      gate.denyAll();
+    }
+  });
+
   it("exposes only selected capabilities and keeps injected contracts direct by default", async () => {
     const echo = tool({
       inputSchema: z.strictObject({ value: z.number() }),

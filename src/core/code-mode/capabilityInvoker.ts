@@ -58,7 +58,9 @@ type StatefulLane = "shell" | "browser" | "workspace" | "contract";
 
 function statefulLaneFor(toolName: string): StatefulLane | undefined {
   if (toolName === "execute_command") return "shell";
-  if (toolName === "create_file") return "workspace";
+  if (["create_file", "update_file", "apply_patch"].includes(toolName)) {
+    return "workspace";
+  }
   if (toolName.startsWith("browser_")) return "browser";
   if (
     ["document_vulnerability", "checkpoint_state", "response"].includes(
@@ -72,15 +74,15 @@ function statefulLaneFor(toolName: string): StatefulLane | undefined {
 
 function laneConflictMessage(lane: StatefulLane): string {
   if (lane === "shell") {
-    return "execute_command is single-lane across exec cells. Await the active command before starting another.";
+    return "execute_command is single-lane across exec cells and direct calls. Await the active command before starting another.";
   }
   if (lane === "browser") {
-    return "Browser operations are single-lane across exec cells; await the active browser operation.";
+    return "Browser operations are single-lane across exec cells and direct calls; await the active browser operation.";
   }
   if (lane === "workspace") {
-    return "Workspace writes are single-lane across exec cells; await the active write.";
+    return "Workspace writes are single-lane across exec cells and direct calls; await the active write.";
   }
-  return "Console contract tools are single-lane across exec cells; await the active contract call.";
+  return "Console contract tools are single-lane across exec cells and direct calls; await the active contract call.";
 }
 
 function stableSerialize(value: unknown): string {
@@ -131,16 +133,44 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
 }
 
 export class CanonicalCapabilityInvoker {
+  readonly tools: ToolSet;
   private readonly allowedTools: Set<string>;
   private readonly cells = new Map<string, CellStats>();
   private readonly invocationCounts = new Map<string, number>();
   private readonly repetitions = new Map<string, Repetition>();
   private consecutiveSingleCallCells = 0;
   private terminal = false;
-  private readonly activeLanes = new Map<StatefulLane, string>();
 
   constructor(private readonly options: CapabilityInvokerOptions) {
     this.allowedTools = new Set(options.allowedTools);
+    const activeLanes = new Set<StatefulLane>();
+    this.tools = Object.fromEntries(
+      Object.entries(options.tools).map(([name, definition]) => {
+        const lane = statefulLaneFor(name);
+        const execute = definition.execute;
+        if (!lane || !execute) return [name, definition];
+        return [
+          name,
+          {
+            ...definition,
+            // Keep streams visible to the SDK and hold the lane until iteration ends.
+            execute: async function* (input, options) {
+              options.abortSignal?.throwIfAborted();
+              if (activeLanes.has(lane))
+                throw new Error(laneConflictMessage(lane));
+              activeLanes.add(lane);
+              try {
+                const result = await execute(input, options);
+                if (isAsyncIterable(result)) yield* result;
+                else yield result;
+              } finally {
+                activeLanes.delete(lane);
+              }
+            },
+          } satisfies ToolSet[string],
+        ];
+      }),
+    );
   }
 
   async describe(toolName: string): Promise<{
@@ -151,8 +181,8 @@ export class CanonicalCapabilityInvoker {
     if (!this.allowedTools.has(toolName)) {
       throw new Error(`Capability is not available in code mode: ${toolName}`);
     }
-    const tool = Object.hasOwn(this.options.tools, toolName)
-      ? (this.options.tools[toolName] as Tool)
+    const tool = Object.hasOwn(this.tools, toolName)
+      ? (this.tools[toolName] as Tool)
       : undefined;
     if (!tool) throw new Error(`Unknown capability: ${toolName}`);
     return {
@@ -213,18 +243,14 @@ export class CanonicalCapabilityInvoker {
       metrics.uniqueCalls > 1
     ) {
       const hasShellCalls = stats.toolNames.includes("execute_command");
-      const hasOtherStatefulCalls = stats.toolNames.some(
-        (name) =>
-          name.startsWith("browser_") ||
-          ["document_vulnerability", "checkpoint_state", "response"].includes(
-            name,
-          ),
+      const hasStatefulCalls = stats.toolNames.some(
+        (name) => statefulLaneFor(name) !== undefined,
       );
       if (hasShellCalls) {
         guidance.push(
           "This cell ran several shell calls sequentially. Keep payload generation, loops, and result processing in JavaScript inside exec, and use available capabilities directly. Reserve execute_command for OS tools or dependencies unavailable in the cell; await each command sequentially.",
         );
-      } else if (!hasOtherStatefulCalls) {
+      } else if (!hasStatefulCalls) {
         guidance.push(
           "This cell ran several calls sequentially. If their inputs were already known and independent, combine concurrency-safe capabilities with mapLimit or Promise.allSettled; keep only adaptive dependencies sequential.",
         );
@@ -259,8 +285,8 @@ export class CanonicalCapabilityInvoker {
       throw new Error(`Capability is not available in code mode: ${toolName}`);
     }
 
-    const tool = Object.hasOwn(this.options.tools, toolName)
-      ? (this.options.tools[toolName] as Tool)
+    const tool = Object.hasOwn(this.tools, toolName)
+      ? (this.tools[toolName] as Tool)
       : undefined;
     if (!tool?.execute) {
       throw new Error(`Capability is not executable: ${toolName}`);
@@ -281,10 +307,6 @@ export class CanonicalCapabilityInvoker {
     }
 
     options.abortSignal?.throwIfAborted();
-    const statefulLane = statefulLaneFor(toolName);
-    if (statefulLane && this.activeLanes.has(statefulLane)) {
-      throw new Error(laneConflictMessage(statefulLane));
-    }
 
     const cell = this.cells.get(options.parentToolCallId) ?? {
       activeCalls: 0,
@@ -329,9 +351,6 @@ export class CanonicalCapabilityInvoker {
       args: validation.value,
     });
 
-    if (statefulLane) {
-      this.activeLanes.set(statefulLane, options.parentToolCallId);
-    }
     try {
       const execution = tool.execute(validation.value, {
         toolCallId,
@@ -369,12 +388,6 @@ export class CanonicalCapabilityInvoker {
       throw error;
     } finally {
       cell.activeCalls = Math.max(0, cell.activeCalls - 1);
-      if (
-        statefulLane &&
-        this.activeLanes.get(statefulLane) === options.parentToolCallId
-      ) {
-        this.activeLanes.delete(statefulLane);
-      }
     }
   }
 }

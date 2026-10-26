@@ -28,6 +28,112 @@ function createInvoker(
 }
 
 describe("CanonicalCapabilityInvoker", () => {
+  it.each([
+    "complete",
+    "return",
+    "throw",
+  ])("holds the browser lane through streaming and releases it on %s", async (ending) => {
+    const closed = vi.fn();
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: {
+        browser_navigate: tool({
+          inputSchema: z.object({}),
+          execute: async function* () {
+            try {
+              yield "working";
+              if (ending === "throw") throw new Error("navigation failed");
+              yield "done";
+            } finally {
+              closed();
+            }
+          },
+        }),
+        browser_snapshot: tool({
+          inputSchema: z.object({}),
+          execute: async () => "snapshot",
+        }),
+      },
+      allowedTools: ["browser_snapshot"],
+      eventBus: new AgentEventBus(),
+      sessionId: "session",
+      getMessageId: () => "message",
+    });
+    const stream = invoker.tools.browser_navigate.execute?.(
+      {},
+      { toolCallId: "direct", messages: [] },
+    );
+    if (
+      !stream ||
+      typeof stream !== "object" ||
+      !(Symbol.asyncIterator in stream)
+    ) {
+      throw new Error("SDK must receive an async iterable directly");
+    }
+    const iterator = stream[Symbol.asyncIterator]();
+    const snapshot = () =>
+      invoker.invoke(
+        "browser_snapshot",
+        {},
+        { parentToolCallId: "snapshot", messages: [] },
+      );
+    try {
+      expect(await iterator.next()).toMatchObject({
+        value: "working",
+        done: false,
+      });
+      await expect(snapshot()).rejects.toThrow("single-lane");
+      if (ending === "return") {
+        await iterator.return?.();
+      } else if (ending === "throw") {
+        await expect(iterator.next()).rejects.toThrow("navigation failed");
+      } else {
+        expect(await iterator.next()).toMatchObject({
+          value: "done",
+          done: false,
+        });
+        await expect(snapshot()).rejects.toThrow("single-lane");
+        expect(await iterator.next()).toMatchObject({ done: true });
+      }
+      expect(closed).toHaveBeenCalledOnce();
+      await expect(snapshot()).resolves.toBe("snapshot");
+    } finally {
+      await iterator.return?.();
+    }
+  });
+
+  it.each([
+    "create_file",
+    "update_file",
+    "apply_patch",
+  ])("does not recommend parallelizing %s writes", async (name) => {
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: {
+        [name]: tool({
+          inputSchema: z.object({ value: z.number() }),
+          execute: async () => "ok",
+        }),
+      },
+      allowedTools: [name],
+      eventBus: new AgentEventBus(),
+      sessionId: "session",
+      getMessageId: () => "message",
+    });
+    for (let value = 0; value < 4; value++) {
+      await invoker.invoke(
+        name,
+        { value },
+        { parentToolCallId: "writes", messages: [] },
+      );
+    }
+    const result = invoker.completeCell("writes");
+    expect(result.metrics).toMatchObject({
+      nestedCalls: 4,
+      uniqueCalls: 4,
+      maxConcurrency: 1,
+    });
+    expect(result.guidance.join(" ")).not.toContain("mapLimit");
+  });
+
   it("preserves execution context and uses the host ID factory for nested events", async () => {
     const execute = vi.fn(async () => "ok");
     const bus = new AgentEventBus();

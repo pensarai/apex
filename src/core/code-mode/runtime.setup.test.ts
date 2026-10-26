@@ -38,6 +38,45 @@ async function createRuntime() {
 const context = { parentToolCallId: "exec_setup", messages: [] };
 
 describe("code cell setup failures", () => {
+  test.each([
+    0, 1,
+  ])("waits for termination during module setup even with a %s ms yield", async (yieldTimeMs) => {
+    const { newQuickJSWASMModule: loadModule } =
+      await vi.importActual<typeof import("quickjs-emscripten")>(
+        "quickjs-emscripten",
+      );
+    let resumeLoad = () => {};
+    vi.mocked(newQuickJSWASMModule).mockImplementationOnce(
+      (...args) =>
+        new Promise((resolve) => {
+          resumeLoad = () => {
+            resumeLoad = () => {};
+            resolve(loadModule(...args));
+          };
+        }),
+    );
+    const { runtime, onComplete } = await createRuntime();
+    try {
+      const cell = await runtime.execute("text(1)", context, 0);
+      expect(cell.status).toBe("running");
+      const stopped = runtime.wait(cell.cellId, {
+        terminate: true,
+        yieldTimeMs,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      resumeLoad();
+      const result = await stopped;
+      expect(result.status).toBe("terminated");
+      expect(onComplete).toHaveBeenCalledWith(result);
+      await expect(runtime.wait(cell.cellId)).rejects.toThrow(
+        "Unknown or completed",
+      );
+    } finally {
+      resumeLoad();
+      await runtime.dispose();
+    }
+  });
+
   test("returns a failed cell after a yielded module load fails and allows a retry", async () => {
     let rejectLoad: (error: Error) => void = () => {};
     vi.mocked(newQuickJSWASMModule).mockImplementationOnce(

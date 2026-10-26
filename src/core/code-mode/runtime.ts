@@ -296,7 +296,7 @@ export class CodeModeRuntime {
     return this.yieldCell(
       cellId,
       cell.promise,
-      options.yieldTimeMs ?? DEFAULT_YIELD_MS,
+      options.terminate ? null : (options.yieldTimeMs ?? DEFAULT_YIELD_MS),
       options.abortSignal,
     );
   }
@@ -327,13 +327,14 @@ export class CodeModeRuntime {
   private async yieldCell(
     cellId: string,
     promise: Promise<CodeCellResult>,
-    requestedYieldMs: number,
+    requestedYieldMs: number | null,
     abortSignal?: AbortSignal,
   ): Promise<CodeCellResult> {
     abortSignal?.throwIfAborted();
-    const yieldTimeMs = Math.min(Math.max(0, requestedYieldMs), MAX_YIELD_MS);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const running = new Promise<CodeCellResult>((resolve) => {
+      if (requestedYieldMs === null) return;
+      const yieldTimeMs = Math.min(Math.max(0, requestedYieldMs), MAX_YIELD_MS);
       timer = setTimeout(
         () => resolve({ cellId, status: "running", output: "" }),
         yieldTimeMs,
