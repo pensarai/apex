@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { searchMemories } from "../../../memory";
-import type { ToolContext } from "./types";
 import { TOOL_OUTPUT_MAX_BYTES } from "./toolOutput";
+import type { ToolContext } from "./types";
 
 export function searchKnowledge(ctx: ToolContext) {
   return tool({
@@ -12,11 +12,10 @@ export function searchKnowledge(ctx: ToolContext) {
       toolCallDescription: z.string(),
     }),
     execute: async ({ query }, { toolCallId }) => {
-      const hits = await searchMemories(
-        query,
-        undefined,
-        { sessionId: ctx.session.id, toolCallId },
-      );
+      const hits = await searchMemories(query, undefined, {
+        sessionId: ctx.session.id,
+        toolCallId,
+      });
       const payload = { success: true, hits };
       const json = JSON.stringify(payload);
       if (Buffer.byteLength(json) <= TOOL_OUTPUT_MAX_BYTES) return payload;

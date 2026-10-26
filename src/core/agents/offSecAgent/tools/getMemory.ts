@@ -5,8 +5,8 @@ import {
   MEMORY_CATEGORIES,
   type Memory,
 } from "../../../memory";
-import type { ToolContext } from "./types";
 import { TOOL_OUTPUT_MAX_BYTES } from "./toolOutput";
+import type { ToolContext } from "./types";
 
 const getMemoryInputSchema = z.object({
   category: z
