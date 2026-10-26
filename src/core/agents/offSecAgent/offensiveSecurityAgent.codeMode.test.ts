@@ -1,7 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ToolExecutionOptions, type ToolSet, tool } from "ai";
+import {
+  simulateReadableStream,
+  streamText,
+  type ToolExecutionOptions,
+  type ToolSet,
+  tool,
+} from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { CodeCellResult } from "../../code-mode";
@@ -88,6 +95,91 @@ async function executeDirect(tools: ToolSet, name: string) {
 }
 
 describe("agent code mode", () => {
+  it("executes findings, checkpoint, and response contracts together in one SDK step", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const effect = vi.fn(async ({ value }: { value: string }) => {
+      await held;
+      return value;
+    });
+    const contract = tool({
+      inputSchema: z.object({ value: z.string() }),
+      execute: effect,
+    });
+    const { agent, request } = makeAgent({
+      activeTools: ["document_vulnerability", "checkpoint_state", "response"],
+      extraTools: {
+        document_vulnerability: contract,
+        checkpoint_state: contract,
+      },
+      responseSchema: z.object({ done: z.boolean() }),
+    });
+    const calls = [
+      { toolName: "document_vulnerability", input: { value: "first finding" } },
+      {
+        toolName: "document_vulnerability",
+        input: { value: "second finding" },
+      },
+      { toolName: "checkpoint_state", input: { value: "checkpoint" } },
+      { toolName: "response", input: { result: { done: true } } },
+    ];
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "stream-start", warnings: [] },
+            ...calls.map(({ toolName, input }, index) => ({
+              type: "tool-call" as const,
+              toolCallId: `contract_${index}`,
+              toolName,
+              input: JSON.stringify(input),
+            })),
+            {
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage: {
+                inputTokens: {
+                  total: 1,
+                  noCache: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    const results: string[] = [];
+    const errors: unknown[] = [];
+    let callsSeen = 0;
+    for await (const part of streamText({
+      model,
+      tools: request.tools,
+      prompt: "submit results",
+    }).fullStream) {
+      if (part.type === "tool-call" && ++callsSeen === calls.length) {
+        setImmediate(release);
+      }
+      if (part.type === "tool-result" && !part.preliminary)
+        results.push(part.toolCallId);
+      if (part.type === "error" || part.type === "tool-error")
+        errors.push(part.error);
+    }
+    expect(errors).toEqual([]);
+    expect(results.sort()).toEqual([
+      "contract_0",
+      "contract_1",
+      "contract_2",
+      "contract_3",
+    ]);
+    expect(effect).toHaveBeenCalledTimes(3);
+    await expect(agent.consume()).resolves.toEqual({ done: true });
+  });
+
   it.each(
     [
       ["execute_command", "execute_command"],
