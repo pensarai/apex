@@ -10,7 +10,7 @@ import {
   hasAnyProviderConfigured,
 } from "../providers/utils";
 import { generateObjectResponse, getContextWindow, streamResponse } from "./ai";
-import { AVAILABLE_MODELS, getMaxOutputTokens } from "./models";
+import { AVAILABLE_MODELS, getMaxOutputTokens, getModelInfo } from "./models";
 import { getReasoningCapabilities } from "./reasoning";
 import { buildAuthConfig, consumeStream, getProviderModel } from "./utils";
 
@@ -58,6 +58,29 @@ afterEach(() => {
 });
 
 describe("Inference.net provider", () => {
+  it.each([
+    "inference:unknown-model",
+    "inference:",
+    "inference:deepseek-v4.1-flash-1017-cybe",
+  ])("rejects an unregistered Inference.net model before local fallback (%s)", (id) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const error = `Unknown Inference.net model "${id}". Select an available Inference.net model in /models.`;
+    expect(() => getModelInfo(id)).toThrow(error);
+    expect(() =>
+      getProviderModel(id, {
+        ...authConfig,
+        local: { baseURL: "http://127.0.0.1:1234/v1" },
+      }),
+    ).toThrow(error);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves the fallback for unregistered local model names", () => {
+    expect(getModelInfo("my-local-model").provider).toBe("local");
+    expect(getProviderModel("my-local-model").provider).toBe("openai.chat");
+  });
+
   it("offers only the Cyber model with its provider-specific token limits", () => {
     const config = {
       responsibleUseAccepted: true,

@@ -53,13 +53,13 @@ export function getModelInfo(model: AIModel): ModelInfo {
     };
   const custom = parseCustomModelId(model);
   if (custom) return { id: model, name: custom.modelId, provider: "custom" };
-  return (
-    AVAILABLE_MODELS.find((m) => m.id === model) ?? {
-      id: model,
-      name: model,
-      provider: "local",
-    }
-  );
+  const registeredModel = AVAILABLE_MODELS.find((m) => m.id === model);
+  if (registeredModel) return registeredModel;
+  if (model.startsWith("inference:"))
+    throw new Error(
+      `Unknown Inference.net model "${model}". Select an available Inference.net model in /models.`,
+    );
+  return { id: model, name: model, provider: "local" };
 }
 
 /**
