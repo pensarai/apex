@@ -411,7 +411,6 @@ export async function runEngagementLead(
         text,
       });
     };
-    eventBus.on("tool-result", onToolResult);
     const workerTools: ToolSet = {
       ...boardTools(record.workerId),
       read_engagement_context: tool({
@@ -460,6 +459,7 @@ export async function runEngagementLead(
     record.status = "running";
     record.error = undefined;
     save();
+    eventBus.on("tool-result", onToolResult);
     const job = Promise.resolve().then(async () => {
       try {
         const history = loadSubagentMessages(workflow.session, record.workerId);
