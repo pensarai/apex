@@ -1,6 +1,7 @@
 import type {
   LanguageModel,
   LanguageModelMiddleware,
+  ModelMessage,
   StreamTextOnStepFinishCallback,
   ToolSet,
 } from "ai";
@@ -141,6 +142,27 @@ describe("streamResponse durability hooks", () => {
 
   afterEach(() => {
     onUsage(null);
+  });
+
+  it("normalizes directed mail before a provider step", async () => {
+    streamResponse({
+      model: "test-model",
+      prompt: "scope",
+      getPendingMessages: async () => [{ role: "user", content: "mail" }],
+    });
+    const call = mocks.streamText.mock.calls[0]?.[0] as {
+      prepareStep: (step: {
+        stepNumber: number;
+        messages: ModelMessage[];
+      }) => Promise<{ messages?: ModelMessage[] } | undefined>;
+    };
+    const prepared = await call.prepareStep({
+      stepNumber: 0,
+      messages: [{ role: "user", content: "scope" }],
+    });
+    expect(prepared?.messages).toEqual([
+      { role: "user", content: "scope\n\nmail" },
+    ]);
   });
 
   describe("languageModelMiddleware", () => {
