@@ -460,7 +460,7 @@ export async function runEngagementLead(
     record.status = "running";
     record.error = undefined;
     save();
-    const job = (async () => {
+    const job = Promise.resolve().then(async () => {
       try {
         const history = loadSubagentMessages(workflow.session, record.workerId);
         const messages = journal.resumeMessages(record.workerId, history);
@@ -561,7 +561,7 @@ export async function runEngagementLead(
         active.delete(id);
         startPending();
       }
-    })();
+    });
     active.set(id, job);
   };
   const startPending = (): void => {
