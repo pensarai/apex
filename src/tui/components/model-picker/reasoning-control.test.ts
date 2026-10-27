@@ -2,8 +2,14 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-for (const scenario of ["effort", "toggle", "unknown", "compact"] as const) {
-  it(`renders and operates the ${scenario} reasoning control`, () => {
+for (const scenario of [
+  "effort",
+  "toggle",
+  "unknown",
+  "compact",
+  "inference",
+] as const) {
+  it(`renders and operates the ${scenario} model picker`, () => {
     const result = spawnSync(
       "bun",
       [join(import.meta.dirname, "__tests__/reasoning-control.tsx"), scenario],

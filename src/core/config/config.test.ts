@@ -30,6 +30,13 @@ afterEach(() => {
 });
 
 describe("provider environment fallbacks", () => {
+  it("loads an Inference.net environment key and prefers a persisted key", async () => {
+    vi.stubEnv("INFERENCE_API_KEY", "inference-env-key");
+    expect((await get()).inferenceAPIKey).toBe("inference-env-key");
+    await update({ inferenceAPIKey: "inference-saved-key" });
+    expect((await get()).inferenceAPIKey).toBe("inference-saved-key");
+  });
+
   it("loads a Concentrate API key from the environment", async () => {
     process.env.CONCENTRATE_API_KEY = "sk-cn-env";
 

@@ -23,6 +23,7 @@ import {
 } from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
+import { INFERENCE_MODELS } from "./inference";
 // Bedrock Mantle (OpenAI Responses API) — curated manually.
 import { MANTLE_MODELS } from "./mantle";
 import { OPENAI_MODELS } from "./openai";
@@ -38,6 +39,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...MANTLE_MODELS,
   ...OPENROUTER_MODELS,
   ...CONCENTRATE_MODELS,
+  ...INFERENCE_MODELS,
   ...PENSAR_MODELS,
   ...INCEPTION_MODELS,
 ];
@@ -51,13 +53,13 @@ export function getModelInfo(model: AIModel): ModelInfo {
     };
   const custom = parseCustomModelId(model);
   if (custom) return { id: model, name: custom.modelId, provider: "custom" };
-  return (
-    AVAILABLE_MODELS.find((m) => m.id === model) ?? {
-      id: model,
-      name: model,
-      provider: "local",
-    }
-  );
+  const registeredModel = AVAILABLE_MODELS.find((m) => m.id === model);
+  if (registeredModel) return registeredModel;
+  if (model.startsWith("inference:"))
+    throw new Error(
+      `Unknown Inference.net model "${model}". Select an available Inference.net model in /models.`,
+    );
+  return { id: model, name: model, provider: "local" };
 }
 
 /**
@@ -104,6 +106,7 @@ export function getMaxOutputTokens(
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  if (modelId === "inference:deepseek-v4.1-flash-1017-cyber") return 393_216;
   if (modelId === "chat-latest") return 128_000;
   if (getClaudeCapabilities(modelId)) return 128_000;
   const concentrateBudget = CONCENTRATE_MAX_OUTPUT_TOKENS[modelId];

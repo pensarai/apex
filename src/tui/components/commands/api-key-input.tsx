@@ -65,6 +65,8 @@ export default function APIKeyInput({
         return "Get your API key from openrouter.ai/keys";
       case "concentrate":
         return "Create your API key at concentrate.ai";
+      case "inference":
+        return "Create your API key at inference.net. Cyber model access requires team approval.";
       case "hoonify":
         return "Create your API key on the Subscriptions page at app.hoonify.ai";
       case "bedrock":

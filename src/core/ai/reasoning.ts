@@ -171,6 +171,7 @@ export function getReasoningCapabilities(
   if (
     provider === "local" ||
     provider === "hoonify" ||
+    provider === "inference" ||
     provider === "inception"
   )
     return UNKNOWN;

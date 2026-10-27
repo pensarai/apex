@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelInfo } from "../../../core/ai";
+import { getAvailableModels } from "../../../core/providers/utils";
 import { filterModels } from "./model-search";
 
 const models: ModelInfo[] = [
@@ -31,6 +32,16 @@ const models: ModelInfo[] = [
 ];
 
 describe("filterModels", () => {
+  it("finds the configured Cyber model by the Inference.net display name", () => {
+    const available = getAvailableModels({
+      responsibleUseAccepted: true,
+      inferenceAPIKey: "test-key",
+    });
+    expect(
+      filterModels(available, "inference.net cyber").map((model) => model.id),
+    ).toEqual(["inference:deepseek-v4.1-flash-1017-cyber"]);
+  });
+
   it("matches a model family", () => {
     expect(filterModels(models, "kimi")).toEqual([models[2]]);
   });

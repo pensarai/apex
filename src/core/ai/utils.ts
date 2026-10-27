@@ -102,6 +102,7 @@ export type AIAuthConfig = {
   googleAPIKey?: string;
   openRouterAPIKey?: string;
   concentrateAPIKey?: string;
+  inferenceAPIKey?: string;
   inceptionAPIKey?: string;
   hoonifyAPIKey?: string;
   hoonifyModels?: HoonifyModel[];
@@ -138,6 +139,7 @@ export function buildAuthConfig(cfg: {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
+  inferenceAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   hoonifyAPIKey?: string | null;
   hoonifyModels?: HoonifyModel[];
@@ -157,6 +159,7 @@ export function buildAuthConfig(cfg: {
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     concentrateAPIKey: cfg.concentrateAPIKey ?? undefined,
+    inferenceAPIKey: cfg.inferenceAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     hoonifyAPIKey: cfg.hoonifyAPIKey ?? undefined,
     hoonifyModels: cfg.hoonifyModels,
@@ -254,6 +257,33 @@ export function getProviderModel(
       providerModel = createConcentrateModel(model, {
         apiKey: concentrateAPIKey,
       });
+      break;
+    }
+
+    case "inference": {
+      const apiKey = (
+        authConfig?.inferenceAPIKey ?? process.env.INFERENCE_API_KEY
+      )?.trim();
+      if (!apiKey)
+        throw new Error(
+          "Set INFERENCE_API_KEY or connect Inference.net in /providers.",
+        );
+      const maxOutputTokens = getMaxOutputTokens(model);
+      providerModel = createOpenAICompatible({
+        name: "inference",
+        apiKey,
+        baseURL: "https://api.inference.net/v1",
+        supportsStructuredOutputs: true,
+        transformRequestBody: (body) => ({
+          ...body,
+          max_tokens: Math.min(
+            typeof body.max_tokens === "number"
+              ? body.max_tokens
+              : maxOutputTokens,
+            maxOutputTokens,
+          ),
+        }),
+      }).chatModel(model.slice("inference:".length));
       break;
     }
 
