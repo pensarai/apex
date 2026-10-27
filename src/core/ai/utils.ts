@@ -174,6 +174,24 @@ export function buildAuthConfig(cfg: {
   };
 }
 
+/** Bare Claude 4.x / Haiku 4+ ids are rejected unless invoked as an inference profile. */
+function toBedrockInferenceProfileId(modelId: string): string {
+  const stripped = modelId.replace(/^(?:mantle:|pensar:)/, "");
+  if (/^(?:us|eu|ap|global)\./.test(stripped)) return stripped;
+  const needsProfile = [
+    "anthropic.claude-opus-4",
+    "anthropic.claude-sonnet-4",
+    "anthropic.claude-haiku-",
+    "anthropic.claude-3-7-sonnet",
+    "anthropic.claude-3-5-sonnet",
+    "anthropic.claude-3-5-haiku",
+  ];
+  if (needsProfile.some((prefix) => stripped.startsWith(prefix))) {
+    return `global.${stripped}`;
+  }
+  return stripped;
+}
+
 export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,
@@ -323,7 +341,7 @@ export function getProviderModel(
         >["credentialProvider"],
         fetch: bedrockFetch as typeof globalThis.fetch,
       });
-      providerModel = bedrock(model);
+      providerModel = bedrock(toBedrockInferenceProfileId(model));
       break;
     }
 

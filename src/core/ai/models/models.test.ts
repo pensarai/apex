@@ -57,7 +57,7 @@ describe("getMaxOutputTokens", () => {
       provider: "openrouter",
       contextLength: 1_048_576,
     });
-    expect(getMaxOutputTokens("poolside/laguna-s-2.1")).toBe(131_072);
+    expect(getMaxOutputTokens("poolside/laguna-s-2.1")).toBe(32_768);
   });
 
   it("registers Nemotron 3 Ultra with its OpenRouter limits", () => {
@@ -77,11 +77,11 @@ describe("getMaxOutputTokens", () => {
       provider: "openrouter",
       contextLength: 1_048_576,
     });
-    expect(getMaxOutputTokens("z-ai/glm-5.3")).toBe(131_072);
+    expect(getMaxOutputTokens("z-ai/glm-5.3")).toBe(32_768);
   });
 
   it("recognizes GLM 5 / 5.2's 131.1K max-output window", () => {
-    expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(131_072);
+    expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(32_768);
     expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);
   });
 
@@ -91,7 +91,7 @@ describe("getMaxOutputTokens", () => {
       provider: "openrouter",
       contextLength: 1_048_576,
     });
-    expect(getMaxOutputTokens("deepseek/deepseek-v4.1-flash")).toBe(384_000);
+    expect(getMaxOutputTokens("deepseek/deepseek-v4.1-flash")).toBe(32_768);
   });
 
   it("recognizes the new Bedrock DeepSeek / Qwen output budgets", () => {
@@ -357,7 +357,7 @@ describe("open-weight gateway models", () => {
       name: "MiMo-V2.6-Pro",
       provider: "openrouter",
       contextLength: 1_050_000,
-      maxOutputTokens: 131_072,
+      maxOutputTokens: 32_768,
     },
     {
       id: "concentrate:mimo-v2.6-pro",
@@ -371,7 +371,7 @@ describe("open-weight gateway models", () => {
       name: "Kimi K3",
       provider: "openrouter",
       contextLength: 1_048_576,
-      maxOutputTokens: 131_072,
+      maxOutputTokens: 32_768,
     },
     {
       id: "concentrate:kimi-k3",
@@ -392,21 +392,21 @@ describe("open-weight gateway models", () => {
       name: "Qwen3.8 Max (0902)",
       provider: "openrouter",
       contextLength: 1_000_000,
-      maxOutputTokens: 131_072,
+      maxOutputTokens: 32_768,
     },
     {
       id: "qwen/qwen3.8-27b",
       name: "Qwen3.8 27B",
       provider: "openrouter",
       contextLength: 1_000_000,
-      maxOutputTokens: 131_072,
+      maxOutputTokens: 32_768,
     },
     {
       id: "qwen/qwen3.8-flash",
       name: "Qwen3.8 Flash",
       provider: "openrouter",
       contextLength: 1_000_000,
-      maxOutputTokens: 131_072,
+      maxOutputTokens: 32_768,
     },
     {
       id: "concentrate:qwen3.8-max",
@@ -427,14 +427,14 @@ describe("open-weight gateway models", () => {
       name: "DeepSeek V4.1 Flash 1017",
       provider: "openrouter",
       contextLength: 1_048_576,
-      maxOutputTokens: 384_000,
+      maxOutputTokens: 32_768,
     },
     {
       id: "deepseek/deepseek-v4-pro-0813",
       name: "DeepSeek V4 Pro 0813",
       provider: "openrouter",
       contextLength: 1_048_576,
-      maxOutputTokens: 384_000,
+      maxOutputTokens: 32_768,
     },
     {
       id: "concentrate:deepseek-v4-1-flash",

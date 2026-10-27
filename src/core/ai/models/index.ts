@@ -99,10 +99,11 @@ export function getMaxOutputTokens(
   const fromPattern = lookupOutputBudgetByPattern(modelId);
   const ctx = AVAILABLE_MODELS.find((m) => m.id === modelId)?.contextLength;
   // Reserve ≥25% of the window for input on tiny-context legacy models.
-  if (ctx && fromPattern >= ctx * 0.75) {
-    return Math.floor(ctx * 0.5);
-  }
-  return fromPattern;
+  const budget =
+    ctx && fromPattern >= ctx * 0.75 ? Math.floor(ctx * 0.5) : fromPattern;
+  // OpenRouter bills the requested max_tokens. Budgets of 131k+ 402 when the org balance is low.
+  if (modelId.includes("/") && budget >= 131_072) return 32_768;
+  return budget;
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
