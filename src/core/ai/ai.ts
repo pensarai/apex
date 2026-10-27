@@ -1,7 +1,6 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
-import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import {
@@ -65,7 +64,6 @@ import {
 } from "./inference-attempt";
 import {
   type ClaudeThinkingEffort,
-  getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
@@ -74,11 +72,15 @@ import {
   runWithNativeRolloutOperation,
   withNativeRolloutEvidenceModel,
 } from "./native-rollout-evidence";
-import {
-  CONCENTRATE_GLM_5_3_MODEL_ID,
-  CONCENTRATE_REASONING_MODEL_IDS,
-} from "./providers/concentrate";
+import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
 import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
+import {
+  buildModelReasoningOptions,
+  getReasoningCapabilities,
+  type ReasoningProviderOptions,
+  type ReasoningSetting,
+  resolveReasoningSetting,
+} from "./reasoning";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
@@ -86,7 +88,6 @@ import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
-  isAnthropicProvider,
 } from "./utils";
 
 const log = scopedLogger(() => createLogger("ai"));
@@ -134,6 +135,7 @@ export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // 
 
 export type OpenAIReasoningEffort =
   | "none"
+  | "minimal"
   | "low"
   | "medium"
   | "high"
@@ -150,37 +152,6 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
  * models that support adaptive thinking; ignored elsewhere.
  */
 export type ThinkingEffort = ClaudeThinkingEffort;
-
-const OPENAI_REASONING_MODEL_IDS = new Set([
-  "gpt-6.1-sol",
-  "gpt-6.1-terra",
-  "gpt-6-luna",
-  "gpt-6-sol",
-  "gpt-6-astra",
-  "gpt-5.5-pro",
-  "gpt-5.5-pro-2026-04-23",
-  "gpt-5.4-nano",
-  "gpt-5.4-nano-2026-03-17",
-  "gpt-5.4-mini",
-  "gpt-5.4-mini-2026-03-17",
-  "gpt-5",
-  "gpt-5-2025-08-07",
-  "gpt-5.1",
-  "gpt-5.1-2025-11-13",
-  "gpt-5.2",
-  "gpt-5.2-2025-12-11",
-  "gpt-5.2-pro",
-  "gpt-5.2-pro-2025-12-11",
-  "gpt-5.4",
-  "gpt-5.4-2026-03-05",
-  "gpt-5.4-pro",
-  "gpt-5.4-pro-2026-03-05",
-  "gpt-5.5",
-  "gpt-5.5-2026-04-23",
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.6-luna",
-]);
 
 /** Per-step billing context attached to a usage report, attributing cost to a specific `(sessionId, stepSeq)`. */
 export interface UsageStepContext {
@@ -1225,61 +1196,27 @@ export interface ModelInfo {
 }
 
 export function modelRequiresThinking(modelId: string): boolean {
-  return getClaudeCapabilities(modelId)?.alwaysOnThinking ?? false;
+  return getReasoningCapabilities(modelId).alwaysOn ?? false;
 }
 
-/**
- * Check whether a model supports extended thinking based on its ID.
- *
- * Thinking is available on Claude 3.7 Sonnet and all Claude 4.x+ models
- * (Sonnet, Opus, Haiku 4.5). Works for Anthropic direct, Bedrock, and
- * Pensar provider IDs.
- */
 export function modelSupportsThinking(modelId: string): boolean {
-  if (getClaudeCapabilities(modelId)) return true;
-  // Normalize: strip provider prefixes so we match the base Claude model ID
-  const normalized = modelId
-    .replace(/^pensar:/, "")
-    .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
-
+  const cap = getReasoningCapabilities(modelId);
   return (
-    /^claude-3-7-sonnet/.test(normalized) ||
-    /^claude-sonnet-4/.test(normalized) ||
-    /^claude-opus-4/.test(normalized) ||
-    /^claude-haiku-4-5/.test(normalized)
+    cap.control !== "none" &&
+    (!!cap.thinking || modelId.startsWith("anthropic/claude-"))
   );
 }
 
-/**
- * Whether a model accepts the `adaptive` thinking type — Claude Opus 4.6+ and
- * Sonnet 4.6+. Pre-4.6 models (Opus 4.0–4.5, Sonnet 4.5, Haiku 4.5) support
- * extended thinking but reject `adaptive`, so we don't request thinking for
- * them at all.
- */
 export function modelSupportsAdaptiveThinking(modelId: string): boolean {
-  if (getClaudeCapabilities(modelId)) return true;
-  const normalized = modelId
-    .replace(/^pensar:/, "")
-    .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
-
-  return (
-    /^claude-sonnet-4-[6-9]/.test(normalized) ||
-    /^claude-opus-4-[6-9]/.test(normalized)
-  );
+  return getReasoningCapabilities(modelId).thinking === "adaptive";
 }
 
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
-  if (
-    modelId === CONCENTRATE_GLM_5_3_MODEL_ID ||
-    CONCENTRATE_REASONING_MODEL_IDS.has(modelId)
-  ) {
-    return true;
-  }
-  const { provider } = getModelInfo(modelId);
-  if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
-  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
+  const cap = getReasoningCapabilities(modelId);
   return (
-    OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
+    cap.control === "effort" &&
+    !modelSupportsThinking(modelId) &&
+    cap.transport !== "google"
   );
 }
 
@@ -1290,112 +1227,44 @@ export function modelRequiresReasoning(modelId: string): boolean {
 export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
-  if (!modelSupportsOpenAIReasoning(modelId)) return [];
-  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
-    return ["low", "high", "max"];
-  }
-  if (CONCENTRATE_REASONING_MODEL_IDS.has(modelId)) {
-    return ["low", "medium", "high", "xhigh", "max"];
-  }
-  if (/^concentrate:gpt-5\.4-(?:mini|nano)$/.test(modelId)) {
-    return ["none", "low", "medium", "high"];
-  }
-  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
-  if (modelId === "gpt-6-sol" || modelId === "gpt-6-luna") {
-    return ["none", "low", "medium", "high", "xhigh", "max"];
-  }
-  if (/^gpt-6[.-]/.test(modelId)) {
-    return ["low", "medium", "high", "xhigh", "max"];
-  }
-  if (/^gpt-5\.5-pro(?:-|$)/.test(modelId)) {
-    return ["medium", "high", "xhigh"];
-  }
-  if (/^gpt-5\.4-(?:mini|nano)(?:-|$)/.test(modelId)) {
-    return ["none", "low", "medium", "high", "xhigh"];
-  }
-  if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
-    return ["low", "medium", "high", "xhigh", "max", "ultra"];
-  }
-  if (/^gpt-5\.5(?:\b|-)/.test(modelId)) {
-    return ["none", "low", "medium", "high", "xhigh"];
-  }
-  return ["low", "medium", "high"];
+  return modelSupportsOpenAIReasoning(modelId)
+    ? ([
+        ...getReasoningCapabilities(modelId).efforts,
+      ] as OpenAIReasoningEffort[])
+    : [];
 }
 
 export function normalizeOpenAIReasoningEffort(
   modelId: string,
   effort?: OpenAIReasoningEffort | null,
 ): OpenAIReasoningEffort | undefined {
-  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
-    switch (effort) {
-      case "none":
-      case "low":
-        return "low";
-      case "medium":
-      case "high":
-        return "high";
-      case "xhigh":
-      case "max":
-      case "ultra":
-        return "max";
-      default:
-        return "high";
-    }
-  }
-  const efforts = getOpenAIReasoningEfforts(modelId);
-  if (efforts.length === 0) return undefined;
-  if (effort && efforts.includes(effort)) {
-    // ponytail: OpenAI has no distinct ultra level; keep the UI choice as a max alias.
-    return effort === "ultra" ? "max" : effort;
-  }
-  return DEFAULT_OPENAI_REASONING_EFFORT;
+  if (!modelSupportsOpenAIReasoning(modelId)) return undefined;
+  const setting = resolveReasoningSetting(modelId, {
+    openAIReasoningEffort: effort,
+  });
+  return setting === "default"
+    ? undefined
+    : (setting as OpenAIReasoningEffort | undefined);
 }
 
-/**
- * Provider-specific options passed to `streamText` to request reasoning /
- * extended thinking. Each provider reads only its own namespace:
- *   - `anthropic.thinking` — direct Anthropic provider AND the Pensar gateway
- *     (the gateway formatter maps it to the Bedrock `thinking` field).
- *   - `bedrock.reasoningConfig` — the AWS Bedrock provider; it ignores the
- *     `anthropic` namespace entirely, so Anthropic-on-Bedrock thinking is only
- *     requested when this key is present. `display: 'summarized'` makes the
- *     model actually return reasoning text (adaptive can otherwise omit it).
- *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
- */
-export type ReasoningProviderOptions = {
-  openrouter?: {
-    reasoning: { effort: OpenAIReasoningEffort; enabled?: boolean };
-  };
-  anthropic?: {
-    thinking:
-      | { type: "adaptive"; display?: "summarized" }
-      | { type: "disabled" };
-    // Soft effort hint for adaptive thinking; omitted when no level requested
-    // (model defaults to "high"). Sibling of `thinking` per the AI SDK.
-    effort?: ThinkingEffort;
-  };
-  bedrock?: {
-    reasoningConfig:
-      | {
-          type: "adaptive";
-          display: "summarized";
-          // Bedrock's channel for the adaptive effort hint (maps to Claude's
-          // output_config.effort).
-          maxReasoningEffort?: ThinkingEffort;
-        }
-      | { type: "disabled" };
-    /** Explicitly forwarded for Anthropic because the Bedrock SDK currently
-     * drops reasoningConfig.type="disabled" instead of sending it. */
-    additionalModelRequestFields?: {
-      thinking: { type: "disabled" };
-    };
-  };
-  openai?: OpenAIResponsesProviderOptions;
-};
+export type { ReasoningProviderOptions } from "./reasoning";
+
+export function mergeProviderOptions(
+  ...options: Array<ReasoningProviderOptions | undefined>
+): ReasoningProviderOptions | undefined {
+  if (options.every((value) => value === undefined)) return undefined;
+  const merged: ReasoningProviderOptions = {};
+  for (const option of options) {
+    for (const [provider, value] of Object.entries(option ?? {})) {
+      merged[provider] = { ...merged[provider], ...value };
+    }
+  }
+  return merged;
+}
 
 export type OpenRouterProviderOptions = {
   openrouter?: {
-    provider:
+    provider?:
       | {
           only: ["z-ai"];
           allow_fallbacks: false;
@@ -1405,6 +1274,7 @@ export type OpenRouterProviderOptions = {
           allow_fallbacks: true;
           require_parameters: true;
         };
+    cache_control?: { type: "ephemeral" };
   };
 };
 
@@ -1412,9 +1282,26 @@ function isZaiPinnedModel(model: AIModel): boolean {
   return model === "z-ai/glm-5.2" || model === "z-ai/glm-5.3";
 }
 
+/**
+ * Anthropic caching engages only on an explicit `cache_control` marker, and
+ * OpenRouter takes it as a request-level directive rather than the per-message
+ * breakpoint `cacheBreakpointFor` emits for the native and Bedrock paths. With
+ * no marker the whole prompt is re-processed every step, which is how every
+ * `anthropic/*` id ran at a 0% cache hit rate. Other OpenRouter authors are
+ * left alone: Z.AI caches implicitly and the directive is Anthropic-only.
+ */
+function isAnthropicOpenRouterModel(model: AIModel): boolean {
+  return model.startsWith("anthropic/");
+}
+
+const ANTHROPIC_OPENROUTER_CACHE: OpenRouterProviderOptions = {
+  openrouter: { cache_control: { type: "ephemeral" } },
+};
+
 export function buildOpenRouterProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
+  if (isAnthropicOpenRouterModel(model)) return ANTHROPIC_OPENROUTER_CACHE;
   if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
@@ -1435,6 +1322,7 @@ export function buildOpenRouterProviderOptions(
 export function buildOpenRouterStructuredProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
+  if (isAnthropicOpenRouterModel(model)) return ANTHROPIC_OPENROUTER_CACHE;
   if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
@@ -1447,119 +1335,21 @@ export function buildOpenRouterStructuredProviderOptions(
   };
 }
 
-/**
- * Build the `providerOptions` for a request based on the model and reasoning
- * settings. Returns `undefined` when no reasoning/thinking is requested.
- *
- * When thinking is enabled for an Anthropic-family model we set BOTH the
- * `anthropic` and `bedrock` keys: the resolved provider (direct Anthropic,
- * Pensar gateway, or Bedrock) reads only its own namespace and ignores the
- * other, so this is safe across all three and avoids brittle provider
- * branching here.
- */
 export function buildReasoningProviderOptions(
   model: AIModel,
   opts: {
+    reasoning?: ReasoningSetting;
     enableThinking?: boolean;
-    /**
-     * Adaptive-thinking effort hint for Anthropic models that support it
-     * Ignored on models without adaptive support. When omitted, models in the
-     * Claude capability registry use their documented provider default.
-     */
     thinkingEffort?: ThinkingEffort | null;
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
+    customProviders?: import("../config/customProviders").CustomProviders;
+    maxOutputTokens?: number;
   },
 ): ReasoningProviderOptions | undefined {
-  const claude = getClaudeCapabilities(model);
-  if (claude) {
-    const provider = getModelInfo(model).provider;
-    const thinking = !!opts.enableThinking || claude.alwaysOnThinking;
-    const effort = opts.thinkingEffort ?? claude.defaultEffort;
-    if (provider === "openrouter") {
-      return {
-        openrouter: {
-          reasoning: {
-            effort: thinking ? effort : "none",
-            enabled: thinking,
-          },
-        },
-      };
-    }
-    if (provider === "concentrate") {
-      return {
-        openai: {
-          forceReasoning: true,
-          reasoningEffort: thinking ? effort : "none",
-          reasoningSummary: "auto",
-        },
-      };
-    }
-    return {
-      anthropic: {
-        thinking: thinking
-          ? { type: "adaptive", display: "summarized" }
-          : { type: "disabled" },
-        ...(thinking ? { effort } : {}),
-      },
-      ...(provider === "bedrock"
-        ? {
-            bedrock: {
-              reasoningConfig: thinking
-                ? {
-                    type: "adaptive" as const,
-                    display: "summarized" as const,
-                    maxReasoningEffort: effort,
-                  }
-                : { type: "disabled" as const },
-              ...(!thinking
-                ? {
-                    additionalModelRequestFields: {
-                      thinking: { type: "disabled" as const },
-                    },
-                  }
-                : {}),
-            },
-          }
-        : {}),
-    };
-  }
-  const useThinking =
-    !!opts.enableThinking &&
-    isAnthropicProvider(model) &&
-    modelSupportsAdaptiveThinking(model);
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
-    opts.openAIReasoningEffort,
-  );
-  // The effort hint only rides along when adaptive thinking is actually used.
-  const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
-
-  if (!useThinking && !normalizedOpenAIEffort) return undefined;
-
-  if (getModelInfo(model).provider === "openrouter" && normalizedOpenAIEffort) {
-    return { openrouter: { reasoning: { effort: normalizedOpenAIEffort } } };
-  }
-
-  return {
-    ...(useThinking
-      ? {
-          anthropic: {
-            thinking: { type: "adaptive" as const },
-            ...(effort ? { effort } : {}),
-          },
-          bedrock: {
-            reasoningConfig: {
-              type: "adaptive" as const,
-              display: "summarized" as const,
-              ...(effort ? { maxReasoningEffort: effort } : {}),
-            },
-          },
-        }
-      : {}),
-    ...(normalizedOpenAIEffort
-      ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
-      : {}),
-  };
+  const setting = resolveReasoningSetting(model, opts);
+  return setting === undefined
+    ? undefined
+    : buildModelReasoningOptions(model, setting, opts);
 }
 
 /** Cache token metrics extracted from Anthropic providerMetadata */
@@ -1622,6 +1412,7 @@ export interface StreamResponseOpts {
   thinkingEffort?: ThinkingEffort | null;
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
   /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
@@ -1718,6 +1509,7 @@ function streamResponseWithinOperation(
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
+    reasoning,
     sessionId,
     sessionPath,
     contextRecorder,
@@ -1965,12 +1757,15 @@ function streamResponseWithinOperation(
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
+    reasoning,
+    customProviders: authConfig?.customProviders,
+    maxOutputTokens,
   });
   const openRouterProviderOptions = buildOpenRouterProviderOptions(model);
-  const providerOptions =
-    reasoningProviderOptions || openRouterProviderOptions
-      ? { ...reasoningProviderOptions, ...openRouterProviderOptions }
-      : undefined;
+  const providerOptions = mergeProviderOptions(
+    reasoningProviderOptions,
+    openRouterProviderOptions,
+  );
 
   let rateLimitRetryCount = 0;
 
@@ -2080,6 +1875,10 @@ function streamResponseWithinOperation(
           operation: "apex.agent.stream",
           sessionId,
           compaction: opts._compaction?.last,
+          reasoning: {
+            requested: reasoning ?? "legacy-default",
+            parameters: JSON.stringify(reasoningProviderOptions ?? {}),
+          },
         }),
         tracer: generationSpans.tracer,
       },
@@ -2264,7 +2063,7 @@ function streamResponseWithinOperation(
             return null;
           }
 
-          const jsonSchema = inputSchema({ toolName: toolCall.toolName });
+          const jsonSchema = await inputSchema({ toolName: toolCall.toolName });
 
           // Bound input + schema so the repair call can't itself overflow.
           const rawInput = toolCall.input;
@@ -2289,8 +2088,9 @@ function streamResponseWithinOperation(
             () =>
               generateText({
                 model: providerModel,
+                maxOutputTokens,
                 providerOptions: {
-                  ...openRouterProviderOptions,
+                  ...providerOptions,
                   // Durable runtime: tool-call repair fires only when a
                   // replayed tool call fails validation — nondeterministically
                   // vs the first run — so it must stay off the checkpoint
@@ -2318,6 +2118,10 @@ function streamResponseWithinOperation(
                 experimental_telemetry: createAiTelemetrySettings({
                   operation: "apex.tool.repair",
                   sessionId,
+                  reasoning: {
+                    requested: reasoning ?? "legacy-default",
+                    parameters: JSON.stringify(reasoningProviderOptions ?? {}),
+                  },
                 }),
               }),
           );
@@ -2478,6 +2282,7 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   maxTokens?: number;
   temperature?: number;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
@@ -2515,6 +2320,7 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
     maxTokens,
     temperature,
     openAIReasoningEffort,
+    reasoning,
     authConfig,
     abortSignal,
     onTokenUsage,
@@ -2539,6 +2345,9 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
     : baseProviderModel;
   const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     openAIReasoningEffort,
+    reasoning,
+    customProviders: authConfig?.customProviders,
+    maxOutputTokens: maxTokens,
   });
   const openRouterProviderOptions =
     buildOpenRouterStructuredProviderOptions(model);
@@ -2566,25 +2375,19 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
             system,
             maxOutputTokens: maxTokens,
             temperature,
-            providerOptions:
-              reasoningProviderOptions || openRouterProviderOptions
-                ? {
-                    ...reasoningProviderOptions,
-                    ...(openRouterProviderOptions
-                      ? {
-                          openrouter: {
-                            ...reasoningProviderOptions?.openrouter,
-                            ...openRouterProviderOptions.openrouter,
-                          },
-                        }
-                      : {}),
-                  }
-                : undefined,
+            providerOptions: mergeProviderOptions(
+              reasoningProviderOptions,
+              openRouterProviderOptions,
+            ),
             maxRetries: 0,
             abortSignal,
             experimental_telemetry: createAiTelemetrySettings({
               operation: opts.operation ?? "apex.structured.generate",
               sessionId,
+              reasoning: {
+                requested: reasoning ?? "legacy-default",
+                parameters: JSON.stringify(reasoningProviderOptions ?? {}),
+              },
             }),
           });
 

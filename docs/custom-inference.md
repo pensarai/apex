@@ -75,7 +75,8 @@ optional `reasoningEffort` on each model:
           "id": "your-model-id",
           "contextLength": 200000,
           "maxOutputTokens": 32000,
-          "reasoningEffort": "high"
+          "reasoningEffort": "high",
+          "supportedReasoningEfforts": ["low", "medium", "high"]
         }
       ]
     }
@@ -90,6 +91,13 @@ effort values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`
 the endpoint decides which values a model accepts. Omit `reasoningEffort` to
 leave the effort choice to the endpoint. `requestBody` is available only for
 Chat Completions providers.
+
+Declare `supportedReasoningEfforts` only with levels verified for that endpoint
+and model. This enables the TUI effort selector and `--effort` overrides; an
+explicit selection takes precedence over `reasoningEffort`. The configured
+default must belong to the declared list. Without that metadata, Apex keeps the
+endpoint's configured behavior and hides the effort control. Chat Completions
+endpoints continue to use their explicit `requestBody` configuration.
 
 ## Headless CLI and workers
 

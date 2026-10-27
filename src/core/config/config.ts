@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FindingPolicy } from "../agents/offSecAgent";
+import type { ReasoningSetting } from "../ai";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
 import {
@@ -53,8 +54,10 @@ export interface Config {
   recentModelIds?: string[];
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
+  modelReasoning?: Record<string, ReasoningSetting>;
   openAIReasoningEffort?:
     | "none"
+    | "minimal"
     | "low"
     | "medium"
     | "high"

@@ -2,11 +2,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { getModelSettings } from "../../../ai";
 import { CredentialManager } from "../../../credentials";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AuthenticationResult } from "../../specialized/authenticationAgent/agent";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
+import { assertUrlInScope } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("delegate_auth"));
@@ -231,6 +233,9 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           }
         }
 
+        assertUrlInScope(target, ctx);
+        if (loginUrl) assertUrlInScope(loginUrl, ctx);
+
         log.info("Delegating to authentication subagent", {
           target,
           reason,
@@ -300,13 +305,13 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           runtime: {
             findingPolicy: ctx.findingPolicy,
             session: ctx.session,
-            model: ctx.model,
-            authConfig: ctx.authConfig,
+            ...getModelSettings(ctx),
             abortSignal: ctx.abortSignal,
             environmentVariables: ctx.environmentVariables,
             secretValues: ctx.secretValues,
             backends: ctx.backends,
             languageModelMiddleware: ctx.languageModelMiddleware,
+            toolProtocol: ctx.toolProtocol,
             usageRecorder: ctx.usageRecorder,
             toolExecutionContext: ctx.toolExecutionContext,
             streamIdFactory: ctx.streamIdFactory,

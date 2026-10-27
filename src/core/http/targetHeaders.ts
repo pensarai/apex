@@ -11,6 +11,7 @@ import {
 } from "./redirects";
 import {
   getSessionAllowedHosts,
+  getSessionAllowedPorts,
   isHostInScope,
   isUrlInSessionScope,
 } from "./targetScope";
@@ -24,6 +25,8 @@ export interface ResolverSession {
     readonly headers?: HeaderRecord;
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
+      readonly allowedPorts?: ReadonlyArray<number>;
+      readonly strictScope?: boolean;
     };
     readonly authCredentials?: unknown;
   };
@@ -34,7 +37,6 @@ export interface ResolverSession {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Layer collection
 // ---------------------------------------------------------------------------
 
@@ -158,17 +160,25 @@ export function targetFetch(
   url: string,
   init?: RequestInit,
 ): Promise<RedirectFetchResult> {
+  const strict = session.config?.scopeConstraints?.strictScope === true;
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const { headers: _headers, ...requestInit } = init ?? {};
-  return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) =>
-    resolveEffectiveHeaders(
+  return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) => {
+    if (strict && !isUrlInSessionScope(hopUrl, session)) {
+      throw new Error(
+        context.redirectCount > 0
+          ? `Scope violation: redirect destination ${hopUrl} is not in the immutable run policy`
+          : `Scope violation: ${hopUrl} is not in the immutable run policy`,
+      );
+    }
+    return resolveEffectiveHeaders(
       session,
       hopUrl,
       context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
         ? callerHeaders
         : undefined,
-    ),
-  );
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +240,8 @@ const injectCurl: ShellInjector = (command, headers) => {
   const existing = existingHeaderNames(command);
   const flags = buildHFlags(headers, existing, "-H");
   if (!flags) return command;
-  return command.replace(/(?<!\/)(\bcurl\b)/, (m) => `${m} ${flags}`);
+  const injected = command.replace(/(?<!\/)(\bcurl\b)/, (m) => `${m} ${flags}`);
+  return `${injected} --max-redirs 0`;
 };
 
 const injectWget: ShellInjector = (command, headers) => {
@@ -242,7 +253,11 @@ const injectWget: ShellInjector = (command, headers) => {
   }
   if (parts.length === 0) return command;
   const joined = parts.join(" ");
-  return command.replace(/(?<!\/)(\bwget\b)/, (m) => `${m} ${joined}`);
+  const injected = command.replace(
+    /(?<!\/)(\bwget\b)/,
+    (m) => `${m} ${joined}`,
+  );
+  return `${injected} --max-redirect=0`;
 };
 
 const injectGenericH: (tool: string) => ShellInjector =
@@ -569,7 +584,10 @@ export function applyHeadersToShellCommand(
     return { command, status: "no-headers", tool: null };
   }
 
-  const url = `https://${inScopeHost}`;
+  const allowedPorts = getSessionAllowedPorts(session);
+  const url = `https://${inScopeHost}${
+    allowedPorts.length > 0 ? `:${allowedPorts[0]}` : ""
+  }`;
   const headers = resolveEffectiveHeaders(session, url);
   if (Object.keys(headers).length === 0) {
     return { command, status: "no-headers", tool: null };

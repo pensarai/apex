@@ -68,11 +68,27 @@ describe("defaultPolicy", () => {
     if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
   });
 
-  it("allows an out-of-scope readability (get_page) fetch — research URLs are unscoped", async () => {
+  it("denies an out-of-scope readability fetch", async () => {
     const decision = await defaultPolicy.beforeCall({
       backend: "http",
       op: "request",
       args: { method: "GET", url: "http://evil.com/", extract: "readability" },
+      ctx: scopedCtx(),
+    });
+    expect(decision.allow).toBe(false);
+    if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
+  });
+
+  it("allows brokered readability with a signed search-result token", async () => {
+    const decision = await defaultPolicy.beforeCall({
+      backend: "http",
+      op: "request",
+      args: {
+        method: "GET",
+        url: "http://research.example/",
+        extract: "readability",
+        fetchToken: "signed-result",
+      },
       ctx: scopedCtx(),
     });
     expect(decision).toEqual({ allow: true });
@@ -87,6 +103,25 @@ describe("defaultPolicy", () => {
     });
     expect(decision.allow).toBe(false);
     if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
+  });
+
+  it("denies a direct browser navigation on an unlisted port", async () => {
+    const ctx = scopedCtx();
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedHosts: ["example.com"],
+        allowedPorts: [443],
+        strictScope: true,
+      },
+    };
+    const decision = await defaultPolicy.beforeCall({
+      backend: "browser",
+      op: "navigate",
+      args: { url: "https://example.com:8443/" },
+      ctx,
+    });
+    expect(decision.allow).toBe(false);
+    if (!decision.allow) expect(decision.reason).toMatch(/port 8443/);
   });
 
   it("allows direct browser navigation when no scope is configured", async () => {

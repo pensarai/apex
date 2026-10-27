@@ -227,7 +227,9 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
       engine: "chrome",
       headerPolicy: {
         allowedHosts: ["example.com"],
+        allowedPorts: [443],
         headers: { "X-Scoped-Secret": "secret" },
+        enforceScope: true,
       },
     }) as unknown as {
       buildMcpLaunch(id: string): Promise<{ cfg: unknown }>;
@@ -242,7 +244,9 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     const session = new PlaywrightMcpSession({
       headerPolicy: {
         allowedHosts: ["example.com"],
+        allowedPorts: [443],
         headers: { "X-Scoped-Secret": "secret" },
+        enforceScope: true,
       },
     });
     const callTool = vi.fn(async (_request: unknown) => ({}));
@@ -260,6 +264,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     expect(request.name).toBe("browser_run_code");
     expect(request.arguments.code).toContain("context.route('**/*'");
     expect(request.arguments.code).toContain("X-Scoped-Secret");
+    expect(request.arguments.code).toContain("maxRedirects: 0");
     expect(request.arguments.code).not.toContain("extraHTTPHeaders");
   });
 

@@ -73,7 +73,7 @@ describe("injected HTTP backends", () => {
     expect(hostFetch).not.toHaveBeenCalled();
   });
 
-  it("re-resolves sandbox curl headers for every redirect destination", async () => {
+  it("blocks a sandbox redirect outside the immutable host policy", async () => {
     const ctx = context();
     ctx.session.config = {
       headers: { "X-Session-Secret": "session-secret" },
@@ -119,20 +119,15 @@ describe("injected HTTP backends", () => {
       { timeoutMs: 5000 },
     );
 
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(commands[0]).toContain("X-Session-Secret: session-secret");
     expect(commands[0]).toContain("X-Credential-Secret: credential-secret");
-    expect(commands[1]).not.toContain("X-Session-Secret");
-    expect(commands[1]).not.toContain("X-Credential-Secret");
     expect(commands.join("\n")).not.toMatch(/\scurl\b[^\n]*\s-L(?:\s|$)/);
     expect(result).toMatchObject({
-      success: true,
-      url: "https://outside.example.net/final",
-      redirected: true,
-      redirectChain: [
-        "https://example.com/start",
-        "https://outside.example.net/final",
-      ],
+      success: false,
+      url: "https://example.com/start",
+      redirected: false,
+      error: expect.stringMatching(/Scope violation/),
     });
   });
 
@@ -142,6 +137,10 @@ describe("injected HTTP backends", () => {
       headers: {
         Authorization: "Bearer session-secret",
         "X-Session-Secret": "session-secret",
+      },
+      scopeConstraints: {
+        strictScope: true,
+        allowedHosts: ["example.com", "api.example.com"],
       },
     } as NonNullable<ToolContext["session"]["config"]>;
     const commands: string[] = [];
@@ -378,7 +377,7 @@ describe("redirect credential isolation", () => {
     return address.port;
   }
 
-  it("keeps get_page and local http_request credentials on the target host", async () => {
+  it("blocks get_page and local http_request redirects outside the target host", async () => {
     const received = new Map<string, import("node:http").IncomingHttpHeaders>();
     const outsidePort = await listen(
       createServer((request, response) => {
@@ -439,21 +438,15 @@ describe("redirect credential isolation", () => {
       expect(received.get(path)?.["x-credential-secret"]).toBeUndefined();
     }
     expect(pageResult).toMatchObject({
-      success: true,
-      url: `http://127.0.0.1:${outsidePort}/page-final`,
-      redirectChain: [
-        `${target}/page`,
-        `http://127.0.0.1:${outsidePort}/page-final`,
-      ],
+      success: false,
+      url: `${target}/page`,
+      error: expect.stringMatching(/Scope violation/),
     });
     expect(httpResult).toMatchObject({
-      success: true,
-      url: `http://127.0.0.1:${outsidePort}/http-final`,
-      redirected: true,
-      redirectChain: [
-        `${target}/http`,
-        `http://127.0.0.1:${outsidePort}/http-final`,
-      ],
+      success: false,
+      url: `${target}/http`,
+      redirected: false,
+      error: expect.stringMatching(/Scope violation/),
     });
   });
 });

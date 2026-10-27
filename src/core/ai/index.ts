@@ -47,6 +47,12 @@ export {
   getRecentModels,
   MAX_RECENT_MODELS,
 } from "./model-history";
+export type {
+  AgentToolProtocol,
+  AgentToolProtocolPreference,
+  ModelRuntimeProfile,
+} from "./modelRuntime";
+export { resolveModelRuntimeProfile } from "./modelRuntime";
 export {
   AVAILABLE_MODELS,
   getClaudeCapabilities,
@@ -69,5 +75,16 @@ export {
   stringifyCanonicalJson,
   toJsonValue,
 } from "./native-rollout-evidence";
+export {
+  getModelSettings,
+  getReasoningCapabilities,
+  getReasoningChoices,
+  REASONING_SETTINGS,
+  type ReasoningCapabilities,
+  type ReasoningEffort,
+  type ReasoningSetting,
+  resolveReasoningSetting,
+  validateReasoningSetting,
+} from "./reasoning";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";

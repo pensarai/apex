@@ -10,10 +10,11 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
-import { runWithNativeRolloutSession } from "../../ai";
+import { getModelSettings, runWithNativeRolloutSession } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -110,6 +111,7 @@ export interface SpawnRuntime {
   findingPolicy?: FindingPolicy;
   session: SessionInfo;
   model: AIModel;
+  toolProtocol?: AgentHooks["toolProtocol"];
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   sandbox?: UnifiedSandbox;
@@ -119,6 +121,7 @@ export interface SpawnRuntime {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   environmentVariables?: Record<string, string>;
   secretValues?: string[];
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
@@ -299,6 +302,7 @@ export interface SpawnedPentestWorkerInput {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   display?: string;
   /** The caller's own {@link AgentHooks} — `backends` is the caller's object. */
   hooks: AgentHooks;
@@ -330,9 +334,8 @@ export async function runSpawnedPentestWorker(
     role: spec.role,
     findingsRegistry: input.findingsRegistry,
     browserSession: input.browserSession,
-    model: input.model,
+    ...getModelSettings(input),
     session: input.session,
-    authConfig: input.authConfig,
     onStepFinish: input.onStepFinish,
     onCacheMetrics: input.onCacheMetrics,
     eventBus: input.eventBus,
@@ -340,9 +343,6 @@ export async function runSpawnedPentestWorker(
     subagentName: input.subagentName,
     environmentVariables: input.environmentVariables,
     secretValues: input.secretValues,
-    enableThinking: input.enableThinking,
-    thinkingEffort: input.thinkingEffort,
-    openAIReasoningEffort: input.openAIReasoningEffort,
     display: input.display,
     ...hooks,
     abortSignal:
@@ -394,9 +394,8 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     role: spec.role,
   };
   const workerInput: SpawnedPentestWorkerInput = {
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
@@ -407,15 +406,13 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     browserSession: spec.browserSession,
     environmentVariables: ctx.environmentVariables,
     secretValues: ctx.secretValues,
-    enableThinking: ctx.enableThinking,
-    thinkingEffort: ctx.thinkingEffort,
-    openAIReasoningEffort: ctx.openAIReasoningEffort,
     display: ctx.display,
     hooks: {
       findingPolicy: ctx.findingPolicy,
       backends: ctx.backends,
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
+      toolProtocol: ctx.toolProtocol,
       usageRecorder: ctx.usageRecorder,
       toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
@@ -443,22 +440,19 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     excludeTools: spec.excludeTools,
     projectThreatModel: spec.projectThreatModel,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
     sandbox: ctx.sandbox,
     backends: ctx.backends,
-    enableThinking: ctx.enableThinking,
-    thinkingEffort: ctx.thinkingEffort,
-    openAIReasoningEffort: ctx.openAIReasoningEffort,
     display: ctx.display,
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
@@ -477,9 +471,8 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     findingPolicy: ctx.findingPolicy,
     codebasePath: spec.codebasePath,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
@@ -487,6 +480,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     sandbox: ctx.sandbox,
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
@@ -505,15 +499,15 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     findingPolicy: ctx.findingPolicy,
     target: spec.target,
     attackSurfaceRegistry: spec.attackSurfaceRegistry,
-    model: ctx.model,
+    ...getModelSettings(ctx),
     session: ctx.session,
-    authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
     sandbox: ctx.sandbox,
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
@@ -532,8 +526,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         target: spec.target,
         authHints: spec.authHints,
         session: ctx.session,
-        model: ctx.model,
-        authConfig: ctx.authConfig,
+        ...getModelSettings(ctx),
         abortSignal: ctx.abortSignal,
         eventBus: ctx.eventBus,
         subagentId: ctx.subagentId,
@@ -542,6 +535,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         secretValues: ctx.secretValues,
         backends: ctx.backends,
         languageModelMiddleware: ctx.languageModelMiddleware,
+        toolProtocol: ctx.toolProtocol,
         usageRecorder: ctx.usageRecorder,
         toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,
@@ -555,9 +549,8 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
     run: () =>
       judgeFinding(spec.judgeInput, {
         waitForDrain: spec.waitForDrain,
-        model: ctx.model,
+        ...getModelSettings(ctx),
         session: ctx.session,
-        authConfig: ctx.authConfig,
         abortSignal: ctx.abortSignal,
         eventBus: ctx.eventBus,
         subagentId: ctx.subagentId,
@@ -565,10 +558,8 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         sandbox: ctx.sandbox,
         backends: ctx.backends,
         target: spec.target,
-        enableThinking: ctx.enableThinking,
-        thinkingEffort: ctx.thinkingEffort,
-        openAIReasoningEffort: ctx.openAIReasoningEffort,
         languageModelMiddleware: ctx.languageModelMiddleware,
+        toolProtocol: ctx.toolProtocol,
         usageRecorder: ctx.usageRecorder,
         toolExecutionContext: ctx.toolExecutionContext,
         streamIdFactory: ctx.streamIdFactory,

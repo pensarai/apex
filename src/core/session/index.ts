@@ -218,6 +218,23 @@ function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
 }
 
 const SessionConfigObject = z.object({
+  modelReasoning: z
+    .object({
+      model: z.string(),
+      setting: z.enum([
+        "default",
+        "enabled",
+        "disabled",
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ]),
+    })
+    .optional(),
   /**
    * Custom HTTP headers for outbound target requests. Snapshotted from
    * `config.defaultHeaders` at create time; read via the resolver in
@@ -1091,4 +1108,16 @@ export const sessions = {
   getResumeMessages,
   updateOperatorSettings,
   updateSessionHeaders,
+  updateModelReasoning,
 };
+
+export async function updateModelReasoning(
+  id: string,
+  model: string,
+  setting: NonNullable<SessionConfig["modelReasoning"]>["setting"],
+): Promise<SessionInfo> {
+  return update(id, (session) => {
+    session.config ??= {};
+    session.config.modelReasoning = { model, setting };
+  });
+}

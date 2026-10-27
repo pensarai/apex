@@ -87,6 +87,7 @@ export function createLanceJudgeVerifier<TResult>(
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
+        reasoning: input.reasoning,
         languageModelMiddleware: [
           runtime.judgeMiddleware,
           ...(Array.isArray(middleware)

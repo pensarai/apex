@@ -16,14 +16,17 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
   InferenceRecorder,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
+import type { CodeCellResult } from "../../code-mode";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -149,6 +152,14 @@ export interface AgentHooks {
   findingPolicy?: FindingPolicy;
 
   toolExecutionContext?: ToolExecutionContext;
+  /** Defaults to auto; APEX_CODE_MODE can select a process-wide default. */
+  toolProtocol?: AgentToolProtocolPreference;
+  /** Restrict these active capabilities to direct calls, excluding the exec bridge. */
+  directTools?: string[];
+  /** Also allow injected tools inside exec; lifecycle contracts always remain direct. */
+  nestedTools?: string[];
+  onCodeCellComplete?: (result: CodeCellResult) => void;
+
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
 
@@ -481,6 +492,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
@@ -613,6 +625,7 @@ export interface SpecializedAgentInput extends AgentHooks {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for

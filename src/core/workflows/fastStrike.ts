@@ -108,6 +108,7 @@ export async function runFastStrike(
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
+    reasoning,
     prompt,
     threatModel,
     seams: inputSeams,
@@ -122,6 +123,7 @@ export async function runFastStrike(
         findings: () =>
           FindingsRegistry.fromDirectory(session.findingsPath, {
             model,
+            reasoning,
             authConfig,
             abortSignal,
             sessionId: session.id,
@@ -218,6 +220,7 @@ export async function runFastStrike(
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
+    reasoning,
   });
 
   eventBus?.emit("subagent-spawn", {

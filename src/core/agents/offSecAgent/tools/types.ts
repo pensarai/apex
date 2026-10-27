@@ -4,10 +4,12 @@ import type {
   ToolSet,
 } from "ai";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../../ai";
@@ -85,6 +87,7 @@ export type ToolContext = {
 
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
+  toolProtocol?: AgentToolProtocolPreference;
 
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
@@ -178,6 +181,7 @@ export type ToolContext = {
 
   /** OpenAI reasoning effort for GPT/o-series sub-agents. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the

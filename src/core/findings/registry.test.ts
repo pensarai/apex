@@ -1627,6 +1627,7 @@ describe("FindingsRegistry model-call hooks", () => {
       model: "test-model",
       languageModelMiddleware,
       usageRecorder,
+      reasoning: "low",
     });
     await registry.register(missingCspRoot);
     await registry.register(
@@ -1642,6 +1643,7 @@ describe("FindingsRegistry model-call hooks", () => {
         operation: "apex.finding.deduplicate",
         languageModelMiddleware,
         usageRecorder,
+        reasoning: "low",
       }),
     );
   });
@@ -1651,7 +1653,12 @@ describe("FindingsRegistry model-call hooks", () => {
 
     const registry = FindingsRegistry.fromFindings(
       [sqlInjectionProducts, missingCspRoot],
-      { model: "test-model", languageModelMiddleware, usageRecorder },
+      {
+        model: "test-model",
+        languageModelMiddleware,
+        usageRecorder,
+        reasoning: "low",
+      },
     );
     await registry.groupByRootCause();
 
@@ -1660,6 +1667,7 @@ describe("FindingsRegistry model-call hooks", () => {
         operation: "apex.finding.root-cause",
         languageModelMiddleware,
         usageRecorder,
+        reasoning: "low",
       }),
     );
   });

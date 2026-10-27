@@ -492,7 +492,11 @@ vi.mock("./tools", () => ({
   sessionHasSmsPasswordless: () => false,
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
-  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
+  resolveBrowserHeaderPolicy: () => ({
+    allowedHosts: [],
+    allowedPorts: [],
+    headers: {},
+  }),
   CallbackListenerRegistry: class {
     async stopAll() {
       return [];
@@ -502,6 +506,7 @@ vi.mock("./tools", () => ({
 }));
 
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: { tools: ToolSet }) => {
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };

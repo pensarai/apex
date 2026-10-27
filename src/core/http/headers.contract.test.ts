@@ -195,6 +195,24 @@ describe("resolveEffectiveHeaders", () => {
     });
     expect(resolveEffectiveHeaders(s, "https://example.com/x")).toEqual({});
   });
+
+  it("does not resolve injected headers on an unlisted port", () => {
+    const s = makeSession({
+      config: {
+        headers: { "X-Test": "1" },
+        scopeConstraints: {
+          allowedHosts: ["example.com"],
+          allowedPorts: [443],
+        },
+      },
+    });
+    expect(resolveEffectiveHeaders(s, "https://example.com/x")).toEqual({
+      "X-Test": "1",
+    });
+    expect(resolveEffectiveHeaders(s, "https://example.com:8443/x")).toEqual(
+      {},
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -252,6 +270,64 @@ describe("targetFetch", () => {
     expect(init.headers).toEqual({
       Accept: "text/html",
       "Accept-Language": "en-US",
+    });
+
+    spy.mockRestore();
+  });
+
+  it("blocks a default strict-scope redirect before connecting to its destination", async () => {
+    const session = makeSession({
+      config: {
+        headers: { Authorization: "Bearer secret" },
+        scopeConstraints: {
+          strictScope: true,
+          allowedHosts: ["example.com"],
+        },
+      },
+    });
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("", {
+        status: 302,
+        headers: { location: "https://outside.example/admin" },
+      }),
+    );
+
+    await expect(
+      targetFetch(session, "https://example.com/start"),
+    ).rejects.toThrow(/redirect destination.*immutable run policy/i);
+    expect(spy).toHaveBeenCalledOnce();
+
+    spy.mockRestore();
+  });
+
+  it("authorizes each strict-scope redirect hop", async () => {
+    const session = makeSession({
+      config: {
+        headers: { "X-API-Key": "abc" },
+        scopeConstraints: {
+          strictScope: true,
+          allowedHosts: ["example.com"],
+        },
+      },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 302,
+          headers: { location: "/final" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+
+    await targetFetch(session, "https://example.com/start", {
+      redirect: "follow",
+    });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1]?.[0]).toBe("https://example.com/final");
+    expect(spy.mock.calls[1]?.[1]?.headers).toMatchObject({
+      "X-API-Key": "abc",
     });
 
     spy.mockRestore();
@@ -440,6 +516,22 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.status).toBe("injected");
     expect(r.tool).toBe("curl");
     expect(r.command).toContain(`-H "X-API-Key: abc"`);
+    expect(r.command).toMatch(/--max-redirs 0$/);
+  });
+
+  it("disables automatic redirects for wget when injecting headers", () => {
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "wget https://example.com/api",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("wget");
+    expect(r.command).toContain(`--header="X-API-Key: abc"`);
+    expect(r.command).toMatch(/--max-redirect=0$/);
   });
 
   it("returns unknown-tool when the binary is not in the registry", () => {
@@ -582,7 +674,8 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.tool).toBe("curl");
     expect(r.command).toContain(`-H "X-API-Key: abc"`);
     // The merge token must survive byte-for-byte.
-    expect(r.command.endsWith("2>&1")).toBe(true);
+    expect(r.command).toContain("2>&1");
+    expect(r.command).toMatch(/--max-redirs 0$/);
   });
 
   it("injects when 2>&1 follows a file redirect (tool-guided capture pattern)", () => {
@@ -703,7 +796,12 @@ describe("applyHeadersToShellCommand", () => {
 
   it("fails closed when 2>&1 rides a command with multiple hosts, mixed or not", () => {
     const session = makeSession({
-      config: { headers: { "X-API-Key": "abc" } },
+      config: {
+        headers: { "X-API-Key": "abc" },
+        scopeConstraints: {
+          allowedHosts: ["example.com", "*.example.com"],
+        },
+      },
     });
     for (const hosts of [
       ["example.com", "attacker.net"],

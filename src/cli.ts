@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { resolveCliReasoning } from "./core/cli/reasoning";
+
 /**
  * Pensar - AI-Powered Penetration Testing CLI
  *
@@ -297,7 +299,6 @@ pentest options:
   --cwd <path>             Source code path — enables whitebox attack surface
   --mode <mode>            Pentest mode: exfil (pivoting & flag extraction)
   --model <model>          AI model (default: auto-selected from configured provider)
-  --extended-thinking       Enable extended thinking for supported models
   --task-driven             Enable task-driven architecture (experimental)
   --lance                 Minimal offensive-capability mode (requires --prompt)
   --timeout-ms <ms>        Lance budget (default: 900000)
@@ -332,6 +333,9 @@ export-trajectory options:
   --output <path>  Fresh output directory; existing paths are never overwritten
 
 Global options:
+  --effort <level>       Reasoning effort or default (headless commands)
+  --extended-thinking   Enable thinking (headless commands)
+  --no-extended-thinking Disable thinking where supported (headless commands)
   --model-provider <id>  Hoonify or custom provider for --model (headless commands)
   -h, --help         Show this help message
   -v, --version      Show version number
@@ -389,6 +393,7 @@ async function runPentest() {
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
+  const reasoning = resolveCliReasoning(args, model, pensarConfig);
   const headers = await resolveCliHeaders();
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
@@ -407,13 +412,16 @@ async function runPentest() {
 ${lance ? "LANCE" : "PENTEST ORCHESTRATION"}
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${externalFindings ? "\nFindings: external evaluation" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
+Model:   ${model}${reasoning ? `\nReasoning: ${reasoning}` : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${externalFindings ? "\nFindings: external evaluation" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
     name: lance ? "Lance" : cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
     config: {
+      ...(reasoning !== undefined
+        ? { modelReasoning: { model, setting: reasoning } }
+        : {}),
       ...(cwd ? { codebasePath: cwd } : {}),
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
@@ -431,6 +439,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
     await runCliLance({
       prompt: resolvedPrompt!,
       model,
+      reasoning,
       target,
       session,
       enableThinking,
@@ -475,6 +484,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
           ...(cwd ? { cwd } : {}),
           session,
           model,
+          reasoning,
           enableThinking,
           ...(externalFindings ? { findingPolicy: "external" as const } : {}),
           ...(fastStrike ? { fastStrike: true } : {}),
@@ -535,6 +545,7 @@ async function runTargetedPentest() {
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
+  const reasoning = resolveCliReasoning(args, model, pensarConfig);
 
   if (objectives.length === 0) {
     console.error("Error: at least one --objective is required");
@@ -558,9 +569,12 @@ ${objectivesList}
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
-    ...(headers !== undefined || evidenceOutput
+    ...(headers !== undefined || evidenceOutput || reasoning !== undefined
       ? {
           config: {
+            ...(reasoning !== undefined
+              ? { modelReasoning: { model, setting: reasoning } }
+              : {}),
             ...(headers !== undefined ? { headers } : {}),
             ...(evidenceOutput
               ? { nativeRolloutEvidence: { outputDirectory: evidenceOutput } }
@@ -587,6 +601,7 @@ ${objectivesList}
             objectives,
             session,
             model,
+            reasoning,
             authConfig: buildAuthConfig(pensarConfig),
             eventBus: targetedBus,
           });
@@ -615,6 +630,7 @@ async function runThreatModel() {
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
+  const reasoning = resolveCliReasoning(args, model, pensarConfig);
 
   const outputArg = getArg("--output") ?? getArg("-o") ?? "threat-model.md";
   const resolvedPath = path.isAbsolute(outputArg)
@@ -641,6 +657,7 @@ Model:    ${model}
     codebasePath: process.cwd(),
     outputPath: resolvedPath,
     model,
+    reasoning,
     authConfig: buildAuthConfig(pensarConfig),
     eventBus: threatBus,
   });
@@ -678,6 +695,7 @@ async function runOperator() {
   const evidenceOutput = nativeRolloutEvidenceOutput();
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
+  const reasoning = resolveCliReasoning(args, model, pensarConfig);
 
   const sep = "─".repeat(60);
   console.log(`${sep}
@@ -691,6 +709,9 @@ ${sep}\n`);
     name: "Operator Session",
     targets: target ? [target] : [],
     config: {
+      ...(reasoning !== undefined
+        ? { modelReasoning: { model, setting: reasoning } }
+        : {}),
       mode: "operator",
       agentCwd: process.cwd(),
       operatorSettings: {
@@ -742,6 +763,7 @@ ${sep}\n`);
             prompt: currentPrompt,
             ...(systemPrompt ? { system: systemPrompt } : {}),
             model,
+            reasoning,
             target,
             activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
             stopWhen: stepCountIs(10000),

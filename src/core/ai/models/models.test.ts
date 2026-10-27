@@ -304,7 +304,6 @@ describe("OpenAI reasoning effort support", () => {
       "high",
       "xhigh",
       "max",
-      "ultra",
     ]);
     expect(modelSupportsOpenAIReasoning("gpt-5.6-terra")).toBe(true);
     expect(modelSupportsOpenAIReasoning("gpt-5.6-luna")).toBe(true);
@@ -317,12 +316,31 @@ describe("OpenAI reasoning effort support", () => {
     expect(modelSupportsOpenAIReasoning("o3-mini")).toBe(true);
   });
 
-  it("does not apply reasoning effort to unsupported GPT-5 variants", () => {
-    expect(modelSupportsOpenAIReasoning("gpt-5-nano")).toBe(false);
-    expect(modelSupportsOpenAIReasoning("gpt-5.1-codex-mini")).toBe(false);
-    expect(modelSupportsOpenAIReasoning("gpt-5.1-codex-max")).toBe(false);
-    expect(modelSupportsOpenAIReasoning("gpt-5.3-codex")).toBe(false);
-    expect(normalizeOpenAIReasoningEffort("gpt-5-nano")).toBeUndefined();
+  it("uses verified effort support for smaller and Codex models", () => {
+    expect(getOpenAIReasoningEfforts("gpt-5-nano")).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getOpenAIReasoningEfforts("gpt-5.1-codex-mini")).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getOpenAIReasoningEfforts("gpt-5.1-codex-max")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(getOpenAIReasoningEfforts("gpt-5.3-codex")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(modelSupportsOpenAIReasoning("gpt-future-99")).toBe(false);
   });
 
   it("defaults only supported reasoning models to medium", () => {

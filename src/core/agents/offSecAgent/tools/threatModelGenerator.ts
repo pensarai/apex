@@ -1,6 +1,7 @@
 import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
+import { getModelSettings } from "../../../ai";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type {
@@ -314,7 +315,6 @@ export async function generateThreatModelForEndpoint(
   input: GenerateThreatModelInput,
 ): Promise<ThreatModelOutput | null> {
   if (!ctx.model) return null;
-  const model = ctx.model;
 
   return threatModelLimiter(async () => {
     if (ctx.abortSignal?.aborted) return null;
@@ -375,11 +375,11 @@ export async function generateThreatModelForEndpoint(
         runtime: {
           findingPolicy: ctx.findingPolicy,
           session: ctx.session,
-          model,
-          authConfig: ctx.authConfig,
+          ...getModelSettings(ctx),
           abortSignal: childAbort.signal,
           backends: ctx.backends,
           languageModelMiddleware: ctx.languageModelMiddleware,
+          toolProtocol: ctx.toolProtocol,
           usageRecorder: ctx.usageRecorder,
           toolExecutionContext: ctx.toolExecutionContext,
           streamIdFactory: ctx.streamIdFactory,

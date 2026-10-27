@@ -103,9 +103,14 @@ vi.mock("./tools", () => ({
   },
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
-  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
+  resolveBrowserHeaderPolicy: () => ({
+    allowedHosts: [],
+    allowedPorts: [],
+    headers: {},
+  }),
 }));
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: Record<string, unknown>) => {
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };
