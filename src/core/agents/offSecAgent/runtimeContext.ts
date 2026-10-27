@@ -363,7 +363,9 @@ export function buildRuntimeContextSection(
         ? "When a tool is absent, use exec for tool coordination and in-memory logic. Use execute_command with available interpreters (shell/Python/Node) when the work needs native programs, installed libraries, services, or substantial processing of files on disk."
         : "When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists."
     } For tools listed unknown, verify with \`${verify}\` before first use.`,
-    "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun. A successful file write alone does not establish that a helper works.",
+    "Before implementing a transformation over unfamiliar data, inspect representative inputs and confirm the fields and structure your logic depends on.",
+    "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun.",
+    "Before declaring success, check the result against the task's requirements using an independent calculation, representative cases, or relevant tests. Creating or reading back an output file alone does not establish correctness.",
     "[/RUNTIME CONTEXT]",
   ];
   return lines.filter(Boolean).join("\n");
