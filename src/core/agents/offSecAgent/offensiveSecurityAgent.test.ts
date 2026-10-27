@@ -366,6 +366,56 @@ describe("spawned-agent usage callbacks", () => {
 });
 
 describe("auxiliary model events", () => {
+  it("acknowledges directed mail only after the transcript is durable", async () => {
+    streamResponseCalls.length = 0;
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-durable-mail-"));
+    try {
+      const onMessagesPersisted = vi.fn((messages) => {
+        expect(
+          JSON.parse(
+            readFileSync(
+              join(rootPath, "subagents", "worker", "messages.json"),
+              "utf8",
+            ),
+          ),
+        ).toEqual(messages);
+      });
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: { id: "ses_durable_mail", rootPath },
+        subagentId: "worker",
+        activeTools: [],
+        sandbox: {},
+        onMessagesPersisted,
+      } as never);
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onContextPrepared: (context: {
+          messages: Array<{ role: string; content: unknown }>;
+          responseMessageOffset: number;
+        }) => void;
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      call.onContextPrepared({
+        messages: [
+          { role: "user", content: "[engagement-mail:123] From lead: help" },
+        ],
+        responseMessageOffset: 0,
+      });
+      await call.onStepFinish({
+        response: {
+          id: "step-1",
+          messages: [{ role: "assistant", content: "done" }],
+        },
+        usage: { inputTokens: 1, outputTokens: 1 },
+      });
+      expect(onMessagesPersisted).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
   it("persists prepared context instead of restoring a fitted-away prefix", async () => {
     streamResponseCalls.length = 0;
     const rootPath = mkdtempSync(join(tmpdir(), "apex-fitted-history-"));

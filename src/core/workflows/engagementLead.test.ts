@@ -68,6 +68,7 @@ function setup() {
     model: "test" as never,
     session,
     prompt: "Test both apps",
+    findingPolicy: "external" as const,
   };
   const plan = {
     version: 1,
@@ -229,6 +230,22 @@ describe("code-mode engagement lead", () => {
 
   it("resumes a failed worker with its stable ID and persists complete coverage", async () => {
     const { rootPath, workflow, plan } = setup();
+    const [firstCandidate, secondCandidate] = candidates as [
+      EngagementTarget,
+      EngagementTarget,
+    ];
+    const grpcCandidates: EngagementTarget[] = [
+      {
+        ...firstCandidate,
+        grpc: {
+          transport: "grpc",
+          serviceFqn: "example.Accounts",
+          method: "GetAccount",
+        },
+      },
+      secondCandidate,
+    ];
+    plan.contractHash = engagementManifestHash(grpcCandidates);
     plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
     plan.missions = plan.missions.slice(0, 1);
     let attempts = 0;
@@ -255,6 +272,7 @@ describe("code-mode engagement lead", () => {
         return { summary: "done", coverageComplete: true };
       }
       attempts += 1;
+      expect(input.grpc).toEqual(grpcCandidates[0]?.grpc);
       if (attempts === 1) throw new Error("temporary failure");
       expect(id).toBe(resumed);
       return {
@@ -273,7 +291,7 @@ describe("code-mode engagement lead", () => {
     };
     const result = await runEngagementLead({
       workflow,
-      candidates,
+      candidates: grpcCandidates,
       findingsRegistry: {} as FindingsRegistry,
       concurrency: 1,
     });
