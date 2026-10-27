@@ -197,6 +197,15 @@ export function validateEngagementPlan(
       if (assigned.has(key)) throw new Error(`Duplicate assignment: ${key}`);
       assigned.add(key);
     }
+    const missionTargets = new Set(
+      mission.assignments.map((pair) => pair.targetId),
+    );
+    if (
+      missionTargets.size > 1 &&
+      [...missionTargets].some((targetId) => known.get(targetId)?.grpc)
+    ) {
+      throw new Error(`gRPC mission ${mission.id} must contain one target`);
+    }
   }
   for (const target of candidates) {
     if (decisions.get(target.id) !== "in") continue;

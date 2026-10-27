@@ -46,6 +46,16 @@ describe("engagement journal", () => {
       expect.stringContaining(b.id),
     ]);
     expect(restarted.resumeMessages("worker", replay)).toEqual(replay);
+    expect(
+      new EngagementJournal(path).resumeMessages("worker", [
+        { role: "user", content: "recent window" },
+      ]),
+    ).toEqual([{ role: "user", content: "recent window" }]);
+    expect(
+      new EngagementJournal(path)
+        .read()
+        .filter((event) => event.kind === "ack"),
+    ).toHaveLength(1);
   });
 
   it("shares board posts and only wakes listeners for material events", () => {
