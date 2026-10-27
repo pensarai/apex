@@ -523,7 +523,9 @@ export async function runEngagementLead(
           if (index >= 0) state.coverage[index] = cell;
           else state.coverage.push(cell);
         }
-        state.reportedFindings.push(...result.reportedFindings);
+        state.reportedFindings = [
+          ...new Set([...state.reportedFindings, ...result.reportedFindings]),
+        ];
         record.status = "completed";
         save();
         journal.append({

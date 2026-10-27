@@ -11,11 +11,16 @@ const fake = vi.hoisted(() => ({
   consume: undefined as
     | undefined
     | ((input: Record<string, unknown>) => Promise<unknown>),
+  construct: undefined as
+    | undefined
+    | ((input: Record<string, unknown>) => void),
 }));
 
 vi.mock("../agents/offSecAgent", () => ({
   OffensiveSecurityAgent: class {
-    constructor(private readonly input: Record<string, unknown>) {}
+    constructor(private readonly input: Record<string, unknown>) {
+      fake.construct?.(input);
+    }
     consume(): Promise<unknown> {
       if (!fake.consume) throw new Error("No fake engagement agent");
       return fake.consume(this.input);
@@ -34,6 +39,7 @@ import {
 const roots: string[] = [];
 afterEach(() => {
   fake.consume = undefined;
+  fake.construct = undefined;
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -298,6 +304,98 @@ describe("code-mode engagement lead", () => {
     expect(attempts).toBe(2);
     expect(result.objectiveResults).toEqual([
       { objective: "Test auth", completed: true, result: "checked" },
+    ]);
+  });
+
+  it("clears a worker that fails during synchronous construction", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
+    plan.missions = plan.missions.slice(0, 1);
+    const abort = new AbortController();
+    const timer = setTimeout(
+      () => abort.abort(new Error("worker never cleared")),
+      500,
+    );
+    let leadTurns = 0;
+    fake.construct = (input) => {
+      if (String(input.subagentId).startsWith("engagement-worker-"))
+        throw new Error("worker setup failed");
+    };
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      leadTurns += 1;
+      return { summary: "unresolved", coverageComplete: false };
+    };
+    try {
+      await expect(
+        runEngagementLead({
+          workflow: { ...workflow, abortSignal: abort.signal },
+          candidates,
+          findingsRegistry: {} as FindingsRegistry,
+          concurrency: 1,
+        }),
+      ).rejects.toThrow("repeatedly ended before terminal mission coverage");
+      expect(leadTurns).toBeGreaterThanOrEqual(3);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
+  it("returns a finding once after following up a completed worker", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
+    plan.missions = plan.missions.slice(0, 1);
+    let workerTurns = 0;
+    let followed = false;
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const state = (await tools(input).read_engagement_state?.execute?.(
+          { offset: 0, limit: 20 },
+          {} as never,
+        )) as { missions: Array<{ status: string; workerId: string }> };
+        const mission = state.missions[0];
+        if (!followed && mission?.status === "completed") {
+          followed = true;
+          await tools(input).follow_up_engagement_worker?.execute?.(
+            { workerId: mission.workerId, text: "Confirm the finding" },
+            {} as never,
+          );
+          return { summary: "following up", coverageComplete: false };
+        }
+        return { summary: "done", coverageComplete: true };
+      }
+      workerTurns += 1;
+      return {
+        summary: "tested",
+        coverage: [
+          {
+            targetId: "a",
+            objectiveId: "auth",
+            status: "tested",
+            summary: "checked",
+            evidence: "Observed access denial",
+          },
+        ],
+        reportedFindings: ["Auth bypass with cross-user access"],
+      };
+    };
+    const result = await runEngagementLead({
+      workflow,
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+      concurrency: 1,
+    });
+    expect(workerTurns).toBe(2);
+    expect(result.reportedFindings).toEqual([
+      "Auth bypass with cross-user access",
     ]);
   });
 });
