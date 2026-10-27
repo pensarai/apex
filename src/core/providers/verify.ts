@@ -121,6 +121,32 @@ async function verifyOpenRouter(apiKey: string): Promise<VerifyResult> {
   }
 }
 
+async function verifyInference(apiKey: string): Promise<VerifyResult> {
+  const key = apiKey.trim();
+  if (!key) return { valid: false, error: "Enter an Inference.net API key" };
+  try {
+    const res = await fetchWithTimeout("https://api.inference.net/v1/models", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (res.ok) return { valid: true };
+    if (res.status === 401 || res.status === 403)
+      return { valid: false, error: "Invalid API key" };
+    return {
+      valid: false,
+      error: `Inference.net returned HTTP ${res.status}`,
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      error:
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Request timed out"
+          : "Could not reach Inference.net API",
+    };
+  }
+}
+
 async function verifyInception(apiKey: string): Promise<VerifyResult> {
   try {
     const res = await fetchWithTimeout(
@@ -175,6 +201,8 @@ export async function verifyApiKey(
           };
     case "inception":
       return verifyInception(apiKey);
+    case "inference":
+      return verifyInference(apiKey);
     case "hoonify":
       try {
         await loadHoonifyModels(apiKey, true);

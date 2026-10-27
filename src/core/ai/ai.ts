@@ -334,6 +334,7 @@ export type AIModelProvider =
   | "google"
   | "openrouter"
   | "concentrate"
+  | "inference"
   | "bedrock"
   | "bedrock-mantle"
   | "pensar"

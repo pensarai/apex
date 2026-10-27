@@ -114,6 +114,19 @@ discovered model in `/models`. Headless commands accept
 `--model-provider hoonify --model <catalog-model-id>`. See
 [Hoonify setup](docs/hoonify.md) for model discovery, token budgets, and live checks.
 
+### Inference.net
+
+Connect **Inference.net** in `/providers` or set `INFERENCE_API_KEY`, then select
+**DeepSeek V4.1 Flash 1017 Cyber** in `/models`. This is the only Inference.net model
+currently available in Apex. Headless commands accept
+`--model inference:deepseek-v4.1-flash-1017-cyber`.
+
+Your team needs [approved model access](https://inference.net/model-access/deepseek-v4.1-flash-1017-cyber)
+before inference will succeed; saving a valid API key does not grant model access.
+Apex uses the provider's default reasoning behavior and the
+[catalog](https://api.inference.net/v1/models) limits of 1,040,000 context tokens
+and 393,216 output tokens.
+
 ### Custom inference endpoints
 
 Bring an OpenAI-compatible endpoint and bearer token through `customProviders`

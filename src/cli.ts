@@ -233,6 +233,7 @@ async function resolveCliModel(): Promise<AIModel> {
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
         "  CONCENTRATE_API_KEY — Concentrate\n" +
+        "  INFERENCE_API_KEY  — Inference.net\n" +
         "  HOONIFY_API_KEY    — Hoonify\n" +
         "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
