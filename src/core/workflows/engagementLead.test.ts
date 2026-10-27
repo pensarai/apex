@@ -107,6 +107,7 @@ describe("code-mode engagement lead", () => {
     let leadTurns = 0;
     let mailSeen = "";
     fake.consume = async (input) => {
+      expect(input.findingPolicy).toBe("external");
       const id = String(input.subagentId);
       if (id === "engagement-planner") {
         expect(input.activeTools).toEqual([
@@ -196,7 +197,7 @@ describe("code-mode engagement lead", () => {
       };
     };
     const result = await runEngagementLead({
-      workflow,
+      workflow: { ...workflow, findingPolicy: "external" },
       candidates,
       findingsRegistry: {} as FindingsRegistry,
       concurrency: 1,
