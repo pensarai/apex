@@ -227,7 +227,7 @@ describe("createCodeModeTools", () => {
     expect(instructions).toContain("declare const ALL_TOOLS");
     expect(instructions).toContain("do not guess or probe capability names");
     expect(instructions).toContain("JavaScript directly in exec");
-    expect(instructions).toContain("Prefer direct calls for simple operations");
+    expect(instructions).toContain("Prefer exec for workflows");
     expect(instructions).toContain("await each command sequentially");
     expect(instructions).toContain('tools.call("http_request"');
     expect(instructions).not.toContain("tools.shell");
@@ -237,8 +237,82 @@ describe("createCodeModeTools", () => {
     expect(instructions).toContain("Guidance is process feedback");
     const tools = createCodeModeTools("schema-code", runtime, {}, []);
     expect(tools.exec.description).toContain("directly in the cell");
-    expect(tools.exec.description).toContain("Prefer direct tool calls");
+    expect(tools.exec.description).toContain("Use direct tools for standalone");
     expect(tools.exec.description).not.toContain("tools.shell");
+  });
+
+  test.each([
+    1, 2,
+  ])("documented coding cell %i executes with governed capabilities", async (index) => {
+    const examples = [
+      ...buildCodeModeInstructions("schema-code").matchAll(
+        /```js\n([\s\S]*?)\n```/g,
+      ),
+    ];
+    const example = examples[index]?.[1];
+    if (!example) throw new Error("Missing documented coding cell");
+    const writes: string[] = [];
+    const capabilities = {
+      read_file: tool({
+        inputSchema: z.object({
+          path: z.string(),
+          toolCallDescription: z.string(),
+        }),
+        execute: async ({ path }) => ({
+          success: true,
+          content: path,
+          truncated: false,
+        }),
+      }),
+      create_file: tool({
+        inputSchema: z.object({
+          path: z.string(),
+          content: z.string(),
+          toolCallDescription: z.string(),
+        }),
+        execute: async ({ path }) => {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          writes.push(path);
+          return { success: true, path };
+        },
+      }),
+    };
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: capabilities,
+      allowedTools: Object.keys(capabilities),
+      eventBus: new AgentEventBus(),
+      sessionId: "session_coding_example",
+      getMessageId: () => "message_coding_example",
+    });
+    const cellRuntime = new CodeModeRuntime(invoker, Object.keys(capabilities));
+    try {
+      const result = await cellRuntime.execute(example, {
+        parentToolCallId: "exec_coding_example",
+        messages: [],
+      });
+      expect(result.status).toBe("completed");
+      if (index === 1) {
+        expect(JSON.parse(result.output)).toEqual({
+          paths: ["config/current.txt", "config/expected.txt"],
+          identical: false,
+        });
+        expect(result.evidence?.map(({ toolName }) => toolName)).toEqual([
+          "read_file",
+          "read_file",
+        ]);
+      } else {
+        expect(writes).toEqual([
+          "scratchpad/input.txt",
+          "scratchpad/expected.txt",
+        ]);
+        expect(result.evidence?.map(({ toolName }) => toolName)).toEqual([
+          "create_file",
+          "create_file",
+        ]);
+      }
+    } finally {
+      await cellRuntime.dispose();
+    }
   });
 
   test("the documented HTTP cell composes requests and stores evidence without a shell", async () => {

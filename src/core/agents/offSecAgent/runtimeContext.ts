@@ -300,6 +300,7 @@ export function resolveCommandPlatform(ctx: ToolContext): "posix" | "windows" {
 
 export interface RuntimeContextSectionOptions {
   platform: "posix" | "windows";
+  codeModeEnabled?: boolean;
 }
 
 function hasTool(facts: RuntimeExecutionFacts, tool: string): boolean {
@@ -357,7 +358,11 @@ export function buildRuntimeContextSection(
     "[RUNTIME CONTEXT]",
     `OS: ${facts.probed ? (facts.os ?? "unknown") : "unknown"} | Shell: ${shellFact(facts)} | Python: ${pythonFact(facts)} | Node: ${toolFact(facts, "node")} | ffuf: ${toolFact(facts, "ffuf")}`,
     inventoryLine(facts),
-    `Treat this inventory as facts, not as a checklist: pick techniques from evidence. When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists. For tools listed unknown, verify with \`${verify}\` before first use.`,
+    `Treat this inventory as facts, not as a checklist: pick techniques from evidence. ${
+      opts.codeModeEnabled
+        ? "When a tool is absent, use exec for tool coordination and in-memory logic. Use execute_command with available interpreters (shell/Python/Node) when the work needs native programs, installed libraries, services, or substantial processing of files on disk."
+        : "When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists."
+    } For tools listed unknown, verify with \`${verify}\` before first use.`,
     "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun. A successful file write alone does not establish that a helper works.",
     "[/RUNTIME CONTEXT]",
   ];

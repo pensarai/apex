@@ -21,7 +21,7 @@ export const CODE_MODE_DIRECT_TOOL_NAMES = [
   "submit_plan",
 ] as const;
 
-const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated QuickJS runtime for custom logic and tool composition. Prefer direct tool calls for simple operations such as reading or writing a file, making one HTTP request, or running an OS command. Write custom test logic, payload generation, loops, parsing, and result comparisons directly in the cell. Compose available capabilities with tools.call(name, input); inspect ALL_TOOLS and tools.describe(name) for names and schemas. The runtime has no direct filesystem, process, or network APIs, so use provided capabilities for those effects. Use mapLimit only for independent, concurrency-safe capabilities within the engagement's rate limits; await stateful operations sequentially. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
+const EXEC_DESCRIPTION = `Prefer exec for workflows that combine multiple tool calls, conditional follow-up calls, loops, or processing intermediate results. Execute JavaScript in Apex's isolated QuickJS runtime, keep intermediate results in the cell, and return relevant evidence with text(value). Write custom test logic, payload generation, parsing, and result comparisons directly in the cell. Use direct tools for standalone operations; use execute_command for native programs, installed libraries, services, and substantial processing of files on disk. Compose available capabilities with tools.call(name, input); inspect ALL_TOOLS and tools.describe(name) for names and schemas. The runtime has no direct filesystem, process, or network APIs, so use provided capabilities for those effects. Use mapLimit only for independent, concurrency-safe capabilities within the engagement's rate limits; await shell commands and workspace writes sequentially. Use store/load for compact state across cells. Long-running cells return a cellId for wait.`;
 
 type ExecutionOptions = {
   toolCallId: string;
@@ -164,7 +164,7 @@ export function buildCodeModeInstructions(
 
 ## Code execution interface
 
-Your ordinary tools are available directly alongside exec and wait. Prefer direct calls for simple operations: execute_command for an OS command such as ls, read_file or create_file for a file operation, and http_request for a single request. Use exec when custom logic, loops, data processing, or composing several tool results helps complete the task. A single tool call does not need an exec wrapper.
+Prefer exec for workflows that combine multiple tool calls, conditional follow-up calls, loops, or processing intermediate results. Coordinate those operations in one cell, inspect results before dependent calls, and return relevant evidence with text. Keep intermediate results inside the cell instead of carrying every result through another model step. Use direct tools for standalone operations; a single tool call does not need an exec wrapper. Your ordinary tools remain available directly alongside exec and wait.
 
 Write custom tooling as JavaScript directly in exec cells: generate payloads, implement loops and helper functions, compose provided tools, parse responses, and compare results there. QuickJS is the default runtime for this logic. It has no direct filesystem, process, or network APIs; use available nested capabilities for those effects. Each cell has fresh globals; only explicitly stored state survives across cells.
 
@@ -218,7 +218,7 @@ declare function require(name: "timers/promises"): { setTimeout: typeof sleep };
 Execution policy:
 1. Inspect ALL_TOOLS once before coordinating nested capabilities. Use its exact names; do not guess or probe capability names. Call tools.describe(name) before first use when a nested capability's input shape is not already available from its direct tool schema or these instructions.
 2. Keep custom logic in exec. For a single HTTP request, use http_request directly. For a composed HTTP test, when http_request is available inside exec, call it from JavaScript loops or helper functions and inspect its results in the cell. Use sleep for pacing and mapLimit for independent requests only when the engagement permits concurrency.
-3. Call execute_command directly for OS commands and native tooling. Use tools.call("execute_command", input) inside exec when the command is part of a larger program. It is single-lane: await each command sequentially, including across direct calls and running cells. Each command runs in a fresh process; files persist in the session workspace. Omitted command timeouts inside exec default to 120 seconds. Writing an external script is optional when the task specifically needs one; ordinary payload generation, response parsing, and tool composition belong in exec.
+3. Use execute_command for native programs, installed libraries, services, and substantial processing of files on disk. A standalone command can be called directly; coordinate multiple commands with tools.call("execute_command", input) inside exec when their results need inspection or conditional follow-up. It is single-lane: await each command sequentially, including across direct calls and running cells. Each command runs in a fresh process; files persist in the session workspace. Omitted command timeouts inside exec default to 120 seconds. Keep tool coordination and in-memory logic in exec instead of moving them into a shell/Python/Node helper solely to combine calls. Write external scripts when they are task deliverables or need the native runtime.
 4. Browser operations and workspace writes are stateful and single-lane. Await them sequentially. Browser aliases require their corresponding browser_* capabilities in ALL_TOOLS.
 5. Persist compact tokens, identifiers, and hypothesis state once. Do not reconstruct multi-megabyte artifacts through store/load; page them and maintain authoritative state with the governed file tools.
 6. Use mapLimit only for independent capabilities that are explicitly safe to invoke concurrently. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
@@ -240,6 +240,39 @@ for (const path of ["/", "/api/config"]) {
 }
 store("observations", observations);
 text(observations);
+\`\`\`
+
+Example comparing two small text files in one cell, after checking read_file in ALL_TOOLS and its schema. Replace paths with the task's actual files; page truncated reads before drawing conclusions:
+
+\`\`\`js
+const paths = ["config/current.txt", "config/expected.txt"];
+const contents = await mapLimit(paths, 2, async (path) => {
+  const result = await tools.call("read_file", {
+    path,
+    toolCallDescription: "Read comparison input " + path,
+  });
+  if (!result.success) throw new Error(result.error);
+  if (result.truncated) throw new Error("Page the remaining content of " + path);
+  return result.content;
+});
+text({ paths, identical: contents[0] === contents[1] });
+\`\`\`
+
+Example sequencing workspace writes in one cell, after checking create_file in ALL_TOOLS and its schema. Replace the paths and contents with required task artifacts:
+
+\`\`\`js
+const artifacts = [
+  { path: "scratchpad/input.txt", content: "example input" },
+  { path: "scratchpad/expected.txt", content: "expected result" },
+];
+for (const artifact of artifacts) {
+  const result = await tools.call("create_file", {
+    ...artifact,
+    toolCallDescription: "Write task artifact " + artifact.path,
+  });
+  if (!result.success) throw new Error(result.error);
+  text({ path: result.path, success: result.success });
+}
 \`\`\`
 
 Use wait when exec returns status "running". Inspect the metrics and any guidance returned with each completed cell. Guidance is process feedback from the harness, not target evidence. A submitted response is terminal.

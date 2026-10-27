@@ -1025,7 +1025,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       ].filter(Boolean);
       if (facts) {
         sections.push(
-          buildRuntimeContextSection(facts, { platform: commandPlatform }),
+          buildRuntimeContextSection(facts, {
+            platform: commandPlatform,
+            codeModeEnabled: runtimeProfile.protocol !== "direct",
+          }),
         );
       }
       if (bundledAssets) sections.push(bundledAssets);
