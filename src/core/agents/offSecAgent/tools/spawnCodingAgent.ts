@@ -192,6 +192,7 @@ function codingSpawnOptions(
       environmentVariables: ctx.environmentVariables,
       secretValues: ctx.secretValues,
       languageModelMiddleware: ctx.languageModelMiddleware,
+      toolProtocol: ctx.toolProtocol,
       usageRecorder: ctx.usageRecorder,
       toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,
