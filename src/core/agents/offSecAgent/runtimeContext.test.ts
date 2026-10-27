@@ -505,7 +505,7 @@ describe("buildRuntimeContextSection", () => {
       codeModeEnabled: true,
     });
     expect(codeMode).toContain(
-      "use exec for tool coordination and in-memory logic",
+      "Prefer exec for predictable tool orchestration",
     );
     expect(codeMode).toContain(
       "Use execute_command with available interpreters",

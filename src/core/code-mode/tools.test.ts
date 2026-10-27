@@ -227,7 +227,9 @@ describe("createCodeModeTools", () => {
     expect(instructions).toContain("declare const ALL_TOOLS");
     expect(instructions).toContain("do not guess or probe capability names");
     expect(instructions).toContain("JavaScript directly in exec");
-    expect(instructions).toContain("Prefer exec for workflows");
+    expect(instructions).toContain(
+      "Prefer exec for predictable tool orchestration",
+    );
     expect(instructions).toContain("await each command sequentially");
     expect(instructions).toContain('tools.call("http_request"');
     expect(instructions).not.toContain("tools.shell");

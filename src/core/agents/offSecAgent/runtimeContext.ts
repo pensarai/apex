@@ -360,7 +360,7 @@ export function buildRuntimeContextSection(
     inventoryLine(facts),
     `Treat this inventory as facts, not as a checklist: pick techniques from evidence. ${
       opts.codeModeEnabled
-        ? "When a tool is absent, use exec for tool coordination and in-memory logic. Use execute_command with available interpreters (shell/Python/Node) when the work needs native programs, installed libraries, services, or substantial processing of files on disk."
+        ? "When a tool is absent, choose an available tool or runtime that fits the work. Prefer exec for predictable tool orchestration and processing intermediate results when it reduces model round trips or unnecessary output. Use direct calls when one operation is sufficient or the next step requires fresh model judgment. Use execute_command with available interpreters (shell/Python/Node) when a native command or script handles the work naturally, including installed libraries, services, and file processing."
         : "When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists."
     } For tools listed unknown, verify with \`${verify}\` before first use.`,
     "Before implementing a transformation over unfamiliar data, inspect representative inputs and confirm the fields and structure your logic depends on.",
