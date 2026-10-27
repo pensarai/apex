@@ -28,8 +28,11 @@ export function parseTargetUrl(target: string): ParsedTarget | null {
 
   let urlString = target.trim();
 
-  // If no protocol, assume https
-  if (!urlString.match(/^https?:\/\//i)) {
+  // Only default the scheme when the target has none. Any explicit scheme with
+  // an authority (connect://, grpc://, h2c://, ws://, …) must keep it: prepending
+  // https:// to `connect://host/svc` reparses the host as "connect" and leaks a
+  // scheme fragment into the scope's allowed-host list. A host needs "://".
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlString)) {
     urlString = `https://${urlString}`;
   }
 

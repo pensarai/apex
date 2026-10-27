@@ -84,6 +84,41 @@ describe("URL Parsing Utilities", () => {
         port: 8443,
       });
     });
+
+    // Regression: a non-http scheme with an authority (connect://, grpc://, …)
+    // must keep its real host. The old code only recognized http(s):// and
+    // prepended https://, so `connect://host/svc` parsed its host as "connect"
+    // and leaked a scheme fragment into the scope's allowed-host list.
+    it("should extract the real host from a connect:// target", () => {
+      const result = parseTargetUrl(
+        "connect://relay.prod.acme.example/relay.v1.RelayService/GetProcessFlow",
+      );
+      expect(result).toEqual({
+        hostname: "relay.prod.acme.example",
+        port: undefined,
+      });
+    });
+
+    it("should parse a connect:// target with an explicit port", () => {
+      const result = parseTargetUrl(
+        "connect://relay.prod.acme.example:8443/relay.v1.RelayService/Get",
+      );
+      expect(result).toEqual({
+        hostname: "relay.prod.acme.example",
+        port: 8443,
+      });
+    });
+
+    it("should extract the real host from other authority-bearing schemes", () => {
+      expect(parseTargetUrl("grpc://svc.internal.example:50051/x")).toEqual({
+        hostname: "svc.internal.example",
+        port: 50051,
+      });
+      expect(parseTargetUrl("h2c://api.example.com/path")).toEqual({
+        hostname: "api.example.com",
+        port: undefined,
+      });
+    });
   });
 
   describe("getAutoPopulatedHosts", () => {
@@ -122,6 +157,15 @@ describe("URL Parsing Utilities", () => {
         "api.example.com",
         "new.example.com",
       ]);
+    });
+
+    // Regression: the scope's allowed-host list must get the real target host,
+    // not the "connect" scheme fragment.
+    it("should add the real host for a connect:// target, not the scheme", () => {
+      const result = getAutoPopulatedHosts(
+        "connect://relay.prod.acme.example/relay.v1.RelayService/GetProcessFlow",
+      );
+      expect(result).toEqual(["relay.prod.acme.example"]);
     });
   });
 

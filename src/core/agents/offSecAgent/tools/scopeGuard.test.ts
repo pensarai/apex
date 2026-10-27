@@ -294,6 +294,31 @@ describe("assertUrlInScope", () => {
     );
   });
 
+  // Regression: a connect:// request is scoped by its real host, not the
+  // "connect" scheme fragment. An out-of-scope connect:// host must still be
+  // blocked rather than slipping through as the parsed-as-"connect" host.
+  it("scopes connect:// URLs by their real host", () => {
+    const ctx = makeCtx();
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedHosts: ["relay.staging.acme.example"],
+        strictScope: true,
+      },
+    };
+    expect(() =>
+      assertUrlInScope(
+        "connect://relay.staging.acme.example/relay.v1.RelayService/Get",
+        ctx,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertUrlInScope(
+        "connect://relay.prod.acme.example/relay.v1.RelayService/Get",
+        ctx,
+      ),
+    ).toThrow(ScopeViolationError);
+  });
+
   it("enforces configured ports, including protocol defaults", () => {
     const ctx = makeCtx({ target: "https://example.com" });
     ctx.session.config = {

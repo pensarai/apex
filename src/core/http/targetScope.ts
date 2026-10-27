@@ -59,17 +59,16 @@ export function isHostInScope(
 export function getUrlPort(url: string): number | null {
   let value = url.trim();
   if (!value) return null;
-  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+  // Match parseTargetUrl: keep any explicit scheme+authority so a connect://
+  // target isn't rewritten to https://connect://… and mis-ported.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `https://${value}`;
 
   try {
     const parsed = new URL(value);
-    if (parsed.protocol === "http:") {
-      return parsed.port ? Number.parseInt(parsed.port, 10) : 80;
-    }
-    if (parsed.protocol === "https:") {
-      return parsed.port ? Number.parseInt(parsed.port, 10) : 443;
-    }
-    return null;
+    if (parsed.port) return Number.parseInt(parsed.port, 10);
+    // http is the only cleartext default; https and TLS-based transports
+    // (connect/grpc/h2/ws over TLS) default to 443.
+    return parsed.protocol === "http:" ? 80 : 443;
   } catch {
     return null;
   }
