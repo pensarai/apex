@@ -1370,6 +1370,7 @@ export interface StreamResponseOpts {
   system?: string;
   model: AIModel;
   messages?: Array<ModelMessage>;
+  getPendingMessages?: () => Promise<ModelMessage[]>;
   stopWhen?:
     | StopCondition<NoInfer<ToolSet>>
     | StopCondition<NoInfer<ToolSet>>[];
@@ -1898,6 +1899,10 @@ function streamResponseWithinOperation(
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
         let stepMessages = step.messages;
+        const pendingMessages = await opts.getPendingMessages?.();
+        if (pendingMessages?.length) {
+          stepMessages = [...stepMessages, ...pendingMessages];
+        }
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&

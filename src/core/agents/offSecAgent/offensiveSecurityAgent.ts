@@ -1089,6 +1089,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           continuation && input.messages
             ? [...input.messages, { role: "user", content: continuation }]
             : input.messages,
+        getPendingMessages: input.getPendingMessages,
         tools,
         activeTools,
         stopWhen,
