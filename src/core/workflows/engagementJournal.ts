@@ -6,6 +6,7 @@ import type { ModelMessage } from "ai";
 export type EngagementEventKind =
   | "mail"
   | "delivery"
+  | "ack"
   | "board"
   | "progress"
   | "help"
@@ -92,6 +93,34 @@ export class EngagementJournal {
     );
   }
 
+  private acknowledgedIds(recipient: string): Set<string> {
+    return new Set(
+      this.read()
+        .filter((event) => event.kind === "ack" && event.to === recipient)
+        .flatMap((event) => event.deliveredIds ?? []),
+    );
+  }
+
+  acknowledgePersisted(recipient: string, transcript: ModelMessage[]): void {
+    const acknowledged = this.acknowledgedIds(recipient);
+    const outstanding = [...this.deliveredIds(recipient)].filter(
+      (id) => !acknowledged.has(id),
+    );
+    if (outstanding.length === 0) return;
+    const serialized = JSON.stringify(transcript);
+    const present = outstanding.filter((id) =>
+      serialized.includes(`[engagement-mail:${id}]`),
+    );
+    if (present.length) {
+      this.append({
+        kind: "ack",
+        from: "host",
+        to: recipient,
+        deliveredIds: present,
+      });
+    }
+  }
+
   pending(recipient: string): EngagementJournalEvent[] {
     const delivered = this.deliveredIds(recipient);
     return this.read().filter(
@@ -120,14 +149,15 @@ export class EngagementJournal {
     recipient: string,
     transcript: ModelMessage[],
   ): ModelMessage[] {
+    this.acknowledgePersisted(recipient, transcript);
     const delivered = this.deliveredIds(recipient);
-    const serialized = JSON.stringify(transcript);
+    const acknowledged = this.acknowledgedIds(recipient);
     const missing = this.read().filter(
       (event) =>
         event.kind === "mail" &&
         event.to === recipient &&
         delivered.has(event.id) &&
-        !serialized.includes(`[engagement-mail:${event.id}]`),
+        !acknowledged.has(event.id),
     );
     return [
       ...transcript,

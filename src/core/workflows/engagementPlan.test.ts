@@ -191,6 +191,46 @@ describe("engagement planning contract", () => {
     ).rejects.toThrow("Missing assignment");
   });
 
+  it("keeps each gRPC target in its own mission", () => {
+    const [firstTarget, secondTarget] = targets as [
+      EngagementTarget,
+      EngagementTarget,
+    ];
+    const grpcTargets: EngagementTarget[] = [
+      {
+        ...firstTarget,
+        grpc: {
+          transport: "grpc",
+          serviceFqn: "example.Accounts",
+          method: "GetAccount",
+        },
+      },
+      secondTarget,
+    ];
+    const mixed = plan(
+      [
+        { targetId: "a", scope: "in", reason: "Requested" },
+        { targetId: "b", scope: "in", reason: "Requested" },
+      ],
+      [
+        {
+          id: "mixed",
+          purpose: "Test both",
+          assignments: [
+            { targetId: "a", objectiveId: "x" },
+            { targetId: "a", objectiveId: "y" },
+            { targetId: "b", objectiveId: "z" },
+          ],
+          dependsOn: [],
+        },
+      ],
+    );
+    mixed.contractHash = engagementManifestHash(grpcTargets);
+    expect(() => validateEngagementPlan(mixed, grpcTargets)).toThrow(
+      "gRPC mission mixed must contain one target",
+    );
+  });
+
   it("deduplicates discoveries and host candidate IDs without losing objectives", async () => {
     const discovered = targetsFromDiscovery([
       { target: "https://a.example", objectives: ["Auth"] },
