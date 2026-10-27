@@ -162,6 +162,7 @@ export interface AgentHooks {
   /** Also allow injected tools inside exec; lifecycle contracts always remain direct. */
   nestedTools?: string[];
   onCodeCellComplete?: (result: CodeCellResult) => void;
+  getPendingMessages?: () => Promise<ModelMessage[]>;
 
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
