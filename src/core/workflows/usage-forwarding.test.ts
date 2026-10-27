@@ -191,6 +191,7 @@ describe("pentest usage callback forwarding", () => {
 describe("pentest findings session attribution", () => {
   it("attributes the workflow registry to the root session", async () => {
     await runPentestWorkflow({
+      engagementMode: false,
       target: "https://example.com",
       model: {} as PentestWorkflowInput["model"],
       session,
