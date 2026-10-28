@@ -108,6 +108,77 @@ function tools(input: Record<string, unknown>): ToolSet {
 }
 
 describe("code-mode engagement lead", () => {
+  it("lets the lead page in-scope context but rejects excluded and unknown targets", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
+    plan.missions = plan.missions.slice(0, 1);
+    const context = "A target-specific threat model and research note";
+    let leadReads = 0;
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        expect(input.activeTools).toContain("read_engagement_context");
+        const read = tools(input).read_engagement_context?.execute;
+        const first = await read?.(
+          { targetId: "a", offset: 0, limit: 12 },
+          {} as never,
+        );
+        const second = await read?.(
+          { targetId: "a", offset: 12, limit: 100 },
+          {} as never,
+        );
+        expect(first).toMatchObject({
+          text: context.slice(0, 12),
+          nextOffset: 12,
+        });
+        expect(second).toMatchObject({
+          text: context.slice(12),
+          nextOffset: null,
+        });
+        await expect(
+          read?.({ targetId: "b", offset: 0, limit: 12 }, {} as never),
+        ).rejects.toThrow("outside the engagement scope");
+        await expect(
+          read?.({ targetId: "missing", offset: 0, limit: 12 }, {} as never),
+        ).rejects.toThrow("outside the engagement scope");
+        leadReads += 1;
+        return { summary: "done", coverageComplete: true };
+      }
+      return {
+        summary: "tested",
+        coverage: [
+          {
+            targetId: "a",
+            objectiveId: "auth",
+            status: "tested",
+            summary: "checked",
+            evidence: "Observed access denial",
+          },
+        ],
+        reportedFindings: [],
+      };
+    };
+    await runEngagementLead({
+      workflow,
+      candidates,
+      provider: {
+        getTarget: async (id) =>
+          candidates.find((target) => target.id === id) ?? null,
+        readContext: async (_id, offset, limit) => ({
+          text: context.slice(offset, offset + limit),
+          nextOffset: offset + limit < context.length ? offset + limit : null,
+          totalChars: context.length,
+          version: "v1",
+        }),
+      },
+      findingsRegistry: {} as FindingsRegistry,
+    });
+    expect(leadReads).toBeGreaterThan(0);
+  });
+
   it("seals the plan, dispatches bounded dependency workers, and rejects an early lead finish", async () => {
     const { rootPath, workflow, plan } = setup();
     const workers: string[] = [];
