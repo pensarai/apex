@@ -36,6 +36,61 @@ export const CAMOUFOX_OPTIONS = {
   // the agent grows proxy support — one object, both launch paths inherit it.
 } as const;
 
+/** A playwright/camoufox proxy config derived from the sandbox egress env. */
+export interface SandboxBrowserProxy {
+  server: string;
+  username?: string;
+  password?: string;
+}
+
+// The env vars entrypoint.sh exports for the authenticated egress gateway. The
+// browser ignores these (unlike curl), so they must be resolved and handed to
+// Camoufox/Playwright explicitly. Order mirrors readSandboxEgressEnv in
+// perCommandShell.
+const SANDBOX_EGRESS_PROXY_ENV_KEYS = [
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+] as const;
+
+/**
+ * Resolve the egress proxy the sandboxed browser must dial through, or
+ * `undefined` outside a proxied sandbox (dev/CLI, mixed-target runs) so the
+ * browser launches unproxied exactly as before.
+ *
+ * A locked-down sandbox's allowlist is the proxy host only, so the browser
+ * reaches a target only through this authenticated HTTPS proxy. The proxy URL
+ * embeds the per-job HMAC credential (`https://jobId:HMAC@host:3128`); split it
+ * into the `{ server, username, password }` shape Playwright/Camoufox expect
+ * (credentials inlined in `server` are ignored by the browser). Firefox trusts
+ * the gateway's egress CA via the NSS db entrypoint.sh populates, enabled per
+ * launch with `security.enterprise_roots.enabled`.
+ */
+export function resolveSandboxBrowserProxy(
+  env: NodeJS.ProcessEnv = process.env,
+): SandboxBrowserProxy | undefined {
+  let raw: string | undefined;
+  for (const key of SANDBOX_EGRESS_PROXY_ENV_KEYS) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) {
+      raw = value;
+      break;
+    }
+  }
+  if (!raw) return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  const proxy: SandboxBrowserProxy = { server: `${url.protocol}//${url.host}` };
+  if (url.username) proxy.username = decodeURIComponent(url.username);
+  if (url.password) proxy.password = decodeURIComponent(url.password);
+  return proxy;
+}
+
 /**
  * Firefox prefs layered on top of Camoufox's fingerprint prefs to cut per-browser
  * memory. Merged AFTER camoufox-js output so these win; every key here is

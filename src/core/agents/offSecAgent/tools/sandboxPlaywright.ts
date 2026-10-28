@@ -49,6 +49,7 @@ import {
   ENDPOINT_VIEWPORT_SIZE,
   MEMORY_FIREFOX_PREFS,
   parseViewportSize,
+  resolveSandboxBrowserProxy,
 } from "./camoufox";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
 import {
@@ -358,12 +359,18 @@ async function runPlaywrightScript(
       enforceScope: false,
     },
   );
+  // Resolve the egress proxy here (the worker inherits HTTP(S)_PROXY from
+  // entrypoint.sh; the clean `node pw_action.js` shell does not), then inline it
+  // so the browser dials the authenticated gateway instead of the blocked direct
+  // path. `null` outside a proxied sandbox → unproxied launch, unchanged.
+  const browserProxy = resolveSandboxBrowserProxy();
   const script = `
 const { firefox } = require('playwright-core');
 const fs = require('fs');
 
 (async () => {
   const { launchOptions } = await import('camoufox-js');
+  const __proxy = ${JSON.stringify(browserProxy ?? null)};
   function resolve(value) {
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
   }
@@ -404,6 +411,7 @@ const fs = require('fs');
   } catch {
     __camou = await launchOptions({
       ...${JSON.stringify(CAMOUFOX_OPTIONS)},
+      ...(__proxy ? { proxy: __proxy } : {}),
       headless: __headless,
       window: __window,
       // Floor only — exact-pinning a 720px height throws in browserforge.
@@ -419,8 +427,15 @@ const fs = require('fs');
       ...__camou,
       // Layer memory prefs over Camoufox's fingerprint prefs (ours win); see
       // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
-      // fan-out that otherwise costs ~3 GB across the run.
-      firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
+      // fan-out that otherwise costs ~3 GB across the run. When proxied, trust
+      // the OS/NSS cert store so the egress gateway's CA (imported by
+      // entrypoint.sh) validates on both the proxy TLS leg and its MITM'd target
+      // certs.
+      firefoxUserPrefs: {
+        ...__camou.firefoxUserPrefs,
+        ...${JSON.stringify(MEMORY_FIREFOX_PREFS)},
+        ...(__proxy ? { 'security.enterprise_roots.enabled': true } : {}),
+      },
       serviceWorkers: 'block',
     });
     ${headerRoute}

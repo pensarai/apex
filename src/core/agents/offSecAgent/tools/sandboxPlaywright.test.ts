@@ -154,6 +154,51 @@ describe("SandboxBrowserBackend", () => {
     );
   });
 
+  it("routes the browser through the egress proxy and trusts the egress CA when proxied", async () => {
+    const saved = process.env.HTTPS_PROXY;
+    process.env.HTTPS_PROXY = "https://job-123:hmacsecret@egress.internal:3128";
+    try {
+      const { sandbox, commands } = makeFakeSandbox({
+        success: true,
+        url: "https://target.example/",
+        title: "T",
+      });
+      await SandboxBrowserBackend(makeCtx(sandbox, rootPath)).navigate(
+        "https://target.example/",
+      );
+      const script = generatedPlaywrightScript(commands);
+      expect(script).toContain(
+        'const __proxy = {"server":"https://egress.internal:3128","username":"job-123","password":"hmacsecret"};',
+      );
+      expect(script).toContain("...(__proxy ? { proxy: __proxy } : {})");
+      expect(script).toContain(
+        "...(__proxy ? { 'security.enterprise_roots.enabled': true } : {})",
+      );
+    } finally {
+      if (saved === undefined) delete process.env.HTTPS_PROXY;
+      else process.env.HTTPS_PROXY = saved;
+    }
+  });
+
+  it("launches the browser unproxied outside a proxied sandbox", async () => {
+    const saved = process.env.HTTPS_PROXY;
+    delete process.env.HTTPS_PROXY;
+    try {
+      const { sandbox, commands } = makeFakeSandbox({
+        success: true,
+        url: "https://target.example/",
+        title: "T",
+      });
+      await SandboxBrowserBackend(makeCtx(sandbox, rootPath)).navigate(
+        "https://target.example/",
+      );
+      const script = generatedPlaywrightScript(commands);
+      expect(script).toContain("const __proxy = null;");
+    } finally {
+      if (saved !== undefined) process.env.HTTPS_PROXY = saved;
+    }
+  });
+
   it("routes scoped headers per request instead of configuring them globally", async () => {
     const { sandbox, commands } = makeFakeSandbox({
       success: true,

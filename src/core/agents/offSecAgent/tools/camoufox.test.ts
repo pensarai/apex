@@ -6,6 +6,7 @@ import {
   parseDisplayNumber,
   parseViewportSize,
   resolveCamoufoxLaunchOptions,
+  resolveSandboxBrowserProxy,
 } from "./camoufox";
 
 const launchOptionsMock = vi.fn();
@@ -16,6 +17,43 @@ vi.mock("camoufox-js", () => ({
 
 afterEach(() => {
   launchOptionsMock.mockReset();
+});
+
+describe("resolveSandboxBrowserProxy", () => {
+  it("splits the authenticated egress proxy URL into server + credentials", () => {
+    const proxy = resolveSandboxBrowserProxy({
+      HTTPS_PROXY: "https://job-123:hmacsecret@egress.internal:3128",
+    });
+    expect(proxy).toEqual({
+      server: "https://egress.internal:3128",
+      username: "job-123",
+      password: "hmacsecret",
+    });
+  });
+
+  it("url-decodes percent-encoded credentials", () => {
+    const proxy = resolveSandboxBrowserProxy({
+      HTTPS_PROXY: "https://user%40x:p%3Aass@egress.internal:3128",
+    });
+    expect(proxy?.username).toBe("user@x");
+    expect(proxy?.password).toBe("p:ass");
+  });
+
+  it("prefers HTTPS_PROXY but falls back through the lowercase/HTTP twins", () => {
+    expect(
+      resolveSandboxBrowserProxy({ http_proxy: "http://p:q@egress:3128" }),
+    ).toEqual({ server: "http://egress:3128", username: "p", password: "q" });
+  });
+
+  it("returns undefined outside a proxied sandbox (dev/CLI)", () => {
+    expect(resolveSandboxBrowserProxy({})).toBeUndefined();
+  });
+
+  it("returns undefined for a malformed proxy value rather than throwing", () => {
+    expect(
+      resolveSandboxBrowserProxy({ HTTPS_PROXY: "not a url" }),
+    ).toBeUndefined();
+  });
 });
 
 describe("display-tier viewport helpers", () => {
