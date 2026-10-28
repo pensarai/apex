@@ -1,6 +1,7 @@
 import {
   PerCommandShell,
   readSandboxAgentEnv,
+  readSandboxEgressEnv,
 } from "../../agents/offSecAgent/tools/perCommandShell";
 /**
  * `LocalBackends` — the apex (CLI/TUI) implementation of {@link ToolBackends}.
@@ -418,6 +419,14 @@ async function* runCommand(
         ...readSandboxAgentEnv(),
         ...ctx.environmentVariables,
         ...o?.envVars,
+        // Egress proxy / CA trust is infrastructure the agent must not clobber:
+        // a locked-down sandbox can only reach targets through this proxy, so
+        // apply it last. The worker inherits HTTP(S)_PROXY/ALL_PROXY + CA vars
+        // from entrypoint.sh; without forwarding them into the clean per-command
+        // bash the command does direct DNS and the egress allowlist (proxy host
+        // only) blocks the target. Empty outside a proxied sandbox, so dev/CLI
+        // runs are unaffected.
+        ...readSandboxEgressEnv(),
       },
     });
     if (result.stdout)

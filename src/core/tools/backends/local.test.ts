@@ -218,6 +218,72 @@ describe("LocalBackends.command streaming", () => {
   });
 });
 
+describe("LocalBackends.command sandbox egress env", () => {
+  const SAVED = {
+    HTTPS_PROXY: process.env.HTTPS_PROXY,
+    HTTP_PROXY: process.env.HTTP_PROXY,
+    NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS,
+  };
+  afterEach(() => {
+    for (const [k, v] of Object.entries(SAVED)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it("forwards the worker's egress proxy + CA env into the sandbox command, non-clobberable", async () => {
+    process.env.HTTPS_PROXY = "https://job:hmac@egress.internal:3128";
+    process.env.HTTP_PROXY = "https://job:hmac@egress.internal:3128";
+    process.env.NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
+
+    let captured: Record<string, string> | undefined;
+    const execute = vi.fn(async (_cmd: string, opts: { envVars?: Record<string, string> }) => {
+      captured = opts.envVars;
+      return { success: true, exitCode: 0, stdout: "", stderr: "" };
+    });
+    const ctx = makeCtx({
+      agentCwd: process.cwd(),
+      // The agent must not be able to override egress infrastructure.
+      environmentVariables: { HTTPS_PROXY: "https://attacker.example:1" },
+      sandbox: {
+        type: "linux",
+        execute,
+      } as unknown as NonNullable<ToolContext["sandbox"]>,
+    });
+
+    await collect(LocalBackends(ctx).command.run("curl -s https://target.example"));
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(captured?.HTTPS_PROXY).toBe("https://job:hmac@egress.internal:3128");
+    expect(captured?.HTTP_PROXY).toBe("https://job:hmac@egress.internal:3128");
+    expect(captured?.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
+  });
+
+  it("stays proxy-free when the worker has no egress env (dev/CLI)", async () => {
+    delete process.env.HTTPS_PROXY;
+    delete process.env.HTTP_PROXY;
+    delete process.env.NODE_EXTRA_CA_CERTS;
+
+    let captured: Record<string, string> | undefined;
+    const execute = vi.fn(async (_cmd: string, opts: { envVars?: Record<string, string> }) => {
+      captured = opts.envVars;
+      return { success: true, exitCode: 0, stdout: "", stderr: "" };
+    });
+    const ctx = makeCtx({
+      agentCwd: process.cwd(),
+      sandbox: {
+        type: "linux",
+        execute,
+      } as unknown as NonNullable<ToolContext["sandbox"]>,
+    });
+
+    await collect(LocalBackends(ctx).command.run("echo hi"));
+
+    expect(captured?.HTTPS_PROXY).toBeUndefined();
+    expect(captured?.HTTP_PROXY).toBeUndefined();
+  });
+});
+
 describe("LocalBackends.http destructive guard", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
