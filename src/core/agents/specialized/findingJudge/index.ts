@@ -42,6 +42,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "usageRecorder"
   | "streamIdFactory"
   | "toolExecutionContext"
+  | "toolProtocol"
 > & {
   model: AIModel;
   /**
@@ -87,6 +88,7 @@ export async function judgeFinding(
       openAIReasoningEffort: ctx.openAIReasoningEffort,
       reasoning: ctx.reasoning,
       languageModelMiddleware: ctx.languageModelMiddleware,
+      toolProtocol: ctx.toolProtocol,
       usageRecorder: ctx.usageRecorder,
       toolExecutionContext: ctx.toolExecutionContext,
       streamIdFactory: ctx.streamIdFactory,

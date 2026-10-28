@@ -25,6 +25,9 @@ afterEach(() => vi.unstubAllGlobals());
 describe("model reasoning capabilities", () => {
   it.each([
     ["gpt-6.1-sol", "effort", false],
+    ["gpt-6.1-terra", "effort", false],
+    ["concentrate:gpt-6.1-terra", "effort", false],
+    ["concentrate:kimi-k3-1-pro", "effort", false],
     ["claude-opus-5-5", "effort", false],
     ["claude-sonnet-4-5", "toggle", true],
     ["gemini-3-pro-preview", "effort", false],
@@ -56,6 +59,7 @@ describe("model reasoning capabilities", () => {
   it("does not invent levels or permit mandatory thinking to be disabled", () => {
     for (const [model, setting] of [
       ["gpt-6.1-sol", "none"],
+      ["gpt-6.1-terra", "none"],
       ["claude-opus-5-5", "disabled"],
       ["gemini-3-pro-preview", "medium"],
       ["gpt-5.6-sol", "ultra"],

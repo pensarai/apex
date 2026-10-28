@@ -26,6 +26,7 @@ export interface Config {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
+  inferenceAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   hoonifyAPIKey?: string | null;
   /** Runtime catalog; fetched using the current key and never persisted. */
@@ -150,6 +151,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
     concentrateAPIKey:
       parsedConfig.concentrateAPIKey ?? process.env.CONCENTRATE_API_KEY,
+    inferenceAPIKey:
+      parsedConfig.inferenceAPIKey ?? process.env.INFERENCE_API_KEY,
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     hoonifyAPIKey: parsedConfig.hoonifyAPIKey ?? process.env.HOONIFY_API_KEY,

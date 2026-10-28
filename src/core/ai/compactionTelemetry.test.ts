@@ -17,6 +17,7 @@ import {
   fitMessagesToContext,
 } from "./contextManagement";
 import { createNativeRolloutEvidenceCapture } from "./native-rollout-evidence";
+import { parseResponsesSSE } from "./providers/pensarResponsesStream";
 
 const state: { model?: MockLanguageModelV3 } = {};
 vi.mock("./utils", async () => ({
@@ -24,7 +25,9 @@ vi.mock("./utils", async () => ({
   getProviderModel: () => state.model,
 }));
 const { streamResponse } = await import("./ai");
-const { createSummarizationStream } = await import("./utils");
+const { CompactionRejectedError, createSummarizationStream } = await import(
+  "./utils"
+);
 
 const MODEL = "claude-haiku-4-5";
 const usage = {
@@ -60,14 +63,12 @@ function model() {
 
 const SUMMARIZE_FN = "apex.context.summarize";
 
-// Summarization and the resumed agent turn both reach the model through doStream,
-// so a mock that must fail only the summary matches on its instruction.
+// Summary and resumed turn both arrive via doStream; the instruction separates them.
 function isSummaryCall(options: { prompt: unknown }): boolean {
   return JSON.stringify(options.prompt).includes("Compact this conversation");
 }
 
-// Located by telemetry functionId rather than span name, so it survives the
-// summarizer switching between streaming and one-shot generation.
+// By functionId, not span name, so it survives a streaming/one-shot switch.
 function summarySpan<
   T extends { name: string; attributes: Record<string, unknown> },
 >(spans: readonly T[]): T | undefined {
@@ -580,6 +581,167 @@ describe("compaction observability", () => {
     expect(JSON.stringify(summaryModel.doStreamCalls[0]?.prompt)).toContain(
       "Compact this conversation",
     );
+  });
+
+  it("rejects a summary whose stream errored but still resolved partial text", async () => {
+    // An error part resolves `.text` with partial output rather than rejecting.
+    const partialFailure = new Error("provider dropped the summary mid-stream");
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      // Only the summary errors, so refusing it is the sole thing that can reject.
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                  { type: "error", error: partialFailure },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "error", raw: "error" },
+                    usage,
+                  },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toBe(partialFailure);
+  });
+
+  it("rejects a summary truncated at the output cap", async () => {
+    // finishReason "length" delivers partial text without an error part.
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      // Only the summary truncates, so refusing it is the sole thing that can reject.
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                  { type: "text-end", id: "s" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "length", raw: "max_tokens" },
+                    usage,
+                  },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
+  });
+
+  it("rejects a summary whose stream disconnected before the finish chunk", async () => {
+    // With output but no finish chunk, ai resolves the partial text, fires no
+    // error, and defaults finishReason to "other".
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
+  });
+
+  it.each([
+    { terminal: undefined, reason: undefined, expected: "other" },
+    {
+      terminal: "response.incomplete",
+      reason: "content_filter",
+      expected: "content-filter",
+    },
+    {
+      terminal: "response.incomplete",
+      reason: "max_output_tokens",
+      expected: "length",
+    },
+    { terminal: "response.completed", reason: undefined, expected: "stop" },
+  ])("handles a Responses summary finishing with $expected", async ({
+    terminal,
+    reason,
+    expected,
+  }) => {
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: "openai.gpt-5.5",
+      doStream: async (options) => {
+        if (!isSummaryCall(options)) return healthy.doStream(options);
+        const events = [
+          { type: "response.output_text.delta", delta: "A compact summary" },
+          ...(terminal
+            ? [
+                {
+                  type: terminal,
+                  response: {
+                    status:
+                      terminal === "response.completed"
+                        ? "completed"
+                        : "incomplete",
+                    ...(reason ? { incomplete_details: { reason } } : {}),
+                  },
+                },
+              ]
+            : []),
+        ];
+        const sse = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                events
+                  .map(
+                    (event) =>
+                      `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+                  )
+                  .join(""),
+              ),
+            );
+            controller.close();
+          },
+        });
+        return { stream: parseResponsesSSE(sse, { idleTimeoutMs: 5_000 }) };
+      },
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: "pensar:openai.gpt-5.5", silent: true },
+      state.model,
+    );
+    if (expected === "stop") {
+      await expect(drain(stream)).resolves.toBeUndefined();
+    } else {
+      await expect(drain(stream)).rejects.toThrow(`finishReason: ${expected}`);
+    }
   });
 
   it("records summary cancellation without hiding the original error", async () => {

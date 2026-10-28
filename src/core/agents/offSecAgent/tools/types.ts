@@ -4,6 +4,7 @@ import type {
   ToolSet,
 } from "ai";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -86,6 +87,7 @@ export type ToolContext = {
 
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
+  toolProtocol?: AgentToolProtocolPreference;
 
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;

@@ -171,6 +171,7 @@ export function getReasoningCapabilities(
   if (
     provider === "local" ||
     provider === "hoonify" ||
+    provider === "inference" ||
     provider === "inception"
   )
     return UNKNOWN;
@@ -316,6 +317,7 @@ export function getReasoningCapabilities(
   if (
     [
       "gpt-6.1-sol",
+      "gpt-6.1-terra",
       "gpt-6-astra",
       "gpt-5.6-sol",
       "gpt-5.6-terra",

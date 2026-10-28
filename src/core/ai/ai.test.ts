@@ -342,10 +342,32 @@ describe("buildOpenRouterProviderOptions", () => {
     }
   });
 
-  it("leaves other OpenRouter models unchanged", () => {
-    expect(buildOpenRouterProviderOptions("anthropic/claude-opus-4-6")).toBe(
-      undefined,
-    );
+  it("asks for prompt caching on Anthropic models", () => {
+    for (const model of [
+      "anthropic/claude-haiku-5.5",
+      "anthropic/claude-opus-5.5",
+      "anthropic/claude-opus-4-6",
+    ]) {
+      expect(buildOpenRouterProviderOptions(model)).toEqual({
+        openrouter: { cache_control: { type: "ephemeral" } },
+      });
+    }
+  });
+
+  it("leaves non-Anthropic, non-pinned OpenRouter models unchanged", () => {
+    for (const model of ["openai/gpt-5.5-pro", "google/gemini-3-pro"]) {
+      expect(buildOpenRouterProviderOptions(model)).toBe(undefined);
+    }
+  });
+
+  it("does not ask for caching on Bedrock or native Anthropic ids", () => {
+    for (const model of [
+      "anthropic.claude-opus-4-6-v1",
+      "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "claude-haiku-4-5",
+    ]) {
+      expect(buildOpenRouterProviderOptions(model)).toBe(undefined);
+    }
   });
 });
 
@@ -364,10 +386,16 @@ describe("buildOpenRouterStructuredProviderOptions", () => {
     }
   });
 
-  it("leaves other OpenRouter models unchanged", () => {
+  it("asks for prompt caching on Anthropic models", () => {
     expect(
       buildOpenRouterStructuredProviderOptions("anthropic/claude-opus-4-6"),
-    ).toBe(undefined);
+    ).toEqual({ openrouter: { cache_control: { type: "ephemeral" } } });
+  });
+
+  it("leaves non-Anthropic, non-pinned OpenRouter models unchanged", () => {
+    expect(buildOpenRouterStructuredProviderOptions("openai/gpt-5.5-pro")).toBe(
+      undefined,
+    );
   });
 });
 

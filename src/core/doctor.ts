@@ -43,6 +43,7 @@ function checkApiKeys(): { provider: string; configured: boolean }[] {
     { provider: "Google", env: "GOOGLE_GENERATIVE_AI_API_KEY" },
     { provider: "OpenRouter", env: "OPENROUTER_API_KEY" },
     { provider: "Concentrate", env: "CONCENTRATE_API_KEY" },
+    { provider: "Inference.net", env: "INFERENCE_API_KEY" },
     { provider: "AWS Bedrock", env: "BEDROCK_API_KEY" },
     { provider: "AWS IAM", env: "AWS_ACCESS_KEY_ID" },
     { provider: "vLLM (local)", env: "LOCAL_MODEL_URL" },

@@ -4,6 +4,7 @@ import type { ModelInfo } from "../ai";
 // ceiling among each slug's upstream providers.
 export const CONCENTRATE_MAX_OUTPUT_TOKENS: Readonly<Record<string, number>> = {
   "concentrate:kimi-k3": 32_768,
+  "concentrate:kimi-k3-1-pro": 32_768,
   "concentrate:qwen3.8-max": 32_768,
   "concentrate:qwen3.8-27b": 32_768,
   "concentrate:deepseek-v4-1-flash": 32_768,
@@ -52,6 +53,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
   {
     id: "concentrate:gpt-6.1-sol",
     name: "GPT-6.1 Sol",
+    provider: "concentrate",
+    contextLength: 1050000,
+  },
+  {
+    id: "concentrate:gpt-6.1-terra",
+    name: "GPT 6.1 Terra",
     provider: "concentrate",
     contextLength: 1050000,
   },
@@ -208,6 +215,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
   {
     id: "concentrate:kimi-k3",
     name: "Kimi K3",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
+    id: "concentrate:kimi-k3-1-pro",
+    name: "Kimi K3.1 Pro",
     provider: "concentrate",
     contextLength: 1048576,
   },

@@ -300,6 +300,7 @@ export function resolveCommandPlatform(ctx: ToolContext): "posix" | "windows" {
 
 export interface RuntimeContextSectionOptions {
   platform: "posix" | "windows";
+  codeModeEnabled?: boolean;
 }
 
 function hasTool(facts: RuntimeExecutionFacts, tool: string): boolean {
@@ -357,8 +358,14 @@ export function buildRuntimeContextSection(
     "[RUNTIME CONTEXT]",
     `OS: ${facts.probed ? (facts.os ?? "unknown") : "unknown"} | Shell: ${shellFact(facts)} | Python: ${pythonFact(facts)} | Node: ${toolFact(facts, "node")} | ffuf: ${toolFact(facts, "ffuf")}`,
     inventoryLine(facts),
-    `Treat this inventory as facts, not as a checklist: pick techniques from evidence. When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists. For tools listed unknown, verify with \`${verify}\` before first use.`,
-    "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun. A successful file write alone does not establish that a helper works.",
+    `Treat this inventory as facts, not as a checklist: pick techniques from evidence. ${
+      opts.codeModeEnabled
+        ? "When a tool is absent, choose an available tool or runtime that fits the work. Prefer exec for predictable tool orchestration and processing intermediate results when it reduces model round trips or unnecessary output. Use direct calls when one operation is sufficient or the next step requires fresh model judgment. Use execute_command with available interpreters (shell/Python/Node) when a native command or script handles the work naturally, including installed libraries, services, and file processing."
+        : "When a tool is absent, build the equivalent with the available interpreters (shell/Python/Node) instead of assuming the tool exists."
+    } For tools listed unknown, verify with \`${verify}\` before first use.`,
+    "Before implementing a transformation over unfamiliar data, inspect representative inputs and confirm the fields and structure your logic depends on.",
+    "Syntax-check or compile new or changed helper scripts with the runtime's available tools before execution; inspect the exit status and output, repair failures, and rerun.",
+    "Before declaring success, check the result against the task's requirements using an independent calculation, representative cases, or relevant tests. Creating or reading back an output file alone does not establish correctness.",
     "[/RUNTIME CONTEXT]",
   ];
   return lines.filter(Boolean).join("\n");

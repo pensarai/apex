@@ -487,7 +487,12 @@ export function createSqliteControlStore(input: {
     // the client's resolve identifier.
     assertDispatchAllowed(runId);
     const run = input.getRun(runId)!;
-    if (!run.spec.activeTools.some((name) => name === toolName)) {
+    // exec/wait only orchestrate; each nested capability still passes this gate.
+    if (
+      toolName !== "exec" &&
+      toolName !== "wait" &&
+      !run.spec.activeTools.some((name) => name === toolName)
+    ) {
       throw new Error(
         `Tool is not in the run's active tool allowlist: ${toolName}`,
       );

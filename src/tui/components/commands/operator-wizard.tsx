@@ -29,6 +29,7 @@ const providerNames: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
   concentrate: "Concentrate",
+  inference: "Inference.net",
   bedrock: "Bedrock",
 };
 const providerOrder = [
@@ -36,6 +37,7 @@ const providerOrder = [
   "openai",
   "openrouter",
   "concentrate",
+  "inference",
   "bedrock",
 ];
 
