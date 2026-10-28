@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
-import { PerCommandShell } from "./perCommandShell";
+import { PerCommandShell, readSandboxEgressEnv } from "./perCommandShell";
 
 // Real-process contract tests for the per-command executor: fresh shell and
 // process group per invocation, curated environment, bounded capture, and a
@@ -562,4 +562,75 @@ describe("PerCommandShell — termination guarantees", () => {
       probeSpy.mockRestore();
     }
   }, 15_000);
+});
+
+describe("PerCommandShell — egress proxy / CA env passthrough", () => {
+  const cleanup: Array<() => Promise<void> | void> = [];
+  afterAll(async () => {
+    for (const fn of cleanup) await fn();
+  });
+  const make = (opts?: { cwd?: string; env?: Record<string, string> }) => {
+    const shell = new PerCommandShell(opts);
+    cleanup.push(() => shell.dispose());
+    return shell;
+  };
+
+  it("readSandboxEgressEnv reads only set egress vars from process.env", () => {
+    const prev = process.env.HTTP_PROXY;
+    try {
+      process.env.HTTP_PROXY = "https://u:p@egress.test:3128";
+      const out = readSandboxEgressEnv();
+      expect(out.HTTP_PROXY).toBe("https://u:p@egress.test:3128");
+      // Unset keys are omitted entirely.
+      expect("THIS_IS_NOT_A_PROXY_VAR" in out).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.HTTP_PROXY;
+      else process.env.HTTP_PROXY = prev;
+    }
+  });
+
+  it("passes the sandbox egress proxy through to every command", async () => {
+    const prev = process.env.HTTPS_PROXY;
+    try {
+      process.env.HTTPS_PROXY = "https://u:p@egress.test:3128";
+      const shell = make();
+      const r = await shell.execute('echo "p=$HTTPS_PROXY"');
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout.trim()).toBe("p=https://u:p@egress.test:3128");
+    } finally {
+      if (prev === undefined) delete process.env.HTTPS_PROXY;
+      else process.env.HTTPS_PROXY = prev;
+    }
+  });
+
+  it("egress proxy is a baseline the agent env cannot clobber", async () => {
+    const prev = process.env.HTTP_PROXY;
+    try {
+      process.env.HTTP_PROXY = "https://real-egress.test:3128";
+      // A workspace/agent env var trying to override the proxy must not win.
+      const shell = make({ env: { HTTP_PROXY: "http://attacker.test:1" } });
+      const r = await shell.execute('echo "p=$HTTP_PROXY"');
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout.trim()).toBe("p=https://real-egress.test:3128");
+    } finally {
+      if (prev === undefined) delete process.env.HTTP_PROXY;
+      else process.env.HTTP_PROXY = prev;
+    }
+  });
+
+  it("leaves commands proxy-free when no egress proxy is set", async () => {
+    const prev = process.env.HTTP_PROXY;
+    const prevS = process.env.HTTPS_PROXY;
+    try {
+      delete process.env.HTTP_PROXY;
+      delete process.env.HTTPS_PROXY;
+      const shell = make();
+      const r = await shell.execute('echo "p=${HTTP_PROXY:-unset}"');
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout.trim()).toBe("p=unset");
+    } finally {
+      if (prev !== undefined) process.env.HTTP_PROXY = prev;
+      if (prevS !== undefined) process.env.HTTPS_PROXY = prevS;
+    }
+  });
 });

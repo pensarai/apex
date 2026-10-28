@@ -44,6 +44,40 @@ export function readSandboxAgentEnv(): Record<string, string> {
   }
 }
 
+// Standard proxy / CA-trust env vars. The command shell builds a clean env and
+// does not inherit arbitrary process.env, but these are infrastructure, not the
+// agent's own config: in a locked-down egress sandbox the entrypoint exports an
+// HTTP(S)/SOCKS proxy + the CA bundle into the process env, and a tool shell
+// that drops them cannot reach any target (direct DNS is firewalled, so curl/
+// dig/sockets fail with NXDOMAIN). Pass the ones that are actually set through to
+// every command so tool traffic rides the same egress proxy the agent's own
+// HTTP clients already use. Empty/unset outside a proxied sandbox, so local and
+// dev runs are unaffected.
+const SANDBOX_EGRESS_ENV_KEYS = [
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "NO_PROXY",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_EXTRA_CA_CERTS",
+  "CURL_CA_BUNDLE",
+  "REQUESTS_CA_BUNDLE",
+] as const;
+
+export function readSandboxEgressEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of SANDBOX_EGRESS_ENV_KEYS) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.length > 0) out[key] = value;
+  }
+  return out;
+}
+
 export interface ShellExecuteOptions {
   /** Working directory for this invocation; defaults to the executor's cwd. */
   cwd?: string;
@@ -188,6 +222,10 @@ export class PerCommandShell {
             TMPDIR: process.env.TMPDIR,
             ...this.extraEnv,
             ...opts?.env,
+            // Egress proxy / CA trust is infrastructure the agent must not be
+            // able to clobber: a locked-down sandbox can only reach targets
+            // through this proxy, so apply it last (after agent/per-command env).
+            ...readSandboxEgressEnv(),
             PS1: "",
             CI: "true",
             TERM: "dumb",
