@@ -144,7 +144,9 @@ export interface IssueEvidence {
   steps: Array<{
     title: string;
     description: string;
-    artifactIds: string[];
+    artifactIds?: string[];
+    detail?: string;
+    artifacts?: Array<Record<string, unknown>>;
   }> | null;
   artifacts: Array<Record<string, unknown>> | null;
   evidenceStatus: string | null;
@@ -170,6 +172,7 @@ export interface IssueEvidence {
     | "no_access"
     | "file_not_found"
     | "unsupported_repository"
+    | "invalid_line_range"
     | null;
 }
 
