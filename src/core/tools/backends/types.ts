@@ -264,9 +264,42 @@ export interface InboxBackend {
   sms: SmsInbox;
 }
 
+export interface RepoCloneRequest {
+  /** Clone URL for the repository, taken from the connected-repo allowlist. */
+  repoUrl: string;
+  /** Branch/ref to check out; defaults to the repository's default branch. */
+  ref?: string;
+  /** Workspace-relative destination subpath (e.g. `repos/<name>`). */
+  dest: string;
+}
+
+export interface RepoCloneResult {
+  success: boolean;
+  /** Absolute path the repository was cloned to inside the workspace. */
+  path: string;
+  error?: string;
+}
+
+/**
+ * Materializes a connected repository inside the agent's workspace. Unlike
+ * {@link FsBackend.git}'s single-destination `clone`, this clones into a named
+ * subdirectory so the generalized attack-surface agent can pull several repos.
+ * Optional: hosts without a sandbox (local runs) leave it unset and the
+ * `clone_repository` tool reports that cloning is unavailable.
+ */
+export interface RepoCloneBackend {
+  clone(req: RepoCloneRequest): Promise<RepoCloneResult>;
+}
+
 export interface ToolBackends {
   fs: FsBackend;
   command: CommandBackend;
+  /**
+   * Multi-repo clone seam for the generalized attack-surface agent. Unset on
+   * hosts that don't support cloning (e.g. local backends); the
+   * `clone_repository` tool returns a structured "unavailable" error then.
+   */
+  repoClone?: RepoCloneBackend;
   http: HttpBackend;
   browser: BrowserBackend;
   inbox: InboxBackend;

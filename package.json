@@ -105,6 +105,11 @@
       "import": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
       "types": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.d.ts"
     },
+    "./agents/specialized/attackSurface/generalizedAgent": {
+      "default": "./build/lib/core/agents/specialized/attackSurface/generalizedAgent.js",
+      "import": "./build/lib/core/agents/specialized/attackSurface/generalizedAgent.js",
+      "types": "./build/lib/core/agents/specialized/attackSurface/generalizedAgent.d.ts"
+    },
     "./agents/specialized/attackSurface/schemas": {
       "default": "./build/lib/core/agents/specialized/attackSurface/schemas.js",
       "import": "./build/lib/core/agents/specialized/attackSurface/schemas.js",
