@@ -60,22 +60,19 @@ export interface IssuePoc {
   contents: string;
 }
 
-export interface IssueDetail extends Omit<IssueSummary, "title" | "location"> {
+export interface IssueDetail {
+  id: string;
+  severity: string;
+  status: string;
+  url: string;
   label: string | null;
   title: string | null;
-  findingTitle: string | null;
-  pullRequestTitle: string | null;
-  name: string | null;
   description: string | null;
   severityLevel: number;
   location: string | null;
   startLine: number | null;
   endLine: number | null;
-  startLineNumber: number | null;
-  endLineNumber: number | null;
-  lineRange?: string;
-  cwe: string;
-  cwes: string[];
+  cwe: string[];
   branch: string | null;
   cvss: {
     score: number;
@@ -99,9 +96,7 @@ export interface IssueDetail extends Omit<IssueSummary, "title" | "location"> {
     } | null;
   } | null;
   application: { id: string; name: string } | null;
-  applicationId: string | null;
   endpoint: { id: string; url: string } | null;
-  endpointId: string | null;
   repository: {
     id: string;
     source: string;
@@ -120,7 +115,6 @@ export interface IssueDetail extends Omit<IssueSummary, "title" | "location"> {
   pentestId: string | null;
   poc: Pick<IssuePoc, "fileName" | "contents"> | null;
   workspaceId: string;
-  workspaceName: string;
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;

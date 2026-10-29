@@ -78,12 +78,12 @@ async function captureRequest(
 }
 
 describe("pensar issues CLI", () => {
-  it("documents issueLabel and the Console url on issue responses", () => {
+  it("documents the label and Console url on issue details", () => {
     const { status, stdout } = runIssues(["--help"]);
 
     expect(status).toBe(0);
-    expect(stdout).toContain("issueLabel");
-    expect(stdout).toContain("deep link to the issue in the Console");
+    expect(stdout).toContain('Issue details include "label"');
+    expect(stdout).toContain("issue in the Console");
   });
 
   it.each([
@@ -284,6 +284,13 @@ describe("finding reads", () => {
       {
         id: issueId,
         label: issueId,
+        title: "Reflected XSS",
+        cwe: ["CWE-79"],
+        location: null,
+        startLine: null,
+        endLine: null,
+        application: { id: "app-id", name: "Acme API" },
+        endpoint: null,
         cvss: {
           score: 0,
           vector: "CVSS:4.0/AV:N",

@@ -73,9 +73,7 @@ back to any command taking an `<issueId>`.
 pensar issues get <issueId> [--json]
 ```
 
-Prints the [canonical issue object](/console/features/webhooks#the-issue-object), including the full CVSS record and reviewer severity override, application, endpoint, repository, close record, and proof-of-concept. The default output renders all returned fields as readable nested text. Add `--json` for the unchanged API JSON, including fields introduced by newer server versions.
-
-Use `--json` in scripts that previously parsed the default output of `issues get`. Existing aliases such as `issueLabel`, `name`, `startLineNumber`, `endLineNumber`, `applicationId`, and `endpointId` remain available; the canonical issue reference documents their replacements.
+Shows the finding's [issue object](/console/features/webhooks#the-issue-object): label, title, CWE list, CVSS assessment, application, endpoint, repository, close record, and proof-of-concept. Output is readable text by default; `--json` prints JSON.
 
 A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400; a well-formed reference that matches no issue returns a 404.
 
@@ -87,7 +85,7 @@ pensar issues evidence <issueId> [--json]
 
 Returns the [evidence resource](/console/features/rest-api#get-issue-evidence): the PoC script and execution output, evidence steps, attack path, and source snippet at the finding's recorded commit. Missing evidence is `null`; `codeSnippetReason` explains an unavailable snippet. The server redacts credentials from evidence and marks capped text with `truncated`.
 
-The default output shows every returned field as nested text, including truncation flags and missing-evidence reasons. `--json` prints the API response unchanged. Evidence uses the same workspace authorization and `issues:read` API-key scope as reading the issue.
+Output is readable text by default; `--json` prints JSON. API keys need `issues:read`.
 
 ### Read Retest History
 
@@ -95,7 +93,7 @@ The default output shows every returned field as nested text, including truncati
 pensar issues retests <issueId> [--json]
 ```
 
-Lists recorded retests with their status, verdict, confidence, evidence, recommendation, errors, and timestamps. The default output is readable text; `--json` prints the unchanged array returned by the API. An empty history is `[]` in JSON mode and `None` in readable mode. This command only reads history; singular `retest` queues a new run.
+Lists recorded retests with their status, verdict, confidence, evidence, recommendation, errors, and timestamps. Output is readable text by default; `--json` prints a JSON array. An empty history is `[]` in JSON mode and `None` in readable mode. This command only reads history; singular `retest` queues a new run.
 
 ### Update an Issue
 

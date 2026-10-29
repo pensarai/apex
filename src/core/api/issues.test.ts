@@ -61,28 +61,24 @@ describe("issue label and url", () => {
     expect(issue?.url).toBe("https://console.pensar.dev/acme/VULN-000123");
   });
 
-  it("allows a null issueLabel on an issue detail", async () => {
+  it("reads the issue detail with its label, CWE list and nested references", async () => {
     const detail: IssueDetail = {
-      ...ISSUE_SUMMARY,
-      issueLabel: null,
+      id: ISSUE_ID,
+      title: "Reflected XSS",
+      severity: "high",
+      status: "open",
+      location: null,
+      url: ISSUE_SUMMARY.url,
       label: null,
-      name: "Reflected XSS",
-      findingTitle: "Reflected XSS",
-      pullRequestTitle: null,
       description: null,
       severityLevel: 3,
       startLine: null,
       endLine: null,
-      startLineNumber: null,
-      endLineNumber: null,
-      cwe: "",
-      cwes: [],
+      cwe: ["CWE-79"],
       branch: null,
       cvss: null,
-      application: null,
-      applicationId: null,
+      application: { id: "app-id", name: "Acme API" },
       endpoint: null,
-      endpointId: null,
       repository: null,
       introducedBy: null,
       pentestId: null,
@@ -95,14 +91,17 @@ describe("issue label and url", () => {
       closedDisposition: null,
       duplicateOf: null,
       workspaceId: "33333333-3333-3333-3333-333333333333",
-      workspaceName: "acme",
       createdAt: "2026-08-27T00:00:00.000Z",
     };
     apiRequest.mockResolvedValue(detail);
 
     const result = await getIssue(ISSUE_ID);
 
-    expect(result.issueLabel).toBeNull();
+    expect(result.label).toBeNull();
+    expect(result.title).toBe("Reflected XSS");
+    expect(result.cwe).toEqual(["CWE-79"]);
+    expect(result.location).toBeNull();
+    expect(result.application).toEqual({ id: "app-id", name: "Acme API" });
     expect(result.url).toBe(ISSUE_SUMMARY.url);
   });
 });

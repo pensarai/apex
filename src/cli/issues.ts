@@ -58,8 +58,8 @@ Usage:
 
 <issueId> accepts the issue UUID or its label (e.g. VULN-000123).
 
-Issue responses include "issueLabel" (e.g. VULN-000123, null for issues created
-before labels existed) and "url", a deep link to the issue in the Console.
+Issue details include "label" (e.g. VULN-000123) and "url", a deep link to the
+issue in the Console. Lists include the label as "issueLabel".
 
 List filters:
   --status <status>     Filter: open, closed, false-positive, in-review
