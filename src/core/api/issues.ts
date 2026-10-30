@@ -54,24 +54,133 @@ export interface IssueSummary {
   url: string;
 }
 
-export interface IssueDetail extends IssueSummary {
-  description?: string;
-  lineRange?: string;
-  cwe?: string;
-  branch?: string;
-  endpoint?: string;
-  poc?: string;
+export interface IssuePoc {
+  fileName: string;
+  language: string | null;
+  contents: string;
+}
+
+export interface IssueDetail {
+  id: string;
+  severity: string;
+  status: string;
+  url: string;
+  label: string | null;
+  title: string | null;
+  description: string | null;
+  severityLevel: number;
+  location: string | null;
+  startLine: number | null;
+  endLine: number | null;
+  cwe: string[];
+  branch: string | null;
+  cvss: {
+    score: number;
+    source: "severity-default" | "ai-override" | "user-override";
+    scored?: boolean;
+    assessment: {
+      score: number;
+      severity: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+      scoreType: "CVSS-B" | "CVSS-BT" | "CVSS-BE" | "CVSS-BTE";
+      vectorString: string;
+      metrics: Record<string, string>;
+    } | null;
+    vector: string | null;
+    metrics: Record<string, string> | null;
+    reasoning: string | null;
+    severityOverride: {
+      severity: string;
+      reason: string;
+      setBy: string | null;
+      setAt: string | null;
+    } | null;
+  } | null;
+  application: { id: string; name: string } | null;
+  endpoint: { id: string; url: string } | null;
+  repository: {
+    id: string;
+    source: string;
+    owner: string;
+    name: string;
+    url: string | null;
+    defaultBranch: string;
+  } | null;
+  introducedBy: {
+    commit: string | null;
+    author: string | null;
+    email: string | null;
+    confidence: "high" | "medium" | "low" | null;
+    at: string | null;
+  } | null;
+  pentestId: string | null;
+  poc: Pick<IssuePoc, "fileName" | "contents"> | null;
   workspaceId: string;
-  workspaceName: string;
   createdAt: string;
-  /** Close metadata. Absent when talking to a console that predates it. */
-  closedAt?: string | null;
-  closedMethod?: string | null;
-  closedReason?: string | null;
-  closedComments?: string | null;
-  closedDisposition?: ClosedDisposition | null;
-  /** UUID of the original issue when closed as a duplicate. */
-  duplicateOf?: string | null;
+  updatedAt: string;
+  closedAt: string | null;
+  closedMethod: string | null;
+  closedReason: string | null;
+  closedComments: string | null;
+  closedDisposition: ClosedDisposition | null;
+  duplicateOf: string | null;
+}
+
+export interface IssueEvidence {
+  issueId: string;
+  poc: IssuePoc | null;
+  pocOutput: {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    executedAt: string;
+    truncated: boolean;
+  } | null;
+  steps: Array<{
+    title: string;
+    description: string;
+    artifactIds?: string[];
+    detail?: string;
+    artifacts?: Array<Record<string, unknown>>;
+  }> | null;
+  artifacts: Array<Record<string, unknown>> | null;
+  evidenceStatus: string | null;
+  attackPath: Array<{
+    application: { id: string; name: string } | null;
+    host: string | null;
+    relationship: string | null;
+    notes: string | null;
+  }> | null;
+  codeSnippet: {
+    repositoryId: string;
+    path: string;
+    startLine: number;
+    endLine: number;
+    commit: string;
+    content: string;
+    truncated: boolean;
+  } | null;
+  codeSnippetReason:
+    | "no_repository"
+    | "no_location"
+    | "no_commit"
+    | "no_access"
+    | "file_not_found"
+    | "unsupported_repository"
+    | "invalid_line_range"
+    | null;
+}
+
+export interface IssueRetest {
+  id: string;
+  status: "queued" | "in-progress" | "fixed" | "still-vulnerable" | "error";
+  stillExists: boolean | null;
+  confidence: "high" | "medium" | "low" | null;
+  evidence: string | null;
+  recommendation: string | null;
+  error: string | null;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 /** Who wrote a comment. Null when the author's user record is gone. */
@@ -285,6 +394,18 @@ export async function listIssues(filters?: {
 
 export async function getIssue(issueId: string): Promise<IssueDetail> {
   return apiRequest<IssueDetail>("GET", `/issues/${issueId}`);
+}
+
+export async function getIssueEvidence(
+  issueId: string,
+): Promise<IssueEvidence> {
+  return apiRequest<IssueEvidence>("GET", `/issues/${issueId}/evidence`);
+}
+
+export async function listIssueRetests(
+  issueId: string,
+): Promise<IssueRetest[]> {
+  return apiRequest<IssueRetest[]>("GET", `/issues/${issueId}/retests`);
 }
 
 export async function updateIssue(
