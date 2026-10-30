@@ -701,6 +701,14 @@ function shouldSummarizeBeforeFitting(
   );
 }
 
+function retryBudgetOf(opts: StreamResponseOpts): StreamRetryBudget {
+  const budget = (opts as InternalStreamResponseOpts)[STREAM_RETRY_BUDGET];
+  if (!budget) {
+    throw new Error("stream recovery wrapper reached without a retry budget");
+  }
+  return budget;
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -708,13 +716,20 @@ function wrapStreamWithErrorHandler(
   opts: StreamResponseOpts,
   model: LanguageModel,
   silent?: boolean,
-  rateLimitRetryCount: number = 0,
-  idleResumeCount: number = 0,
   generationSpans?: GenerationSpanTracker,
   drainIdleStream?: (reason: unknown) => Promise<void>,
 ): StreamTextResult<ToolSet, never> {
+  const budget = retryBudgetOf(opts);
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
+  // Result fields must describe the attempt that produced the consumed
+  // chunks, not the attempt that failed and was replaced.
+  let finalAttempt: StreamTextResult<ToolSet, never> = originalStream;
+  let consumptionStarted = false;
+  let settleAttempts!: () => void;
+  const attemptsSettled = new Promise<void>((resolve) => {
+    settleAttempts = resolve;
+  });
 
   const handler = {
     get(_target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
@@ -730,6 +745,7 @@ function wrapStreamWithErrorHandler(
           const toolGate = createToolExecutionGate();
 
           wrappedStream = (async function* () {
+            consumptionStarted = true;
             let streamError: unknown;
             try {
               for await (const chunk of withIdleTimeout(
@@ -783,6 +799,13 @@ function wrapStreamWithErrorHandler(
                 // must not observe step-close-out after a fatal error.
                 if (streamError !== undefined) {
                   continue;
+                }
+
+                // Retry caps bound consecutive failures; a completed step is
+                // progress, so a long run is not charged for old recoveries.
+                if (chunk.type === "finish-step") {
+                  budget.rateLimit = 0;
+                  budget.idleResume = 0;
                 }
 
                 yield chunk;
@@ -839,10 +862,10 @@ function wrapStreamWithErrorHandler(
               if (
                 !isCtxError &&
                 isStreamIdleTimeoutError(error) &&
-                idleResumeCount < MAX_IDLE_RESUME_RETRIES &&
+                budget.idleResume < MAX_IDLE_RESUME_RETRIES &&
                 messagesContainer.current.length > 0
               ) {
-                const nextIdleCount = idleResumeCount + 1;
+                const nextIdleCount = ++budget.idleResume;
                 await getInferenceRecorder(opts)?.retry({
                   authority: "stream-idle",
                   count: nextIdleCount,
@@ -867,9 +890,8 @@ function wrapStreamWithErrorHandler(
                   opts,
                   model,
                   silent,
-                  rateLimitRetryCount,
-                  nextIdleCount,
                 );
+                finalAttempt = wrappedRetriedStream;
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
                   yield chunk;
@@ -881,9 +903,9 @@ function wrapStreamWithErrorHandler(
               if (
                 !isCtxError &&
                 checkIfRateLimitError(error) &&
-                rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
+                budget.rateLimit < MAX_RATE_LIMIT_RETRIES
               ) {
-                const nextRetryCount = rateLimitRetryCount + 1;
+                const nextRetryCount = ++budget.rateLimit;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
                 const recorder = getInferenceRecorder(opts);
                 await recorder?.retry({
@@ -919,9 +941,8 @@ function wrapStreamWithErrorHandler(
                   opts,
                   model,
                   silent,
-                  nextRetryCount,
-                  idleResumeCount,
                 );
+                finalAttempt = wrappedRetriedStream;
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
                   yield chunk;
@@ -1020,9 +1041,8 @@ function wrapStreamWithErrorHandler(
                       opts,
                       model,
                       silent,
-                      rateLimitRetryCount,
-                      idleResumeCount,
                     );
+                    finalAttempt = wrappedRetry;
                     for await (const chunk of wrappedRetry.fullStream) {
                       yield chunk;
                     }
@@ -1082,6 +1102,7 @@ function wrapStreamWithErrorHandler(
                     },
                     model,
                   );
+                  finalAttempt = summarizationStream;
                   for await (const chunk of summarizationStream.fullStream) {
                     yield chunk;
                   }
@@ -1160,6 +1181,7 @@ function wrapStreamWithErrorHandler(
                     messages: undefined,
                     _restartDepth: postReactiveDepth + 1,
                   });
+                  finalAttempt = fallback;
                   for await (const chunk of fallback.fullStream) {
                     yield chunk;
                   }
@@ -1172,16 +1194,34 @@ function wrapStreamWithErrorHandler(
                 }
                 throw error;
               }
+            } finally {
+              settleAttempts();
             }
           })();
         }
         return wrappedStream;
       }
 
-      // For all other properties, return the original
-      return (originalStream as unknown as Record<string | symbol, unknown>)[
-        prop
-      ];
+      const value = (
+        originalStream as unknown as Record<string | symbol, unknown>
+      )[prop];
+      if (!isPromiseLike(value)) return value;
+      // Recovery only happens while `fullStream` is consumed, so a result read
+      // without it belongs to the original attempt.
+      const fromFinalAttempt = (original: () => unknown) =>
+        consumptionStarted
+          ? attemptsSettled.then(() =>
+              finalAttempt === originalStream
+                ? original()
+                : (finalAttempt as unknown as Record<string | symbol, unknown>)[
+                    prop
+                  ],
+            )
+          : original();
+      return Promise.resolve(value).then(
+        (resolved) => fromFinalAttempt(() => resolved),
+        (rejected) => fromFinalAttempt(() => Promise.reject(rejected)),
+      );
     },
   };
 
@@ -1444,9 +1484,26 @@ interface NativeStreamRecovery {
   run<T>(fn: () => T): T;
 }
 
+const STREAM_RETRY_BUDGET = Symbol("stream-retry-budget");
+
+/** Shared by every re-entry of one logical stream; never across agents. */
+interface StreamRetryBudget {
+  rateLimit: number;
+  idleResume: number;
+}
+
 type InternalStreamResponseOpts = StreamResponseOpts & {
   [NATIVE_STREAM_RECOVERY]?: NativeStreamRecovery;
+  [STREAM_RETRY_BUDGET]?: StreamRetryBudget;
 };
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
 
 export function streamResponse(
   opts: StreamResponseOpts,
@@ -1480,6 +1537,10 @@ function streamResponseWithinOperation(
     // (including `response`) is exposed only when the caller lists it, so the
     // structured-output tool is included when listed and inert when omitted.
     ...resolveEffectiveTools(opts.tools, opts.activeTools),
+  };
+  (opts as InternalStreamResponseOpts)[STREAM_RETRY_BUDGET] ??= {
+    rateLimit: 0,
+    idleResume: 0,
   };
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
@@ -2219,8 +2280,6 @@ function streamResponseWithinOperation(
       recoveryOpts,
       providerModel,
       silent,
-      0,
-      0,
       generationSpans,
       drainIdleStream,
     );
