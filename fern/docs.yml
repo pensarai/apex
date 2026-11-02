@@ -53,6 +53,10 @@ tabs:
     display-name: Console
     icon: fa-regular fa-book
     href: https://docs.pensar.dev/console
+  console-api:
+    display-name: Console API
+    icon: fa-regular fa-code
+    href: https://docs.pensar.dev/console/api
 
 navigation:
   - tab: blog
@@ -170,6 +174,8 @@ navigation:
                 slug: console-api
                 path: ./docs/sdk/reference/console-api.mdx
   - tab: console
+    layout:
+  - tab: console-api
     layout:
 
 navbar-links:
