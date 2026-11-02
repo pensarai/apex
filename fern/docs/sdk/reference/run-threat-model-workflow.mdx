@@ -4,7 +4,9 @@ description: "Generate a threat model document for a codebase"
 ---
 
 ```ts title="Signature"
-function runThreatModelWorkflow(input: ThreatModelWorkflowInput): Promise<ThreatModelWorkflowResult>;
+function runThreatModelWorkflow(
+  input: ThreatModelWorkflowInput,
+): Promise<ThreatModelWorkflowResult>;
 ```
 
 Analyzes a codebase with Apex's built-in `threat-model` skill and writes a Markdown threat model to `outputPath`. This is what `pensar threat-model` runs. Pass the result to [`runPentestAgent`](/apex/sdk/reference/run-pentest-agent) as `threatModel` to steer a pentest.

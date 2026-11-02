@@ -4,7 +4,9 @@ description: "Log in to a target with session credentials and export the resulti
 ---
 
 ```ts title="Signature"
-function runAuthenticationAgent(input: AuthenticationAgentInput): Promise<AuthenticationResult>;
+function runAuthenticationAgent(
+  input: AuthenticationAgentInput,
+): Promise<AuthenticationResult>;
 ```
 
 Drives a target's login flow with an AI agent and returns reusable authentication material. The agent uses a real browser and can work through form logins, OAuth, SPAs, CSRF tokens, and email or SMS one-time codes (if inboxes are configured). Use the exported cookies and headers to authenticate other tools or pentest runs.
