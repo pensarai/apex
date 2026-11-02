@@ -28,7 +28,7 @@ import { INFERENCE_MODELS } from "./inference";
 import { MANTLE_MODELS } from "./mantle";
 import { OPENAI_MODELS } from "./openai";
 // OpenRouter — curated manually (SDK doesn't enumerate models).
-import { OPENROUTER_MODELS } from "./openrouter";
+import { OPENROUTER_MAX_OUTPUT_TOKENS, OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
@@ -109,6 +109,8 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   if (modelId === "inference:deepseek-v4.1-flash-1017-cyber") return 393_216;
   if (modelId === "chat-latest") return 128_000;
   if (getClaudeCapabilities(modelId)) return 128_000;
+  const openRouterBudget = OPENROUTER_MAX_OUTPUT_TOKENS[modelId];
+  if (openRouterBudget) return openRouterBudget;
   const concentrateBudget = CONCENTRATE_MAX_OUTPUT_TOKENS[modelId];
   if (concentrateBudget) return concentrateBudget;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
