@@ -1,0 +1,132 @@
+---
+title: "runAttackSurfaceAgent"
+description: "Map a target's attack surface from the outside (blackbox) or from its source code (whitebox)"
+---
+
+```ts title="Signature"
+function runAttackSurfaceAgent(
+  input: AttackSurfaceInput,
+): Promise<AttackSurfaceResult | WhiteboxAttackSurfaceResult>;
+```
+
+Runs only the discovery phase of a pentest:
+
+- **Blackbox.** When `cwd` is not set, the agent probes the live `target` (domain, IP, URL, network range, or organization name). It returns the assets it found, plus the targets that warrant deep testing.
+- **Whitebox.** When `cwd` is set, Apex analyzes the source code. It returns every app, page, and API endpoint it finds, each with pentest objectives and a risk score.
+
+Feed the results into [`runTargetedPentestAgent`](/apex/sdk/reference/run-targeted-pentest-agent) to test the endpoints you care about.
+
+```ts title="Import"
+import { runAttackSurfaceAgent } from "@pensar/apex/core/api";
+```
+
+## Parameters
+
+<ParamField path="target" type="string">
+  What to analyze. Required for blackbox runs.
+</ParamField>
+
+<ParamField path="cwd" type="string">
+  Path to the source code. Switches the run to whitebox mode.
+</ParamField>
+
+<ParamField path="session" type="SessionInfo" required={true}>
+  Session for artifacts. See [`sessions.create()`](/apex/sdk/reference/sessions).
+</ParamField>
+
+<ParamField path="model" type="AIModel" required={true}>
+  Model ID. See [Models](/apex/sdk/configuration#models).
+</ParamField>
+
+<ParamField path="authConfig" type="AIAuthConfig">
+  AI provider credentials.
+</ParamField>
+
+<ParamField path="eventBus" type="AgentEventBus">
+  Streaming events. See [AgentEventBus](/apex/sdk/reference/agent-event-bus).
+</ParamField>
+
+<ParamField path="abortSignal" type="AbortSignal">
+  Cancels the run.
+</ParamField>
+
+<ParamField path="surfaceIntegrationEnabled" type="boolean" default="true">
+  Whitebox only. Set to `false` to skip deterministic `@pensar/surface` enumeration.
+</ParamField>
+
+<ParamField path="reasoning" type="ReasoningSetting">
+  Extended-thinking setting. See [Reasoning](/apex/sdk/configuration#reasoning).
+</ParamField>
+
+## Returns
+
+### Blackbox: `AttackSurfaceResult`
+
+<ParamField path="targets" type="PentestTarget[]">
+  Targets recommended for deep testing. Each has a `target`, an `objective`, a `rationale`, and optional `authenticationInfo`.
+</ParamField>
+
+<ParamField path="results" type="AttackSurfaceAnalysisResults | null">
+  The full analysis: `summary` counts, `discoveredAssets`, `targets`, and `keyFindings`. `null` if the agent didn't submit one.
+</ParamField>
+
+<ParamField path="resultsPath" type="string">
+  Absolute path to `attack-surface-results.json` in the session.
+</ParamField>
+
+<ParamField path="assetsPath" type="string">
+  Absolute path to the session's assets directory.
+</ParamField>
+
+### Whitebox: `WhiteboxAttackSurfaceResult`
+
+<ParamField path="apps" type="App[]">
+  Every application found in the repository, with its `name`, `type`, `framework`, `location`, `pages`, and `apiEndpoints`. Each endpoint carries `method`, `path`, `file`, `authRequired`, `pentestObjectives`, and `riskScore`.
+</ParamField>
+
+<ParamField path="summary" type="{ totalApps: number; totalPages: number; totalApiEndpoints: number; totalPentestObjectives: number }">
+  Counts across all apps.
+</ParamField>
+
+<ParamField path="repoType" type="string">
+  Repository layout, for example `monorepo` or `single-app`.
+</ParamField>
+
+<ParamField path="packageManager" type="string">
+  Detected package manager.
+</ParamField>
+
+## Example
+
+```ts title="Discover, then test the riskiest targets"
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { runAttackSurfaceAgent, runTargetedPentestAgent } from "@pensar/apex/core/api";
+import { config } from "@pensar/apex/core/config";
+import { sessions } from "@pensar/apex/core/session";
+
+const authConfig = buildAuthConfig(await config.get());
+const model = "claude-opus-4-6";
+const session = await sessions.create({
+  name: "Recon",
+  targets: ["example.com"],
+});
+
+const surface = await runAttackSurfaceAgent({
+  target: "example.com",
+  session,
+  model,
+  authConfig,
+});
+
+if ("targets" in surface) {
+  for (const t of surface.targets.slice(0, 3)) {
+    await runTargetedPentestAgent({
+      target: t.target,
+      objectives: [t.objective],
+      session,
+      model,
+      authConfig,
+    });
+  }
+}
+```

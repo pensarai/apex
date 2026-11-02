@@ -1,0 +1,126 @@
+---
+title: "AgentEventBus"
+description: "Subscribe to streaming text, tool calls, sub-agent lifecycle, and workflow phase events from Apex agents"
+---
+
+```ts title="Signature"
+class AgentEventBus {
+  on<K extends keyof AgentEventMap>(event: K, handler: (payload: AgentEventMap[K]) => void): this;
+  once<K extends keyof AgentEventMap>(event: K, handler: (payload: AgentEventMap[K]) => void): this;
+  off<K extends keyof AgentEventMap>(event: K, handler: (payload: AgentEventMap[K]) => void): this;
+  emit<K extends keyof AgentEventMap>(event: K, payload: AgentEventMap[K]): boolean;
+  removeAllListeners(event?: keyof AgentEventMap): this;
+}
+```
+
+A typed event emitter for agent output. Pass one bus to any runner as `eventBus`. Events from sub-agents (for example, each worker in a pentest swarm) are forwarded to the same bus, tagged with `subagentId` and `sessionId`, so one subscriber sees the whole run.
+
+Handlers run synchronously while the agent streams. Keep them fast, and hand slow work (database writes, network calls) off to a queue.
+
+```ts title="Import"
+import { AgentEventBus } from "@pensar/apex/core/eventBus";
+```
+
+## Events
+
+### Model output
+
+<ParamField path="text-delta" type="{ text: string; subagentId?: string; sessionId?: string; messageId?: string; partId?: string }">
+  A chunk of the model's response text.
+</ParamField>
+
+<ParamField path="reasoning-delta" type="{ text: string; subagentId?: string; sessionId?: string; messageId?: string }">
+  A chunk of extended-thinking output.
+</ParamField>
+
+<ParamField path="reasoning-start" type="{ subagentId?: string; sessionId?: string; messageId?: string }">
+  A reasoning block opened.
+</ParamField>
+
+<ParamField path="reasoning-end" type="{ subagentId?: string; sessionId?: string; messageId?: string }">
+  A reasoning block closed.
+</ParamField>
+
+<ParamField path="step-finish" type="{ messages: unknown[]; subagentId?: string; sessionId?: string; messageId?: string }">
+  An agent step finished. `messages` holds the conversation so far.
+</ParamField>
+
+### Tools
+
+<ParamField path="tool-call-start" type="{ toolCallId: string; toolName: string; subagentId?: string; sessionId?: string }">
+  The model started generating a tool call.
+</ParamField>
+
+<ParamField path="tool-call-delta" type="{ toolCallId: string; argsTextDelta: string; subagentId?: string; sessionId?: string }">
+  A chunk of the tool call's JSON arguments.
+</ParamField>
+
+<ParamField path="tool-call-complete" type="{ toolCallId: string; toolName: string; args: unknown; subagentId?: string; sessionId?: string }">
+  The tool call is fully formed and about to execute.
+</ParamField>
+
+<ParamField path="tool-result" type="{ toolCallId: string; toolName: string; result: unknown; subagentId?: string; sessionId?: string }">
+  The tool finished. Match it to its call with `toolCallId`.
+</ParamField>
+
+<ParamField path="command-output" type="{ data: string; subagentId?: string }">
+  Live output from a running shell command.
+</ParamField>
+
+### Sub-agents and workflow
+
+<ParamField path="subagent-spawn" type="{ subagentId: string; sessionId?: string; name?: string; input: unknown; parentSubagentId?: string; parentSessionId?: string }">
+  A sub-agent started. `parentSubagentId` is unset for top-level agents.
+</ParamField>
+
+<ParamField path="subagent-complete" type="{ subagentId: string; sessionId?: string; status: 'completed' | 'failed'; parentSubagentId?: string; parentSessionId?: string }">
+  A sub-agent finished.
+</ParamField>
+
+<ParamField path="workflow-phase-start" type="{ phase: 'discovery' | 'pentesting' | 'reporting'; label: string; metadata?: Record<string, unknown> }">
+  A [`runPentestAgent`](/apex/sdk/reference/run-pentest-agent) phase started.
+</ParamField>
+
+<ParamField path="workflow-phase-complete" type="{ phase: 'discovery' | 'pentesting' | 'reporting'; summary: Record<string, unknown> }">
+  A phase finished. For `reporting`, `summary` includes `reportPath`, `findingsCount`, and `findingsBySeverity`.
+</ParamField>
+
+<ParamField path="app-analysis-progress" type="{ totalApps: number; completedApps: number; appName?: string }">
+  Whitebox discovery progress across the apps in a repository.
+</ParamField>
+
+### Errors and tracing
+
+<ParamField path="error" type="{ error: unknown; subagentId?: string }">
+  An agent or sub-agent hit an error. See [Errors and cancellation](/apex/sdk/errors-and-cancellation#agent-errors).
+</ParamField>
+
+<ParamField path="trace-record" type="{ record: TraceRecord; subagentId?: string }">
+  A structured step-level trace record (reasoning, tool calls, token usage), suitable for exporting to a tracing backend.
+</ParamField>
+
+## Example
+
+```ts title="Per-agent progress for a pentest swarm"
+import { AgentEventBus } from "@pensar/apex/core/eventBus";
+
+const eventBus = new AgentEventBus();
+const names = new Map<string, string>();
+
+eventBus
+  .on("workflow-phase-start", ({ label }) => console.log(`\n== ${label}`))
+  .on("subagent-spawn", ({ subagentId, name }) => {
+    names.set(subagentId, name ?? subagentId);
+    console.log(`+ ${names.get(subagentId)}`);
+  })
+  .on("tool-call-complete", ({ toolName, subagentId }) => {
+    const who = subagentId ? names.get(subagentId) : "root";
+    console.log(`  [${who}] → ${toolName}`);
+  })
+  .on("subagent-complete", ({ subagentId, status }) =>
+    console.log(`${status === "completed" ? "✓" : "✗"} ${names.get(subagentId)}`),
+  )
+  .on("error", ({ error }) => console.error(error));
+
+// await runPentestAgent({ ..., eventBus });
+```
