@@ -38,6 +38,17 @@ export interface WebSearchResponse {
 }
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+const EXA_SEARCH_URL = "https://api.exa.ai/search";
+
+const exaSearchResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      title: z.string().nullish(),
+      url: z.string(),
+      highlights: z.array(z.string()).nullish(),
+    }),
+  ),
+});
 
 async function braveSearch(
   query: string,
@@ -109,6 +120,69 @@ async function braveSearch(
   return { success: true, results };
 }
 
+async function exaSearch(
+  query: string,
+  apiKey: string,
+  abortSignal?: AbortSignal,
+): Promise<WebSearchResponse> {
+  const timeout = AbortSignal.timeout(30_000);
+  // biome-ignore lint/style/noRestrictedGlobals: Exa Search is infrastructure, not a pentest target.
+  const response = await fetch(EXA_SEARCH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+    body: JSON.stringify({
+      query,
+      type: "auto",
+      numResults: 10,
+      contents: { highlights: { maxCharacters: 2000 } },
+    }),
+    signal: abortSignal ? AbortSignal.any([abortSignal, timeout]) : timeout,
+  });
+
+  if (!response.ok) {
+    const errors: Record<number, string> = {
+      401: "Exa API authentication failed. Check your EXA_API_KEY or exaAPIKey.",
+      402: "Exa search credits or spending budget exhausted. Check your Exa billing settings.",
+      403: "Exa search access denied. Check your Exa permissions and search policy.",
+      429: "Exa API rate limit exceeded. Please wait before searching again.",
+    };
+    return {
+      success: false,
+      results: [],
+      error:
+        errors[response.status] ??
+        `Exa search failed: ${response.status} ${response.statusText}.`,
+    };
+  }
+
+  const data = exaSearchResponseSchema.safeParse(
+    await response.json().catch(() => null),
+  );
+  if (!data.success) {
+    return {
+      success: false,
+      results: [],
+      error: "Exa search returned an invalid response.",
+    };
+  }
+
+  const results = data.data.results.flatMap((result) => {
+    try {
+      return [
+        {
+          title: result.title ?? "",
+          url: result.url,
+          snippet: result.highlights?.join("\n") ?? "",
+          fetchToken: createLocalResearchFetchToken(result.url),
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+  return { success: true, results };
+}
+
 export async function postPensarWebSearch(
   body: unknown,
   signal?: AbortSignal,
@@ -143,7 +217,7 @@ export async function postPensarWebSearch(
     return {
       ok: false,
       error:
-        "Web search requires a Pensar account or Brave API key. Please sign in or configure brave_api_key.",
+        "Web search requires a Pensar account, Brave API key, or Exa API key. Sign in or configure BRAVE_API_KEY or EXA_API_KEY.",
     };
   }
 
@@ -186,7 +260,7 @@ export async function postPensarWebSearch(
   return { ok: true, response };
 }
 
-export function webSearch(_ctx: ToolContext) {
+export function webSearch(ctx: ToolContext) {
   return tool({
     description: `Search the web for real-time information about any topic. Returns summarized information from search results.
 
@@ -197,7 +271,7 @@ USAGE GUIDANCE:
 - Find documentation for tools, APIs, and security testing techniques
 - Look up default credentials, common misconfigurations, and hardening guides
 
-IMPORTANT: This tool requires a Pensar account or Brave API key. Every successful result carries a short-lived fetch capability for safe follow-up reads.
+IMPORTANT: This tool requires a Pensar account, Brave API key, or Exa API key. Every successful result carries a short-lived fetch capability for safe follow-up reads.
 
 COMMON SEARCH PATTERNS:
 - "CVE-2024-XXXX exploit" — Find details about specific CVEs
@@ -206,11 +280,18 @@ COMMON SEARCH PATTERNS:
 - "Spring Boot actuator default credentials" — Look up default credentials
 - "JWT token security vulnerabilities" — Research vulnerability classes`,
     inputSchema: webSearchInputSchema,
-    execute: async ({ query }): Promise<WebSearchResponse> => {
+    execute: async ({ query }, { abortSignal }): Promise<WebSearchResponse> => {
       try {
         const cfg = await config.get();
         if (cfg.braveAPIKey) {
           return braveSearch(query, cfg.braveAPIKey);
+        }
+        if (cfg.exaAPIKey) {
+          return await exaSearch(
+            query,
+            cfg.exaAPIKey,
+            abortSignal ?? ctx.abortSignal,
+          );
         }
         const result = await postPensarWebSearch({ query });
         if (!result.ok) {

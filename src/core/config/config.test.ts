@@ -30,6 +30,19 @@ afterEach(() => {
 });
 
 describe("provider environment fallbacks", () => {
+  it("loads an Exa environment key and prefers a persisted key without saving the environment key", async () => {
+    vi.stubEnv("EXA_API_KEY", "exa-env-key");
+    expect((await get()).exaAPIKey).toBe("exa-env-key");
+    await update({ selectedModelId: "test-model" });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.exaAPIKey).toBeUndefined();
+
+    await update({ exaAPIKey: "exa-saved-key" });
+    expect((await get()).exaAPIKey).toBe("exa-saved-key");
+  });
+
   it("loads an Inference.net environment key and prefers a persisted key", async () => {
     vi.stubEnv("INFERENCE_API_KEY", "inference-env-key");
     expect((await get()).inferenceAPIKey).toBe("inference-env-key");
