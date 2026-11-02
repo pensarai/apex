@@ -129,6 +129,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "anthropic.claude-opus": 200000,
   "anthropic.claude-opus-4-7": 1000000,
   "anthropic.claude-opus-4-8": 1000000,
+  "anthropic.claude-opus-5-5": 1000000,
 };
 
 function getContextLength(modelId: string): number | undefined {
@@ -707,6 +708,8 @@ function main() {
     "anthropic.claude-opus-4-7",
     "anthropic.claude-opus-4-8",
     "us.anthropic.claude-opus-4-8",
+    "anthropic.claude-opus-5-5",
+    "us.anthropic.claude-opus-5-5",
   ]);
 
   const bedrockRegionalIds = generateBedrockRegionalVariants(bedrockBaseIds);

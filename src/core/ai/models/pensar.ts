@@ -10,6 +10,12 @@ export const PENSAR_MODELS: ModelInfo[] = [
     contextLength: 272000,
   },
   {
+    id: "pensar:anthropic.claude-opus-5-5",
+    name: "Claude Opus 5.5",
+    provider: "pensar",
+    contextLength: 1000000,
+  },
+  {
     id: "pensar:anthropic.claude-opus-4-8",
     name: "Claude Opus 4.8",
     provider: "pensar",

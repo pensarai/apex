@@ -61,6 +61,7 @@ describe("model reasoning capabilities", () => {
       ["gpt-6.1-sol", "none"],
       ["gpt-6.1-terra", "none"],
       ["claude-opus-5-5", "disabled"],
+      ["global.anthropic.claude-opus-5-5", "disabled"],
       ["gemini-3-pro-preview", "medium"],
       ["gpt-5.6-sol", "ultra"],
       ["unknown", "high"],
@@ -70,6 +71,20 @@ describe("model reasoning capabilities", () => {
       );
     }
     expect(buildModelReasoningOptions("unknown", "default")).toBeUndefined();
+  });
+
+  it("sends Bedrock Opus 5.5 reasoning through the Bedrock transport", () => {
+    expect(
+      getReasoningCapabilities("global.anthropic.claude-opus-5-5"),
+    ).toMatchObject({
+      control: "effort",
+      transport: "bedrock",
+      thinking: "adaptive",
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "medium",
+      alwaysOn: true,
+      canDisable: false,
+    });
   });
 
   it("uses the route's published levels instead of guessing from a model family", () => {
@@ -166,6 +181,20 @@ describe("model reasoning capabilities", () => {
     expect(body).toMatchObject({
       thinking: { type: "adaptive", display: "summarized" },
       output_config: { effort: "low" },
+    });
+  });
+
+  it("defaults Opus 5.5 on Pensar's gateway to adaptive medium effort", () => {
+    const body = convertToBedrockFormat("anthropic.claude-opus-5-5", {
+      prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+      providerOptions: buildModelReasoningOptions(
+        "pensar:anthropic.claude-opus-5-5",
+        "default",
+      ),
+    });
+    expect(body).toMatchObject({
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: { effort: "medium" },
     });
   });
 

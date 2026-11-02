@@ -134,6 +134,30 @@ describe("getMaxOutputTokens", () => {
     });
   });
 
+  it.each([
+    ["anthropic.claude-opus-5-5", "Claude Opus 5.5 (Bedrock)"],
+    ["us.anthropic.claude-opus-5-5", "Claude Opus 5.5 (US)"],
+    ["global.anthropic.claude-opus-5-5", "Claude Opus 5.5 (Global)"],
+  ])("registers %s as a Bedrock model with a 128K output budget", (id, name) => {
+    expect(getModelInfo(id)).toMatchObject({
+      name,
+      provider: "bedrock",
+      contextLength: 1_000_000,
+    });
+    expect(getMaxOutputTokens(id)).toBe(128_000);
+  });
+
+  it("registers Claude Opus 5.5 on the Pensar gateway", () => {
+    expect(getModelInfo("pensar:anthropic.claude-opus-5-5")).toMatchObject({
+      name: "Claude Opus 5.5",
+      provider: "pensar",
+      contextLength: 1_000_000,
+    });
+    expect(getMaxOutputTokens("pensar:anthropic.claude-opus-5-5")).toBe(
+      128_000,
+    );
+  });
+
   it("pins latest-tier Claude (4.6 + 4.7 + 4.8) to 128K output", () => {
     // These ship the 128K window; they MUST not fall through to the
     // generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls (32K/64K)
