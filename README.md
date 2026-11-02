@@ -135,6 +135,22 @@ it with `--model-provider <id> --model <model>`, or choose its declared models i
 the operator's `/models` picker. See [custom inference setup](docs/custom-inference.md)
 for GLM settings, headless job configuration, and a live connection test.
 
+### Web search
+
+Use your own Exa API key for direct web search with any model provider:
+
+```bash
+export EXA_API_KEY=your-exa-api-key
+pensar
+```
+
+You can also save the key as `exaAPIKey` in your existing
+`~/.pensar/config.json`. If a Brave key is configured (`BRAVE_API_KEY` or
+`braveAPIKey`), Brave takes precedence; remove that key to use Exa. Without
+either search key, Apex uses the existing Pensar web-search gateway, which
+requires Pensar authentication. Exa errors are returned directly without
+switching providers.
+
 ### Logging
 
 Apex routes diagnostic/operational logging through a centralized structured logger
