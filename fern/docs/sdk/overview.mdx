@@ -1,0 +1,100 @@
+---
+title: "SDK Overview"
+description: "Embed Apex agents in your own TypeScript and JavaScript tools with the @pensar/apex package"
+---
+
+## Overview
+
+The `@pensar/apex` npm package is both the `pensar` CLI and a TypeScript SDK. The SDK exposes the same agents the TUI and headless CLI use: full pentests, targeted pentests, attack surface mapping, authentication, threat modeling, and patching. It also includes a client for the Pensar Console API.
+
+Use the SDK when you want to:
+
+- Run Apex agents from your own CI jobs, scripts, or services
+- Stream agent output into your own UI, logs, or database
+- Combine individual agents (for example, map the attack surface, then run targeted pentests on selected endpoints)
+- Read and update Pensar Console issues, pentests, apps, and knowledge programmatically
+
+<Callout intent="warning">
+  **Authorization Required**: Only test systems you own or have explicit authorization to test.
+</Callout>
+
+## Installation
+
+<CodeBlocks>
+  ```bash title="npm"
+  npm install @pensar/apex
+  ```
+  ```bash title="bun"
+  bun add @pensar/apex
+  ```
+  ```bash title="pnpm"
+  pnpm add @pensar/apex
+  ```
+  ```bash title="yarn"
+  yarn add @pensar/apex
+  ```
+</CodeBlocks>
+
+The package ships ESM modules and TypeScript declarations. It requires Node.js 18 or later, or Bun 1.0 or later.
+
+## Importing
+
+Every module is published as a package subpath, so import only the parts you need:
+
+```ts
+import { runPentestAgent } from "@pensar/apex/core/api";
+import { sessions } from "@pensar/apex/core/session";
+```
+
+The package root also re-exports each module as a namespace. This is convenient for exploration, but subpath imports keep your bundle smaller:
+
+```ts
+import { api, session } from "@pensar/apex";
+
+await api.runPentestAgent({ /* ... */ });
+await session.sessions.create({ /* ... */ });
+```
+
+## Core modules
+
+| Import path | What it provides |
+| --- | --- |
+| `@pensar/apex/core/api` | Agent runners (`runPentestAgent`, `runTargetedPentestAgent`, `runAttackSurfaceAgent`, ...) and the Pensar Console API client |
+| `@pensar/apex/core/session` | `sessions` — create, load, and delete the sessions that hold agent artifacts |
+| `@pensar/apex/core/eventBus` | `AgentEventBus` — typed stream of agent text, tool calls, and lifecycle events |
+| `@pensar/apex/core/config` | `config` — read and update `~/.pensar/config.json` |
+| `@pensar/apex/core/ai` | `buildAuthConfig` and model/provider types |
+| `@pensar/apex/api/targetedPentest` | `startTargetedPentestAgent` — targeted pentest with an explicit teardown handle |
+| `@pensar/apex/agents/offSecAgent` | Tool name lists (`ALL_TOOL_NAMES`, `SKILL_TOOL_NAMES`) and agent input types |
+
+The `package.json` `exports` map lists further subpaths (findings registry, CVSS scoring, observability, tool backends). Those are lower-level building blocks and are not covered by this reference yet.
+
+## How the SDK fits together
+
+Every agent run follows the same shape:
+
+<Steps>
+  <Step title="Resolve credentials">
+    Load your AI provider keys with `config.get()` and pass them to agents as `authConfig: buildAuthConfig(cfg)`. See [Configuration](/apex/sdk/configuration).
+  </Step>
+  <Step title="Create a session">
+    Call `sessions.create()` to allocate a directory under `~/.pensar/sessions/` for findings, POCs, and logs. See [sessions](/apex/sdk/reference/sessions).
+  </Step>
+  <Step title="Run an agent">
+    Call a runner such as `runPentestAgent()` with a target, model, and session. Pass an `AgentEventBus` to stream progress. See [AgentEventBus](/apex/sdk/reference/agent-event-bus).
+  </Step>
+  <Step title="Read the results">
+    Each runner resolves with structured results (for example, `findings`) plus paths to the artifacts it wrote into the session.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/apex/sdk/quickstart">
+    Run your first pentest from TypeScript
+  </Card>
+  <Card title="runPentestAgent" icon="code" href="/apex/sdk/reference/run-pentest-agent">
+    Full reference for the pentest runner
+  </Card>
+</CardGroup>

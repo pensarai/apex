@@ -1,0 +1,236 @@
+---
+title: "sessions"
+description: "Create, load, and delete the sessions that hold Apex agent configuration and artifacts"
+---
+
+A session is a directory under `~/.pensar/sessions/<id>/`, together with the configuration for one engagement: targets, scope, credentials, headers, and safety switches. Every agent runner takes a `session`, writes its findings, POCs, and logs into it, and reads its configuration from it.
+
+```ts title="Import"
+import { sessions } from "@pensar/apex/core/session";
+```
+
+```text title="Session directory"
+~/.pensar/sessions/<id>/
+├── session.json   # SessionInfo, including config
+├── README.md
+├── findings/      # One file per documented vulnerability
+├── pocs/          # Proof-of-concept scripts
+├── logs/          # Execution logs
+└── scratchpad/    # Agent notes
+```
+
+## sessions.create
+
+```ts title="Signature"
+function create(input: CreateInputProps): Promise<SessionInfo>;
+```
+
+Creates the session directory and returns the session.
+
+<ParamField path="targets" type="string[]" required={true}>
+  URLs, hosts, or IPs in scope. Unless `config.scopeConstraints.allowedHosts` is set, these hostnames define the in-scope hosts.
+</ParamField>
+
+<ParamField path="name" type="string">
+  Display name. When omitted, a random name is used, or an AI-generated one if `model` and `authConfig` are provided.
+</ParamField>
+
+<ParamField path="config" type="SessionConfig">
+  Configuration for agents that run in this session. See [Session config](#session-config).
+</ParamField>
+
+<ParamField path="prefix" type="string">
+  Prefix for the session ID, for example `"ci-"`.
+</ParamField>
+
+<ParamField path="model" type="AIModel">
+  Model used to generate a session name in the background. Only used when `name` is omitted.
+</ParamField>
+
+<ParamField path="authConfig" type="AIAuthConfig">
+  Credentials for name generation.
+</ParamField>
+
+### Returns: `SessionInfo`
+
+<ParamField path="id" type="string">
+  Unique session ID.
+</ParamField>
+
+<ParamField path="rootPath" type="string">
+  Absolute path to the session directory.
+</ParamField>
+
+<ParamField path="findingsPath" type="string">
+  Absolute path to `findings/`.
+</ParamField>
+
+<ParamField path="pocsPath" type="string">
+  Absolute path to `pocs/`.
+</ParamField>
+
+<ParamField path="logsPath" type="string">
+  Absolute path to `logs/`.
+</ParamField>
+
+<ParamField path="targets" type="string[]">
+  The session's targets.
+</ParamField>
+
+<ParamField path="config" type="SessionConfig">
+  The resolved configuration, including defaults such as `headers` and `outcomeGuidance`.
+</ParamField>
+
+## Session config
+
+All fields are optional.
+
+### Scope and safety
+
+<ParamField path="scopeConstraints" type="{ allowedHosts?: string[]; allowedPorts?: number[]; strictScope?: boolean }">
+  `allowedHosts` overrides the in-scope hosts derived from `targets`. It supports wildcards such as `*.example.com`. With `strictScope: true`, requests to out-of-scope hosts or ports fail, even after redirects or newly discovered assets.
+</ParamField>
+
+<ParamField path="requestsPerSecond" type="number">
+  Rate limit for outbound requests to the target.
+</ParamField>
+
+<ParamField path="allowDestructiveActions" type="boolean" default="false">
+  Allow destructive testing: financial mutations, database deletes and drops, and destructive API writes. When `false`, those operations are blocked at the tool layer.
+</ParamField>
+
+<ParamField path="allowRateLimitTesting" type="boolean" default="false">
+  Allow burst and volumetric testing to probe for missing rate limits. Endpoints with real-world side effects, such as email, SMS, and payments, are never looped either way.
+</ParamField>
+
+<ParamField path="enumerateSubdomains" type="boolean" default="false">
+  Enumerate subdomains during attack surface discovery.
+</ParamField>
+
+<ParamField path="exfilMode" type="boolean" default="false">
+  CTF-style mode: allows pivoting and flag extraction through confirmed vulnerabilities.
+</ParamField>
+
+<ParamField path="outcomeGuidance" type="string">
+  What counts as a successful exploit. Defaults to proving exploitability without exfiltrating data or causing harm.
+</ParamField>
+
+### Authentication credentials
+
+<ParamField path="authCredentials" type="AuthCredentials | AuthCredentials[]">
+  Credentials agents can log in with. Agents see only credential references in their prompts; tools resolve the secrets at execution time. Pass an array to test with multiple roles.
+</ParamField>
+
+<Indent>
+  <ParamField path="username" type="string">
+    Login username or email.
+  </ParamField>
+  <ParamField path="password" type="string">
+    Login password.
+  </ParamField>
+  <ParamField path="loginUrl" type="string">
+    Login page URL.
+  </ParamField>
+  <ParamField path="apiKey" type="string">
+    API key, for API-key auth.
+  </ParamField>
+  <ParamField path="role" type="string">
+    Role label, such as `admin` or `viewer`, used for authorization testing.
+  </ParamField>
+  <ParamField path="tokens" type="{ bearerToken?: string; cookies?: string; sessionToken?: string; customHeaders?: Record<string, string> }">
+    Existing tokens to reuse instead of logging in.
+  </ParamField>
+  <ParamField path="googleSignIn" type="boolean">
+    The target uses Sign in with Google.
+  </ParamField>
+</Indent>
+
+<Warning>
+  `authCredentials` is saved as part of the session config in `session.json`, in plaintext. Treat `~/.pensar/sessions/` as sensitive, and delete sessions with `sessions.remove()` when you no longer need them.
+</Warning>
+
+<ParamField path="authenticationInstructions" type="string">
+  Free-form instructions for the login flow.
+</ParamField>
+
+### Requests
+
+<ParamField path="headers" type="Record<string, string>">
+  Headers sent on every in-scope request (HTTP tools, supported CLI tools, and browser navigation). When omitted, the global `pensar config headers` defaults are copied in at creation time. Pass `{}` to send no custom headers.
+</ParamField>
+
+### Agent behavior
+
+<ParamField path="codebasePath" type="string">
+  Source code path for whitebox analysis.
+</ParamField>
+
+<ParamField path="prompt" type="string">
+  Operator guidance injected into agent system prompts.
+</ParamField>
+
+<ParamField path="disableSubagents" type="boolean" default="false">
+  Run targeted pentests as one worker instead of one sub-agent per objective. Cheaper and faster, but less thorough.
+</ParamField>
+
+<ParamField path="requirePlan" type="boolean" default="false">
+  Run a planning phase before pentest agents start executing.
+</ParamField>
+
+<ParamField path="taskDriven" type="boolean" default="false">
+  Experimental. Agents break objectives down into tracked tasks.
+</ParamField>
+
+## sessions.get
+
+```ts title="Signature"
+function get(id: string): Promise<SessionInfo>;
+```
+
+Loads a session from disk. A loaded session's `config.authCredentials` is present, but its credential manager isn't rebuilt. To run authenticated agents again, create a new session with the credentials.
+
+## sessions.remove
+
+```ts title="Signature"
+function remove(input: { sessionId: string }): Promise<void>;
+```
+
+Deletes the session directory and everything in it.
+
+## list
+
+```ts title="Signature"
+function list(): AsyncGenerator<SessionInfo>;
+```
+
+Yields every session in `~/.pensar/sessions/`. Directories without a valid `session.json` are skipped.
+
+```ts
+import { list } from "@pensar/apex/core/session";
+
+for await (const s of list()) {
+  console.log(s.id, s.name, s.targets.join(", "));
+}
+```
+
+## Example
+
+```ts title="A scoped, authenticated session"
+const session = await sessions.create({
+  name: "Staging — nightly",
+  prefix: "ci-",
+  targets: ["https://staging.example.com"],
+  config: {
+    scopeConstraints: {
+      allowedHosts: ["staging.example.com", "*.staging-api.example.com"],
+      strictScope: true,
+    },
+    requestsPerSecond: 5,
+    headers: { "X-Pentest-Run": process.env.CI_RUN_ID ?? "local" },
+    authCredentials: [
+      { username: "admin@example.com", password: process.env.ADMIN_PW, role: "admin" },
+      { username: "viewer@example.com", password: process.env.VIEWER_PW, role: "viewer" },
+    ],
+  },
+});
+```

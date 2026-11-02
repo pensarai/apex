@@ -1,0 +1,100 @@
+---
+title: "SDK Quickstart"
+description: "Run an Apex pentest from TypeScript in a few lines of code"
+---
+
+This guide runs a blackbox pentest against a live target from a TypeScript script and prints the findings.
+
+## Prerequisites
+
+- `@pensar/apex` installed in your project (see [Installation](/apex/sdk/overview#installation))
+- An AI provider configured, either through an environment variable such as `ANTHROPIC_API_KEY` or by running `pensar login`. See [Configuration](/apex/sdk/configuration).
+- A target you are authorized to test
+
+## Run a pentest
+
+```ts title="pentest.ts"
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { runPentestAgent } from "@pensar/apex/core/api";
+import { config } from "@pensar/apex/core/config";
+import { AgentEventBus } from "@pensar/apex/core/eventBus";
+import { sessions } from "@pensar/apex/core/session";
+
+const target = "https://staging.example.com";
+
+// Provider keys from ~/.pensar/config.json, with environment variable fallbacks
+const pensarConfig = await config.get();
+
+// Allocates ~/.pensar/sessions/<id>/ for findings, POCs, and logs
+const session = await sessions.create({
+  name: "SDK pentest",
+  targets: [target],
+});
+
+const eventBus = new AgentEventBus();
+eventBus.on("tool-call-complete", (e) => console.log(`→ ${e.toolName}`));
+
+const result = await runPentestAgent({
+  target,
+  session,
+  model: "claude-opus-4-6",
+  authConfig: buildAuthConfig(pensarConfig),
+  eventBus,
+});
+
+for (const finding of result.findings) {
+  console.log(`[${finding.severity}] ${finding.title} — ${finding.endpoint}`);
+}
+console.log(`Report: ${result.reportPath}`);
+```
+
+Run it:
+
+<CodeBlocks>
+  ```bash title="Bun"
+  ANTHROPIC_API_KEY=sk-ant-... bun pentest.ts
+  ```
+  ```bash title="Node.js (tsx)"
+  ANTHROPIC_API_KEY=sk-ant-... npx tsx pentest.ts
+  ```
+</CodeBlocks>
+
+`runPentestAgent` first maps the target's attack surface, then runs a swarm of targeted pentest agents against each endpoint it discovered. When it finishes, the session directory contains:
+
+| Path | Contents |
+| --- | --- |
+| `findings/` | One file per documented vulnerability |
+| `pocs/` | Proof-of-concept scripts for each finding |
+| `logs/` | Execution logs |
+| `pentest-report.md`, `pentest-report.json` | The final pentest report (`result.reportPath` points to the Markdown file) |
+
+## Whitebox mode
+
+Pass `cwd` with the path to the target's source code. The attack surface phase then reads the code directly, while the pentest phase still tests the live `target`:
+
+```ts
+const result = await runPentestAgent({
+  target: "http://localhost:3000",
+  cwd: "./my-app",
+  session,
+  model: "claude-opus-4-6",
+  authConfig: buildAuthConfig(pensarConfig),
+});
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="runTargetedPentestAgent" icon="crosshairs" href="/apex/sdk/reference/run-targeted-pentest-agent">
+    Test specific objectives against a single target
+  </Card>
+  <Card title="AgentEventBus" icon="wave-pulse" href="/apex/sdk/reference/agent-event-bus">
+    Stream agent text, tool calls, and phases
+  </Card>
+  <Card title="Errors and cancellation" icon="circle-stop" href="/apex/sdk/errors-and-cancellation">
+    Abort runs and handle failures
+  </Card>
+  <Card title="sessions" icon="folder-open" href="/apex/sdk/reference/sessions">
+    Configure scope, credentials, and headers
+  </Card>
+</CardGroup>
