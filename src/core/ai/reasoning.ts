@@ -9,6 +9,7 @@ import { getClaudeCapabilities, getModelInfo } from "./models";
 import openRouterReasoning from "./models/openrouter-reasoning.json";
 import {
   CONCENTRATE_GLM_5_3_MODEL_ID,
+  CONCENTRATE_QWEN_REASONING_EFFORTS,
   CONCENTRATE_REASONING_MODEL_IDS,
 } from "./providers/concentrate";
 import type { AIAuthConfig } from "./utils";
@@ -310,6 +311,8 @@ export function getReasoningCapabilities(
   const transport = "openai";
   if (modelId === "concentrate:glm-5.3")
     return effort(transport, ["low", "high", "max"], "high");
+  const qwenEfforts = CONCENTRATE_QWEN_REASONING_EFFORTS[modelId];
+  if (qwenEfforts) return effort(transport, qwenEfforts);
   if (CONCENTRATE_REASONING_MODEL_IDS.has(modelId))
     return effort(transport, EXTENDED);
   if (!["openai", "pensar", "concentrate", "bedrock-mantle"].includes(provider))
