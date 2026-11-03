@@ -372,3 +372,66 @@ describe("partId shape", () => {
     expect(isPartId(got[0])).toBe(true);
   });
 });
+
+describe("emitStreamPart — tool approval chunks", () => {
+  const ids: StreamIdContext = {
+    sessionId: "ses_a",
+    messageId: "msg_a",
+    toolPartId: (id: string) => `prt_${id}`,
+  };
+
+  it("maps tool-approval-request", () => {
+    const bus = new AgentEventBus();
+    const seen: unknown[] = [];
+    bus.on("tool-approval-request", (e) => seen.push(e));
+    bus.emitStreamPart(
+      {
+        type: "tool-approval-request",
+        approvalId: "ap-1",
+        toolCall: {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "del",
+          input: { id: "x" },
+        },
+      } as unknown as TextStreamPart<ToolSet>,
+      ids,
+    );
+    expect(seen).toEqual([
+      {
+        toolCallId: "tc-1",
+        approvalId: "ap-1",
+        toolName: "del",
+        input: { id: "x" },
+        subagentId: undefined,
+        sessionId: "ses_a",
+        messageId: "msg_a",
+        partId: "prt_tc-1",
+      },
+    ]);
+  });
+
+  it("maps tool-output-denied", () => {
+    const bus = new AgentEventBus();
+    const seen: unknown[] = [];
+    bus.on("tool-output-denied", (e) => seen.push(e));
+    bus.emitStreamPart(
+      {
+        type: "tool-output-denied",
+        toolCallId: "tc-1",
+        toolName: "del",
+      } as unknown as TextStreamPart<ToolSet>,
+      ids,
+    );
+    expect(seen).toEqual([
+      {
+        toolCallId: "tc-1",
+        toolName: "del",
+        subagentId: undefined,
+        sessionId: "ses_a",
+        messageId: "msg_a",
+        partId: "prt_tc-1",
+      },
+    ]);
+  });
+});
