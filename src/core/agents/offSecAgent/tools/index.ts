@@ -700,6 +700,8 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_recon_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
+  // Generalized recon only
+  "clone_repository",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",

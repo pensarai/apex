@@ -61,7 +61,8 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
   },
   system: () => GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
   activeTools: (opts) => {
-    if (!opts.excludeTools?.length) return [...GENERALIZED_ATTACK_SURFACE_TOOLS];
+    if (!opts.excludeTools?.length)
+      return [...GENERALIZED_ATTACK_SURFACE_TOOLS];
     const excluded = new Set(opts.excludeTools);
     return GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t));
   },
