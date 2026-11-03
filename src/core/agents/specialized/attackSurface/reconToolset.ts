@@ -29,9 +29,12 @@ export const RECON_WORKER_TOOLS: string[] = [
   // Research.
   "web_search",
   "get_page",
-  // Map an origin to source and document discovered services.
+  // Map an origin to source and document the topology behind it.
   "clone_repository",
   "document_app",
+  "document_boundary",
+  "document_service",
+  "document_flow",
   // Email / SMS (filtered out by the base class when none are configured).
   "email_list_inboxes",
   "email_list_messages",

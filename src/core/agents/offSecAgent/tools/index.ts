@@ -45,6 +45,11 @@ export { detectAuthScheme } from "./detectAuthScheme";
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
 export { documentVulnerability } from "./documentFinding";
+export {
+  documentBoundary,
+  documentFlow,
+  documentService,
+} from "./documentTopology";
 // Email tools
 export {
   createEmailToolset,
@@ -231,6 +236,11 @@ import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { documentVulnerability } from "./documentFinding";
 import {
+  documentBoundary,
+  documentFlow,
+  documentService,
+} from "./documentTopology";
+import {
   emailGetAttachments,
   emailGetMessage,
   emailListInboxes,
@@ -362,6 +372,9 @@ const TOOL_REGISTRY = [
 
   // Attack surface / recon tools
   { name: "document_app", factory: documentApp },
+  { name: "document_boundary", factory: documentBoundary },
+  { name: "document_service", factory: documentService },
+  { name: "document_flow", factory: documentFlow },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
   { name: "create_workspace_domain", factory: createWorkspaceDomain },
@@ -636,6 +649,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "git_diff",
   "clone_repository",
   "document_app",
+  "document_boundary",
+  "document_service",
+  "document_flow",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
   "delegate_to_auth_subagent",
@@ -702,6 +718,9 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "delegate_to_auth_subagent",
   // Generalized recon only
   "clone_repository",
+  "document_boundary",
+  "document_service",
+  "document_flow",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",
