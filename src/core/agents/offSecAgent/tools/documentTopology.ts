@@ -12,12 +12,13 @@ import type { ToolContext } from "./types";
 
 /**
  * The topology tools record the system behind one or more origins:
- * boundaries contain components, flows connect components, controls apply to
- * boundaries and components, and attack vectors span components.
+ * boundaries contain components, flows connect components, and controls
+ * apply to boundaries and components. They record facts only — pentest
+ * agents form their own hypotheses from this map with live access.
  *
  * A component's threat model is composed rather than written as prose: the
  * agent records what is at stake and what the component trusts, and the
- * consumer derives reachability, controls, and vectors from the graph.
+ * consumer derives reachability and controls from the graph.
  *
  * Every record carries evidence, because most of a system's interior is not
  * reachable from the origin: datastores behind a VPC are known from source or
@@ -97,16 +98,7 @@ export const CONTROL_KINDS = [
   "logging",
 ] as const;
 
-export const VECTOR_PATTERNS = [
-  "control-bypass",
-  "missing-control",
-  "trust-abuse",
-  "shared-resource",
-  "exposure",
-  "misconfiguration",
-] as const;
-
-type RecordKind = "boundary" | "component" | "flow" | "control" | "vector";
+type RecordKind = "boundary" | "component" | "flow" | "control";
 
 function sanitize(name: string): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -251,7 +243,7 @@ export function documentComponent(ctx: ToolContext) {
 
 Document components even when they are not reachable from the origin — a database in a private subnet is part of the surface. Its evidence will then be 'source' (IaC, config, code) or 'inferred', not 'observed'.
 
-Every component gets a threat model. Record what is at stake and what the component trusts; its reachability, controls, and attack vectors come from the rest of the graph. Applications also record their business logic.
+Every component gets a threat model. Record what is at stake and what the component trusts; its reachability and controls come from the rest of the graph. Applications also record their business logic.
 
 Call again with the same name to update a component — never create a second record for the same thing.`,
     inputSchema: z.object({
@@ -405,7 +397,7 @@ export function documentControl(ctx: ToolContext) {
   return tool({
     description: `Document a security control and the layer it protects: a WAF on a distribution, a security group on a subnet tier, an IP allowlist on a route, authentication on an application, tenant isolation in application code, an AUTH token on a cache, an IAM policy on a credential, encryption of stored secrets.
 
-Analyze every layer — edge, account, VPC, subnet, application, datastore, credential — and record what is enforced there. Be concrete about what the control protects and, critically, its gaps: where it does not apply, what an attacker could route around, or what it trusts. A control's gaps are where attack vectors come from.
+Analyze every layer — edge, account, VPC, subnet, application, datastore, credential — and record what is enforced there. Be concrete about what the control protects and, critically, its gaps: where it does not apply, what an attacker could route around, or what it trusts. A control's gaps are the most valuable context a pentest agent receives.
 
 \`appliesTo\` names the documented boundaries and components the control is enforced on. Call again with the same name to update a control.`,
     inputSchema: z.object({
@@ -455,88 +447,6 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
         appliesTo: input.appliesTo,
         filepath,
         message: `Control '${input.name}' documented`,
-      };
-    },
-  });
-}
-
-export function documentAttackVector(ctx: ToolContext) {
-  return tool({
-    description: `Document a theoretical attack vector: a risk the system may have, derived from its controls and grounded in what recon observed or read, for pentest agents to discover and validate.
-
-This is a hypothesis, not a test plan. State what could go wrong, where, why you suspect it, and what it would mean. Do NOT write procedures, commands, payloads, or step lists — the pentest agent working live on the target decides how to confirm it.
-
-A vector usually spans several components (for example sandbox → egress proxy → cloud metadata, or every application that shares a database). List each one in \`components\`.
-
-Call again with the same title to update a vector.`,
-    inputSchema: z.object({
-      title: z
-        .string()
-        .describe(
-          "Short name of the vector, e.g. 'Sandbox egress escapes containment'.",
-        ),
-      risk: z
-        .string()
-        .describe(
-          "The theoretical risk in one to three sentences: what could be wrong and how an attacker would benefit.",
-        ),
-      components: z
-        .array(z.string())
-        .min(1)
-        .describe("Names of the documented components the vector spans."),
-      rationale: z
-        .string()
-        .describe(
-          "Why recon suspects it — the specific control, configuration, or code observation that makes it plausible.",
-        ),
-      impact: z
-        .string()
-        .describe(
-          "What a successful exploit would mean for the business or its tenants.",
-        ),
-      pattern: z
-        .enum(VECTOR_PATTERNS)
-        .describe(
-          "control-bypass = a path around a documented control; missing-control = a layer with no control where one is expected; trust-abuse = one component trusts another more than it should; shared-resource = one resource serves many tenants or applications; exposure = something reachable that should not be; misconfiguration = a control set up wrongly.",
-        ),
-      controls: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Names of documented controls this vector bypasses, defeats, or depends on.",
-        ),
-      priority: z.enum(["high", "medium", "low"]),
-      evidence: evidenceSchema,
-      toolCallDescription,
-    }),
-    execute: async (input) => {
-      const components = documented(ctx, "component");
-      const missingComponent = firstMissing(input.components, components);
-      if (missingComponent)
-        return unknownReference(
-          "component",
-          missingComponent,
-          components.keys(),
-          "Document it with document_component first.",
-        );
-      const controls = documented(ctx, "control");
-      const missingControl = firstMissing(input.controls ?? [], controls);
-      if (missingControl)
-        return unknownReference(
-          "control",
-          missingControl,
-          controls.keys(),
-          "Document it with document_control first.",
-        );
-      const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(ctx, "vector", input.title, record);
-      return {
-        success: true,
-        title: input.title,
-        components: input.components,
-        priority: input.priority,
-        filepath,
-        message: `Attack vector '${input.title}' documented`,
       };
     },
   });

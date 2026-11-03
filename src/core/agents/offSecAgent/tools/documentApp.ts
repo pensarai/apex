@@ -160,7 +160,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe(
-          "App-level threat model: attacker profiles, the most relevant attack vectors for this application, and an overall risk assessment. This replaces per-endpoint threat modeling — reason about the application as a whole. Record each concrete attack vector with document_attack_vector. Markdown.",
+          "App-level threat model: attacker profiles, the most relevant attack vectors for this application, and an overall risk assessment. This replaces per-endpoint threat modeling — reason about the application as a whole. Markdown.",
         ),
       domain: z
         .string()

@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
-  documentAttackVector,
   documentBoundary,
   documentComponent,
   documentControl,
@@ -195,64 +194,5 @@ describe("document_control", () => {
       appliesTo: ["Console Web", "Admin API"],
     });
     expect(res.error).toBe("unknown_layer");
-  });
-});
-
-describe("document_attack_vector", () => {
-  const vector = {
-    title: "Tenant isolation rests on every handler",
-    risk: "One handler that skips the check exposes another tenant.",
-    rationale: "Isolation is enforced per handler, not by the database.",
-    impact: "Cross-tenant disclosure.",
-    pattern: "missing-control",
-    priority: "high",
-    evidence: fromSource,
-  };
-
-  it("spans components and links documented controls", async () => {
-    const ctx = makeCtx();
-    await seed(ctx);
-    await run(documentComponent(ctx), aurora);
-    await run(documentControl(ctx), {
-      name: "Workspace authorization",
-      kind: "tenant-isolation",
-      appliesTo: ["Console Web"],
-      protects: "Handler checks.",
-      evidence: fromSource,
-    });
-    const res = await run(documentAttackVector(ctx), {
-      ...vector,
-      components: ["Console Web", "aurora postgresql"],
-      controls: ["workspace authorization"],
-    });
-    expect(res.success).toBe(true);
-  });
-
-  it("refuses unknown components and controls", async () => {
-    const ctx = makeCtx();
-    await seed(ctx);
-    expect(
-      (
-        await run(documentAttackVector(ctx), {
-          ...vector,
-          components: ["Console Web", "Redis"],
-        })
-      ).error,
-    ).toBe("unknown_component");
-    expect(
-      (
-        await run(documentAttackVector(ctx), {
-          ...vector,
-          components: ["Console Web"],
-          controls: ["API WAF"],
-        })
-      ).error,
-    ).toBe("unknown_control");
-  });
-
-  it("requires at least one component", () => {
-    expect(
-      parses(documentAttackVector(makeCtx()), { ...vector, components: [] }),
-    ).toBe(false);
   });
 });
