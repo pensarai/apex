@@ -598,3 +598,47 @@ function generateToolResultSummary(toolName: string, text: string): string {
 
   return `[${toolName}] → ${len} chars, ${lines} lines`;
 }
+
+/**
+ * Tail the SDK needs to replay pending approvals: unresolved responses in the
+ * last message, plus their requests, tool calls and everything after them.
+ */
+export function splitPendingApprovals(messages: ModelMessage[]): {
+  head: ModelMessage[];
+  pinned: ModelMessage[];
+} {
+  const last = messages.at(-1);
+  if (last?.role !== "tool") return { head: messages, pinned: [] };
+  const resolved = new Set<string>();
+  const callIdByApprovalId = new Map<string, string>();
+  for (const message of messages) {
+    if (typeof message.content === "string") continue;
+    for (const part of message.content) {
+      if (part.type === "tool-result") resolved.add(part.toolCallId);
+      if (part.type === "tool-approval-request")
+        callIdByApprovalId.set(part.approvalId, part.toolCallId);
+    }
+  }
+  const pendingCallIds = new Set<string>();
+  const pendingApprovalIds = new Set<string>();
+  for (const part of last.content) {
+    if (part.type !== "tool-approval-response") continue;
+    const toolCallId = callIdByApprovalId.get(part.approvalId);
+    if (toolCallId === undefined || resolved.has(toolCallId)) continue;
+    pendingCallIds.add(toolCallId);
+    pendingApprovalIds.add(part.approvalId);
+  }
+  if (pendingCallIds.size === 0) return { head: messages, pinned: [] };
+  const start = messages.findIndex(
+    (message) =>
+      message.role === "assistant" &&
+      typeof message.content !== "string" &&
+      message.content.some(
+        (part) =>
+          (part.type === "tool-call" && pendingCallIds.has(part.toolCallId)) ||
+          (part.type === "tool-approval-request" &&
+            pendingApprovalIds.has(part.approvalId)),
+      ),
+  );
+  return { head: messages.slice(0, start), pinned: messages.slice(start) };
+}
