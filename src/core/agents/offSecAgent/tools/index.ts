@@ -48,9 +48,9 @@ export { documentVulnerability } from "./documentFinding";
 export {
   documentAttackVector,
   documentBoundary,
+  documentComponent,
   documentControl,
   documentFlow,
-  documentService,
 } from "./documentTopology";
 // Email tools
 export {
@@ -240,9 +240,9 @@ import { documentVulnerability } from "./documentFinding";
 import {
   documentAttackVector,
   documentBoundary,
+  documentComponent,
   documentControl,
   documentFlow,
-  documentService,
 } from "./documentTopology";
 import {
   emailGetAttachments,
@@ -377,7 +377,7 @@ const TOOL_REGISTRY = [
   // Attack surface / recon tools
   { name: "document_app", factory: documentApp },
   { name: "document_boundary", factory: documentBoundary },
-  { name: "document_service", factory: documentService },
+  { name: "document_component", factory: documentComponent },
   { name: "document_flow", factory: documentFlow },
   { name: "document_control", factory: documentControl },
   { name: "document_attack_vector", factory: documentAttackVector },
@@ -656,7 +656,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "clone_repository",
   "document_app",
   "document_boundary",
-  "document_service",
+  "document_component",
   "document_flow",
   "document_control",
   "document_attack_vector",
@@ -727,7 +727,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   // Generalized recon only
   "clone_repository",
   "document_boundary",
-  "document_service",
+  "document_component",
   "document_flow",
   "document_control",
   "document_attack_vector",

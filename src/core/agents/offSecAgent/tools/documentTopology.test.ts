@@ -5,13 +5,12 @@ import type { Tool } from "ai";
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
-import { documentApp } from "./documentApp";
 import {
   documentAttackVector,
   documentBoundary,
+  documentComponent,
   documentControl,
   documentFlow,
-  documentService,
 } from "./documentTopology";
 import type { ToolContext } from "./types";
 
@@ -39,7 +38,34 @@ async function run(
   )) as Record<string, unknown>;
 }
 
+function parses(t: Tool, input: Record<string, unknown>): boolean {
+  return (
+    t.inputSchema as { safeParse: (v: unknown) => { success: boolean } }
+  ).safeParse({ toolCallDescription: "x", ...input }).success;
+}
+
 const fromSource = [{ source: "source", detail: "IaC", ref: "infra/vpc.ts" }];
+
+const web = {
+  name: "Console Web",
+  kind: "application",
+  boundary: "Private subnets",
+  exposure: "public",
+  atStake: "Every tenant's findings through server actions.",
+  trustAssumptions: ["The AuthKit session cookie identifies the user."],
+  evidence: fromSource,
+};
+
+const aurora = {
+  name: "Aurora PostgreSQL",
+  kind: "database",
+  boundary: "Private subnets",
+  exposure: "private",
+  usedBy: ["console web"],
+  atStake: "All tenants' data and encrypted credentials.",
+  trustAssumptions: ["Any caller holding the proxy IAM role."],
+  evidence: fromSource,
+};
 
 async function seed(ctx: ToolContext) {
   await run(documentBoundary(ctx), {
@@ -53,85 +79,66 @@ async function seed(ctx: ToolContext) {
     parent: "AWS account",
     evidence: fromSource,
   });
-  await run(documentApp(ctx), {
-    appName: "Console Web",
-    appType: "web_application",
-    description: "UI",
-    boundary: "Private subnets",
-  });
+  await run(documentComponent(ctx), web);
 }
 
 describe("document_boundary", () => {
   it("requires the parent boundary to be documented first", async () => {
-    const ctx = makeCtx();
-    const res = await run(documentBoundary(ctx), {
+    const res = await run(documentBoundary(makeCtx()), {
       name: "Private subnets",
       kind: "subnet",
       parent: "Console VPC",
       evidence: fromSource,
     });
-    expect(res.success).toBe(false);
     expect(res.error).toBe("unknown_boundary");
   });
 
   it("rejects a record without evidence", () => {
-    const schema = documentBoundary(makeCtx()).inputSchema as {
-      safeParse: (v: unknown) => { success: boolean };
-    };
     expect(
-      schema.safeParse({
+      parses(documentBoundary(makeCtx()), {
         name: "VPC",
         kind: "vpc",
         evidence: [],
-        toolCallDescription: "x",
-      }).success,
+      }),
     ).toBe(false);
   });
 });
 
-describe("document_app boundary", () => {
-  it("rejects a boundary that was never documented", async () => {
-    const ctx = makeCtx();
-    const res = await run(documentApp(ctx), {
-      appName: "Console Web",
-      appType: "web_application",
-      description: "UI",
-      boundary: "Nowhere",
-    });
-    expect(res.error).toBe("unknown_boundary");
+describe("document_component", () => {
+  it("requires what is at stake and what the component trusts", () => {
+    const { atStake: _, trustAssumptions: __, ...withoutThreatModel } = aurora;
+    expect(parses(documentComponent(makeCtx()), withoutThreatModel)).toBe(
+      false,
+    );
+    expect(parses(documentComponent(makeCtx()), aurora)).toBe(true);
   });
-});
 
-describe("document_service", () => {
-  it("attaches a private datastore to a boundary and its applications", async () => {
+  it("places a private datastore in a boundary used by an application", async () => {
     const ctx = makeCtx();
     await seed(ctx);
-    const res = await run(documentService(ctx), {
-      name: "Aurora PostgreSQL",
-      kind: "database",
-      boundary: "private subnets",
-      exposure: "private",
-      applications: ["console web"],
-      evidence: fromSource,
-    });
+    const res = await run(documentComponent(ctx), aurora);
     expect(res.success).toBe(true);
     expect(
       readdirSync(join(ctx.session.rootPath, "topology")).filter((f) =>
-        f.startsWith("service_aurora_postgresql_"),
+        f.startsWith("component_aurora_postgresql_"),
       ),
     ).toHaveLength(1);
   });
 
-  it("names the documented applications when one is unknown", async () => {
+  it("refuses an undocumented boundary", async () => {
+    const res = await run(documentComponent(makeCtx()), web);
+    expect(res.error).toBe("unknown_boundary");
+  });
+
+  it("only accepts applications in usedBy", async () => {
     const ctx = makeCtx();
     await seed(ctx);
-    const res = await run(documentService(ctx), {
+    await run(documentComponent(ctx), aurora);
+    const res = await run(documentComponent(ctx), {
+      ...aurora,
       name: "Redis",
       kind: "cache",
-      boundary: "Private subnets",
-      exposure: "private",
-      applications: ["Admin API"],
-      evidence: fromSource,
+      usedBy: ["Aurora PostgreSQL"],
     });
     expect(res.error).toBe("unknown_application");
     expect(res.message).toContain("console web");
@@ -139,17 +146,10 @@ describe("document_service", () => {
 });
 
 describe("document_flow", () => {
-  it("connects documented nodes and refuses unknown ones", async () => {
+  it("connects documented components and refuses unknown ones", async () => {
     const ctx = makeCtx();
     await seed(ctx);
-    await run(documentService(ctx), {
-      name: "Aurora PostgreSQL",
-      kind: "database",
-      boundary: "Private subnets",
-      exposure: "private",
-      applications: ["Console Web"],
-      evidence: fromSource,
-    });
+    await run(documentComponent(ctx), aurora);
     const ok = await run(documentFlow(ctx), {
       from: "Console Web",
       to: "Aurora PostgreSQL",
@@ -163,58 +163,7 @@ describe("document_flow", () => {
       label: "cache",
       evidence: fromSource,
     });
-    expect(bad.error).toBe("unknown_node");
-  });
-});
-
-describe("document_attack_vector", () => {
-  const vector = {
-    title: "Shared database tenant isolation",
-    risk: "Every application reads Aurora; a missing workspace filter in any one exposes other tenants.",
-    rationale:
-      "All tables key on a workspace FK enforced in application code, not in the database.",
-    impact: "Cross-tenant disclosure of findings and stored credentials.",
-    pattern: "shared-resource",
-    priority: "high",
-    evidence: fromSource,
-  };
-
-  it("spans an application and a service", async () => {
-    const ctx = makeCtx();
-    await seed(ctx);
-    await run(documentService(ctx), {
-      name: "Aurora PostgreSQL",
-      kind: "database",
-      boundary: "Private subnets",
-      exposure: "private",
-      applications: ["Console Web"],
-      evidence: fromSource,
-    });
-    const res = await run(documentAttackVector(ctx), {
-      ...vector,
-      surfaces: ["Console Web", "aurora postgresql"],
-    });
-    expect(res.success).toBe(true);
-  });
-
-  it("refuses a surface that was never documented", async () => {
-    const ctx = makeCtx();
-    await seed(ctx);
-    const res = await run(documentAttackVector(ctx), {
-      ...vector,
-      surfaces: ["Console Web", "Redis"],
-    });
-    expect(res.error).toBe("unknown_surface");
-  });
-
-  it("requires at least one surface", () => {
-    const schema = documentAttackVector(makeCtx()).inputSchema as {
-      safeParse: (v: unknown) => { success: boolean };
-    };
-    expect(
-      schema.safeParse({ ...vector, surfaces: [], toolCallDescription: "x" })
-        .success,
-    ).toBe(false);
+    expect(bad.error).toBe("unknown_component");
   });
 });
 
@@ -228,7 +177,7 @@ describe("document_control", () => {
     evidence: fromSource,
   };
 
-  it("attaches to boundaries, applications, and services", async () => {
+  it("attaches to boundaries and components", async () => {
     const ctx = makeCtx();
     await seed(ctx);
     const res = await run(documentControl(ctx), {
@@ -247,30 +196,63 @@ describe("document_control", () => {
     });
     expect(res.error).toBe("unknown_layer");
   });
+});
 
-  it("links a vector to a documented control and refuses an unknown one", async () => {
+describe("document_attack_vector", () => {
+  const vector = {
+    title: "Tenant isolation rests on every handler",
+    risk: "One handler that skips the check exposes another tenant.",
+    rationale: "Isolation is enforced per handler, not by the database.",
+    impact: "Cross-tenant disclosure.",
+    pattern: "missing-control",
+    priority: "high",
+    evidence: fromSource,
+  };
+
+  it("spans components and links documented controls", async () => {
     const ctx = makeCtx();
     await seed(ctx);
-    await run(documentControl(ctx), { ...control, appliesTo: ["Console Web"] });
-    const vector = {
-      title: "Tenant isolation rests on handler checks",
-      risk: "One handler that skips the check exposes another tenant.",
-      surfaces: ["Console Web"],
-      rationale: "Isolation is enforced per handler.",
-      impact: "Cross-tenant disclosure.",
-      pattern: "missing-control",
-      priority: "high",
+    await run(documentComponent(ctx), aurora);
+    await run(documentControl(ctx), {
+      name: "Workspace authorization",
+      kind: "tenant-isolation",
+      appliesTo: ["Console Web"],
+      protects: "Handler checks.",
       evidence: fromSource,
-    };
-    const linked = await run(documentAttackVector(ctx), {
+    });
+    const res = await run(documentAttackVector(ctx), {
       ...vector,
+      components: ["Console Web", "aurora postgresql"],
       controls: ["workspace authorization"],
     });
-    expect(linked.success).toBe(true);
-    const unknown = await run(documentAttackVector(ctx), {
-      ...vector,
-      controls: ["API WAF"],
-    });
-    expect(unknown.error).toBe("unknown_control");
+    expect(res.success).toBe(true);
+  });
+
+  it("refuses unknown components and controls", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    expect(
+      (
+        await run(documentAttackVector(ctx), {
+          ...vector,
+          components: ["Console Web", "Redis"],
+        })
+      ).error,
+    ).toBe("unknown_component");
+    expect(
+      (
+        await run(documentAttackVector(ctx), {
+          ...vector,
+          components: ["Console Web"],
+          controls: ["API WAF"],
+        })
+      ).error,
+    ).toBe("unknown_control");
+  });
+
+  it("requires at least one component", () => {
+    expect(
+      parses(documentAttackVector(makeCtx()), { ...vector, components: [] }),
+    ).toBe(false);
   });
 });

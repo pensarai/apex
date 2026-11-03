@@ -23,7 +23,7 @@ describe("recon toolsets", () => {
       "read_file",
       "web_search",
       "clone_repository",
-      "document_app",
+      "document_component",
     ]) {
       expect(RECON_WORKER_TOOLS).toContain(t);
     }
@@ -75,7 +75,7 @@ describe("generalized attack-surface agent definition", () => {
     );
     expect(tools).not.toContain("spawn_recon_agent");
     expect(tools).not.toContain("clone_repository");
-    expect(tools).toContain("document_app");
+    expect(tools).toContain("document_component");
     expect(tools).toContain("execute_command");
   });
 

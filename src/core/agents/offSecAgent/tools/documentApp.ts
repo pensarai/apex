@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { resolveArtifactFs } from "../../../tools/backends/resolve";
-import { checkBoundaryReference } from "./documentTopology";
 import type { ToolContext } from "./types";
 
 function sanitizeName(name: string): string {
@@ -151,12 +150,6 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .describe(
           "Name of the connected repository this application's source lives in, when you confirmed the mapping by reading its code. Omit when no connected repository matches — do not guess.",
         ),
-      boundary: z
-        .string()
-        .optional()
-        .describe(
-          "Name of the documented boundary (document_boundary) the application's compute runs in, e.g. 'Private subnets'. Omit when unknown.",
-        ),
       businessLogic: z
         .string()
         .optional()
@@ -204,11 +197,6 @@ Each application creates a JSON file in the apps directory for tracking and anal
           };
         }
         input = { ...input, domain: domainCheck.origin! };
-      }
-
-      if (input.boundary) {
-        const boundaryError = checkBoundaryReference(ctx, input.boundary);
-        if (boundaryError) return boundaryError;
       }
 
       if (!ctx.attackSurfaceArtifactsPath && !existsSync(baseAppsPath)) {
@@ -265,7 +253,6 @@ Each application creates a JSON file in the apps directory for tracking and anal
         appType: input.appType,
         domain: input.domain,
         repository: input.repository,
-        boundary: input.boundary,
         businessLogic: input.businessLogic,
         threatModel: input.threatModel,
         filepath,

@@ -22,7 +22,7 @@ export function spawnReconAgent(ctx: ToolContext) {
   return tool({
     description: `Spawn one or more reconnaissance sub-agents to pursue scoped goals in parallel.
 
-Each worker gets the same tools you have — browser automation, execute_command, http_request, the code tools, web_search/get_page, clone_repository (connected repos only), and the documentation tools (document_boundary, document_app, document_service, document_flow) — but cannot spawn further workers or finalize the run.
+Each worker gets the same tools you have — browser automation, execute_command, http_request, the code tools, web_search/get_page, clone_repository (connected repos only), and the documentation tools (document_boundary, document_component, document_flow, document_control, document_attack_vector) — but cannot spawn further workers or finalize the run.
 
 Use this to fan out attack-surface mapping — e.g. "enumerate and threat-model the admin service", "map the api.example.com service to its repository and analyze it", "investigate the storage buckets referenced in the JS bundle".
 

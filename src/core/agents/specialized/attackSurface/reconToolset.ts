@@ -31,9 +31,8 @@ export const RECON_WORKER_TOOLS: string[] = [
   "get_page",
   // Map an origin to source and document the topology behind it.
   "clone_repository",
-  "document_app",
   "document_boundary",
-  "document_service",
+  "document_component",
   "document_flow",
   "document_control",
   "document_attack_vector",

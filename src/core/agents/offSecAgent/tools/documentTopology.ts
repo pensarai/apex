@@ -11,10 +11,13 @@ import { z } from "zod";
 import type { ToolContext } from "./types";
 
 /**
- * `document_boundary`, `document_service`, and `document_flow` record the
- * system topology behind an origin: where things run, what each application
- * depends on, and how traffic moves between them. Together with
- * `document_app` they describe boundaries → applications → services.
+ * The topology tools record the system behind one or more origins:
+ * boundaries contain components, flows connect components, controls apply to
+ * boundaries and components, and attack vectors span components.
+ *
+ * A component's threat model is composed rather than written as prose: the
+ * agent records what is at stake and what the component trusts, and the
+ * consumer derives reachability, controls, and vectors from the graph.
  *
  * Every record carries evidence, because most of a system's interior is not
  * reachable from the origin: datastores behind a VPC are known from source or
@@ -60,7 +63,8 @@ export const BOUNDARY_KINDS = [
   "third-party",
 ] as const;
 
-export const SERVICE_KINDS = [
+export const COMPONENT_KINDS = [
+  "application",
   "entrypoint",
   "compute",
   "database",
@@ -102,7 +106,7 @@ export const VECTOR_PATTERNS = [
   "misconfiguration",
 ] as const;
 
-type TopologyKind = "boundary" | "service" | "flow" | "vector" | "control";
+type RecordKind = "boundary" | "component" | "flow" | "control" | "vector";
 
 function sanitize(name: string): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -115,7 +119,7 @@ function topologyDir(ctx: ToolContext): string {
 
 function writeRecord(
   ctx: ToolContext,
-  kind: TopologyKind,
+  kind: RecordKind,
   key: string,
   record: Record<string, unknown>,
 ): string {
@@ -138,55 +142,48 @@ function writeRecord(
   return filepath;
 }
 
-/** Lower-cased names already documented for a kind, so references can be checked. */
-function documentedNames(
+/** Latest record per lower-cased name for a kind, so references can be checked. */
+function documented(
   ctx: ToolContext,
-  kind: "boundary" | "service" | "app" | "control",
-): Set<string> {
-  const dir =
-    kind === "app" ? join(ctx.session.rootPath, "apps") : topologyDir(ctx);
-  const prefix = kind === "app" ? "app_" : `${kind}_`;
-  const field = kind === "app" ? "appName" : "name";
-  const names = new Set<string>();
-  if (!existsSync(dir)) return names;
-  for (const file of readdirSync(dir)) {
-    if (!file.startsWith(prefix) || !file.endsWith(".json")) continue;
+  kind: "boundary" | "component" | "control",
+): Map<string, Record<string, unknown>> {
+  const dir = topologyDir(ctx);
+  const byName = new Map<string, Record<string, unknown>>();
+  if (!existsSync(dir)) return byName;
+  for (const file of readdirSync(dir).sort()) {
+    if (!file.startsWith(`${kind}_`) || !file.endsWith(".json")) continue;
     const record = JSON.parse(readFileSync(join(dir, file), "utf8")) as Record<
       string,
       unknown
     >;
-    const name = record[field];
-    if (typeof name === "string") names.add(name.toLowerCase());
+    if (typeof record.name === "string")
+      byName.set(record.name.toLowerCase(), record);
   }
-  return names;
-}
-
-/** Error result for `document_app` when its `boundary` names nothing documented; null when valid. */
-export function checkBoundaryReference(ctx: ToolContext, boundary: string) {
-  const boundaries = documentedNames(ctx, "boundary");
-  return boundaries.has(boundary.toLowerCase())
-    ? null
-    : unknownReference(
-        "boundary",
-        boundary,
-        boundaries,
-        "Document it with document_boundary first.",
-      );
+  return byName;
 }
 
 function unknownReference(
   what: string,
   name: string,
-  known: Set<string>,
+  known: Iterable<string>,
   fix: string,
 ) {
+  const names = [...known];
   return {
     success: false,
     error: `unknown_${what}`,
     message: `No ${what} named "${name}" has been documented. ${fix}${
-      known.size ? ` Documented: ${[...known].join(", ")}.` : ""
+      names.length ? ` Documented: ${names.join(", ")}.` : ""
     }`,
   };
+}
+
+/** First name in `names` that `known` lacks, or undefined. */
+function firstMissing(
+  names: readonly string[],
+  known: { has(name: string): boolean },
+) {
+  return names.find((name) => !known.has(name.toLowerCase()));
 }
 
 const toolCallDescription = z
@@ -197,7 +194,7 @@ const toolCallDescription = z
 
 export function documentBoundary(ctx: ToolContext) {
   return tool({
-    description: `Document a boundary that contains applications and services: an edge network (CDN, Cloudflare), a cloud account, a region, a VPC, a subnet tier, or the set of third-party services the system relies on.
+    description: `Document a boundary that contains components: an edge network (CDN, Cloudflare), a cloud account, a region, a VPC, a subnet tier, or the set of third-party services the system relies on.
 
 Record the rules that govern it with document_control. Nest boundaries with \`parent\` — e.g. subnet → VPC → region → cloud account. Document a parent before its children.
 
@@ -225,12 +222,12 @@ Call again with the same name to update a boundary.`,
     }),
     execute: async (input) => {
       if (input.parent) {
-        const boundaries = documentedNames(ctx, "boundary");
+        const boundaries = documented(ctx, "boundary");
         if (!boundaries.has(input.parent.toLowerCase()))
           return unknownReference(
             "boundary",
             input.parent,
-            boundaries,
+            boundaries.keys(),
             "Document the parent boundary first.",
           );
       }
@@ -248,29 +245,33 @@ Call again with the same name to update a boundary.`,
   });
 }
 
-export function documentService(ctx: ToolContext) {
+export function documentComponent(ctx: ToolContext) {
   return tool({
-    description: `Document a service that applications depend on or are reached through: entry points (CDN distributions, load balancers, API gateways, function URLs, MQTT endpoints), datastores (databases, caches, object stores), queues and brokers, shared compute (workers), identity providers, LLM providers, and SaaS.
+    description: `Document a component of the system: an application users or attackers reach, or anything applications are reached through or depend on — entry points (CDN distributions, load balancers, API gateways, function URLs, MQTT endpoints), databases, caches, queues, object stores, brokers, shared workers, identity providers, LLM providers, SaaS.
 
-Document services even when they are not reachable from the origin — a database in a private subnet is part of the surface. Its evidence will then be 'source' (IaC, config, code) or 'inferred', not 'observed'.
+Document components even when they are not reachable from the origin — a database in a private subnet is part of the surface. Its evidence will then be 'source' (IaC, config, code) or 'inferred', not 'observed'.
 
-\`applications\` lists the documented applications that use this service; that is what an application drill-down shows. Call again with the same name to update a service.`,
+Every component gets a threat model. Record what is at stake and what the component trusts; its reachability, controls, and attack vectors come from the rest of the graph. Applications also record their business logic.
+
+Call again with the same name to update a component — never create a second record for the same thing.`,
     inputSchema: z.object({
       name: z
         .string()
         .describe(
-          "Unique service name, e.g. 'Aurora PostgreSQL', 'api.example.com', 'SQS queues'.",
+          "Unique component name, e.g. 'Pensar Console (web)', 'Aurora PostgreSQL', 'api.example.com'.",
         ),
-      kind: z.enum(SERVICE_KINDS),
+      kind: z.enum(COMPONENT_KINDS),
       boundary: z
         .string()
         .describe(
-          "Name of the already-documented boundary this service runs in.",
+          "Name of the documented boundary its compute or data lives in.",
         ),
       tech: z
         .string()
         .optional()
-        .describe("e.g. 'Aurora PostgreSQL 16 behind RDS Proxy'."),
+        .describe(
+          "Technology, e.g. 'Next.js 16 on Lambda', 'Aurora PostgreSQL 16 behind RDS Proxy'.",
+        ),
       exposure: z
         .enum(["public", "private", "unknown"])
         .describe(
@@ -280,12 +281,35 @@ Document services even when they are not reachable from the origin — a databas
         .array(z.string())
         .optional()
         .describe("Hostnames or URLs it answers on."),
-      applications: z
+      usedBy: z
         .array(z.string())
+        .optional()
         .describe(
-          "Names of documented applications that use this service (from document_app).",
+          "Names of documented application components that depend on this one. Omit for applications.",
+        ),
+      repository: z
+        .string()
+        .optional()
+        .describe(
+          "Connected repository whose source backs or defines this component, when confirmed by reading it.",
         ),
       description: z.string().optional(),
+      atStake: z
+        .string()
+        .describe(
+          "What this component holds or does that is worth attacking — the data, credentials, privileges, money, or trust an attacker gains by compromising it. Concrete, not generic.",
+        ),
+      trustAssumptions: z
+        .array(z.string())
+        .describe(
+          "What this component trusts without verifying: callers in a security group, a header set by a proxy, a token's claims, content it ingests, an upstream service. One assumption per entry; empty only when it truly trusts nothing.",
+        ),
+      businessLogic: z
+        .string()
+        .optional()
+        .describe(
+          "For applications: what it does, its actors, and its sensitive operations, fusing wire observations with source. Markdown.",
+        ),
       members: z
         .array(z.string())
         .optional()
@@ -294,34 +318,84 @@ Document services even when they are not reachable from the origin — a databas
       toolCallDescription,
     }),
     execute: async (input) => {
-      const boundaries = documentedNames(ctx, "boundary");
+      const boundaries = documented(ctx, "boundary");
       if (!boundaries.has(input.boundary.toLowerCase()))
         return unknownReference(
           "boundary",
           input.boundary,
-          boundaries,
+          boundaries.keys(),
           "Document it with document_boundary first.",
         );
-      const apps = documentedNames(ctx, "app");
-      const missing = input.applications.find(
-        (name) => !apps.has(name.toLowerCase()),
-      );
-      if (missing)
-        return unknownReference(
-          "application",
-          missing,
-          apps,
-          "Document it with document_app first, or use its exact appName.",
+      if (input.usedBy?.length) {
+        const applications = new Set(
+          [...documented(ctx, "component")]
+            .filter(([, record]) => record.kind === "application")
+            .map(([name]) => name),
         );
+        const missing = firstMissing(input.usedBy, applications);
+        if (missing)
+          return unknownReference(
+            "application",
+            missing,
+            applications,
+            "Document the application with document_component (kind: application) first, or use its exact name.",
+          );
+      }
       const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(ctx, "service", input.name, record);
+      const filepath = writeRecord(ctx, "component", input.name, record);
       return {
         success: true,
         name: input.name,
         kind: input.kind,
         boundary: input.boundary,
         filepath,
-        message: `Service '${input.name}' documented`,
+        message: `Component '${input.name}' documented`,
+      };
+    },
+  });
+}
+
+export function documentFlow(ctx: ToolContext) {
+  return tool({
+    description: `Document how traffic or data moves between two documented components: e.g. CDN → web app, web app → database, worker → queue, sandbox → egress proxy.
+
+\`from\` and \`to\` are exact component names. Call again with the same from/to/label to update a flow.`,
+    inputSchema: z.object({
+      from: z
+        .string()
+        .describe("Name of the documented component traffic originates from."),
+      to: z.string().describe("Name of the documented component it reaches."),
+      label: z
+        .string()
+        .describe(
+          "Short protocol or purpose, e.g. 'HTTPS', 'RDS Proxy', 'enqueue jobs'.",
+        ),
+      evidence: evidenceSchema,
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const components = documented(ctx, "component");
+      const missing = firstMissing([input.from, input.to], components);
+      if (missing)
+        return unknownReference(
+          "component",
+          missing,
+          components.keys(),
+          "Document it with document_component first.",
+        );
+      const { toolCallDescription: _, ...record } = input;
+      const filepath = writeRecord(
+        ctx,
+        "flow",
+        `${input.from}__${input.to}__${input.label}`,
+        record,
+      );
+      return {
+        success: true,
+        from: input.from,
+        to: input.to,
+        filepath,
+        message: `Flow '${input.from}' → '${input.to}' documented`,
       };
     },
   });
@@ -333,7 +407,7 @@ export function documentControl(ctx: ToolContext) {
 
 Analyze every layer — edge, account, VPC, subnet, application, datastore, credential — and record what is enforced there. Be concrete about what the control protects and, critically, its gaps: where it does not apply, what an attacker could route around, or what it trusts. A control's gaps are where attack vectors come from.
 
-\`appliesTo\` names the documented boundaries, applications, and services the control is enforced on. Call again with the same name to update a control.`,
+\`appliesTo\` names the documented boundaries and components the control is enforced on. Call again with the same name to update a control.`,
     inputSchema: z.object({
       name: z
         .string()
@@ -345,7 +419,7 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
         .array(z.string())
         .min(1)
         .describe(
-          "Names of the documented boundaries, applications, and services it is enforced on.",
+          "Names of the documented boundaries and components it is enforced on.",
         ),
       protects: z
         .string()
@@ -360,20 +434,17 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
       toolCallDescription,
     }),
     execute: async (input) => {
-      const nodes = new Set([
-        ...documentedNames(ctx, "boundary"),
-        ...documentedNames(ctx, "app"),
-        ...documentedNames(ctx, "service"),
+      const layers = new Set([
+        ...documented(ctx, "boundary").keys(),
+        ...documented(ctx, "component").keys(),
       ]);
-      const missing = input.appliesTo.find(
-        (name) => !nodes.has(name.toLowerCase()),
-      );
+      const missing = firstMissing(input.appliesTo, layers);
       if (missing)
         return unknownReference(
           "layer",
           missing,
-          nodes,
-          "Document it with document_boundary, document_app, or document_service first.",
+          layers,
+          "Document it with document_boundary or document_component first.",
         );
       const { toolCallDescription: _, ...record } = input;
       const filepath = writeRecord(ctx, "control", input.name, record);
@@ -391,11 +462,11 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
 
 export function documentAttackVector(ctx: ToolContext) {
   return tool({
-    description: `Document a theoretical attack vector: a risk the system may have, grounded in what recon observed or read, for pentest agents to discover and validate.
+    description: `Document a theoretical attack vector: a risk the system may have, derived from its controls and grounded in what recon observed or read, for pentest agents to discover and validate.
 
 This is a hypothesis, not a test plan. State what could go wrong, where, why you suspect it, and what it would mean. Do NOT write procedures, commands, payloads, or step lists — the pentest agent working live on the target decides how to confirm it.
 
-A vector can span several applications and services (for example sandbox → egress proxy → cloud metadata, or every application that shares a database). List each one in \`surfaces\`; an application's objectives are the vectors that touch it.
+A vector usually spans several components (for example sandbox → egress proxy → cloud metadata, or every application that shares a database). List each one in \`components\`.
 
 Call again with the same title to update a vector.`,
     inputSchema: z.object({
@@ -409,16 +480,14 @@ Call again with the same title to update a vector.`,
         .describe(
           "The theoretical risk in one to three sentences: what could be wrong and how an attacker would benefit.",
         ),
-      surfaces: z
+      components: z
         .array(z.string())
         .min(1)
-        .describe(
-          "Names of the documented applications and services the vector spans.",
-        ),
+        .describe("Names of the documented components the vector spans."),
       rationale: z
         .string()
         .describe(
-          "Why recon suspects it — the specific design, configuration, or code observation that makes it plausible.",
+          "Why recon suspects it — the specific control, configuration, or code observation that makes it plausible.",
         ),
       impact: z
         .string()
@@ -441,29 +510,22 @@ Call again with the same title to update a vector.`,
       toolCallDescription,
     }),
     execute: async (input) => {
-      const nodes = new Set([
-        ...documentedNames(ctx, "app"),
-        ...documentedNames(ctx, "service"),
-      ]);
-      const missing = input.surfaces.find(
-        (name) => !nodes.has(name.toLowerCase()),
-      );
-      if (missing)
+      const components = documented(ctx, "component");
+      const missingComponent = firstMissing(input.components, components);
+      if (missingComponent)
         return unknownReference(
-          "surface",
-          missing,
-          nodes,
-          "Document it with document_app or document_service first.",
+          "component",
+          missingComponent,
+          components.keys(),
+          "Document it with document_component first.",
         );
-      const controls = documentedNames(ctx, "control");
-      const unknownControl = input.controls?.find(
-        (name) => !controls.has(name.toLowerCase()),
-      );
-      if (unknownControl)
+      const controls = documented(ctx, "control");
+      const missingControl = firstMissing(input.controls ?? [], controls);
+      if (missingControl)
         return unknownReference(
           "control",
-          unknownControl,
-          controls,
+          missingControl,
+          controls.keys(),
           "Document it with document_control first.",
         );
       const { toolCallDescription: _, ...record } = input;
@@ -471,63 +533,10 @@ Call again with the same title to update a vector.`,
       return {
         success: true,
         title: input.title,
-        surfaces: input.surfaces,
+        components: input.components,
         priority: input.priority,
         filepath,
         message: `Attack vector '${input.title}' documented`,
-      };
-    },
-  });
-}
-
-export function documentFlow(ctx: ToolContext) {
-  return tool({
-    description: `Document how traffic or data moves between two documented nodes (applications or services): e.g. CDN → web app, web app → database, worker → queue, sandbox → egress proxy.
-
-\`from\` and \`to\` are the exact names used in document_app or document_service. Call again with the same from/to/label to update a flow.`,
-    inputSchema: z.object({
-      from: z
-        .string()
-        .describe(
-          "Name of the documented application or service traffic originates from.",
-        ),
-      to: z
-        .string()
-        .describe("Name of the documented application or service it reaches."),
-      label: z
-        .string()
-        .describe(
-          "Short protocol or purpose, e.g. 'HTTPS', 'RDS Proxy', 'enqueue jobs'.",
-        ),
-      evidence: evidenceSchema,
-      toolCallDescription,
-    }),
-    execute: async (input) => {
-      const nodes = new Set([
-        ...documentedNames(ctx, "app"),
-        ...documentedNames(ctx, "service"),
-      ]);
-      for (const end of [input.from, input.to])
-        if (!nodes.has(end.toLowerCase()))
-          return unknownReference(
-            "node",
-            end,
-            nodes,
-            "Document it with document_app or document_service first.",
-          );
-      const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(
-        ctx,
-        "flow",
-        `${input.from}__${input.to}__${input.label}`,
-        record,
-      );
-      return {
-        success: true,
-        from: input.from,
-        to: input.to,
-        filepath,
-        message: `Flow '${input.from}' → '${input.to}' documented`,
       };
     },
   });
