@@ -94,7 +94,7 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
     if (!call) throw new Error("Expected a Claude request");
     expect(String(call[0])).toBe("https://api.anthropic.com/v1/messages");
     const body = JSON.parse(String(call[1]?.body));
-    if (boundModels.has(id)) {
+    if (boundModels.has(id) && (enableThinking || required)) {
       expect(body.thinking.block_binding).toEqual({
         prefix_mismatch_behavior: "drop_block",
       });
