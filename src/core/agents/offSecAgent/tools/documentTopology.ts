@@ -77,7 +77,6 @@ export const COMPONENT_KINDS = [
   "identity-provider",
   "llm-provider",
   "saas",
-  "secret-store",
 ] as const;
 
 export const CONTROL_KINDS = [
@@ -239,7 +238,7 @@ Call again with the same name to update a boundary.`,
 
 export function documentComponent(ctx: ToolContext) {
   return tool({
-    description: `Document a component of the system: an application users or attackers reach, or anything applications are reached through or depend on — entry points (CDN distributions, load balancers, API gateways, function URLs, MQTT endpoints), databases, caches, queues, object stores, brokers, shared workers, identity providers, LLM providers, SaaS.
+    description: `Document a component of the system on an attack path: an application users or attackers reach, or anything applications are reached through or that attacker-influenced data flows into — entry points (CDN distributions, load balancers, API gateways, function URLs, MQTT endpoints), databases, caches, queues, object stores, brokers, shared workers, identity providers, LLM providers, SaaS. Supporting infrastructure nothing attacker-influenced flows into (secret stores, key management, deploy roles, alerting, log forwarding, housekeeping jobs) is not a component.
 
 Document components even when they are not reachable from the origin — a database in a private subnet is part of the surface. Its evidence will then be 'source' (IaC, config, code) or 'inferred', not 'observed'.
 
