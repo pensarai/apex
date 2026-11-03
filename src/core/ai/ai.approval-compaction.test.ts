@@ -154,7 +154,8 @@ function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
       stopWhen: stepCountIs(5),
       silent: true,
       authConfig: { customProviders: customProviders(contextLength) },
-      onContextPrepared: ({ messages }) => prepared.push(messages),
+      onContextPrepared: ({ messages }: { messages: ModelMessage[] }) =>
+        prepared.push(messages),
       ...extra,
     } as unknown as Parameters<typeof streamResponse>[0]);
     for await (const chunk of result.fullStream) bus.emitStreamPart(chunk);
