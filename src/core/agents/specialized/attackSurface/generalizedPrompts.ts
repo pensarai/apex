@@ -12,6 +12,7 @@ Work the surface in this order:
 
 4. THREAT-MODEL AT THE APPLICATION LEVEL. For every service you confirm, call document_app with:
    - a clear description, type, and (when derivable) the domain and framework;
+   - repository: the connected repository whose source you confirmed backs this service (omit it when none does);
    - businessLogic: what the application does, its actors, the sensitive data/operations it handles, and its trust boundaries — fusing wire observations with source findings;
    - threatModel: the attacker profiles, the most relevant attack vectors, and an overall risk assessment for the application as a whole;
    - objectives: prioritized, concrete, testable pentest objectives.

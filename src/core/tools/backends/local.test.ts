@@ -1,4 +1,5 @@
-import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -429,5 +430,77 @@ it("preserves UTF-8 codepoints split across streamed stdout chunks", async () =>
     type: "end",
     exitCode: 0,
     timedOut: false,
+  });
+});
+
+describe("LocalBackends.repoClone", () => {
+  let shell: PerCommandShell | undefined;
+
+  afterEach(() => {
+    shell?.dispose();
+    shell = undefined;
+  });
+
+  function sourceRepo(): string {
+    const repo = tmp("apex-repo-src-");
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: repo, stdio: "pipe" });
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.test");
+    writeFileSync(join(repo, "marker"), "main");
+    git("add", ".");
+    git("commit", "-m", "main");
+    git("checkout", "-b", "release");
+    writeFileSync(join(repo, "marker"), "release");
+    git("commit", "-am", "release");
+    git("checkout", "main");
+    return repo;
+  }
+
+  function cloner(root: string) {
+    shell = new PerCommandShell({ cwd: root });
+    const { repoClone } = LocalBackends(
+      makeCtx({ agentCwd: root, commandShell: shell }),
+    );
+    if (!repoClone) throw new Error("LocalBackends must provide repoClone");
+    return repoClone;
+  }
+
+  it("clones a connected repo at the requested branch under the workspace", async () => {
+    const root = tmp("apex-be-");
+    const repoClone = cloner(root);
+    const result = await repoClone.clone({
+      repoUrl: sourceRepo(),
+      ref: "release",
+      dest: "repos/fixture",
+    });
+    expect(result).toEqual({
+      success: true,
+      path: join(root, "repos/fixture"),
+    });
+    expect(readFileSync(join(root, "repos/fixture/marker"), "utf8")).toBe(
+      "release",
+    );
+  });
+
+  it("reuses an existing clone instead of failing on a second call", async () => {
+    const root = tmp("apex-be-");
+    const repoClone = cloner(root);
+    const repoUrl = sourceRepo();
+    const request = { repoUrl, dest: "repos/fixture" };
+    expect((await repoClone.clone(request)).success).toBe(true);
+    expect((await repoClone.clone(request)).success).toBe(true);
+  });
+
+  it("reports a failed clone as a structured error", async () => {
+    const root = tmp("apex-be-");
+    const repoClone = cloner(root);
+    const result = await repoClone.clone({
+      repoUrl: join(root, "does-not-exist"),
+      dest: "repos/missing",
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
   });
 });

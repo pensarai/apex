@@ -144,6 +144,12 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe("Additional notes or observations about the application"),
+      repository: z
+        .string()
+        .optional()
+        .describe(
+          "Name of the connected repository this application's source lives in, when you confirmed the mapping by reading its code. Omit when no connected repository matches — do not guess.",
+        ),
       businessLogic: z
         .string()
         .optional()
@@ -252,6 +258,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         appName: input.appName,
         appType: input.appType,
         domain: input.domain,
+        repository: input.repository,
         businessLogic: input.businessLogic,
         threatModel: input.threatModel,
         objectives: input.objectives,
