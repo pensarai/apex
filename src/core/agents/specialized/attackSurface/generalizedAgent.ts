@@ -17,7 +17,7 @@ import {
 
 export interface GeneralizedAttackSurfaceAgentInput
   extends SpecializedAgentInput {
-  /** The origin to map — a domain, IP address, or URL. */
+  /** The primary origin to map — a domain, IP address, or URL. Further origins come from `session.targets`. */
   target: string;
   /**
    * Tool names to drop from the orchestrator roster. A host whose runtime
@@ -73,7 +73,7 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
   target: (_opts, state) => state.target,
   prompt: (opts, state) =>
     buildGeneralizedAttackSurfacePrompt(
-      state.target,
+      [...new Set([state.target, ...opts.session.targets])],
       opts.session.config?.connectedRepositories ?? [],
       opts.session.config?.prompt,
     ),

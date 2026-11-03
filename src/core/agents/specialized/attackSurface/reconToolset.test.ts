@@ -81,12 +81,23 @@ describe("generalized attack-surface agent definition", () => {
 
   it("builds a prompt that names the origin and connected repos", () => {
     const prompt = buildGeneralizedAttackSurfacePrompt(
-      "https://app.example.com",
+      ["https://app.example.com"],
       [{ name: "acme-api", url: "https://github.com/acme/acme-api.git" }],
       undefined,
     );
-    expect(prompt).toContain("https://app.example.com");
+    expect(prompt).toContain("ORIGIN: https://app.example.com");
     expect(prompt).toContain("acme-api");
+  });
+
+  it("names every origin of a multi-origin system", () => {
+    const prompt = buildGeneralizedAttackSurfacePrompt(
+      ["https://app.example.com", "https://vpn.example.com"],
+      [],
+      undefined,
+    );
+    expect(prompt).toContain("ORIGINS (one system):");
+    expect(prompt).toContain("- https://app.example.com");
+    expect(prompt).toContain("- https://vpn.example.com");
   });
 });
 
