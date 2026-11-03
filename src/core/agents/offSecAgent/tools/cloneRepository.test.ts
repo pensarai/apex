@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import type { ToolBackends } from "../../../tools/backends/types";
@@ -73,14 +77,53 @@ describe("clone_repository", () => {
     expect(res.error).toBe("repository_not_connected");
   });
 
-  it("reports clone unavailable when no clone backend is present", async () => {
-    const ctx = makeCtx();
+  it("reports clone unavailable when the host backends have no clone seam", async () => {
+    const ctx = makeCtx({ backends: {} as unknown as ToolBackends });
     const res = await runClone(ctx, {
       repository: "acme-api",
       toolCallDescription: "x",
     });
     expect(res.success).toBe(false);
     expect(res.error).toBe("clone_unavailable");
+  });
+
+  it("clones through local backends when the host injects none", async () => {
+    const source = mkdtempSync(join(tmpdir(), "apex-clone-src-"));
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: source, stdio: "pipe" });
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.test");
+    writeFileSync(join(source, "marker"), "main");
+    git("add", ".");
+    git("commit", "-m", "main");
+
+    const root = mkdtempSync(join(tmpdir(), "apex-clone-ws-"));
+    const base = makeCtx();
+    const ctx = makeCtx({
+      agentCwd: root,
+      session: {
+        ...base.session,
+        rootPath: root,
+        config: {
+          connectedRepositories: [
+            {
+              id: "repo_1",
+              name: "fixture",
+              url: source,
+              defaultBranch: "main",
+            },
+          ],
+        },
+      } as SessionInfo,
+    });
+
+    const res = await runClone(ctx, {
+      repository: "fixture",
+      toolCallDescription: "x",
+    });
+    expect(res.success).toBe(true);
+    expect(readFileSync(join(String(res.path), "marker"), "utf8")).toBe("main");
   });
 
   it("clones a connected repo matched by name, id, or url", async () => {

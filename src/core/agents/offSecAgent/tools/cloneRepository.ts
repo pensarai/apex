@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 function sanitizeDirName(name: string): string {
@@ -71,7 +72,7 @@ Returns the local path the repository was cloned to.`,
         };
       }
 
-      const cloner = ctx.backends?.repoClone;
+      const cloner = resolveBackends(ctx).repoClone;
       if (!cloner) {
         return {
           success: false,
