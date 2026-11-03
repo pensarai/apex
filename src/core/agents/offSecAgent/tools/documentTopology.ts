@@ -86,7 +86,7 @@ const CONTROL_KINDS = [
   "logging",
 ] as const;
 
-type TopologyKind = "boundary" | "service" | "flow";
+type TopologyKind = "boundary" | "service" | "flow" | "vector";
 
 function sanitize(name: string): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -318,6 +318,75 @@ Document services even when they are not reachable from the origin — a databas
         boundary: input.boundary,
         filepath,
         message: `Service '${input.name}' documented`,
+      };
+    },
+  });
+}
+
+export function documentAttackVector(ctx: ToolContext) {
+  return tool({
+    description: `Document a theoretical attack vector: a risk the system may have, grounded in what recon observed or read, for pentest agents to discover and validate.
+
+This is a hypothesis, not a test plan. State what could go wrong, where, why you suspect it, and what it would mean. Do NOT write procedures, commands, payloads, or step lists — the pentest agent working live on the target decides how to confirm it.
+
+A vector can span several applications and services (for example sandbox → egress proxy → cloud metadata, or every application that shares a database). List each one in \`surfaces\`; an application's objectives are the vectors that touch it.
+
+Call again with the same title to update a vector.`,
+    inputSchema: z.object({
+      title: z
+        .string()
+        .describe(
+          "Short name of the vector, e.g. 'Sandbox egress escapes containment'.",
+        ),
+      risk: z
+        .string()
+        .describe(
+          "The theoretical risk in one to three sentences: what could be wrong and how an attacker would benefit.",
+        ),
+      surfaces: z
+        .array(z.string())
+        .min(1)
+        .describe(
+          "Names of the documented applications and services the vector spans.",
+        ),
+      rationale: z
+        .string()
+        .describe(
+          "Why recon suspects it — the specific design, configuration, or code observation that makes it plausible.",
+        ),
+      impact: z
+        .string()
+        .describe(
+          "What a successful exploit would mean for the business or its tenants.",
+        ),
+      priority: z.enum(["high", "medium", "low"]),
+      evidence: evidenceSchema,
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const nodes = new Set([
+        ...documentedNames(ctx, "app"),
+        ...documentedNames(ctx, "service"),
+      ]);
+      const missing = input.surfaces.find(
+        (name) => !nodes.has(name.toLowerCase()),
+      );
+      if (missing)
+        return unknownReference(
+          "surface",
+          missing,
+          nodes,
+          "Document it with document_app or document_service first.",
+        );
+      const { toolCallDescription: _, ...record } = input;
+      const filepath = writeRecord(ctx, "vector", input.title, record);
+      return {
+        success: true,
+        title: input.title,
+        surfaces: input.surfaces,
+        priority: input.priority,
+        filepath,
+        message: `Attack vector '${input.title}' documented`,
       };
     },
   });

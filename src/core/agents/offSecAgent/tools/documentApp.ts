@@ -167,13 +167,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe(
-          "App-level threat model: attacker profiles, the most relevant attack vectors for this application, and an overall risk assessment. This replaces per-endpoint threat modeling — reason about the application as a whole. Markdown.",
-        ),
-      objectives: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "App-level pentest objectives: concrete, testable hypotheses a pentester should pursue against this application, ordered by priority. Each is a self-contained objective string.",
+          "App-level threat model: attacker profiles, the most relevant attack vectors for this application, and an overall risk assessment. This replaces per-endpoint threat modeling — reason about the application as a whole. Record each concrete attack vector with document_attack_vector. Markdown.",
         ),
       domain: z
         .string()
@@ -274,7 +268,6 @@ Each application creates a JSON file in the apps directory for tracking and anal
         boundary: input.boundary,
         businessLogic: input.businessLogic,
         threatModel: input.threatModel,
-        objectives: input.objectives,
         filepath,
         message: `Application '${input.appName}' documented successfully`,
       };

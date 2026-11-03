@@ -46,6 +46,7 @@ export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
 export { documentVulnerability } from "./documentFinding";
 export {
+  documentAttackVector,
   documentBoundary,
   documentFlow,
   documentService,
@@ -236,6 +237,7 @@ import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { documentVulnerability } from "./documentFinding";
 import {
+  documentAttackVector,
   documentBoundary,
   documentFlow,
   documentService,
@@ -375,6 +377,7 @@ const TOOL_REGISTRY = [
   { name: "document_boundary", factory: documentBoundary },
   { name: "document_service", factory: documentService },
   { name: "document_flow", factory: documentFlow },
+  { name: "document_attack_vector", factory: documentAttackVector },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
   { name: "create_workspace_domain", factory: createWorkspaceDomain },
@@ -652,6 +655,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_boundary",
   "document_service",
   "document_flow",
+  "document_attack_vector",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
   "delegate_to_auth_subagent",
@@ -721,6 +725,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "document_boundary",
   "document_service",
   "document_flow",
+  "document_attack_vector",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",

@@ -35,6 +35,7 @@ export const RECON_WORKER_TOOLS: string[] = [
   "document_boundary",
   "document_service",
   "document_flow",
+  "document_attack_vector",
   // Email / SMS (filtered out by the base class when none are configured).
   "email_list_inboxes",
   "email_list_messages",

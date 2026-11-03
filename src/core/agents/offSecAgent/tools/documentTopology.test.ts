@@ -7,6 +7,7 @@ import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { documentApp } from "./documentApp";
 import {
+  documentAttackVector,
   documentBoundary,
   documentFlow,
   documentService,
@@ -162,5 +163,55 @@ describe("document_flow", () => {
       evidence: fromSource,
     });
     expect(bad.error).toBe("unknown_node");
+  });
+});
+
+describe("document_attack_vector", () => {
+  const vector = {
+    title: "Shared database tenant isolation",
+    risk: "Every application reads Aurora; a missing workspace filter in any one exposes other tenants.",
+    rationale:
+      "All tables key on a workspace FK enforced in application code, not in the database.",
+    impact: "Cross-tenant disclosure of findings and stored credentials.",
+    priority: "high",
+    evidence: fromSource,
+  };
+
+  it("spans an application and a service", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    await run(documentService(ctx), {
+      name: "Aurora PostgreSQL",
+      kind: "database",
+      boundary: "Private subnets",
+      exposure: "private",
+      applications: ["Console Web"],
+      evidence: fromSource,
+    });
+    const res = await run(documentAttackVector(ctx), {
+      ...vector,
+      surfaces: ["Console Web", "aurora postgresql"],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("refuses a surface that was never documented", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    const res = await run(documentAttackVector(ctx), {
+      ...vector,
+      surfaces: ["Console Web", "Redis"],
+    });
+    expect(res.error).toBe("unknown_surface");
+  });
+
+  it("requires at least one surface", () => {
+    const schema = documentAttackVector(makeCtx()).inputSchema as {
+      safeParse: (v: unknown) => { success: boolean };
+    };
+    expect(
+      schema.safeParse({ ...vector, surfaces: [], toolCallDescription: "x" })
+        .success,
+    ).toBe(false);
   });
 });
