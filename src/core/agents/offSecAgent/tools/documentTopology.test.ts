@@ -9,6 +9,7 @@ import { documentApp } from "./documentApp";
 import {
   documentAttackVector,
   documentBoundary,
+  documentControl,
   documentFlow,
   documentService,
 } from "./documentTopology";
@@ -173,6 +174,7 @@ describe("document_attack_vector", () => {
     rationale:
       "All tables key on a workspace FK enforced in application code, not in the database.",
     impact: "Cross-tenant disclosure of findings and stored credentials.",
+    pattern: "shared-resource",
     priority: "high",
     evidence: fromSource,
   };
@@ -213,5 +215,62 @@ describe("document_attack_vector", () => {
       schema.safeParse({ ...vector, surfaces: [], toolCallDescription: "x" })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("document_control", () => {
+  const control = {
+    name: "Workspace authorization",
+    kind: "tenant-isolation",
+    protects:
+      "Every server action checks the caller belongs to the workspace it names.",
+    gaps: "Enforced per handler in application code; the database has no row-level policy.",
+    evidence: fromSource,
+  };
+
+  it("attaches to boundaries, applications, and services", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    const res = await run(documentControl(ctx), {
+      ...control,
+      appliesTo: ["Private subnets", "Console Web"],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("refuses a layer that was never documented", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    const res = await run(documentControl(ctx), {
+      ...control,
+      appliesTo: ["Console Web", "Admin API"],
+    });
+    expect(res.error).toBe("unknown_layer");
+  });
+
+  it("links a vector to a documented control and refuses an unknown one", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    await run(documentControl(ctx), { ...control, appliesTo: ["Console Web"] });
+    const vector = {
+      title: "Tenant isolation rests on handler checks",
+      risk: "One handler that skips the check exposes another tenant.",
+      surfaces: ["Console Web"],
+      rationale: "Isolation is enforced per handler.",
+      impact: "Cross-tenant disclosure.",
+      pattern: "missing-control",
+      priority: "high",
+      evidence: fromSource,
+    };
+    const linked = await run(documentAttackVector(ctx), {
+      ...vector,
+      controls: ["workspace authorization"],
+    });
+    expect(linked.success).toBe(true);
+    const unknown = await run(documentAttackVector(ctx), {
+      ...vector,
+      controls: ["API WAF"],
+    });
+    expect(unknown.error).toBe("unknown_control");
   });
 });

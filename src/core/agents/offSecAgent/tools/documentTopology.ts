@@ -75,18 +75,34 @@ export const SERVICE_KINDS = [
   "secret-store",
 ] as const;
 
-const CONTROL_KINDS = [
+export const CONTROL_KINDS = [
   "waf",
   "ip-allowlist",
   "geo-block",
   "security-group",
+  "network-isolation",
   "origin-secret",
   "authentication",
-  "network-isolation",
+  "authorization",
+  "tenant-isolation",
+  "rate-limit",
+  "encryption",
+  "secret-management",
+  "iam-policy",
+  "input-validation",
   "logging",
 ] as const;
 
-type TopologyKind = "boundary" | "service" | "flow" | "vector";
+export const VECTOR_PATTERNS = [
+  "control-bypass",
+  "missing-control",
+  "trust-abuse",
+  "shared-resource",
+  "exposure",
+  "misconfiguration",
+] as const;
+
+type TopologyKind = "boundary" | "service" | "flow" | "vector" | "control";
 
 function sanitize(name: string): string {
   const cleaned = name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -125,7 +141,7 @@ function writeRecord(
 /** Lower-cased names already documented for a kind, so references can be checked. */
 function documentedNames(
   ctx: ToolContext,
-  kind: "boundary" | "service" | "app",
+  kind: "boundary" | "service" | "app" | "control",
 ): Set<string> {
   const dir =
     kind === "app" ? join(ctx.session.rootPath, "apps") : topologyDir(ctx);
@@ -183,7 +199,7 @@ export function documentBoundary(ctx: ToolContext) {
   return tool({
     description: `Document a boundary that contains applications and services: an edge network (CDN, Cloudflare), a cloud account, a region, a VPC, a subnet tier, or the set of third-party services the system relies on.
 
-Record the rules that govern traffic into the boundary as controls (WAF rules, IP allowlists, security groups, origin secrets, network isolation). Nest boundaries with \`parent\` — e.g. subnet → VPC → region → cloud account. Document a parent before its children.
+Record the rules that govern it with document_control. Nest boundaries with \`parent\` — e.g. subnet → VPC → region → cloud account. Document a parent before its children.
 
 Call again with the same name to update a boundary.`,
     inputSchema: z.object({
@@ -204,18 +220,6 @@ Call again with the same name to update a boundary.`,
           "Name of an already-documented boundary this one sits inside.",
         ),
       description: z.string().optional(),
-      controls: z
-        .array(
-          z.object({
-            kind: z.enum(CONTROL_KINDS),
-            summary: z
-              .string()
-              .describe("What the rule allows or blocks, concretely."),
-            evidence: evidenceSchema,
-          }),
-        )
-        .optional()
-        .describe("Rules governing traffic into or within this boundary."),
       evidence: evidenceSchema,
       toolCallDescription,
     }),
@@ -323,6 +327,68 @@ Document services even when they are not reachable from the origin — a databas
   });
 }
 
+export function documentControl(ctx: ToolContext) {
+  return tool({
+    description: `Document a security control and the layer it protects: a WAF on a distribution, a security group on a subnet tier, an IP allowlist on a route, authentication on an application, tenant isolation in application code, an AUTH token on a cache, an IAM policy on a credential, encryption of stored secrets.
+
+Analyze every layer — edge, account, VPC, subnet, application, datastore, credential — and record what is enforced there. Be concrete about what the control protects and, critically, its gaps: where it does not apply, what an attacker could route around, or what it trusts. A control's gaps are where attack vectors come from.
+
+\`appliesTo\` names the documented boundaries, applications, and services the control is enforced on. Call again with the same name to update a control.`,
+    inputSchema: z.object({
+      name: z
+        .string()
+        .describe(
+          "Unique control name, e.g. 'API WAF', 'Aurora security group', 'Workspace authorization in server actions'.",
+        ),
+      kind: z.enum(CONTROL_KINDS),
+      appliesTo: z
+        .array(z.string())
+        .min(1)
+        .describe(
+          "Names of the documented boundaries, applications, and services it is enforced on.",
+        ),
+      protects: z
+        .string()
+        .describe("What it is meant to stop or guarantee, concretely."),
+      gaps: z
+        .string()
+        .optional()
+        .describe(
+          "Where it does not apply, what can route around it, what it trusts, or weaknesses observed. Omit only when you found none.",
+        ),
+      evidence: evidenceSchema,
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const nodes = new Set([
+        ...documentedNames(ctx, "boundary"),
+        ...documentedNames(ctx, "app"),
+        ...documentedNames(ctx, "service"),
+      ]);
+      const missing = input.appliesTo.find(
+        (name) => !nodes.has(name.toLowerCase()),
+      );
+      if (missing)
+        return unknownReference(
+          "layer",
+          missing,
+          nodes,
+          "Document it with document_boundary, document_app, or document_service first.",
+        );
+      const { toolCallDescription: _, ...record } = input;
+      const filepath = writeRecord(ctx, "control", input.name, record);
+      return {
+        success: true,
+        name: input.name,
+        kind: input.kind,
+        appliesTo: input.appliesTo,
+        filepath,
+        message: `Control '${input.name}' documented`,
+      };
+    },
+  });
+}
+
 export function documentAttackVector(ctx: ToolContext) {
   return tool({
     description: `Document a theoretical attack vector: a risk the system may have, grounded in what recon observed or read, for pentest agents to discover and validate.
@@ -359,6 +425,17 @@ Call again with the same title to update a vector.`,
         .describe(
           "What a successful exploit would mean for the business or its tenants.",
         ),
+      pattern: z
+        .enum(VECTOR_PATTERNS)
+        .describe(
+          "control-bypass = a path around a documented control; missing-control = a layer with no control where one is expected; trust-abuse = one component trusts another more than it should; shared-resource = one resource serves many tenants or applications; exposure = something reachable that should not be; misconfiguration = a control set up wrongly.",
+        ),
+      controls: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Names of documented controls this vector bypasses, defeats, or depends on.",
+        ),
       priority: z.enum(["high", "medium", "low"]),
       evidence: evidenceSchema,
       toolCallDescription,
@@ -377,6 +454,17 @@ Call again with the same title to update a vector.`,
           missing,
           nodes,
           "Document it with document_app or document_service first.",
+        );
+      const controls = documentedNames(ctx, "control");
+      const unknownControl = input.controls?.find(
+        (name) => !controls.has(name.toLowerCase()),
+      );
+      if (unknownControl)
+        return unknownReference(
+          "control",
+          unknownControl,
+          controls,
+          "Document it with document_control first.",
         );
       const { toolCallDescription: _, ...record } = input;
       const filepath = writeRecord(ctx, "vector", input.title, record);

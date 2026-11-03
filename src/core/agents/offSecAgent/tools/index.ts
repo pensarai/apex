@@ -48,6 +48,7 @@ export { documentVulnerability } from "./documentFinding";
 export {
   documentAttackVector,
   documentBoundary,
+  documentControl,
   documentFlow,
   documentService,
 } from "./documentTopology";
@@ -239,6 +240,7 @@ import { documentVulnerability } from "./documentFinding";
 import {
   documentAttackVector,
   documentBoundary,
+  documentControl,
   documentFlow,
   documentService,
 } from "./documentTopology";
@@ -377,6 +379,7 @@ const TOOL_REGISTRY = [
   { name: "document_boundary", factory: documentBoundary },
   { name: "document_service", factory: documentService },
   { name: "document_flow", factory: documentFlow },
+  { name: "document_control", factory: documentControl },
   { name: "document_attack_vector", factory: documentAttackVector },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
@@ -655,6 +658,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_boundary",
   "document_service",
   "document_flow",
+  "document_control",
   "document_attack_vector",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
@@ -725,6 +729,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "document_boundary",
   "document_service",
   "document_flow",
+  "document_control",
   "document_attack_vector",
   // Whitebox jobs
   "run_whitebox_scan",
