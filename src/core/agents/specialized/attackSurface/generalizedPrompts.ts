@@ -25,9 +25,9 @@ Work the surface in this order:
    - trustAssumptions: what it trusts without verifying — callers in a security group, a header a proxy sets, a token's claims, content it ingests, an upstream service.
    - usedBy: the applications that depend on it.
    - for applications, businessLogic: what it does, its actors, and its sensitive operations.
-   Note every entry point that reaches an application without passing the edge (direct origin URLs, function URLs, execute-api URLs, load balancers with public DNS). Do NOT enumerate individual endpoints; the unit of analysis is the component.
+   Record concrete endpoints (hostname or URL, with port when it is not the scheme default) for every entry point and every public component — read them from IaC, config, environment variables, DNS records, and the JS bundles you fetch. A pentest can only be authorized against concrete hosts, so an entry point without one cannot be put in scope; when a host is generated at deploy time and cannot be found, say so in the description. Note every entry point that reaches an application without passing the edge (direct origin URLs, function URLs, execute-api URLs, load balancers with public DNS). Do NOT enumerate individual endpoints; the unit of analysis is the component.
 
-5. DOCUMENT FLOWS. document_flow for how traffic and data move between components, so every component's reachability can be traced from the internet.
+5. DOCUMENT FLOWS. document_flow for how traffic and data move between components: every entry point to what it fronts, every application to each datastore, cache, queue, broker, and service it calls, every worker to what triggers it and what it writes. Flows matter as much as components — they define each component's reachability from the internet and which neighbors a pentest of that component may reach. Every component should end up with at least one flow; a component with none is either unconnected in reality or a gap in your map.
 
 6. ANALYZE CONTROLS, LAYER BY LAYER. Work outside in and document_control what each layer enforces — this is the core of the analysis, so go deep:
    - Edge: WAF rules, geo blocks, IP allowlists, bot and rate controls, and which distributions they attach to.
