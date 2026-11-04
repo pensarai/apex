@@ -5,11 +5,13 @@ import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
 import { describeDocumentedTopology } from "../../offSecAgent/tools/documentTopology";
+import type { TopologyChangeSet } from "../../offSecAgent/tools/topologyRecords";
 import {
   buildGeneralizedAttackSurfacePrompt,
   GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
 } from "./generalizedPrompts";
 import { GENERALIZED_ATTACK_SURFACE_TOOLS } from "./reconToolset";
+import { finishUpdate, type ReconUpdate, startUpdate } from "./reconUpdate";
 import {
   type AttackSurfaceAnalysisResults,
   loadAttackSurfaceResults,
@@ -32,6 +34,10 @@ export interface GeneralizedAttackSurfaceAgentInput
    * documented, so this pass continues instead of starting over.
    */
   continuation?: string;
+  /** Re-map from an earlier run's map instead of from scratch. */
+  update?: ReconUpdate;
+  /** Set by {@link runGeneralizedReconToReport}: the update section of the prompt. */
+  updateBrief?: string;
 }
 
 /** Typed result returned by {@link GeneralizedAttackSurfaceAgent.consume}. */
@@ -40,6 +46,11 @@ export interface GeneralizedAttackSurfaceResult {
   targets: PentestTarget[];
   resultsPath: string;
   assetsPath: string;
+  /** Update runs: what changed relative to the baseline. */
+  changeSet?: TopologyChangeSet;
+  changesPath?: string;
+  /** Update runs the agent did not need to run for, and why. */
+  skipped?: string;
 }
 
 interface GeneralizedState {
@@ -83,6 +94,7 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
       opts.session.config?.connectedRepositories ?? [],
       opts.session.config?.prompt,
       opts.continuation,
+      opts.updateBrief,
     ),
   resolveResult: (opts) => {
     const resultsPath = join(
@@ -130,22 +142,39 @@ export async function runGeneralizedReconToReport(
     consume(): Promise<GeneralizedAttackSurfaceResult>;
   } = (i) => new GeneralizedAttackSurfaceAgent(i),
 ): Promise<GeneralizedAttackSurfaceResult> {
-  let result = await createAgent(input).consume();
+  const root = input.session.rootPath;
+  let first = input;
+  if (input.update) {
+    const start = startUpdate(input.update, root);
+    if (start.skip)
+      return {
+        results: null,
+        targets: [],
+        resultsPath: join(root, "attack-surface-results.json"),
+        assetsPath: join(root, "assets"),
+        skipped: start.skip,
+        ...finishUpdate(input.update, root, input.session.id),
+      };
+    first = { ...input, updateBrief: start.brief };
+  }
+  let result = await createAgent(first).consume();
   for (
     let pass = 1;
     !result.results && pass <= MAX_RECON_CONTINUATIONS;
     pass++
   ) {
     result = await createAgent({
-      ...input,
-      continuation: describeDocumentedTopology(input.session.rootPath, pass),
+      ...first,
+      continuation: describeDocumentedTopology(root, pass),
     }).consume();
   }
   if (!result.results)
     throw new Error(
       `Generalized recon for ${input.target} stopped before create_attack_surface_report after ${MAX_RECON_CONTINUATIONS} continuation passes (session ${input.session.id})`,
     );
-  return result;
+  return input.update
+    ? { ...result, ...finishUpdate(input.update, root, input.session.id) }
+    : result;
 }
 
 export class GeneralizedAttackSurfaceAgent extends AgentRuntime<

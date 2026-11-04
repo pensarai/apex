@@ -56,6 +56,7 @@ export function buildGeneralizedAttackSurfacePrompt(
   connectedRepositories: ReadonlyArray<{ name: string; url: string }>,
   operatorPrompt: string | undefined,
   continuation?: string,
+  update?: string,
 ): string {
   const repoBlock =
     connectedRepositories.length > 0
@@ -74,8 +75,13 @@ export function buildGeneralizedAttackSurfacePrompt(
       : `ORIGINS (one system):\n${origins.map((o) => `- ${o}`).join("\n")}`;
 
   const continuationBlock = continuation ? `\n${continuation}\n` : "";
+  const updateBlock = update ? `\n${update}\n` : "";
 
   return `${originBlock}
-${repoBlock}${operatorBlock}${continuationBlock}
-Begin now. Probe each origin, map it to connected source, document the boundaries, components, and flows behind it with evidence, analyze the controls at every layer, and finish by calling create_attack_surface_report.`;
+${repoBlock}${operatorBlock}${updateBlock}${continuationBlock}
+${
+  update
+    ? "Begin now. Update the map from what the trigger points at, keep everything else, and finish by calling create_attack_surface_report."
+    : "Begin now. Probe each origin, map it to connected source, document the boundaries, components, and flows behind it with evidence, analyze the controls at every layer, and finish by calling create_attack_surface_report."
+}`;
 }
