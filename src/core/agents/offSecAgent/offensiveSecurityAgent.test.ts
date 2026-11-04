@@ -604,6 +604,8 @@ function buildStubAgent(overrides: {
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
+  responseRequired?: boolean;
+  responseToolError?: unknown;
   responseToolResult?: unknown;
   subagentId?: string;
   subagentName?: string;
@@ -619,6 +621,12 @@ function buildStubAgent(overrides: {
   vi.spyOn(bus, "emitStreamPart").mockImplementation(() => {});
 
   Object.defineProperty(agent, "eventBus", { value: bus });
+  Object.defineProperty(agent, "responseRequired", {
+    value: overrides.responseRequired ?? false,
+  });
+  Object.defineProperty(agent, "responseToolError", {
+    value: overrides.responseToolError,
+  });
   Object.defineProperty(agent, "streamResult", {
     value: { fullStream: overrides.fullStream },
   });
@@ -1617,6 +1625,28 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       const result = await agent.consume();
       expect(result).toBeUndefined();
+    });
+
+    it("rejects structured runs that finish without a valid response capture", async () => {
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        responseRequired: true,
+      });
+
+      await expect(agent.consume()).rejects.toThrow(
+        "Structured response tool did not capture a valid result",
+      );
+    });
+
+    it("surfaces the response validation cause when capture never succeeds", async () => {
+      const cause = new Error("Invalid response.result.done");
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        responseRequired: true,
+        responseToolError: cause,
+      });
+
+      await expect(agent.consume()).rejects.toBe(cause);
     });
   });
 
