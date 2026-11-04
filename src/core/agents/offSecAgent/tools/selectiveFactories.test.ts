@@ -4,7 +4,7 @@
 // duplicates all count). Selection must construct exactly the requested
 // tools with zero unselected siblings. Baseline (8c5b46c8) built 78
 // constructions for 74 retained keys (four email duplicates constructed then
-// discarded); the registry design constructs 76 (87 with the callback
+// discarded); the registry design constructs 76 (88 with the callback
 // helper and topology documentation tools). Agent-path counts include
 // conditional tools (traceWriter is always provided) — see
 // selectiveConstruction.test.ts.
@@ -137,9 +137,9 @@ describe("createAllTools (full construction)", () => {
   it("constructs one tool per retained key — no discarded duplicates", () => {
     reset();
     const tools = createAllTools(makeCtx());
-    expect(Object.keys(tools)).toHaveLength(87);
+    expect(Object.keys(tools)).toHaveLength(88);
     // One construction per retained key — no discarded duplicates.
-    expect(counts.toolCtor).toBe(87);
+    expect(counts.toolCtor).toBe(88);
     expect(counts.browserGroupRouter).toBe(1);
     expect(counts.sharedBrowserFactories).toBe(1);
     expect(counts.emailGroup).toBe(0);
@@ -157,8 +157,8 @@ describe("createAllTools (full construction)", () => {
         tasksDir: "/tmp/apex-selective-factories-tasks",
       }),
     );
-    expect(Object.keys(tools)).toHaveLength(92);
-    expect(counts.toolCtor).toBe(92);
+    expect(Object.keys(tools)).toHaveLength(93);
+    expect(counts.toolCtor).toBe(93);
   });
 });
 

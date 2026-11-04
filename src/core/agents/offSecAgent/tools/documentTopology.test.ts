@@ -10,6 +10,7 @@ import {
   documentComponent,
   documentControl,
   documentFlow,
+  documentThreat,
   reviewTopologyRecords,
 } from "./documentTopology";
 import type { ToolContext } from "./types";
@@ -198,6 +199,21 @@ describe("document_control", () => {
   });
 });
 
+/** One threat, enough to satisfy review_topology's no-threats check. */
+async function threaten(ctx: ToolContext, component: string) {
+  await run(documentThreat(ctx), {
+    component,
+    title: `Abuse ${component}`,
+    category: "elevation-of-privilege",
+    scenario: `An attacker reaches ${component} and abuses what it trusts.`,
+    preconditions: [],
+    impact: "Tenant data.",
+    likelihood: "medium",
+    likelihoodRationale: "Reachable from the internet.",
+    evidence: fromSource,
+  });
+}
+
 describe("review_topology", () => {
   async function vpcSeed(ctx: ToolContext) {
     for (const b of [
@@ -221,6 +237,7 @@ describe("review_topology", () => {
       .sort();
     expect(checks).toEqual([
       "names-two-parts",
+      "no-threats",
       "placed-at-vpc-level",
       "public-without-host",
       "unconnected",
@@ -260,6 +277,8 @@ describe("review_topology", () => {
       label: "SQL",
       evidence: fromSource,
     });
+    await threaten(ctx, "Console Web");
+    await threaten(ctx, "Aurora PostgreSQL");
     expect(reviewTopologyRecords(ctx)).toEqual([]);
   });
 
@@ -322,6 +341,8 @@ describe("review_topology", () => {
       label: "HTTPS API",
       evidence: fromSource,
     });
+    await threaten(ctx, "Console Web");
+    await threaten(ctx, "Android app");
     expect(reviewTopologyRecords(ctx)).toEqual([]);
   });
 });

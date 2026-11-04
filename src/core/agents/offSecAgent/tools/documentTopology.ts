@@ -308,7 +308,7 @@ A client is software the organization distributes that runs on users' devices �
 
 Document components even when they are not reachable from the origin — a database in a private subnet is part of the surface. Its evidence will then be 'source' (IaC, config, code) or 'inferred', not 'observed'.
 
-Every component gets a threat model. Record what is at stake and what the component trusts; its reachability and controls come from the rest of the graph. Applications also record their business logic.
+Every component gets a threat model. Record what is at stake and what the component trusts here; its reachability and controls come from the rest of the graph, and its threats from document_threat. Applications also record their business logic.
 
 Call again with the same name to update a component — never create a second record for the same thing.`,
     inputSchema: z.object({
@@ -570,9 +570,128 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
   });
 }
 
+/** Third-party services the system relies on but cannot be attacked through directly. */
+const UNTHREATENED_KINDS = new Set([
+  "saas",
+  "identity-provider",
+  "llm-provider",
+]);
+
+export const THREAT_CATEGORIES = [
+  "spoofing",
+  "tampering",
+  "repudiation",
+  "information-disclosure",
+  "denial-of-service",
+  "elevation-of-privilege",
+] as const;
+
+export function documentThreat(ctx: ToolContext) {
+  return tool({
+    description: `Document one threat to a component: a concrete way this system could be attacked through it. A component's threat model is the set of its threats, together with what is at stake, what it trusts, how it is reached, and its controls.
+
+Model each component in depth. Work through every STRIDE category against what the map shows — its trust assumptions, the gaps in the controls on it and on the layers around it, the flows that reach it and the ones it makes, and what it holds — and document each threat that plausibly applies. Most components on an attack path have several. Write each one for this system specifically: who acts, through which entry point and flow, using which trust assumption or control gap, and what they get. A generic threat ("SQL injection is possible") is not a threat model.
+
+Document the same title on the same component again to update it.`,
+    inputSchema: z.object({
+      component: z
+        .string()
+        .describe("Exact name of the documented component the threat targets."),
+      title: z
+        .string()
+        .describe(
+          "Short, specific title, unique within the component, e.g. 'Read any account through legacy v1 IDs'.",
+        ),
+      category: z.enum(THREAT_CATEGORIES),
+      scenario: z
+        .string()
+        .describe(
+          "Who does what, through which entry point and flow, exploiting which trust assumption or control gap, with what result — concrete to this system.",
+        ),
+      preconditions: z
+        .array(z.string())
+        .describe(
+          "What the attacker needs: network position, an account, a leaked key, a victim action. Empty when anyone on the internet can do it.",
+        ),
+      impact: z
+        .string()
+        .describe(
+          "What is lost and how widely: whose data, which privileges, how much money or availability.",
+        ),
+      likelihood: z.enum(["low", "medium", "high"]),
+      likelihoodRationale: z
+        .string()
+        .describe(
+          "Why that likelihood: exposure, ease, what stands in the way, whether it was confirmed.",
+        ),
+      controls: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Names of documented controls that should stop it — the threat usually exploits their gaps.",
+        ),
+      evidence: evidenceSchema,
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const components = documented(ctx, "component");
+      const component = components.get(input.component.toLowerCase());
+      if (!component)
+        return unknownReference(
+          "component",
+          input.component,
+          components.keys(),
+          "Document the component first, or use its exact name.",
+        );
+      const controls = documented(ctx, "control");
+      const missing = firstMissing(input.controls ?? [], controls);
+      if (missing)
+        return unknownReference(
+          "control",
+          missing,
+          controls.keys(),
+          "Document the control with document_control first, or use its exact name.",
+        );
+      const existing = loadTopology(ctx.session.rootPath).threats.find(
+        (t) =>
+          (t.componentId === component.id ||
+            String(t.component).toLowerCase() ===
+              String(component.name).toLowerCase()) &&
+          String(t.title).toLowerCase() === input.title.toLowerCase(),
+      );
+      const { toolCallDescription: _, ...record } = input;
+      const filepath = save(
+        ctx,
+        "threat",
+        `${component.name}__${input.title}`,
+        {
+          ...record,
+          id: existing?.id ?? newRecordId("threat"),
+          component: component.name,
+          componentId: component.id,
+          ...(input.controls?.length
+            ? {
+                controlIds: input.controls.map(
+                  (n) => (controls.get(n.toLowerCase()) as TopologyRecord).id,
+                ),
+              }
+            : {}),
+        },
+      );
+      return {
+        success: true,
+        component: component.name,
+        title: input.title,
+        filepath,
+        message: `Threat '${input.title}' documented on '${component.name}'`,
+      };
+    },
+  });
+}
+
 /** Fields update_record may change, per kind; everything else carries forward verbatim. */
 const UPDATABLE: Record<
-  "boundary" | "component" | "control",
+  "boundary" | "component" | "control" | "threat",
   readonly string[]
 > = {
   boundary: ["kind", "provider", "parent", "description"],
@@ -591,16 +710,31 @@ const UPDATABLE: Record<
     "members",
   ],
   control: ["kind", "appliesTo", "protects", "gaps"],
+  threat: [
+    "category",
+    "scenario",
+    "preconditions",
+    "impact",
+    "likelihood",
+    "likelihoodRationale",
+    "controls",
+  ],
 };
 
 export function updateRecord(ctx: ToolContext) {
   return tool({
-    description: `Change specific fields of a documented boundary, component, or control, leaving every other field exactly as it is. In an update run this is how a record changes: pass only what the change affects (e.g. a component's exposure and endpoints, a control's gaps), with evidence for the change.
+    description: `Change specific fields of a documented boundary, component, control, or threat, leaving every other field exactly as it is. In an update run this is how a record changes: pass only what the change affects (e.g. a component's exposure and endpoints, a control's gaps), with evidence for the change.
 
 Do not use it to restate a record in new words, and do not touch a record whose facts did not change. Rename with document_* and renameFrom; remove with retire_record.`,
     inputSchema: z.object({
-      kind: z.enum(["boundary", "component", "control"]),
-      name: z.string().describe("Exact current name of the record."),
+      kind: z.enum(["boundary", "component", "control", "threat"]),
+      name: z
+        .string()
+        .describe("Exact current name of the record; for a threat, its title."),
+      component: z
+        .string()
+        .optional()
+        .describe("For a threat: the exact name of its component."),
       changes: z
         .object({
           kind: z.string().optional(),
@@ -620,21 +754,46 @@ Do not use it to restate a record in new words, and do not touch a record whose 
           appliesTo: z.array(z.string()).optional(),
           protects: z.string().optional(),
           gaps: z.string().optional(),
+          category: z.enum(THREAT_CATEGORIES).optional(),
+          scenario: z.string().optional(),
+          preconditions: z.array(z.string()).optional(),
+          impact: z.string().optional(),
+          likelihood: z.enum(["low", "medium", "high"]).optional(),
+          likelihoodRationale: z.string().optional(),
+          controls: z.array(z.string()).optional(),
         })
         .describe("Only the fields that changed, with their new values."),
       evidence: evidenceSchema,
       toolCallDescription,
     }),
     execute: async (input) => {
-      const known = documented(ctx, input.kind);
-      const record = known.get(input.name.toLowerCase());
-      if (!record)
-        return unknownReference(
-          input.kind,
-          input.name,
-          known.keys(),
-          "Give the exact current name.",
+      let record: TopologyRecord | undefined;
+      if (input.kind === "threat") {
+        const threats = loadTopology(ctx.session.rootPath).threats;
+        record = threats.find(
+          (t) =>
+            String(t.component).toLowerCase() ===
+              input.component?.toLowerCase() &&
+            String(t.title).toLowerCase() === input.name.toLowerCase(),
         );
+        if (!record)
+          return unknownReference(
+            "threat",
+            `${input.component}: ${input.name}`,
+            threats.map((t) => `${t.component}: ${t.title}`),
+            "Give the threat's exact component and title.",
+          );
+      } else {
+        const known = documented(ctx, input.kind);
+        record = known.get(input.name.toLowerCase());
+        if (!record)
+          return unknownReference(
+            input.kind,
+            input.name,
+            known.keys(),
+            "Give the exact current name.",
+          );
+      }
       const changes = Object.fromEntries(
         Object.entries(input.changes).filter(([, v]) => v !== undefined),
       ) as Record<string, unknown>;
@@ -656,6 +815,7 @@ Do not use it to restate a record in new words, and do not touch a record whose 
         boundary: BOUNDARY_KINDS as readonly string[],
         component: COMPONENT_KINDS as readonly string[],
         control: CONTROL_KINDS as readonly string[],
+        threat: [] as readonly string[],
       }[input.kind];
       if (changes.kind !== undefined && !kinds.includes(String(changes.kind)))
         return {
@@ -730,8 +890,27 @@ Do not use it to restate a record in new words, and do not touch a record whose 
         }
         resolved.appliesToIds = ids;
       }
+      if (changes.controls !== undefined) {
+        const controls = documented(ctx, "control");
+        const ids: string[] = [];
+        for (const n of changes.controls as string[]) {
+          const r = one(
+            controls,
+            n,
+            "control",
+            "Use the exact name of a documented control.",
+          );
+          if ("error" in r) return r.error;
+          ids.push(r.found.id);
+        }
+        resolved.controlIds = ids;
+      }
       const prior = Array.isArray(record.evidence) ? record.evidence : [];
-      const filepath = save(ctx, input.kind, String(record.name), {
+      const key =
+        input.kind === "threat"
+          ? `${record.component}__${record.title}`
+          : String(record.name);
+      const filepath = save(ctx, input.kind, key, {
         ...record,
         ...changes,
         ...resolved,
@@ -751,15 +930,18 @@ Do not use it to restate a record in new words, and do not touch a record whose 
 
 export function retireRecord(ctx: ToolContext) {
   return tool({
-    description: `Retire a boundary, component, flow, or control that no longer exists — the only way to remove something from the map. Use it in an update run when evidence shows the thing is gone: a host that no longer resolves or answers, a resource removed from IaC or absent from the cloud inventory, a route deleted from code.
+    description: `Retire a boundary, component, flow, control, or threat that no longer exists or no longer applies — the only way to remove something from the map. Use it in an update run when evidence shows the thing is gone: a host that no longer resolves or answers, a resource removed from IaC or absent from the cloud inventory, a route deleted from code.
 
 Never retire something only because you did not look at it again, or to replace it with a renamed record (rename with renameFrom instead). Retiring a component does not retire its flows or controls; review_topology lists the ones left pointing at it.`,
     inputSchema: z.object({
-      kind: z.enum(["boundary", "component", "flow", "control"]),
+      kind: z.enum(["boundary", "component", "flow", "control", "threat"]),
       name: z
         .string()
         .optional()
-        .describe("Exact current name, for a boundary, component, or control."),
+        .describe(
+          "Exact current name, for a boundary, component, or control; for a threat, its title.",
+        ),
+      component: z.string().optional().describe("For a threat: its component."),
       from: z.string().optional().describe("For a flow: its source component."),
       to: z.string().optional().describe("For a flow: its target component."),
       label: z.string().optional().describe("For a flow: its label."),
@@ -789,6 +971,20 @@ Never retire something only because you did not look at it again, or to replace 
             topology.flows.map((f) => `${f.from} → ${f.to} (${f.label})`),
             "Give the flow's exact from, to, and label.",
           );
+      } else if (input.kind === "threat") {
+        record = topology.threats.find(
+          (t) =>
+            String(t.component).toLowerCase() ===
+              input.component?.toLowerCase() &&
+            String(t.title).toLowerCase() === input.name?.toLowerCase(),
+        );
+        if (!record)
+          return unknownReference(
+            "threat",
+            `${input.component}: ${input.name}`,
+            topology.threats.map((t) => `${t.component}: ${t.title}`),
+            "Give the threat's exact component and title.",
+          );
       } else {
         const known = documented(ctx, input.kind);
         record = input.name ? known.get(input.name.toLowerCase()) : undefined;
@@ -803,7 +999,9 @@ Never retire something only because you did not look at it again, or to replace 
       const name =
         input.kind === "flow"
           ? `${record.from}__${record.to}__${record.label}`
-          : String(record.name);
+          : input.kind === "threat"
+            ? `${record.component}__${record.title}`
+            : String(record.name);
       const filepath = save(ctx, input.kind, name, {
         ...record,
         status: "retired",
@@ -977,6 +1175,32 @@ Everything that pointed at the duplicate moves to the kept record: flows (a flow
         });
         moved++;
       }
+      if (input.kind === "component") {
+        const keptTitles = new Set(
+          topology.threats
+            .filter((t) => t.componentId === keep.id)
+            .map((t) => String(t.title).toLowerCase()),
+        );
+        for (const t of topology.threats) {
+          if (!isDup(t.componentId, t.component)) continue;
+          const key = `${t.component}__${t.title}`;
+          if (keptTitles.has(String(t.title).toLowerCase())) {
+            save(ctx, "threat", key, {
+              ...t,
+              status: "retired",
+              retiredReason: `Merged into "${keep.name}"`,
+            });
+            continue;
+          }
+          keptTitles.add(String(t.title).toLowerCase());
+          save(ctx, "threat", key, {
+            ...t,
+            component: keep.name,
+            componentId: keep.id,
+          });
+          moved++;
+        }
+      }
       save(ctx, input.kind, String(dup.name), {
         ...dup,
         status: "retired",
@@ -1004,6 +1228,7 @@ export interface TopologyIssue {
     | "client-off-device"
     | "references-retired"
     | "possible-duplicate"
+    | "no-threats"
     | "unconnected";
   subject: string;
   fix: string;
@@ -1102,6 +1327,26 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
         fix: `It applies to the retired '${gone}': update appliesTo, or retire the control if nothing it protects remains.`,
       });
   }
+  for (const t of topology.threats) {
+    const gone = pointsAtRetired([t.component]);
+    if (gone)
+      issues.push({
+        check: "references-retired",
+        subject: `${t.component}: ${t.title}`,
+        fix: `It targets the retired '${gone}': retire the threat, or move it with update_record if it applies elsewhere.`,
+      });
+  }
+  const threatened = new Set(topology.threats.map((t) => lower(t.component)));
+  for (const c of components)
+    if (
+      !UNTHREATENED_KINDS.has(String(c.kind)) &&
+      !threatened.has(lower(c.name))
+    )
+      issues.push({
+        check: "no-threats",
+        subject: String(c.name),
+        fix: "Threat-model it with document_threat: work through each STRIDE category against its trust assumptions, its controls' gaps, and its flows.",
+      });
   for (const kind of ["boundary", "component"] as const)
     for (const p of duplicatePairs(
       kind,

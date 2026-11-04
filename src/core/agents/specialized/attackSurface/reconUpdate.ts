@@ -195,7 +195,8 @@ Rules for an update:
 - To change a record, call update_record with only the fields that changed and evidence for the change. Every other field stays exactly as written.
 - Never rewrite a record whose facts did not change — not to rephrase it, reformat its endpoints, or add detail you could have recorded before. An update's change set should list only what the system changed.
 - To rename a record, document it under the new name with renameFrom so it keeps its identity.
-- Document what is new with document_*, as usual, with its flows and controls.
+- Document what is new with document_*, as usual, with its flows, controls, and threats.
+- Threats follow the change: threat-model a new component, update or retire the threats a change opens, closes, or alters, and leave the rest alone.
 - Remove something only with retire_record and evidence that it is gone. Never retire a record because you did not look at it again.
 - Leave everything else untouched; records you do not revisit stay as they are.
 - Finish as usual: review_topology, then create_attack_surface_report.`;

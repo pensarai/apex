@@ -22,7 +22,12 @@ import { join } from "node:path";
  * name (or a flow's endpoints and label), so older sessions read the same.
  */
 
-export type RecordKind = "boundary" | "component" | "flow" | "control";
+export type RecordKind =
+  | "boundary"
+  | "component"
+  | "flow"
+  | "control"
+  | "threat";
 export type TopologyRecord = Record<string, unknown> & { id: string };
 
 const ID_PREFIX: Record<RecordKind, string> = {
@@ -30,6 +35,7 @@ const ID_PREFIX: Record<RecordKind, string> = {
   component: "cmp",
   flow: "flw",
   control: "ctl",
+  threat: "thr",
 };
 const KINDS = Object.keys(ID_PREFIX) as RecordKind[];
 const COLLECTION = {
@@ -37,6 +43,7 @@ const COLLECTION = {
   component: "components",
   flow: "flows",
   control: "controls",
+  threat: "threats",
 } as const;
 
 export function topologyDir(sessionRoot: string): string {
@@ -55,9 +62,11 @@ export function flowKey(fromId: string, toId: string, label: unknown): string {
 }
 
 function legacyId(kind: RecordKind, r: Record<string, unknown>): string {
-  return kind === "flow"
-    ? `${kind}:${lower(r.from)}|${lower(r.to)}|${lower(r.label)}`
-    : `${kind}:${lower(r.name)}`;
+  if (kind === "flow")
+    return `${kind}:${lower(r.from)}|${lower(r.to)}|${lower(r.label)}`;
+  if (kind === "threat")
+    return `${kind}:${lower(r.component)}|${lower(r.title)}`;
+  return `${kind}:${lower(r.name)}`;
 }
 
 function sanitize(name: string): string {
@@ -99,6 +108,8 @@ export interface LoadedTopology {
   components: TopologyRecord[];
   flows: TopologyRecord[];
   controls: TopologyRecord[];
+  /** Threats to components: one scenario each, attached by componentId. */
+  threats: TopologyRecord[];
   /** Retired records, latest version, by kind. */
   retired: { kind: RecordKind; record: TopologyRecord }[];
 }
@@ -115,7 +126,7 @@ export function loadTopology(sessionRoot: string): LoadedTopology {
 
   const nameById = new Map<string, string>();
   for (const s of all)
-    if (s.kind === "boundary" || s.kind === "component")
+    if (s.kind === "boundary" || s.kind === "component" || s.kind === "control")
       nameById.set(s.record.id, String(s.record.name));
   const name = (id: unknown, fallback: unknown) =>
     (typeof id === "string" && nameById.get(id)) || fallback;
@@ -136,6 +147,10 @@ export function loadTopology(sessionRoot: string): LoadedTopology {
     }
     if (s.kind === "control" && r.appliesToIds)
       r.appliesTo = names(r.appliesToIds, r.appliesTo);
+    if (s.kind === "threat") {
+      r.component = name(r.componentId, r.component);
+      if (r.controlIds) r.controls = names(r.controlIds, r.controls);
+    }
     return r;
   };
 
@@ -148,6 +163,7 @@ export function loadTopology(sessionRoot: string): LoadedTopology {
     components: active("component"),
     flows: active("flow"),
     controls: active("control"),
+    threats: active("threat"),
     retired: all
       .filter((s) => s.record.status === "retired")
       .map((s) => ({ kind: s.kind, record: resolve(s) })),
@@ -229,6 +245,8 @@ const REFERENCE_IDS: Record<string, string> = {
   from: "fromId",
   to: "toId",
   appliesTo: "appliesToIds",
+  component: "componentId",
+  controls: "controlIds",
 };
 const ID_FIELDS = new Set(Object.values(REFERENCE_IDS));
 
@@ -277,7 +295,11 @@ export interface TopologyChangeSet {
 }
 
 const label = (kind: RecordKind, r: TopologyRecord) =>
-  kind === "flow" ? `${r.from} → ${r.to} (${r.label})` : String(r.name);
+  kind === "flow"
+    ? `${r.from} → ${r.to} (${r.label})`
+    : kind === "threat"
+      ? `${r.component}: ${r.title}`
+      : String(r.name);
 
 /**
  * What an update run changed relative to its baseline, computed from the
