@@ -57,6 +57,7 @@ import {
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
+import { withCutOffToolCallGuard } from "./cutOffToolCalls";
 import {
   getInferenceRecorder,
   type InferenceRecorder,
@@ -1570,7 +1571,9 @@ function streamResponseWithinOperation(
     nativeRecovery?.model ??
     (() => {
       const baseProviderModel = withNativeRolloutEvidenceModel(
-        withModelCallDiagnostics(getProviderModel(model, authConfig)),
+        withModelCallDiagnostics(
+          withCutOffToolCallGuard(getProviderModel(model, authConfig)),
+        ),
         {
           requestedModelId: model,
           operationKind: "agent.stream",
@@ -2311,7 +2314,9 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
   } = opts;
 
   const baseProviderModel = withNativeRolloutEvidenceModel(
-    withModelCallDiagnostics(getProviderModel(model, authConfig)),
+    withModelCallDiagnostics(
+      withCutOffToolCallGuard(getProviderModel(model, authConfig)),
+    ),
     {
       requestedModelId: model,
       operationKind: nativeRolloutOperation(opts.operation),
