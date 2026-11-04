@@ -13,6 +13,7 @@ export interface BrowserHeaderPolicy {
   readonly allowedHosts: string[];
   readonly allowedPorts: number[];
   readonly headers: HeaderRecord;
+  /** Abort off-scope page requests and redirects. Session policies leave this off. */
   readonly enforceScope: boolean;
 }
 
@@ -28,10 +29,6 @@ export function resolveBrowserHeaderPolicy(
   const resolutionUrl = target ?? scopedSession.targets?.[0];
   const allowedHosts = getSessionAllowedHosts(scopedSession);
   const allowedPorts = getSessionAllowedPorts(scopedSession);
-  const enforceScope =
-    allowedHosts.length > 0 ||
-    allowedPorts.length > 0 ||
-    scopedSession.config?.scopeConstraints?.strictScope === true;
   const headers =
     resolutionUrl && allowedHosts.length > 0
       ? stripBrowserManagedHeaders(
@@ -42,7 +39,9 @@ export function resolveBrowserHeaderPolicy(
     allowedHosts,
     allowedPorts,
     headers: headers ?? {},
-    enforceScope,
+    // Redirects and auth hops must load in the page; explicit navigations are
+    // still held to the run's hosts by the tool policy.
+    enforceScope: false,
   };
 }
 

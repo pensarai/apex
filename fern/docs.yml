@@ -53,6 +53,10 @@ tabs:
     display-name: Console
     icon: fa-regular fa-book
     href: https://docs.pensar.dev/console
+  console-api:
+    display-name: Console API
+    icon: fa-regular fa-code
+    href: https://docs.pensar.dev/console/api
 
 navigation:
   - tab: blog
@@ -125,7 +129,53 @@ navigation:
             path: ./docs/cli/uninstall.mdx
           - page: pensar version
             path: ./docs/cli/version.mdx
+      - section: SDK
+        slug: sdk
+        contents:
+          - page: Overview
+            path: ./docs/sdk/overview.mdx
+          - page: Quickstart
+            path: ./docs/sdk/quickstart.mdx
+          - page: Configuration
+            path: ./docs/sdk/configuration.mdx
+          - page: Errors and Cancellation
+            path: ./docs/sdk/errors-and-cancellation.mdx
+          - section: Reference
+            slug: reference
+            contents:
+              - page: runPentestAgent
+                slug: run-pentest-agent
+                path: ./docs/sdk/reference/run-pentest-agent.mdx
+              - page: runTargetedPentestAgent
+                slug: run-targeted-pentest-agent
+                path: ./docs/sdk/reference/run-targeted-pentest-agent.mdx
+              - page: runAttackSurfaceAgent
+                slug: run-attack-surface-agent
+                path: ./docs/sdk/reference/run-attack-surface-agent.mdx
+              - page: runAuthenticationAgent
+                slug: run-authentication-agent
+                path: ./docs/sdk/reference/run-authentication-agent.mdx
+              - page: runOffensiveSecurityAgent
+                slug: run-offensive-security-agent
+                path: ./docs/sdk/reference/run-offensive-security-agent.mdx
+              - page: runThreatModelWorkflow
+                slug: run-threat-model-workflow
+                path: ./docs/sdk/reference/run-threat-model-workflow.mdx
+              - page: runPatchingAgent
+                slug: run-patching-agent
+                path: ./docs/sdk/reference/run-patching-agent.mdx
+              - page: sessions
+                slug: sessions
+                path: ./docs/sdk/reference/sessions.mdx
+              - page: AgentEventBus
+                slug: agent-event-bus
+                path: ./docs/sdk/reference/agent-event-bus.mdx
+              - page: Console API
+                slug: console-api
+                path: ./docs/sdk/reference/console-api.mdx
   - tab: console
+    layout:
+  - tab: console-api
     layout:
 
 navbar-links:

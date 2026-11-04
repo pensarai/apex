@@ -209,6 +209,26 @@ describe("getMaxOutputTokens", () => {
     expect(getModelInfo("gpt-5.5-2026-04-23").contextLength).toBe(1_050_000);
   });
 
+  it("registers the GPT-6.1 family with its 1.05M context window", () => {
+    for (const id of ["gpt-6.1-sol", "gpt-6.1-terra"]) {
+      expect(getModelInfo(id)).toMatchObject({
+        provider: "openai",
+        contextLength: 1_050_000,
+      });
+      expect(getModelInfo(id).provider).not.toBe("local");
+    }
+    expect(getModelInfo("concentrate:gpt-6.1-terra")).toMatchObject({
+      name: "GPT 6.1 Terra",
+      provider: "concentrate",
+      contextLength: 1_050_000,
+    });
+    expect(getModelInfo("concentrate:kimi-k3-1-pro")).toMatchObject({
+      name: "Kimi K3.1 Pro",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+    });
+  });
+
   it("registers the GPT-5.6 family with its 1.05M context window", () => {
     for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
       expect(getModelInfo(id)).toMatchObject({
@@ -361,6 +381,13 @@ describe("open-weight gateway models", () => {
       maxOutputTokens: 32_768,
     },
     {
+      id: "concentrate:kimi-k3-1-pro",
+      name: "Kimi K3.1 Pro",
+      provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 32_768,
+    },
+    {
       id: "qwen/qwen3.8-max-0902",
       name: "Qwen3.8 Max (0902)",
       provider: "openrouter",
@@ -442,6 +469,7 @@ describe("open-weight gateway models", () => {
   it.each([
     "concentrate:mimo-v2.6-pro",
     "concentrate:kimi-k3",
+    "concentrate:kimi-k3-1-pro",
     "concentrate:qwen3.8-max",
     "concentrate:qwen3.8-27b",
     "concentrate:deepseek-v4-1-flash",

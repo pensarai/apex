@@ -28,6 +28,11 @@ const models = [
     efforts: ["low", "medium", "high", "xhigh", "max"],
   },
   {
+    ids: ["gpt-6.1-terra"],
+    context: 1050000,
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
     ids: ["gpt-6-luna"],
     context: 1050000,
     efforts: ["none", "low", "medium", "high", "xhigh", "max"],

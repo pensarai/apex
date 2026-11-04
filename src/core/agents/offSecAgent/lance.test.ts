@@ -51,6 +51,29 @@ afterEach(() => {
 
 describe("Lance shared harness integration", () => {
   it.each([
+    { kind: "steps" as const, limit: 1000 },
+    { kind: "tokens" as const, limit: 1000000 },
+    { kind: "time" as const, limit: 3600000 },
+  ])("removes the fixed SDK and runtime ceilings for $kind budgets", async (budget) => {
+    const agent = new OffensiveSecurityAgent({ ...input(), lance: { budget } });
+    await agent.streamReady();
+    const conditions = observed.streams[0].stopWhen!;
+    for (const condition of Array.isArray(conditions)
+      ? conditions
+      : [conditions]) {
+      expect(
+        await condition({
+          steps: Array.from({ length: 200 }, () => ({})),
+        } as never),
+      ).toBe(false);
+    }
+    for (let i = 0; i < 201; i++) agent.lanceRuntime!.stepFinished();
+    expect(agent.lanceRuntime!.terminal).toBe(false);
+    expect(observed.streams[0].system).toContain(JSON.stringify(budget));
+    await agent.consume();
+  });
+
+  it.each([
     "unsolved",
     "deadline_exhausted",
     "cancelled",
@@ -174,13 +197,15 @@ describe("Lance shared harness integration", () => {
         response: { id, messages: [] },
         usage: { inputTokens: 2, outputTokens: 1 },
       }) as unknown as Parameters<typeof onStep>[0];
-    for (let index = 0; index < LANCE_CONFIG.maxSteps - 1; index++) {
+    for (let index = 0; index < LANCE_CONFIG.defaultBudget.limit - 1; index++) {
       await onStep(event(`agent-${index}`));
     }
     await onStep(event("summarization"));
     await onStep(event("tool-repair"));
     expect(agent.lanceRuntime!.terminal).toBe(false);
-    expect(onStepFinish).toHaveBeenCalledTimes(LANCE_CONFIG.maxSteps + 1);
+    expect(onStepFinish).toHaveBeenCalledTimes(
+      LANCE_CONFIG.defaultBudget.limit + 1,
+    );
     await onStep(event("agent-final"));
     expect(agent.lanceRuntime!.metrics("fixture").outcome).toBe("step_limit");
     await agent.consume();

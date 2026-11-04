@@ -13,7 +13,9 @@ All commands operate on the **selected workspace**, which is chosen when you con
 
 ```bash
 pensar issues [filters]                        # List issues in the workspace (alias: pensar issues list)
-pensar issues get <issueId>                    # Get issue details
+pensar issues get <issueId> [--json]           # Get issue details
+pensar issues evidence <issueId> [--json]      # Get finding evidence
+pensar issues retests <issueId> [--json]       # List retest history
 pensar issues update <issueId> [options]       # Update an issue
 pensar issues retest <issueId>                 # Queue an issue retest
 pensar issues link-pr <issueId> --url <url>    # Link a pull request to an issue
@@ -68,12 +70,30 @@ back to any command taking an `<issueId>`.
 ### Get Issue Details
 
 ```bash
-pensar issues get <issueId>
+pensar issues get <issueId> [--json]
 ```
 
-Returns detailed information about a specific issue, including vulnerability description, reproduction steps, and severity. The response carries the same `issueLabel` and `url` as the list shape, plus description, line range, CWE, branch, and proof-of-concept.
+Shows the finding's [issue object](/console/features/webhooks#the-issue-object): label, title, CWE list, CVSS assessment, application, endpoint, repository, close record, and proof-of-concept. Output is readable text by default; `--json` prints JSON.
 
 A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400; a well-formed reference that matches no issue returns a 404.
+
+### Read Finding Evidence
+
+```bash
+pensar issues evidence <issueId> [--json]
+```
+
+Returns the [evidence resource](/console/features/rest-api#get-issue-evidence): the PoC script and execution output, evidence steps, attack path, and source snippet at the finding's recorded commit. Missing evidence is `null`; `codeSnippetReason` explains an unavailable snippet. The server redacts credentials from evidence and marks capped text with `truncated`.
+
+Output is readable text by default; `--json` prints JSON. API keys need `issues:read`.
+
+### Read Retest History
+
+```bash
+pensar issues retests <issueId> [--json]
+```
+
+Lists recorded retests with their status, verdict, confidence, evidence, recommendation, errors, and timestamps. Output is readable text by default; `--json` prints a JSON array. An empty history is `[]` in JSON mode and `None` in readable mode. This command only reads history; singular `retest` queues a new run.
 
 ### Update an Issue
 
@@ -81,17 +101,17 @@ A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400
 pensar issues update <issueId> [options]
 ```
 
-| Option                      | Description                                                             |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `--status <status>`         | New status                                                              |
-| `--disposition <value>`     | Why the issue is closed: `resolved`, `duplicate`, `wont-fix`, `out-of-scope`, `risk-accepted` |
-| `--duplicate-of <issueId>`  | The issue this one duplicates, by UUID or label. Required with `--disposition duplicate`, rejected with any other |
-| `--closed-reason <reason>`  | Reason for closing                                                      |
-| `--closed-comments <text>`  | Additional comments when closing                                        |
-| `--false-positive`          | Flag the issue as a false positive                                      |
-| `--fp-reason <reason>`      | Reason for the false positive flag                                      |
+| Option                     | Description                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--status <status>`        | New status                                                                                                        |
+| `--disposition <value>`    | Why the issue is closed: `resolved`, `duplicate`, `wont-fix`, `out-of-scope`, `risk-accepted`                     |
+| `--duplicate-of <issueId>` | The issue this one duplicates, by UUID or label. Required with `--disposition duplicate`, rejected with any other |
+| `--closed-reason <reason>` | Reason for closing                                                                                                |
+| `--closed-comments <text>` | Additional comments when closing                                                                                  |
+| `--false-positive`         | Flag the issue as a false positive                                                                                |
+| `--fp-reason <reason>`     | Reason for the false positive flag                                                                                |
 
-`--disposition` records *why* an issue is closed as a structured value, so it can
+`--disposition` records _why_ an issue is closed as a structured value, so it can
 be filtered and counted. Without it a close reads as a plain resolution whatever
 the reason was. The five values above are the full accepted set.
 

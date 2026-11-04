@@ -1,0 +1,123 @@
+---
+title: "runAuthenticationAgent"
+description: "Log in to a target with session credentials and export the resulting cookies and headers"
+---
+
+```ts title="Signature"
+function runAuthenticationAgent(
+  input: AuthenticationAgentInput,
+): Promise<AuthenticationResult>;
+```
+
+Drives a target's login flow with an AI agent and returns reusable authentication material. The agent uses a real browser and can work through form logins, OAuth, SPAs, CSRF tokens, and email or SMS one-time codes (if inboxes are configured). Use the exported cookies and headers to authenticate other tools or pentest runs.
+
+The model never sees your raw secrets. Credentials go into the session's `authCredentials`, and tools resolve them at execution time.
+
+```ts title="Import"
+import { runAuthenticationAgent } from "@pensar/apex/core/api";
+```
+
+## Parameters
+
+<ParamField path="target" type="string" required={true}>
+  The application to authenticate against.
+</ParamField>
+
+<ParamField path="session" type="SessionInfo" required={true}>
+  A session created with `config.authCredentials`. Its credential manager supplies secrets to the agent. See [sessions](/apex/sdk/reference/sessions#authentication-credentials).
+</ParamField>
+
+<ParamField path="model" type="AIModel" required={true}>
+  Model ID. See [Models](/apex/sdk/configuration#models).
+</ParamField>
+
+<ParamField path="authConfig" type="AIAuthConfig">
+  AI provider credentials.
+</ParamField>
+
+<ParamField path="authHints" type="{ authScheme?: string; csrfRequired?: boolean; browserRequired?: boolean; protectedEndpoints?: string[] }">
+  Optional hints about the login flow. `protectedEndpoints` gives the agent URLs to verify the session against.
+</ParamField>
+
+<ParamField path="context" type="string">
+  Free-form context about the application.
+</ParamField>
+
+<ParamField path="eventBus" type="AgentEventBus">
+  Streaming events. See [AgentEventBus](/apex/sdk/reference/agent-event-bus).
+</ParamField>
+
+<ParamField path="abortSignal" type="AbortSignal">
+  Cancels the run.
+</ParamField>
+
+## Returns
+
+`Promise<AuthenticationResult>`
+
+<ParamField path="success" type="boolean">
+  Whether the agent authenticated.
+</ParamField>
+
+<ParamField path="summary" type="string">
+  What the agent did and why it succeeded or failed.
+</ParamField>
+
+<ParamField path="strategy" type="string">
+  How the agent authenticated: `browser`, `form_post`, `json_post`, `basic_auth`, or `bearer`. `unknown` if it couldn't tell.
+</ParamField>
+
+<ParamField path="exportedCookies" type="string">
+  Session cookies, formatted for a `Cookie` header.
+</ParamField>
+
+<ParamField path="exportedHeaders" type="Record<string, string>">
+  Headers to send on authenticated requests, such as `Authorization`.
+</ParamField>
+
+<ParamField path="authBarrier" type="AuthBarrier | undefined">
+  Set when the agent hit a barrier, such as a CAPTCHA or MFA it couldn't complete.
+</ParamField>
+
+<ParamField path="authDataPath" type="string">
+  Path to the auth data the agent saved in the session's `auth/` directory.
+</ParamField>
+
+## Example
+
+```ts
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { runAuthenticationAgent } from "@pensar/apex/core/api";
+import { config } from "@pensar/apex/core/config";
+import { sessions } from "@pensar/apex/core/session";
+
+const target = "https://staging.example.com";
+const session = await sessions.create({
+  name: "Auth check",
+  targets: [target],
+  config: {
+    authCredentials: {
+      username: "admin@example.com",
+      password: process.env.STAGING_ADMIN_PASSWORD,
+      loginUrl: `${target}/login`,
+    },
+  },
+});
+
+const auth = await runAuthenticationAgent({
+  target,
+  session,
+  model: "claude-opus-4-6",
+  authConfig: buildAuthConfig(await config.get()),
+  authHints: { protectedEndpoints: [`${target}/api/me`] },
+});
+
+if (auth.success) {
+  const res = await fetch(`${target}/api/me`, {
+    headers: { ...auth.exportedHeaders, Cookie: auth.exportedCookies },
+  });
+  console.log(res.status);
+} else {
+  console.error(auth.summary, auth.authBarrier);
+}
+```

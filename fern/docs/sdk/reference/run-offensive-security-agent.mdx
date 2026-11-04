@@ -1,0 +1,176 @@
+---
+title: "runOffensiveSecurityAgent"
+description: "Run Apex's general-purpose operator agent with your own prompt, tools, and stop conditions"
+---
+
+```ts title="Signature"
+function runOffensiveSecurityAgent(
+  input: (OffensiveSecurityAgentInput | CreateAgentInput) & {
+    onSessionReady?: (session: SessionInfo) => void;
+  },
+): Promise<RunAgentResult>;
+```
+
+Runs the general-purpose offensive security agent behind `/operator` mode and `pensar -p`. Unlike the specialized runners, it has no fixed workflow. You give it a prompt and a set of tools, and it works until the model finishes or a stop condition is met.
+
+If you omit `session`, a session is created for you. Pass `onSessionReady` to receive it as soon as it exists. After each step, the conversation is saved to `messages.json` in the session directory.
+
+```ts title="Import"
+import { runOffensiveSecurityAgent } from "@pensar/apex/core/api";
+```
+
+## Parameters
+
+<ParamField path="prompt" type="string" required={true}>
+  The user prompt that starts the run.
+</ParamField>
+
+<ParamField path="model" type="AIModel" required={true}>
+  Model ID. See [Models](/apex/sdk/configuration#models).
+</ParamField>
+
+<ParamField path="activeTools" type="string[]" required={true}>
+  Tools the agent may call. Use `ALL_TOOL_NAMES` and `SKILL_TOOL_NAMES` from `@pensar/apex/agents/offSecAgent` for the full operator toolset, or pass a subset to restrict it.
+</ParamField>
+
+<ParamField path="session" type="SessionInfo">
+  Existing session to run in. When omitted, one is created from `sessionConfig`.
+</ParamField>
+
+<ParamField path="sessionConfig" type="SessionConfig">
+  Config for the auto-created session. Ignored when `session` is set. See [sessions](/apex/sdk/reference/sessions#session-config).
+</ParamField>
+
+<ParamField path="authConfig" type="AIAuthConfig">
+  AI provider credentials.
+</ParamField>
+
+<ParamField path="target" type="string">
+  Target URL or host, passed to browser tools as context.
+</ParamField>
+
+<ParamField path="system" type="string">
+  Replaces Apex's base system prompt. The session workspace section is always appended.
+</ParamField>
+
+<ParamField path="messages" type="ModelMessage[]">
+  Earlier conversation history, for multi-turn runs. The history must end with a user message.
+</ParamField>
+
+<ParamField path="stopWhen" type="StopCondition | StopCondition[]">
+  AI SDK stop condition, for example `stepCountIs(200)`.
+</ParamField>
+
+<ParamField path="mode" type="'default' | 'plan' | 'fast-strike' | 'lance'" default="default">
+  `plan` restricts the agent to read-only tools. `fast-strike` runs one focused operator loop.
+</ParamField>
+
+<ParamField path="extraTools" type="ToolSet">
+  Your own AI SDK tools, merged into the toolset. Add their names to `activeTools` to enable them.
+</ParamField>
+
+<ParamField path="eventBus" type="AgentEventBus">
+  Streaming events. See [AgentEventBus](/apex/sdk/reference/agent-event-bus).
+</ParamField>
+
+<ParamField path="abortSignal" type="AbortSignal">
+  Cancels the run. Not accepted by `createOffensiveSecurityAgentClient().run()`, which owns its own signal.
+</ParamField>
+
+<ParamField path="reasoning" type="ReasoningSetting">
+  Extended-thinking setting. See [Reasoning](/apex/sdk/configuration#reasoning).
+</ParamField>
+
+<ParamField path="onSessionReady" type="(session: SessionInfo) => void">
+  Called with the session (provided or auto-created) before the agent starts.
+</ParamField>
+
+## Returns
+
+`Promise<RunAgentResult>`
+
+<ParamField path="streamResult" type="StreamTextResult">
+  The completed AI SDK stream result. Read `await streamResult.text`, `await streamResult.steps`, or `await streamResult.totalUsage`.
+</ParamField>
+
+<ParamField path="session" type="SessionInfo">
+  The session the run used. This is the only way to get it when it was auto-created.
+</ParamField>
+
+<ParamField path="lance" type="LanceMetrics">
+  Run metrics. Only set when `mode` is `lance`.
+</ParamField>
+
+## Example
+
+```ts title="Multi-turn operator session"
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { stepCountIs, type ModelMessage } from "ai";
+import { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } from "@pensar/apex/agents/offSecAgent";
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { runOffensiveSecurityAgent } from "@pensar/apex/core/api";
+import { config } from "@pensar/apex/core/config";
+import { getResumeMessages, normalizeMessages, sessions } from "@pensar/apex/core/session";
+
+const session = await sessions.create({
+  name: "Operator",
+  targets: ["https://staging.example.com"],
+  config: { mode: "operator" },
+});
+const base = {
+  model: "claude-opus-4-6",
+  target: "https://staging.example.com",
+  activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+  stopWhen: stepCountIs(500),
+  authConfig: buildAuthConfig(await config.get()),
+  session,
+};
+
+const first = await runOffensiveSecurityAgent({
+  ...base,
+  prompt: "Enumerate the API and look for broken access control.",
+});
+console.log(await first.streamResult.text);
+
+const saved: ModelMessage[] = JSON.parse(
+  readFileSync(join(session.rootPath, "messages.json"), "utf8"),
+);
+const followUp = "Write a POC for the most severe issue you found.";
+await runOffensiveSecurityAgent({
+  ...base,
+  prompt: followUp,
+  messages: normalizeMessages([
+    ...getResumeMessages(saved),
+    { role: "user", content: followUp },
+  ]),
+});
+```
+
+<Note>
+  `stepCountIs` and `ModelMessage` come from the [AI SDK](https://ai-sdk.dev) (`ai` package), which `@pensar/apex` depends on. If your package manager doesn't hoist dependencies (for example, pnpm), add `ai` to your own dependencies.
+</Note>
+
+## createOffensiveSecurityAgentClient
+
+```ts title="Signature"
+function createOffensiveSecurityAgentClient(): {
+  run: (input: OffensiveSecurityAgentClientInput) => Promise<RunAgentResult>;
+  abort: () => void;
+};
+```
+
+Creates a single-use client that owns the abort signal for one run. `abort()` works immediately, even while `run()` is still creating the session. Calling `run()` a second time throws, so create a new client for each run.
+
+```ts
+import { createOffensiveSecurityAgentClient } from "@pensar/apex/core/api";
+
+const client = createOffensiveSecurityAgentClient();
+const timer = setTimeout(() => client.abort(), 10 * 60 * 1000);
+try {
+  const { session } = await client.run({ ...base, prompt: "Map the attack surface." });
+  console.log("Artifacts in", session.rootPath);
+} finally {
+  clearTimeout(timer);
+}
+```

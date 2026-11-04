@@ -102,6 +102,7 @@ export type AIAuthConfig = {
   googleAPIKey?: string;
   openRouterAPIKey?: string;
   concentrateAPIKey?: string;
+  inferenceAPIKey?: string;
   inceptionAPIKey?: string;
   hoonifyAPIKey?: string;
   hoonifyModels?: HoonifyModel[];
@@ -138,6 +139,7 @@ export function buildAuthConfig(cfg: {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
+  inferenceAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   hoonifyAPIKey?: string | null;
   hoonifyModels?: HoonifyModel[];
@@ -157,6 +159,7 @@ export function buildAuthConfig(cfg: {
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     concentrateAPIKey: cfg.concentrateAPIKey ?? undefined,
+    inferenceAPIKey: cfg.inferenceAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     hoonifyAPIKey: cfg.hoonifyAPIKey ?? undefined,
     hoonifyModels: cfg.hoonifyModels,
@@ -254,6 +257,33 @@ export function getProviderModel(
       providerModel = createConcentrateModel(model, {
         apiKey: concentrateAPIKey,
       });
+      break;
+    }
+
+    case "inference": {
+      const apiKey = (
+        authConfig?.inferenceAPIKey ?? process.env.INFERENCE_API_KEY
+      )?.trim();
+      if (!apiKey)
+        throw new Error(
+          "Set INFERENCE_API_KEY or connect Inference.net in /providers.",
+        );
+      const maxOutputTokens = getMaxOutputTokens(model);
+      providerModel = createOpenAICompatible({
+        name: "inference",
+        apiKey,
+        baseURL: "https://api.inference.net/v1",
+        supportsStructuredOutputs: true,
+        transformRequestBody: (body) => ({
+          ...body,
+          max_tokens: Math.min(
+            typeof body.max_tokens === "number"
+              ? body.max_tokens
+              : maxOutputTokens,
+            maxOutputTokens,
+          ),
+        }),
+      }).chatModel(model.slice("inference:".length));
       break;
     }
 
@@ -448,18 +478,14 @@ async function summarizeConversation(
     }),
     buildOpenRouterProviderOptions(opts.model),
   );
-  // Streamed rather than generated in one shot: a non-streaming request returns no
-  // response headers until the whole summary exists, which is indistinguishable from
-  // a hung connection to anything watching time-to-headers. Streaming also lets a
-  // genuine stall be caught between chunks. Resolved here so callers keep the
-  // one-shot result shape.
+  // Streamed: a one-shot request withholds headers for the whole generation, which
+  // reads as a hung connection. Resolved here so callers keep the one-shot shape.
   const generateSummary = async (
     history: ModelMessage[],
     toolChoiceOverride?: "none",
   ) => {
-    // streamText reports a provider failure as a stream part and then throws a
-    // generic AI_NoOutputGeneratedError. That would mask the context-length error
-    // the retry ladder below matches on, and a caller abort. Keep the real one.
+    // streamText masks the real failure as AI_NoOutputGeneratedError; the ladder
+    // below matches on the context-length error.
     let streamError: unknown;
     const result = streamText({
       model,
@@ -494,8 +520,7 @@ async function summarizeConversation(
       }),
     });
     try {
-      // Awaited together so a stream failure throws here rather than surfacing as
-      // an unobserved rejection on one of the other settled promises.
+      // Awaited together so no rejection goes unobserved.
       const [text, usage, finishReason, providerMetadata, toolCalls] =
         await Promise.all([
           result.text,
@@ -504,6 +529,9 @@ async function summarizeConversation(
           result.providerMetadata,
           result.toolCalls,
         ]);
+      // An error part still resolves these, with partial output; rethrowing keeps
+      // the real provider failure instead of the generic rejection below.
+      if (streamError !== undefined) throw streamError;
       return { text, usage, finishReason, providerMetadata, toolCalls };
     } catch (error) {
       throw streamError ?? error;
@@ -600,9 +628,16 @@ async function summarizeConversation(
     await reportSummaryUsage(summaryResult);
   }
   const { text: summary } = summaryResult;
-  if (!summary.trim() || (summaryResult.toolCalls?.length ?? 0) > 0) {
+  // Anything but "stop" delivered partial text: "length" hit the output cap,
+  // "content-filter" was cut off, and a disconnect before the finish chunk
+  // surfaces as "other" (both ai's step default and the Pensar provider's).
+  if (
+    !summary.trim() ||
+    (summaryResult.toolCalls?.length ?? 0) > 0 ||
+    summaryResult.finishReason !== "stop"
+  ) {
     throw new CompactionRejectedError(
-      "Compaction returned no complete summary",
+      `Compaction returned no complete summary (finishReason: ${summaryResult.finishReason})`,
     );
   }
 

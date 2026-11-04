@@ -119,6 +119,7 @@ function spec(runId: string, maxModelAttempts = 3) {
 }
 
 beforeEach(async () => {
+  vi.stubEnv("APEX_CODE_MODE", "off");
   root = mkdtempSync(join(tmpdir(), "recorded-loop-"));
   state.sessionRoot = join(root, "session");
   state.session = undefined;
@@ -138,6 +139,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   target.closeAllConnections();
   await new Promise<void>((resolve, reject) =>
     target.close((error) => (error ? reject(error) : resolve())),
@@ -147,6 +149,71 @@ afterEach(async () => {
 });
 
 describe("recorded runs through the real agent and SDK loop", () => {
+  it("journals direct calls alongside exec source and nested tool results", async () => {
+    vi.stubEnv("APEX_CODE_MODE", "schema-code");
+    const code = `text(await tools.call("http_request", {url: ${JSON.stringify(`${targetUrl}/nested`)}, method: "GET"}))`;
+    const doStream = vi
+      .fn()
+      .mockImplementationOnce(async () =>
+        stream([
+          {
+            type: "tool-call",
+            toolCallId: "tc_exec",
+            toolName: "exec",
+            input: JSON.stringify({ code }),
+          },
+          {
+            type: "finish",
+            finishReason: { unified: "tool-calls", raw: "tool_use" },
+            usage,
+          },
+        ]),
+      )
+      .mockImplementationOnce(async () => httpStep("direct"))
+      .mockImplementation(async () => finalStep());
+    state.model = new MockLanguageModelV3({ doStream });
+    const input = spec("run_code_mode");
+    const outcome = await runRecordedAgent({ spec: input, store });
+    expect(outcome.record.status).toBe("completed");
+    expect(hits).toEqual(["/nested", "/direct"]);
+    const operations = await store.listToolOperations(input.runId);
+    expect(operations).toMatchObject([
+      {
+        toolCallId: "tc_exec",
+        toolName: "exec",
+        input: { code },
+        state: "settled",
+      },
+      {
+        toolCallId: "tc_exec:nested:1",
+        toolName: "http_request",
+        state: "settled",
+        output: { type: "json", value: { success: true, body: "ok" } },
+      },
+      {
+        toolCallId: "tc_direct",
+        toolName: "http_request",
+        state: "settled",
+        output: { type: "json", value: { success: true, body: "ok" } },
+      },
+    ]);
+    const execOutput = operations[0].output;
+    expect(execOutput?.type).toBe("text");
+    if (execOutput?.type !== "text") throw new Error("Missing exec output");
+    expect(JSON.parse(execOutput.value)).toMatchObject({
+      status: "completed",
+      evidence: [
+        {
+          toolCallId: "tc_exec:nested:1",
+          toolName: "http_request",
+          status: "succeeded",
+        },
+      ],
+    });
+    expect(
+      state.model.doStreamCalls[0].tools?.map((item) => item.name),
+    ).toEqual(["exec", "wait", "http_request"]);
+  });
   it.each([
     false,
     true,

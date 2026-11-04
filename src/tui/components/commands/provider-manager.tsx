@@ -66,6 +66,9 @@ export default function ProviderManager({
       case "concentrate":
         configUpdate.concentrateAPIKey = apiKey;
         break;
+      case "inference":
+        configUpdate.inferenceAPIKey = apiKey;
+        break;
       case "hoonify":
         configUpdate.hoonifyAPIKey = apiKey;
         break;

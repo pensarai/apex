@@ -40,9 +40,10 @@ export function parseResponsesSSE(
       let outputTokens = 0;
       let cacheReadTokens = 0;
       let noCacheInputTokens = 0;
-      let finishReasonUnified: LanguageModelV3FinishReason["unified"] = "stop";
+      let finishReasonUnified: LanguageModelV3FinishReason["unified"] = "other";
       let finishReasonRaw: string | undefined;
       let sawToolCall = false;
+      let sawRefusal = false;
 
       // Lazily-opened text/reasoning blocks, keyed by Responses item/content id.
       const openText = new Set<string>();
@@ -93,6 +94,12 @@ export function parseResponsesSSE(
                   toolName: name,
                 });
               }
+              break;
+            }
+
+            case "response.refusal.delta":
+            case "response.refusal.done": {
+              sawRefusal = true;
               break;
             }
 
@@ -216,6 +223,18 @@ export function parseResponsesSSE(
               if (incomplete?.reason === "max_output_tokens") {
                 finishReasonUnified = "length";
                 finishReasonRaw = "max_output_tokens";
+              } else if (incomplete?.reason === "content_filter") {
+                finishReasonUnified = "content-filter";
+                finishReasonRaw = "content_filter";
+              } else if (type === "response.incomplete" || incomplete?.reason) {
+                finishReasonUnified = "other";
+                finishReasonRaw =
+                  typeof incomplete?.reason === "string"
+                    ? incomplete.reason
+                    : "incomplete";
+              } else if (sawRefusal) {
+                finishReasonUnified = "content-filter";
+                finishReasonRaw = "refusal";
               } else if (sawToolCall) {
                 finishReasonUnified = "tool-calls";
                 finishReasonRaw = "tool_calls";

@@ -494,6 +494,25 @@ describe("buildRuntimeContextSection", () => {
     expect(section).not.toContain("Operator Mode");
   });
 
+  it("recommends exec for coordination only when code mode is enabled", () => {
+    const direct = buildRuntimeContextSection(facts, { platform: "posix" });
+    expect(direct).toContain(
+      "build the equivalent with the available interpreters",
+    );
+    expect(direct).not.toContain("use exec");
+    const codeMode = buildRuntimeContextSection(facts, {
+      platform: "posix",
+      codeModeEnabled: true,
+    });
+    expect(codeMode).toContain(
+      "Prefer exec for predictable tool orchestration",
+    );
+    expect(codeMode).toContain(
+      "Use execute_command with available interpreters",
+    );
+    expect(codeMode).toContain("installed libraries");
+  });
+
   it("unknown facts never read as absent", () => {
     const section = buildRuntimeContextSection(UNKNOWN_FACTS, {
       platform: "posix",
