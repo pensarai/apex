@@ -69,6 +69,11 @@ describe("Lance's optional Apex judge", () => {
       modelJudgedSuccess: true,
       harnessVerifiedSuccess: false,
       verificationSource: "apex_judge",
+      outcomeAnalysis: {
+        kind: "judge_accepted",
+        independentSuccess: true,
+        evaluatorAcceptedEvidence: true,
+      },
     });
     await expect(runtime.spawner.spawn({} as never)).rejects.toThrow(
       "prohibits child",

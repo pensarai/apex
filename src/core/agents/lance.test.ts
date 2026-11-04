@@ -139,6 +139,35 @@ describe("Lance terminal policy", () => {
       harnessVerifiedSuccess: false,
       verification: { verified: false },
       firstVerified: null,
+      outcomeAnalysis: {
+        kind: "claim_rejected",
+        modelClaimedSuccess: true,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+      },
+    });
+  });
+
+  it("classifies verifier transport failures separately from rejected claims", async () => {
+    const runtime = new LanceRuntime({
+      verifyObjective: async () => {
+        throw new Error("verifier unavailable");
+      },
+    });
+    await execute(runtime.tools({}), "finish_task", {
+      summary: "Task complete",
+      evidence: "candidate",
+    }).catch(() => {});
+    runtime.finish();
+    expect(runtime.metrics("m")).toMatchObject({
+      outcome: "completed",
+      verificationError: "verifier unavailable",
+      outcomeAnalysis: {
+        kind: "verification_error",
+        modelClaimedSuccess: true,
+        independentSuccess: false,
+        reason: "verifier unavailable",
+      },
     });
   });
 
@@ -158,6 +187,13 @@ describe("Lance terminal policy", () => {
       harnessVerifiedSuccess: false,
       firstVerified: null,
       verification: { verified: true, objectiveComplete: false },
+      outcomeAnalysis: {
+        kind: "milestone_only",
+        modelClaimedSuccess: true,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: true,
+        objectiveComplete: false,
+      },
     });
     runtime.finish();
   });
@@ -286,6 +322,13 @@ describe("Lance terminal policy", () => {
       toolCalls: 1,
       firstCandidate: { toolCalls: 1 },
       firstVerified: { toolCalls: 1 },
+      outcomeAnalysis: {
+        kind: "objective_verified",
+        modelClaimedSuccess: true,
+        independentSuccess: true,
+        evaluatorAcceptedEvidence: true,
+        objectiveComplete: true,
+      },
     });
   });
 
@@ -301,6 +344,11 @@ describe("Lance terminal policy", () => {
       modelSubmittedSuccess: true,
       harnessVerifiedSuccess: false,
       firstVerified: null,
+      outcomeAnalysis: {
+        kind: "claim_rejected",
+        modelClaimedSuccess: true,
+        independentSuccess: false,
+      },
     });
     const noVerifier = new LanceRuntime();
     await execute(noVerifier.tools({}), "submit_objective", {
@@ -311,7 +359,14 @@ describe("Lance terminal policy", () => {
       summary: "Finished",
     }).catch(() => {});
     noVerifier.finish();
-    expect(noVerifier.metrics("m").outcome).toBe("completed");
+    expect(noVerifier.metrics("m")).toMatchObject({
+      outcome: "completed",
+      outcomeAnalysis: {
+        kind: "claim_unverified",
+        modelClaimedSuccess: true,
+        independentSuccess: false,
+      },
+    });
   });
 
   it("ends a hung verifier before the hard deadline and ignores late confirmation", async () => {
@@ -338,6 +393,10 @@ describe("Lance terminal policy", () => {
       outcome: "deadline_exhausted",
       harnessVerifiedSuccess: false,
       elapsedMs: 900,
+      outcomeAnalysis: {
+        kind: "resource_exhausted",
+        independentSuccess: false,
+      },
     });
     expect(runtime.signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
