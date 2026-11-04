@@ -62,10 +62,12 @@ export const BOUNDARY_KINDS = [
   "vpc",
   "subnet",
   "third-party",
+  "user-device",
 ] as const;
 
 export const COMPONENT_KINDS = [
   "application",
+  "client",
   "entrypoint",
   "compute",
   "database",
@@ -185,7 +187,7 @@ const toolCallDescription = z
 
 export function documentBoundary(ctx: ToolContext) {
   return tool({
-    description: `Document a boundary that contains components: an edge network (CDN, Cloudflare), a cloud account, a region, a VPC, a subnet tier, or the set of third-party services the system relies on.
+    description: `Document a boundary that contains components: an edge network (CDN, Cloudflare), a cloud account, a region, a VPC, a subnet tier, the set of third-party services the system relies on, or the user devices its distributed clients run on (user-device: whoever holds the device controls the client).
 
 Record the rules that govern it with document_control. Nest boundaries with \`parent\` — e.g. subnet → VPC → region → cloud account. Document a parent before its children.
 
@@ -240,6 +242,8 @@ export function documentComponent(ctx: ToolContext) {
   return tool({
     description: `Document a component of the system on an attack path: an application users or attackers reach, or anything applications are reached through or that attacker-influenced data flows into — entry points (CDN distributions, load balancers, API gateways, function URLs, MQTT endpoints), databases, caches, queues, object stores, brokers, shared workers, identity providers, LLM providers, SaaS. Supporting infrastructure nothing attacker-influenced flows into (secret stores, key management, deploy roles, alerting, log forwarding, housekeeping jobs) is not a component.
 
+A client is software the organization distributes that runs on users' devices — a mobile or desktop app, a browser extension, a CLI. Document it in a user-device boundary: anyone can obtain and inspect it, so what it ships (hosts, keys, flags) is public, and its own controls (transport security, exported components, deep-link handling, embedded secrets) belong on it. Its endpoints are the URL schemes and app links it handles; connect it with flows to the components it calls. A web frontend served by an application is part of that application, not a client.
+
 Document components even when they are not reachable from the origin — a database in a private subnet is part of the surface. Its evidence will then be 'source' (IaC, config, code) or 'inferred', not 'observed'.
 
 Every component gets a threat model. Record what is at stake and what the component trusts; its reachability and controls come from the rest of the graph. Applications also record their business logic.
@@ -271,7 +275,9 @@ Call again with the same name to update a component — never create a second re
       endpoints: z
         .array(z.string())
         .optional()
-        .describe("Hostnames or URLs it answers on."),
+        .describe(
+          "Hostnames or URLs it answers on; for a client, the URL schemes and app links it handles (e.g. 'example://pay').",
+        ),
       usedBy: z
         .array(z.string())
         .optional()
@@ -458,6 +464,7 @@ export interface TopologyIssue {
     | "vpc-without-subnets"
     | "names-two-parts"
     | "public-without-host"
+    | "client-off-device"
     | "unconnected";
   subject: string;
   fix: string;
@@ -493,6 +500,11 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
   const vpcs = new Set(
     boundaries.filter((b) => b.kind === "vpc").map((b) => lower(b.name)),
   );
+  const devices = new Set(
+    boundaries
+      .filter((b) => b.kind === "user-device")
+      .map((b) => lower(b.name)),
+  );
   const flowEnds = new Set(flows.flatMap((f) => [lower(f.from), lower(f.to)]));
   const issues: TopologyIssue[] = [];
 
@@ -527,6 +539,15 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
         subject: name,
         fix: "Record its concrete host — a pentest cannot be scoped to it otherwise.",
       });
+    if ((c.kind === "client") !== devices.has(lower(c.boundary)))
+      issues.push({
+        check: "client-off-device",
+        subject: name,
+        fix:
+          c.kind === "client"
+            ? "Place the client in a user-device boundary — it runs on users' devices, not in the organization's infrastructure."
+            : "Only clients live in a user-device boundary; place it where it runs, or document it as a client.",
+      });
     if (!flowEnds.has(lower(name)))
       issues.push({
         check: "unconnected",
@@ -539,7 +560,7 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
 
 export function reviewTopology(ctx: ToolContext) {
   return tool({
-    description: `Check the documented topology for structural problems before finalizing: VPCs without subnet tiers, components placed at the VPC level instead of a subnet, components whose name joins two parts, public entry points and applications without a concrete host, and components with no flows.
+    description: `Check the documented topology for structural problems before finalizing: VPCs without subnet tiers, components placed at the VPC level instead of a subnet, components whose name joins two parts, public entry points and applications without a concrete host, clients outside a user-device boundary (or other components inside one), and components with no flows.
 
 Resolve every issue by documenting again with the same name (or splitting a component in two), then call review_topology again until it reports none or the remaining ones are explained in the component's description.`,
     inputSchema: z.object({ toolCallDescription }),

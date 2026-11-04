@@ -262,4 +262,66 @@ describe("review_topology", () => {
     });
     expect(reviewTopologyRecords(ctx)).toEqual([]);
   });
+
+  const androidApp = {
+    name: "Android app",
+    kind: "client",
+    exposure: "public",
+    endpoints: ["example://pay"],
+    atStake: "The session token and every host and key it ships.",
+    trustAssumptions: ["Deep links come from the user."],
+    evidence: fromSource,
+  };
+
+  async function deviceSeed(ctx: ToolContext) {
+    await vpcSeed(ctx);
+    await run(documentBoundary(ctx), {
+      name: "User devices",
+      kind: "user-device",
+      evidence: fromSource,
+    });
+  }
+
+  it("flags a client outside a user-device boundary", async () => {
+    const ctx = makeCtx();
+    await deviceSeed(ctx);
+    await run(documentComponent(ctx), { ...androidApp, boundary: "Private" });
+    expect(
+      reviewTopologyRecords(ctx).find((i) => i.check === "client-off-device"),
+    ).toMatchObject({ subject: "Android app" });
+  });
+
+  it("flags a non-client inside a user-device boundary", async () => {
+    const ctx = makeCtx();
+    await deviceSeed(ctx);
+    await run(documentComponent(ctx), {
+      ...web,
+      boundary: "User devices",
+      endpoints: ["https://console.example"],
+    });
+    expect(
+      reviewTopologyRecords(ctx).find((i) => i.check === "client-off-device"),
+    ).toMatchObject({ subject: "Console Web" });
+  });
+
+  it("passes a client on a user device that calls an application", async () => {
+    const ctx = makeCtx();
+    await deviceSeed(ctx);
+    await run(documentComponent(ctx), {
+      ...web,
+      boundary: "Private",
+      endpoints: ["https://console.example"],
+    });
+    await run(documentComponent(ctx), {
+      ...androidApp,
+      boundary: "User devices",
+    });
+    await run(documentFlow(ctx), {
+      from: "Android app",
+      to: "Console Web",
+      label: "HTTPS API",
+      evidence: fromSource,
+    });
+    expect(reviewTopologyRecords(ctx)).toEqual([]);
+  });
 });
