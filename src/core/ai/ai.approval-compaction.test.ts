@@ -229,6 +229,7 @@ describe("pending approvals across context compaction", () => {
     expect(resumed[0]).toMatchObject({ role: "user" });
     expect(String(resumed[0].content)).toContain("sum");
     expect(String(resumed[0].content)).not.toContain(PADDING);
+    expect(resumed[1]).toEqual({ role: "user", content: "continue" });
     expect(hasApprovalResponse(resumed)).toBe(true);
     expect(JSON.stringify(t.mainPrompts[0])).not.toContain(PADDING);
   });
@@ -244,6 +245,7 @@ describe("pending approvals across context compaction", () => {
     expectApprovedOnce(t);
     const resumed = t.prepared[0];
     expect(String(resumed[0].content)).toContain("Continue the previous task");
+    expect(resumed[1]).toEqual({ role: "user", content: "continue" });
     expect(hasApprovalResponse(resumed)).toBe(true);
   });
 
@@ -256,10 +258,11 @@ describe("pending approvals across context compaction", () => {
       t.responses({ c2: true, c3: false }),
     ]);
     expectApprovedOnce(t);
-    // The retry resumes from the summary alone: the executed call is history.
+    // The retry resumes from the summary and the request: the executed call is history.
     const retry = t.prepared.at(-1) as ModelMessage[];
-    expect(retry).toHaveLength(1);
+    expect(retry).toHaveLength(2);
     expect(String(retry[0].content)).toContain("sum");
+    expect(retry[1]).toEqual(user);
   });
 
   it("rejects an oversized pending suffix before executing anything", async () => {
@@ -293,6 +296,44 @@ describe("pending approvals across context compaction", () => {
     );
     expectApprovedOnce(t);
     expect(hasApprovalResponse(t.prepared[0])).toBe(true);
+  });
+});
+
+describe("latest user message across compaction", () => {
+  const request: ModelMessage = {
+    role: "user",
+    content: "Delete endpoint a.\n  Keep b exactly as it is.",
+  };
+
+  it.each([
+    ["a summary", "ok"],
+    ["a minimal restart", "context-error"],
+  ] as const)("replays it verbatim after %s", async (_label, summary) => {
+    const t = setup();
+    await t.drive(
+      t.model({ main: ["ok"], summary }),
+      [user, { role: "assistant", content: PADDING }, request],
+      { contextLength: SMALL },
+    );
+    const resumed = t.prepared[0];
+    expect(resumed).toHaveLength(2);
+    expect(resumed[1]).toEqual(request);
+    expect(JSON.stringify(resumed)).not.toContain(PADDING);
+  });
+
+  it("is not repeated when the resume prompt already carries it", async () => {
+    const t = setup();
+    await t.drive(
+      t.model({ main: ["ok"] }),
+      [
+        { role: "assistant", content: PADDING },
+        { role: "user", content: "continue" },
+      ],
+      { contextLength: SMALL, extra: { prompt: "continue" } },
+    );
+    const resumed = t.prepared[0];
+    expect(resumed).toHaveLength(1);
+    expect(String(resumed[0].content).startsWith("continue\n\n")).toBe(true);
   });
 });
 

@@ -1172,7 +1172,11 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
     const stream = streamResponse({
       model: MODEL,
       prompt: "Continue the task.",
-      messages: [{ role: "user", content: "Old synthetic evidence." }],
+      messages: [
+        { role: "user", content: "Old synthetic evidence." },
+        { role: "assistant", content: "Noted." },
+        { role: "user", content: "Latest request." },
+      ],
       onSummarized,
       silent: true,
       authConfig: {
@@ -1214,6 +1218,7 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
       pinnedToolCallIds: [],
     });
     expect(resumedPrompt).not.toContain("Old synthetic evidence.");
+    expect(resumedPrompt).toContain("Latest request.");
   } finally {
     state.model = null;
   }

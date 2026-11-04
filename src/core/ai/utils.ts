@@ -52,7 +52,7 @@ import {
   estimateToolsOverheadTokens,
   extractTaskSummaryFromMessages,
   fitMessagesToContext,
-  splitPendingApprovals,
+  splitResumeTail,
 } from "./contextManagement";
 import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getMaxOutputTokens, getModelInfo } from "./models";
@@ -475,7 +475,10 @@ async function summarizeConversation(
     compaction,
   }: { model: LanguageModel; compaction?: CompactionTelemetry },
 ): Promise<StreamTextResult<ToolSet, never>> {
-  const { head, pinned, pinnedToolCallIds } = splitPendingApprovals(messages);
+  const { head, pinned, pinnedToolCallIds } = splitResumeTail(messages, [
+    opts.prompt,
+    opts._initialPrompt,
+  ]);
   const cacheBreakpoint = cacheBreakpointFor(opts.model);
   // Keep tool schemas in the cached prefix without allowing compaction to execute them.
   const summaryTools = opts.tools

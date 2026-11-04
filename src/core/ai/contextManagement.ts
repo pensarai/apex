@@ -649,3 +649,23 @@ export function splitPendingApprovals(messages: ModelMessage[]): {
     pinnedToolCallIds: [...pendingCallIds],
   };
 }
+
+/**
+ * What a compacted resume replays verbatim: the pending approvals, preceded by
+ * the latest user message unless the resume prompt already carries it.
+ */
+export function splitResumeTail(
+  messages: ModelMessage[],
+  resumePrompts: readonly (string | undefined)[],
+): ReturnType<typeof splitPendingApprovals> {
+  const split = splitPendingApprovals(messages);
+  if (split.pinned.some((message) => message.role === "user")) return split;
+  const latestUser = split.head.findLast((message) => message.role === "user");
+  if (
+    !latestUser ||
+    (typeof latestUser.content === "string" &&
+      resumePrompts.includes(latestUser.content))
+  )
+    return split;
+  return { ...split, pinned: [latestUser, ...split.pinned] };
+}

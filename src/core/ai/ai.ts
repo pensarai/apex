@@ -56,7 +56,7 @@ import {
   estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
-  splitPendingApprovals,
+  splitResumeTail,
   truncateWithMarker,
 } from "./contextManagement";
 import { projectFailedToolCalls } from "./failedToolCallHistory";
@@ -1136,8 +1136,10 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
-                  const { pinned, pinnedToolCallIds } =
-                    splitPendingApprovals(messagesForSummary);
+                  const { pinned, pinnedToolCallIds } = splitResumeTail(
+                    messagesForSummary,
+                    [opts.prompt, opts._initialPrompt],
+                  );
                   const resumeMessages = resumeMessagesWithPinned(
                     minimalPrompt,
                     pinned,
@@ -2687,18 +2689,18 @@ export class ContextLengthExhaustedError extends Error {
   }
 }
 
-/** Approved calls cannot be summarized away, so an oversized replay is terminal. */
+/** Approved calls and the latest user message cannot be summarized away, so an oversized replay is terminal. */
 export class PendingApprovalExceedsContextError extends ContextLengthExhaustedError {
   constructor(restartDepth: number) {
     super(
-      "Pending tool approvals do not fit in the model's context window",
+      "Messages replayed verbatim after compaction do not fit in the model's context window",
       restartDepth,
     );
     this.name = "PendingApprovalExceedsContextError";
   }
 }
 
-/** Resume history for a compacted turn: undefined when nothing is pending. */
+/** Resume history for a compacted turn: undefined when nothing is pinned. */
 export function resumeMessagesWithPinned(
   prompt: string,
   pinned: ModelMessage[],
