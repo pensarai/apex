@@ -33,11 +33,28 @@ describe("resolveBrowserHeaderPolicy", () => {
 
     expect(policy.allowedHosts).toEqual(["app.example.com"]);
     expect(policy.allowedPorts).toEqual([]);
-    expect(policy.enforceScope).toBe(true);
     expect(policy.headers).toEqual({
       "X-Session-Secret": "session-secret",
       "X-Credential-Secret": "credential-secret",
     });
+  });
+
+  it("leaves page traffic unenforced so redirects and auth hops load", () => {
+    expect(
+      resolveBrowserHeaderPolicy(
+        {
+          targets: ["https://app.example.com"],
+          config: {
+            scopeConstraints: {
+              strictScope: true,
+              allowedHosts: ["app.example.com"],
+              allowedPorts: [443],
+            },
+          },
+        },
+        "https://app.example.com/login",
+      ).enforceScope,
+    ).toBe(false);
   });
 
   it("injects nothing when no target scope exists", () => {
