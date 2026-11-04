@@ -10,6 +10,7 @@ import {
   documentComponent,
   documentControl,
   documentFlow,
+  reviewTopologyRecords,
 } from "./documentTopology";
 import type { ToolContext } from "./types";
 
@@ -194,5 +195,71 @@ describe("document_control", () => {
       appliesTo: ["Console Web", "Admin API"],
     });
     expect(res.error).toBe("unknown_layer");
+  });
+});
+
+describe("review_topology", () => {
+  async function vpcSeed(ctx: ToolContext) {
+    for (const b of [
+      { name: "Account", kind: "cloud-account" },
+      { name: "VPC", kind: "vpc", parent: "Account" },
+      { name: "Private", kind: "subnet", parent: "VPC" },
+    ])
+      await run(documentBoundary(ctx), { ...b, evidence: fromSource });
+  }
+
+  it("flags VPC-level placement, two-part names, missing hosts, and unconnected components", async () => {
+    const ctx = makeCtx();
+    await vpcSeed(ctx);
+    await run(documentComponent(ctx), {
+      ...web,
+      name: "Gateway (Worker + Lambda)",
+      boundary: "VPC",
+    });
+    const checks = reviewTopologyRecords(ctx)
+      .map((i) => i.check)
+      .sort();
+    expect(checks).toEqual([
+      "names-two-parts",
+      "placed-at-vpc-level",
+      "public-without-host",
+      "unconnected",
+    ]);
+  });
+
+  it("flags a VPC with no subnet tiers", async () => {
+    const ctx = makeCtx();
+    await run(documentBoundary(ctx), {
+      name: "Account",
+      kind: "cloud-account",
+      evidence: fromSource,
+    });
+    await run(documentBoundary(ctx), {
+      name: "VPC",
+      kind: "vpc",
+      parent: "Account",
+      evidence: fromSource,
+    });
+    expect(reviewTopologyRecords(ctx).map((i) => i.check)).toEqual([
+      "vpc-without-subnets",
+    ]);
+  });
+
+  it("passes a placed, hosted, connected topology", async () => {
+    const ctx = makeCtx();
+    await vpcSeed(ctx);
+    await run(documentComponent(ctx), {
+      ...web,
+      boundary: "Private",
+      endpoints: ["https://console.example"],
+    });
+    await run(documentComponent(ctx), { ...aurora, boundary: "Private" });
+    await run(documentFlow(ctx), {
+      from: "Console Web",
+      to: "Aurora PostgreSQL",
+      label: "SQL",
+      evidence: fromSource,
+    });
+    expect(reviewTopologyRecords(ctx)).toEqual([]);
   });
 });

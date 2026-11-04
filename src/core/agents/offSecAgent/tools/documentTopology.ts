@@ -450,3 +450,109 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
     },
   });
 }
+
+/** One problem `review_topology` found, with the fix it expects. */
+export interface TopologyIssue {
+  check:
+    | "placed-at-vpc-level"
+    | "vpc-without-subnets"
+    | "names-two-parts"
+    | "public-without-host"
+    | "unconnected";
+  subject: string;
+  fix: string;
+}
+
+function latestRecords(
+  ctx: ToolContext,
+  prefix: string,
+): Record<string, unknown>[] {
+  const dir = topologyDir(ctx);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
+    .sort()
+    .map(
+      (f) =>
+        JSON.parse(readFileSync(join(dir, f), "utf8")) as Record<
+          string,
+          unknown
+        >,
+    );
+}
+
+/** Deterministic checks over the documented topology. */
+export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
+  const boundaries = [...documented(ctx, "boundary").values()];
+  const components = [...documented(ctx, "component").values()];
+  const flows = latestRecords(ctx, "flow_");
+  const lower = (v: unknown) => String(v ?? "").toLowerCase();
+  const subnetParents = new Set(
+    boundaries.filter((b) => b.kind === "subnet").map((b) => lower(b.parent)),
+  );
+  const vpcs = new Set(
+    boundaries.filter((b) => b.kind === "vpc").map((b) => lower(b.name)),
+  );
+  const flowEnds = new Set(flows.flatMap((f) => [lower(f.from), lower(f.to)]));
+  const issues: TopologyIssue[] = [];
+
+  for (const vpc of vpcs)
+    if (!subnetParents.has(vpc))
+      issues.push({
+        check: "vpc-without-subnets",
+        subject: vpc,
+        fix: "Document its subnet tiers (at least public and private) and move its components into them.",
+      });
+  for (const c of components) {
+    const name = String(c.name);
+    if (vpcs.has(lower(c.boundary)) && subnetParents.has(lower(c.boundary)))
+      issues.push({
+        check: "placed-at-vpc-level",
+        subject: name,
+        fix: "Place it in the subnet tier where it runs (public for internet-facing load balancers, NAT, elastic IPs; private for functions, containers, datastores).",
+      });
+    if (/\s\+\s/.test(name))
+      issues.push({
+        check: "names-two-parts",
+        subject: name,
+        fix: "If the parts run in different boundaries (e.g. a Worker and the Lambda behind it), document each as its own component and connect them with a flow.",
+      });
+    if (
+      c.exposure === "public" &&
+      (c.kind === "entrypoint" || c.kind === "application") &&
+      !(Array.isArray(c.endpoints) && c.endpoints.length)
+    )
+      issues.push({
+        check: "public-without-host",
+        subject: name,
+        fix: "Record its concrete host — a pentest cannot be scoped to it otherwise.",
+      });
+    if (!flowEnds.has(lower(name)))
+      issues.push({
+        check: "unconnected",
+        subject: name,
+        fix: "Document the flows that reach it and that it makes, or remove it if it is not on an attack path.",
+      });
+  }
+  return issues;
+}
+
+export function reviewTopology(ctx: ToolContext) {
+  return tool({
+    description: `Check the documented topology for structural problems before finalizing: VPCs without subnet tiers, components placed at the VPC level instead of a subnet, components whose name joins two parts, public entry points and applications without a concrete host, and components with no flows.
+
+Resolve every issue by documenting again with the same name (or splitting a component in two), then call review_topology again until it reports none or the remaining ones are explained in the component's description.`,
+    inputSchema: z.object({ toolCallDescription }),
+    execute: async () => {
+      const issues = reviewTopologyRecords(ctx);
+      return {
+        success: true,
+        issueCount: issues.length,
+        issues,
+        message: issues.length
+          ? `${issues.length} topology issue(s) to resolve`
+          : "No topology issues found",
+      };
+    },
+  });
+}

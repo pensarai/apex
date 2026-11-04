@@ -45,7 +45,7 @@ Work the surface in this order:
 
 7. FAN OUT when useful. Use spawn_recon_agent for scoped goals in parallel — the control analysis splits naturally by layer, e.g. "analyze network and IAM controls defined in infra/", "analyze authorization and tenant isolation in the API handlers", "analyze what credentials the sandboxes hold and what they can reach". Workers share your toolset but cannot spawn further workers. Document the boundaries and components yourself first so workers can attach controls to them.
 
-8. FINALIZE. When the topology is mapped, every component carries what is at stake and what it trusts, and every layer's controls are analyzed, call create_attack_surface_report with the applications and the targets you recommend for deep pentesting.
+8. FINALIZE. Call review_topology and resolve every issue it reports — re-document with the same name, or split a component in two — until it reports none or each remaining one is explained in its component's description. When the topology is mapped, every component carries what is at stake and what it trusts, and every layer's controls are analyzed, call create_attack_surface_report with the applications and the targets you recommend for deep pentesting.
 
 Discipline: record facts, not opinions — no attack hypotheses, priorities, or test plans; prefer evidence over assumption; never invent a boundary, component, control, domain, or repository mapping you cannot support; stay within the authorized scope.`;
 

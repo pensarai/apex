@@ -50,6 +50,7 @@ export {
   documentComponent,
   documentControl,
   documentFlow,
+  reviewTopology,
 } from "./documentTopology";
 // Email tools
 export {
@@ -241,6 +242,7 @@ import {
   documentComponent,
   documentControl,
   documentFlow,
+  reviewTopology,
 } from "./documentTopology";
 import {
   emailGetAttachments,
@@ -377,6 +379,7 @@ const TOOL_REGISTRY = [
   { name: "document_boundary", factory: documentBoundary },
   { name: "document_component", factory: documentComponent },
   { name: "document_flow", factory: documentFlow },
+  { name: "review_topology", factory: reviewTopology },
   { name: "document_control", factory: documentControl },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
@@ -655,6 +658,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_boundary",
   "document_component",
   "document_flow",
+  "review_topology",
   "document_control",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
@@ -725,6 +729,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "document_boundary",
   "document_component",
   "document_flow",
+  "review_topology",
   "document_control",
   // Whitebox jobs
   "run_whitebox_scan",
