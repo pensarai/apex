@@ -475,10 +475,10 @@ async function summarizeConversation(
     compaction,
   }: { model: LanguageModel; compaction?: CompactionTelemetry },
 ): Promise<StreamTextResult<ToolSet, never>> {
-  const { head, pinned, pinnedToolCallIds } = splitResumeTail(messages, [
-    opts.prompt,
-    opts._initialPrompt,
-  ]);
+  const { head, latestUser, pinned, pinnedToolCallIds } = splitResumeTail(
+    messages,
+    [opts.prompt, opts._initialPrompt],
+  );
   const cacheBreakpoint = cacheBreakpointFor(opts.model);
   // Keep tool schemas in the cached prefix without allowing compaction to execute them.
   const summaryTools = opts.tools
@@ -703,7 +703,7 @@ async function summarizeConversation(
         : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
   const resumeMessages = resumeMessagesWithPinned(
     enhancedPrompt,
-    pinned,
+    { latestUser, pinned },
     opts,
     (opts._restartDepth ?? 0) + 1,
   );

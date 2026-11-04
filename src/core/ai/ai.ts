@@ -1136,13 +1136,14 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
-                  const { pinned, pinnedToolCallIds } = splitResumeTail(
-                    messagesForSummary,
-                    [opts.prompt, opts._initialPrompt],
-                  );
+                  const { latestUser, pinned, pinnedToolCallIds } =
+                    splitResumeTail(messagesForSummary, [
+                      opts.prompt,
+                      opts._initialPrompt,
+                    ]);
                   const resumeMessages = resumeMessagesWithPinned(
                     minimalPrompt,
-                    pinned,
+                    { latestUser, pinned },
                     opts,
                     postReactiveDepth + 1,
                   );
@@ -1583,8 +1584,9 @@ function streamResponseWithinOperation(
     rateLimit: 0,
     idleResume: 0,
   };
-  const streamSteps = ((opts as InternalStreamResponseOpts)[STREAM_STEPS] ??=
-    []);
+  const streamSteps: StepResult<ToolSet>[] =
+    (opts as InternalStreamResponseOpts)[STREAM_STEPS] ?? [];
+  (opts as InternalStreamResponseOpts)[STREAM_STEPS] = streamSteps;
   const priorSteps = [...streamSteps];
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
@@ -2689,29 +2691,39 @@ export class ContextLengthExhaustedError extends Error {
   }
 }
 
-/** Approved calls and the latest user message cannot be summarized away, so an oversized replay is terminal. */
+/** Approved calls cannot be summarized away, so an oversized replay is terminal. */
 export class PendingApprovalExceedsContextError extends ContextLengthExhaustedError {
   constructor(restartDepth: number) {
     super(
-      "Messages replayed verbatim after compaction do not fit in the model's context window",
+      "Pending tool approvals do not fit in the model's context window",
       restartDepth,
     );
     this.name = "PendingApprovalExceedsContextError";
   }
 }
 
-/** Resume history for a compacted turn: undefined when nothing is pinned. */
+/** The latest user message is never paraphrased, so one the window cannot hold is terminal. */
+export class LatestUserMessageExceedsContextError extends ContextLengthExhaustedError {
+  constructor(restartDepth: number) {
+    super(
+      "The latest user message does not fit in the model's context window",
+      restartDepth,
+    );
+    this.name = "LatestUserMessageExceedsContextError";
+  }
+}
+
+/** Resume history for a compacted turn: undefined when nothing is replayed. */
 export function resumeMessagesWithPinned(
   prompt: string,
-  pinned: ModelMessage[],
+  { latestUser, pinned }: { latestUser?: ModelMessage; pinned: ModelMessage[] },
   opts: StreamResponseOpts,
   restartDepth: number,
 ): ModelMessage[] | undefined {
-  if (pinned.length === 0) return undefined;
-  const messages: ModelMessage[] = [
-    { role: "user", content: prompt },
-    ...pinned,
-  ];
+  const resumePrompt: ModelMessage = { role: "user", content: prompt };
+  const replayed = latestUser ? [latestUser, ...pinned] : pinned;
+  if (replayed.length === 0) return undefined;
+  const messages: ModelMessage[] = [resumePrompt, ...replayed];
   const overhead =
     estimateToolsOverheadTokens(opts.tools) +
     1_000 +
@@ -2727,7 +2739,11 @@ export function resumeMessagesWithPinned(
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
     );
-  if (estimateMessageTokens(messages) + overhead > budget)
+  const fits = (history: ModelMessage[]) =>
+    estimateMessageTokens(history) + overhead <= budget;
+  if (latestUser && !fits([resumePrompt, latestUser]))
+    throw new LatestUserMessageExceedsContextError(restartDepth);
+  if (!fits(messages))
     throw new PendingApprovalExceedsContextError(restartDepth);
   return messages;
 }

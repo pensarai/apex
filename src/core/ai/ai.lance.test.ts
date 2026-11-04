@@ -486,12 +486,9 @@ describe("Lance with the real AI SDK loop", () => {
     state.model = new MockLanguageModelV3({ doStream });
     const running = agent({
       messages: [
-        {
-          role: "user",
-          content:
-            "Capture the objective on example.test. " +
-            "history ".repeat(100_000),
-        },
+        { role: "user", content: "history ".repeat(100_000) },
+        { role: "assistant", content: "Noted." },
+        { role: "user", content: "Capture the objective on example.test." },
       ],
       lance: {
         pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },

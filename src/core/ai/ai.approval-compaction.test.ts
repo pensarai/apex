@@ -19,9 +19,11 @@ vi.mock("./utils", async () => ({
   ...(await vi.importActual<typeof import("./utils")>("./utils")),
   getProviderModel: () => state.model,
 }));
-const { streamResponse, PendingApprovalExceedsContextError } = await import(
-  "./ai"
-);
+const {
+  streamResponse,
+  LatestUserMessageExceedsContextError,
+  PendingApprovalExceedsContextError,
+} = await import("./ai");
 
 const MODEL = "custom:fx:m";
 const customProviders = (contextLength: number) => ({
@@ -319,6 +321,26 @@ describe("latest user message across compaction", () => {
     expect(resumed).toHaveLength(2);
     expect(resumed[1]).toEqual(request);
     expect(JSON.stringify(resumed)).not.toContain(PADDING);
+  });
+
+  it("fails with a typed error instead of paraphrasing one the window cannot hold", async () => {
+    const t = setup();
+    const result = t.drive(
+      t.model({ main: ["ok"] }),
+      [
+        user,
+        { role: "assistant", content: "x" },
+        { ...request, content: PADDING },
+      ],
+      { contextLength: SMALL },
+    );
+    await expect(result).rejects.toBeInstanceOf(
+      LatestUserMessageExceedsContextError,
+    );
+    await expect(result).rejects.not.toBeInstanceOf(
+      PendingApprovalExceedsContextError,
+    );
+    expect(t.mainPrompts).toEqual([]);
   });
 
   it("is not repeated when the resume prompt already carries it", async () => {
