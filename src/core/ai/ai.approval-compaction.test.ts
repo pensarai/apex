@@ -69,11 +69,19 @@ function isSummaryCall(options: LanguageModelV3CallOptions): boolean {
     last?.role === "user" &&
     last.content.some(
       (part) =>
-        part.type === "text" &&
-        part.text.startsWith("Compact this conversation"),
+        part.type === "text" && part.text.includes("Compact this conversation"),
     )
   );
 }
+
+const promptText = (
+  message: LanguageModelV3CallOptions["prompt"][number],
+): string =>
+  typeof message.content === "string"
+    ? message.content
+    : message.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("");
 
 function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
   const executed: string[] = [];
@@ -115,6 +123,7 @@ function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
   );
   const prepared: ModelMessage[][] = [];
   const mainPrompts: LanguageModelV3CallOptions["prompt"][] = [];
+  const summaryRequests: LanguageModelV3CallOptions[] = [];
 
   const model = ({
     main,
@@ -129,6 +138,7 @@ function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
       modelId: "m",
       doStream: async (options) => {
         if (isSummaryCall(options)) {
+          summaryRequests.push(options);
           if (summary === "context-error") throw new Error(CONTEXT_ERROR);
           return { stream: simulateReadableStream({ chunks: text("sum") }) };
         }
@@ -169,6 +179,7 @@ function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
     executed.length = 0;
     prepared.length = 0;
     mainPrompts.length = 0;
+    summaryRequests.length = 0;
     return held;
   };
 
@@ -186,6 +197,7 @@ function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
     events,
     prepared,
     mainPrompts,
+    summaryRequests,
     model,
     drive,
     hold,
@@ -356,6 +368,173 @@ describe("latest user message across compaction", () => {
     const resumed = t.prepared[0];
     expect(resumed).toHaveLength(1);
     expect(String(resumed[0].content).startsWith("continue\n\n")).toBe(true);
+  });
+});
+
+describe("summarizer request", () => {
+  const codeword: ModelMessage[] = [
+    { role: "user", content: "Remember the codeword PELICAN-7319. Reply OK." },
+    { role: "assistant", content: "OK." },
+    { role: "user", content: `Filler block. ${PADDING}` },
+    { role: "assistant", content: "OK." },
+  ];
+  const obey: ModelMessage = { role: "user", content: "Reply with just OK" };
+  const CLOSE = "</transcript>";
+
+  it("sends the history as one transcript under a summarizer system prompt, without tools", async () => {
+    const t = setup();
+    await t.drive(t.model({ main: ["ok"] }), [...codeword, obey], {
+      contextLength: SMALL,
+      extra: { system: "AGENT-SYSTEM-PROMPT" },
+    });
+    expect(t.summaryRequests).toHaveLength(1);
+    const [request] = t.summaryRequests;
+    expect(request.prompt.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+    ]);
+    const system = promptText(request.prompt[0]);
+    expect(system).not.toContain("AGENT-SYSTEM-PROMPT");
+    expect(system).toMatch(/transcript/i);
+    expect(request.tools ?? []).toEqual([]);
+    const data = promptText(request.prompt[1]);
+    expect(data.startsWith("<transcript>")).toBe(true);
+    expect(data.indexOf("PELICAN-7319")).toBeLessThan(data.indexOf(CLOSE));
+  });
+
+  it("keeps a trailing user instruction inside the transcript and ends with the summary instruction", async () => {
+    const t = setup();
+    await t.drive(t.model({ main: ["ok"] }), [...codeword, obey], {
+      contextLength: SMALL,
+    });
+    const [request] = t.summaryRequests;
+    // The final user text is what an instruction-following model answers.
+    const users = request.prompt.filter((message) => message.role === "user");
+    expect(users).toHaveLength(1);
+    expect(request.prompt.at(-1)).toBe(users[0]);
+    const data = promptText(users[0]);
+    const close = data.lastIndexOf(CLOSE);
+    expect(data.indexOf("Reply with just OK")).toBeGreaterThan(-1);
+    expect(data.lastIndexOf("Reply with just OK")).toBeLessThan(close);
+    const instruction = data.slice(close + CLOSE.length).trim();
+    expect(instruction.startsWith("Compact this conversation")).toBe(true);
+    expect(instruction).toMatch(/do not (answer|follow)/i);
+    expect(instruction).toMatch(/never invent tool calls/i);
+
+    const resumed = t.prepared[0];
+    expect(resumed).toHaveLength(2);
+    expect(String(resumed[0].content)).toContain("sum");
+    expect(resumed[1]).toEqual(obey);
+  });
+
+  it("renders each tool call by what actually ran", async () => {
+    const t = setup();
+    const history: ModelMessage[] = [
+      { role: "user", content: "Clean up the shop endpoints." },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Reading first." },
+          { type: "tool-call", toolCallId: "r1", toolName: "read", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "r1",
+            toolName: "read",
+            output: { type: "text", value: "endpoints a, b, c" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "d1", toolName: "del", input: {} },
+          {
+            type: "tool-approval-request",
+            approvalId: "ap-d1",
+            toolCallId: "d1",
+          },
+          { type: "tool-call", toolCallId: "d2", toolName: "del", input: {} },
+          {
+            type: "tool-approval-request",
+            approvalId: "ap-d2",
+            toolCallId: "d2",
+          },
+          { type: "tool-call", toolCallId: "d3", toolName: "del", input: {} },
+          {
+            type: "tool-approval-request",
+            approvalId: "ap-d3",
+            toolCallId: "d3",
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId: "ap-d1",
+            approved: true,
+          },
+          {
+            type: "tool-result",
+            toolCallId: "d1",
+            toolName: "del",
+            output: { type: "json", value: { deleted: "a" } },
+          },
+          {
+            type: "tool-approval-response",
+            approvalId: "ap-d2",
+            approved: false,
+            reason: "keep b",
+          },
+        ],
+      },
+      { role: "assistant", content: PADDING },
+      { role: "user", content: "Status?" },
+    ];
+    await t.drive(t.model({ main: ["ok"] }), history, {
+      contextLength: SMALL,
+    });
+    const { prompt } = t.summaryRequests[0];
+    const data = promptText(prompt[prompt.length - 1]);
+    const transcript = data.slice(0, data.lastIndexOf(CLOSE));
+    const about = (id: string) =>
+      transcript
+        .split("\n")
+        .filter((line) => line.includes(id))
+        .join("\n");
+    expect(about("r1")).toContain("[tool result r1: read]");
+    expect(about("r1")).not.toMatch(/not executed|pending|denied/i);
+    expect(about("d1")).toContain("[tool result d1: del]");
+    expect(about("d1")).not.toMatch(/not executed|pending|denied/i);
+    expect(about("d2")).toMatch(/denied.*keep b/i);
+    expect(about("d2")).toMatch(/not executed/i);
+    expect(about("d3")).toMatch(/pending/i);
+    expect(about("d3")).toMatch(/not executed/i);
+    expect(about("d3")).not.toMatch(/result/i);
+  });
+
+  it("summarizes only the head and still replays pending approvals", async () => {
+    const t = setup();
+    const held = await t.hold(padded);
+    await t.drive(
+      t.model({ main: ["ok"] }),
+      [...padded, ...held, t.responses({ c2: true, c3: false })],
+      { contextLength: SMALL },
+    );
+    expectApprovedOnce(t);
+    const { prompt } = t.summaryRequests[0];
+    const data = promptText(prompt[prompt.length - 1]);
+    expect(data.startsWith("<transcript>")).toBe(true);
+    expect(data).not.toMatch(/\bc[123]\b/);
+    const resumed = t.prepared[0];
+    expect(resumed[1]).toEqual({ role: "user", content: "continue" });
+    expect(hasApprovalResponse(resumed)).toBe(true);
   });
 });
 

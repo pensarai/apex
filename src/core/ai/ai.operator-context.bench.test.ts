@@ -163,7 +163,7 @@ it("measures a synthetic long tool loop through the real stream and context path
     expect(summaryCalls).toBeGreaterThan(0);
     expect(compactionEvents).toBe(summaryCalls);
     expect(summaryPrompts[0]).toContain("probe-0");
-    expect(summaryPrompts[0]).toContain(
+    expect(summaryPrompts[0]).not.toContain(
       "Synthetic benchmark; no external target.",
     );
     expect(Math.max(...providerInputTokens)).toBeLessThan(18_000);
@@ -286,7 +286,7 @@ it.each([
       expect(summaryPrompt.includes("source-31:")).toBe(true);
       expect(
         summaryPrompt.includes("Keep all source evidence available."),
-      ).toBe(true);
+      ).toBe(false);
       expect(resumedPrompt.includes("The first source is source-0.")).toBe(
         true,
       );

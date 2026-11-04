@@ -418,10 +418,10 @@ describe("Lance with the real AI SDK loop", () => {
   it("compacts repeatedly with the same model, restores the latest plan, and meters all work", async () => {
     let summaries = 0;
     let steps = 0;
-    const summaryToolChoices: unknown[] = [];
+    const summaryTools: unknown[] = [];
     const doStream = vi.fn(async (options) => {
       if (isSummaryCall(options)) {
-        summaryToolChoices.push(options.toolChoice);
+        summaryTools.push(options.tools);
         return stream([
           { type: "text-start", id: "s" },
           {
@@ -501,8 +501,7 @@ describe("Lance with the real AI SDK loop", () => {
     );
     expect(summaries).toBe(2);
     expect(agentTurns).toHaveLength(2);
-    for (const toolChoice of summaryToolChoices)
-      expect(toolChoice).toEqual({ type: "none" });
+    expect(summaryTools).toEqual([undefined, undefined]);
     const continued = JSON.stringify(agentTurns[1].prompt);
     expect(continued).toContain("summary-2");
     expect(continued).not.toContain("summary-1");
