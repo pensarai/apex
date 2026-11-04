@@ -522,7 +522,7 @@ describe("executeCommand deadlines", () => {
 
       expect(result.success).toBe(true);
       expect(result.stdout).toContain("x".repeat(60_000));
-      const projected = await toolOutputForModel(ctx, result);
+      const projected = await toolOutputForModel(ctx, "command-output", result);
       expect(projected.type).toBe("text");
       const text = String(projected.value);
       expect(text).toContain("Failed to save captured result");

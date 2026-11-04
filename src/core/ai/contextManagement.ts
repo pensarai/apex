@@ -6,15 +6,30 @@
  * token budget so callers can compact proactively, not only on error.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelMessage, ToolSet } from "ai";
+import { persistToolOutput } from "../agents/offSecAgent/tools/toolOutput";
 import {
   beginCompaction,
   type CompactionContext,
   type CompactionLink,
   type CompactionTelemetry,
 } from "./compactionTelemetry";
+
+function slicePrefix(text: string, max: number): string {
+  let end = Math.min(max, text.length);
+  const before = text.charCodeAt(end - 1);
+  const after = text.charCodeAt(end);
+  if (
+    before >= 0xd800 &&
+    before <= 0xdbff &&
+    after >= 0xdc00 &&
+    after <= 0xdfff
+  ) {
+    end--;
+  }
+  return text.slice(0, end);
+}
 
 /**
  * Truncate `text` so the returned string fits in **at most** `max` chars,
@@ -41,7 +56,7 @@ export function truncateWithMarker(
   if (label) {
     const marker = `…[${label} truncated]`;
     const sliceLen = Math.max(0, max - marker.length);
-    return `${text.slice(0, sliceLen)}${marker}`;
+    return `${slicePrefix(text, sliceLen)}${marker}`;
   }
   // Marker width depends on the dropped-char count — but the count itself
   // depends on the slice length. Reserve the worst-case width (digits of
@@ -49,8 +64,9 @@ export function truncateWithMarker(
   // always ≤ `max` regardless of how the count formats.
   const widestMarker = `…[truncated ${text.length} chars]`;
   const sliceLen = Math.max(0, max - widestMarker.length);
-  const dropped = text.length - sliceLen;
-  return `${text.slice(0, sliceLen)}…[truncated ${dropped} chars]`;
+  const prefix = slicePrefix(text, sliceLen);
+  const dropped = text.length - prefix.length;
+  return `${prefix}…[truncated ${dropped} chars]`;
 }
 
 // Layer 1: Tool Result Truncation
@@ -74,13 +90,12 @@ const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
 
 /**
  * Replace large tool results in message history with truncated previews.
- * Full results are persisted to disk at `{sessionPath}/tool-results/`.
+ * Full results use the owning agent's opaque retained-output references.
  *
  * Returns a new messages array (does not mutate the input).
  *
- * `persistedIds`, when passed, deduplicates writes across cascading calls
- * (e.g. `fitMessagesToContext` invokes this with progressively tighter
- * thresholds — the original full output only needs to land on disk once).
+ * Cascading passes retain the first reference and never overwrite full output.
+ * `persistedIds`, when passed, tracks the tool calls saved during this fit.
  */
 export function applyToolResultBudget(
   messages: ModelMessage[],
@@ -92,9 +107,8 @@ export function applyToolResultBudget(
   },
 ): ModelMessage[] {
   const maxChars = opts.maxResultChars ?? DEFAULT_MAX_RESULT_CHARS;
-  const resultsDir = join(opts.sessionPath, "tool-results");
+  const logsPath = join(opts.sessionPath, "logs");
   const persistedIds = opts.persistedIds;
-  let dirCreated = false;
   let anyModified = false;
 
   const result = messages.map((msg, messageIndex) => {
@@ -131,9 +145,6 @@ export function applyToolResultBudget(
       if (!tailMatch && previewBody.length <= maxChars) return part;
 
       const toolCallId = String(p.toolCallId ?? "unknown");
-      const filePath = tailMatch
-        ? tailMatch[2]!
-        : join(resultsDir, `${toolCallId}.txt`);
 
       // Preview must scale with `maxChars` so cascading thresholds
       // {10K, 5K, 2K, 500} achieve progressively tighter compaction on
@@ -144,14 +155,17 @@ export function applyToolResultBudget(
       // Floor of 100 keeps the smallest preview useful; the
       // monotone-reduction guard below catches any pathological case.
       const previewSize = Math.max(100, Math.floor(maxChars / 5));
-      const preview = previewBody.slice(0, previewSize);
+      const preview = slicePrefix(previewBody, previewSize);
       // `preview.length`, not `previewSize`: when re-entering on a
       // small `previewBody` (already heavily truncated), the slice
       // is shorter than `previewSize`, so the dropped-char count must
       // reference what the preview ACTUALLY contains, otherwise the
       // metadata understates the data loss by `previewSize -
       // previewBody.length` chars.
-      const newValue = `${preview}\n\n[... truncated ${originalLength - preview.length} chars — full output saved to ${filePath}]`;
+      const notice = `\n\n[... truncated ${originalLength - preview.length} chars — full output saved to `;
+      const referenceLength = tailMatch
+        ? tailMatch[2]!.length
+        : "tool-output:".length + 36;
 
       // Monotone-reduction guard: near the threshold boundary
       // (e.g. text.length=2050 against maxChars=2000), preview + ~80
@@ -161,32 +175,24 @@ export function applyToolResultBudget(
       // write the file for an entry we won't actually compact, and the
       // next tighter cascading threshold (or Layer 2 / Layer 3) will get
       // another shot at it.
-      if (newValue.length >= text.length) return part;
+      if (preview.length + notice.length + referenceLength + 1 >= text.length)
+        return part;
 
       let preservation: "written" | "write_failed" | "referenced_unverified" =
         "referenced_unverified";
-      if (!persistedIds?.has(toolCallId)) {
-        // If this entry already carried a truncation tail, the full
-        // output was persisted by an earlier pass — `text` is just the
-        // preview, so writing it back would clobber the disk file with
-        // a partial. The earlier path stays the source of truth.
-        if (!tailMatch) {
-          if (!dirCreated) {
-            mkdirSync(resultsDir, { recursive: true });
-            dirCreated = true;
-          }
-          try {
-            writeFileSync(filePath, text, "utf-8");
-            preservation = "written";
-            opts.telemetry?.persisted("written");
-          } catch {
-            preservation = "write_failed";
-            opts.telemetry?.persisted("write_failed");
-            // Non-critical: full output may be lost.
-          }
+      let reference = tailMatch?.[2];
+      if (!reference) {
+        try {
+          reference = persistToolOutput(logsPath, toolCallId, text);
+          preservation = "written";
+          opts.telemetry?.persisted("written");
+          persistedIds?.add(toolCallId);
+        } catch (error) {
+          opts.telemetry?.persisted("write_failed");
+          throw error;
         }
-        persistedIds?.add(toolCallId);
       }
+      const newValue = `${preview}${notice}${reference}]`;
 
       msgModified = true;
       opts.telemetry?.result(`${messageIndex}:${partIndex}`, () => ({
@@ -197,7 +203,7 @@ export function applyToolResultBudget(
         outputChars: newValue.length,
         originalChars: originalLength,
         preservation,
-        path: filePath,
+        path: reference,
       }));
       return {
         ...p,

@@ -1112,12 +1112,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             this.writer.setLatest(persistedMessages(context.messages));
           }
         },
-        // Per-subagent so the overflow tool-result dumps land next to this
-        // agent's messages.json (`subagents/{id}/tool-results/`) and a host
-        // can reclaim them when the subagent finishes, instead of piling up
-        // at the shared session root for the whole scan (ENOSPC). Falls back
-        // to the session root for the root/operator agent.
-        sessionPath: messagesDir,
+        // Match retained-output ownership even with a custom messagesDir.
+        sessionPath: input.subagentId
+          ? join(input.session.rootPath, "subagents", input.subagentId)
+          : input.session.rootPath,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
           const auxiliaryModelEvent =

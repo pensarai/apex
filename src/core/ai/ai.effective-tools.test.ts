@@ -455,7 +455,9 @@ describe("effective toolset budgeting (real catalog, real SDK)", () => {
     expect(state.providerTools[0]).toEqual([...JUDGE_TOOLS]);
     expect(state.providerTools[2]).toEqual([...JUDGE_TOOLS]);
     // Layer 1 persisted the oversized tool result for the reactive retry.
-    expect(readdirSync(join(fixture.root, "tool-results"))).toHaveLength(1);
+    expect(readdirSync(join(fixture.root, "logs", "tool-output"))).toHaveLength(
+      1,
+    );
   });
 });
 
