@@ -524,7 +524,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         ],
         stopWhen: [
           () => this.lanceRuntime!.terminal,
-          stepCountIs(LANCE_CONFIG.maxSteps),
+          ...(this.lanceRuntime.budget.kind === "steps"
+            ? [stepCountIs(this.lanceRuntime.budget.limit)]
+            : []),
         ],
         skillsRegistry: undefined,
       };
@@ -1073,7 +1075,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           : input.prompt,
         system:
           input.mode === "lance"
-            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}`
+            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
             : baseWithFacts + workspaceSection,
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,

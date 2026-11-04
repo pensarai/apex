@@ -1,3 +1,7 @@
+import {
+  DEFAULT_LANCE_BUDGET,
+  type LanceBudget,
+} from "../../../core/agents/lanceBudget";
 import { getSavedReasoning } from "../../../core/cli/reasoning";
 /**
  * Operator Dashboard
@@ -163,6 +167,7 @@ export default function OperatorDashboard({
     operatorMode?: OperatorMode;
     strikeMode?: boolean;
     lanceMode?: boolean;
+    lanceBudget?: LanceBudget;
     findingPolicy?: FindingPolicy;
     sandbox?: boolean;
     taskDriven?: boolean;
@@ -203,6 +208,11 @@ export default function OperatorDashboard({
   const { refocusPromptIfNoActiveEditor } = useFocus();
   const herdr = useHerdr();
   const { enabled: obfuscateEnabled } = useObfuscation();
+  const [lanceBudget, setLanceBudget] = useState(
+    initialConfig?.lanceBudget ??
+      config.data.lanceBudget ??
+      DEFAULT_LANCE_BUDGET,
+  );
   const [lanceMode, setLanceMode] = useState(
     sessionId
       ? false
@@ -491,6 +501,9 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          setLanceBudget(
+            s.config?.operatorSettings?.lanceBudget ?? DEFAULT_LANCE_BUDGET,
+          );
           setLanceMode(
             existsSync(join(s.rootPath, "lance-result.json")) ||
               (s.config?.operatorSettings?.lanceMode ?? false),
@@ -950,7 +963,9 @@ export default function OperatorDashboard({
           ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
-        lance: lanceMode ? { interactive: true } : undefined,
+        lance: lanceMode
+          ? { interactive: true, budget: lanceBudget }
+          : undefined,
         findingPolicy: activeFindingPolicy,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
@@ -1027,6 +1042,7 @@ export default function OperatorDashboard({
               enableSuggestions: true,
               strikeMode,
               lanceMode,
+              lanceBudget,
               findingPolicy,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -1178,6 +1194,7 @@ export default function OperatorDashboard({
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
       lanceMode,
+      lanceBudget,
       findingPolicy,
       activeFindingPolicy,
       route.data,

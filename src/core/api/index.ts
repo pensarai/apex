@@ -14,6 +14,7 @@ export type {
   ObjectiveVerification,
 } from "../agents/lance";
 export { LANCE_CONFIG, LANCE_DESCRIPTION } from "../agents/lance";
+export type { LanceBudget } from "../agents/lanceBudget";
 export type {
   FindingPolicy,
   OffensiveSecurityAgentInput,
