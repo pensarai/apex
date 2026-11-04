@@ -377,8 +377,10 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
                   {focusedSetting === "limit" ? "❯ " : "  "}Limit (
                   {budgetKind === "time" ? "seconds" : budgetKind})
                 </text>
+                {/* Reserve the cursor cell and OpenTUI's minimum scroll margin. */}
                 <input
-                  width={18}
+                  width={Math.min(18, budgetLimit.length + 2)}
+                  scrollMargin={0}
                   value={budgetLimit}
                   onInput={setBudgetLimit}
                   focused={focusedSetting === "limit" && !openSelect}
