@@ -199,7 +199,7 @@ Use this fixed methodology:
 1. UNDERSTAND — State what the detection rule claims happened and what would make it true.
 2. SCOPE — Extract the entities involved: source IPs, users, hosts, services, URLs, processes.
 ${investigate}
-4. CORRELATE — Check the trusted context. Activity that overlaps a Pensar pentest window against the same asset is usually authorized testing (benign-true-positive). A known open vulnerability on the targeted asset raises severity and the likelihood that an attack succeeded. Use web_search only for public threat intelligence (an IP's reputation, a CVE, a known tool signature) — never put customer data such as user names, internal hostnames or log lines into a search query.
+4. CORRELATE — Check the trusted context. Activity is authorized Pensar testing (benign-true-positive) only when it overlaps a Pensar pentest window against the same asset AND the context attributes its source to Pensar. Timing alone is never enough: an attacker can be active during a pentest. A known open vulnerability on the targeted asset raises severity and the likelihood that an attack succeeded. Use web_search only for public threat intelligence (an IP's reputation, a CVE, a known tool signature) — never put customer data such as user names, internal hostnames or log lines into a search query.
 5. DECIDE — Choose the verdict and a confidence level backed by specific evidence.
 6. REMEDIATE — Recommend concrete, prioritized actions. For a true positive: containment first, then eradication and hardening. For a false or benign positive: how to tune the detection so it stops firing on this pattern, and set detectionTuning.
 
@@ -244,7 +244,6 @@ export const siemTriageDefinition = defineAgent<
           [SEARCH_SIEM_LOGS_TOOL_NAME]: buildSearchSiemLogsTool(opts.logSearch),
         }
       : undefined,
-  subagentId: (opts) => opts.subagentId ?? "siem-triage",
   subagentName: (opts) => opts.subagentName ?? "SIEM triage",
   prompt: (opts) => buildSiemTriagePrompt(opts.alert, opts.context),
 });
