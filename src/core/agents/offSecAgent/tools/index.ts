@@ -53,6 +53,7 @@ export {
   mergeRecords,
   retireRecord,
   reviewTopology,
+  updateRecord,
 } from "./documentTopology";
 // Email tools
 export {
@@ -247,6 +248,7 @@ import {
   mergeRecords,
   retireRecord,
   reviewTopology,
+  updateRecord,
 } from "./documentTopology";
 import {
   emailGetAttachments,
@@ -386,6 +388,7 @@ const TOOL_REGISTRY = [
   { name: "review_topology", factory: reviewTopology },
   { name: "retire_record", factory: retireRecord },
   { name: "merge_records", factory: mergeRecords },
+  { name: "update_record", factory: updateRecord },
   { name: "document_control", factory: documentControl },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
@@ -667,6 +670,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "review_topology",
   "retire_record",
   "merge_records",
+  "update_record",
   "document_control",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
@@ -740,6 +744,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "review_topology",
   "retire_record",
   "merge_records",
+  "update_record",
   "document_control",
   // Whitebox jobs
   "run_whitebox_scan",

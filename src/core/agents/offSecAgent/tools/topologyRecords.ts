@@ -231,6 +231,32 @@ const REFERENCE_IDS: Record<string, string> = {
 };
 const ID_FIELDS = new Set(Object.values(REFERENCE_IDS));
 
+/** An endpoint as host:port (path kept), so "http://x:80/" and "x" are the same place. */
+function normalizeEndpoint(endpoint: string): string {
+  const text = endpoint.trim();
+  try {
+    const url = new URL(text.includes("://") ? text : `http://${text}`);
+    const port =
+      url.port ||
+      (url.protocol === "https:"
+        ? "443"
+        : url.protocol === "http:"
+          ? "80"
+          : "");
+    const path = url.pathname.replace(/\/+$/, "");
+    return `${url.hostname.toLowerCase()}${port ? `:${port}` : ""}${path}`;
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
+/** Compare endpoints as a set of places, not as the strings a model happened to write. */
+function comparable(field: string, value: unknown): unknown {
+  if (field === "endpoints" && Array.isArray(value))
+    return [...new Set(value.map((e) => normalizeEndpoint(String(e))))].sort();
+  return value ?? null;
+}
+
 export interface RecordChange {
   kind: RecordKind;
   id: string;
@@ -306,8 +332,8 @@ export function diffTopology(
         prior.record[idField] !== undefined &&
         record[idField] !== undefined;
       const compared = byId ? (idField as string) : field;
-      const a = JSON.stringify(prior.record[compared] ?? null);
-      const b = JSON.stringify(record[compared] ?? null);
+      const a = JSON.stringify(comparable(field, prior.record[compared]));
+      const b = JSON.stringify(comparable(field, record[compared]));
       if (a !== b)
         fields[field] = { before: prior.record[field], after: record[field] };
     }

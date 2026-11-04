@@ -224,6 +224,10 @@ describe("runGeneralizedReconToReport with an update", () => {
     expect(brief).toContain("```mermaid\nflowchart LR");
     expect(brief).toContain("retire_record");
     expect(brief).toContain("renameFrom");
+    expect(brief).toContain(
+      "call update_record with only the fields that changed",
+    );
+    expect(brief).toContain("most will be unaffected");
     expect(result.changeSet?.added.map((a) => a.name).sort()).toEqual([
       "Jobs",
       "Shop API → Jobs (enqueue)",

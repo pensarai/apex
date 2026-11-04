@@ -570,6 +570,185 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
   });
 }
 
+/** Fields update_record may change, per kind; everything else carries forward verbatim. */
+const UPDATABLE: Record<
+  "boundary" | "component" | "control",
+  readonly string[]
+> = {
+  boundary: ["kind", "provider", "parent", "description"],
+  component: [
+    "kind",
+    "boundary",
+    "tech",
+    "exposure",
+    "endpoints",
+    "usedBy",
+    "repository",
+    "description",
+    "atStake",
+    "trustAssumptions",
+    "businessLogic",
+    "members",
+  ],
+  control: ["kind", "appliesTo", "protects", "gaps"],
+};
+
+export function updateRecord(ctx: ToolContext) {
+  return tool({
+    description: `Change specific fields of a documented boundary, component, or control, leaving every other field exactly as it is. In an update run this is how a record changes: pass only what the change affects (e.g. a component's exposure and endpoints, a control's gaps), with evidence for the change.
+
+Do not use it to restate a record in new words, and do not touch a record whose facts did not change. Rename with document_* and renameFrom; remove with retire_record.`,
+    inputSchema: z.object({
+      kind: z.enum(["boundary", "component", "control"]),
+      name: z.string().describe("Exact current name of the record."),
+      changes: z
+        .object({
+          kind: z.string().optional(),
+          provider: z.string().optional(),
+          parent: z.string().optional(),
+          boundary: z.string().optional(),
+          tech: z.string().optional(),
+          exposure: z.enum(["public", "private", "unknown"]).optional(),
+          endpoints: z.array(z.string()).optional(),
+          usedBy: z.array(z.string()).optional(),
+          repository: z.string().optional(),
+          description: z.string().optional(),
+          atStake: z.string().optional(),
+          trustAssumptions: z.array(z.string()).optional(),
+          businessLogic: z.string().optional(),
+          members: z.array(z.string()).optional(),
+          appliesTo: z.array(z.string()).optional(),
+          protects: z.string().optional(),
+          gaps: z.string().optional(),
+        })
+        .describe("Only the fields that changed, with their new values."),
+      evidence: evidenceSchema,
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const known = documented(ctx, input.kind);
+      const record = known.get(input.name.toLowerCase());
+      if (!record)
+        return unknownReference(
+          input.kind,
+          input.name,
+          known.keys(),
+          "Give the exact current name.",
+        );
+      const changes = Object.fromEntries(
+        Object.entries(input.changes).filter(([, v]) => v !== undefined),
+      ) as Record<string, unknown>;
+      const fields = Object.keys(changes);
+      if (!fields.length)
+        return {
+          success: false,
+          error: "no_changes",
+          message: "Pass at least one changed field.",
+        };
+      const invalid = fields.filter((f) => !UPDATABLE[input.kind].includes(f));
+      if (invalid.length)
+        return {
+          success: false,
+          error: "invalid_field",
+          message: `A ${input.kind} has no updatable field ${invalid.join(", ")}. Updatable: ${UPDATABLE[input.kind].join(", ")}.`,
+        };
+      const kinds = {
+        boundary: BOUNDARY_KINDS as readonly string[],
+        component: COMPONENT_KINDS as readonly string[],
+        control: CONTROL_KINDS as readonly string[],
+      }[input.kind];
+      if (changes.kind !== undefined && !kinds.includes(String(changes.kind)))
+        return {
+          success: false,
+          error: "invalid_kind",
+          message: `kind must be one of ${kinds.join(", ")}.`,
+        };
+
+      const resolved: Record<string, unknown> = {};
+      const boundaries = documented(ctx, "boundary");
+      const components = documented(ctx, "component");
+      const one = (
+        map: Map<string, TopologyRecord>,
+        name: unknown,
+        what: string,
+        fix: string,
+      ) => {
+        const found = map.get(String(name).toLowerCase());
+        return found
+          ? { found }
+          : { error: unknownReference(what, String(name), map.keys(), fix) };
+      };
+      if (changes.parent !== undefined) {
+        const r = one(
+          boundaries,
+          changes.parent,
+          "boundary",
+          "Document the parent boundary first.",
+        );
+        if ("error" in r) return r.error;
+        resolved.parentId = r.found.id;
+      }
+      if (changes.boundary !== undefined) {
+        const r = one(
+          boundaries,
+          changes.boundary,
+          "boundary",
+          "Document it with document_boundary first.",
+        );
+        if ("error" in r) return r.error;
+        resolved.boundaryId = r.found.id;
+      }
+      if (changes.usedBy !== undefined) {
+        const apps = new Map(
+          [...components].filter(([, c]) => c.kind === "application"),
+        );
+        const ids: string[] = [];
+        for (const n of changes.usedBy as string[]) {
+          const r = one(
+            apps,
+            n,
+            "application",
+            "Use the exact name of a documented application.",
+          );
+          if ("error" in r) return r.error;
+          ids.push(r.found.id);
+        }
+        resolved.usedByIds = ids;
+      }
+      if (changes.appliesTo !== undefined) {
+        const layers = new Map([...boundaries, ...components]);
+        const ids: string[] = [];
+        for (const n of changes.appliesTo as string[]) {
+          const r = one(
+            layers,
+            n,
+            "layer",
+            "Document it with document_boundary or document_component first.",
+          );
+          if ("error" in r) return r.error;
+          ids.push(r.found.id);
+        }
+        resolved.appliesToIds = ids;
+      }
+      const prior = Array.isArray(record.evidence) ? record.evidence : [];
+      const filepath = save(ctx, input.kind, String(record.name), {
+        ...record,
+        ...changes,
+        ...resolved,
+        evidence: [...prior, ...input.evidence],
+      });
+      return {
+        success: true,
+        kind: input.kind,
+        name: record.name,
+        changed: fields,
+        filepath,
+        message: `Updated ${input.kind} '${record.name}': ${fields.join(", ")}`,
+      };
+    },
+  });
+}
+
 export function retireRecord(ctx: ToolContext) {
   return tool({
     description: `Retire a boundary, component, flow, or control that no longer exists — the only way to remove something from the map. Use it in an update run when evidence shows the thing is gone: a host that no longer resolves or answers, a resource removed from IaC or absent from the cloud inventory, a route deleted from code.

@@ -13,6 +13,7 @@ import {
   readDocumentedTopology,
   retireRecord,
   reviewTopologyRecords,
+  updateRecord,
 } from "./documentTopology";
 import {
   diffTopology,
@@ -305,7 +306,123 @@ describe("seedFromBaseline", () => {
   });
 });
 
+describe("update_record", () => {
+  it("changes only the given fields, keeps the rest verbatim, and appends the evidence", async () => {
+    const ctx = makeCtx();
+    await baseline(ctx);
+    const before = loadTopology(ctx.session.rootPath).components.find(
+      (c) => c.name === "Shop API",
+    );
+    const result = await run(updateRecord(ctx), {
+      kind: "component",
+      name: "Shop API",
+      changes: { exposure: "private" },
+      evidence: [
+        {
+          source: "source",
+          detail: "Port no longer published",
+          ref: "docker-compose.yml",
+        },
+      ],
+    });
+    expect(result).toMatchObject({ success: true, changed: ["exposure"] });
+    const after = loadTopology(ctx.session.rootPath).components.find(
+      (c) => c.name === "Shop API",
+    );
+    expect(after?.exposure).toBe("private");
+    expect(after?.atStake).toBe(before?.atStake);
+    expect(after?.endpoints).toEqual(before?.endpoints);
+    expect(after?.id).toBe(before?.id);
+    expect(after?.evidence).toHaveLength(2);
+  });
+
+  it("resolves changed references by id, so a later rename still follows", async () => {
+    const ctx = makeCtx();
+    await baseline(ctx);
+    await run(documentBoundary(ctx), {
+      name: "Public",
+      kind: "subnet",
+      evidence,
+    });
+    await run(updateRecord(ctx), {
+      kind: "component",
+      name: "Shop API",
+      changes: { boundary: "Public" },
+      evidence,
+    });
+    await run(documentBoundary(ctx), {
+      name: "DMZ",
+      kind: "subnet",
+      renameFrom: "Public",
+      evidence,
+    });
+    expect(
+      loadTopology(ctx.session.rootPath).components.find(
+        (c) => c.name === "Shop API",
+      )?.boundary,
+    ).toBe("DMZ");
+  });
+
+  it("rejects a field the kind does not have, an unknown reference, and an empty change", async () => {
+    const ctx = makeCtx();
+    await baseline(ctx);
+    expect(
+      await run(updateRecord(ctx), {
+        kind: "control",
+        name: "DB password",
+        changes: { endpoints: ["x"] },
+        evidence,
+      }),
+    ).toMatchObject({ error: "invalid_field" });
+    expect(
+      await run(updateRecord(ctx), {
+        kind: "control",
+        name: "DB password",
+        changes: { appliesTo: ["Redis"] },
+        evidence,
+      }),
+    ).toMatchObject({ error: "unknown_layer" });
+    expect(
+      await run(updateRecord(ctx), {
+        kind: "component",
+        name: "Shop API",
+        changes: {},
+        evidence,
+      }),
+    ).toMatchObject({ error: "no_changes" });
+  });
+});
+
 describe("diffTopology", () => {
+  it("does not count reformatted endpoints as a change, but does count a different host", async () => {
+    const base = makeCtx();
+    await baseline(base);
+    const next = update(base);
+    await run(updateRecord(next), {
+      kind: "component",
+      name: "Shop API",
+      changes: { endpoints: ["app.example:443/"] },
+      evidence,
+    });
+    expect(
+      diffTopology(base.session.rootPath, next.session.rootPath, "ses_update")
+        .changed,
+    ).toEqual([]);
+    await run(updateRecord(next), {
+      kind: "component",
+      name: "Shop API",
+      changes: { endpoints: ["https://api.example"] },
+      evidence,
+    });
+    expect(
+      diffTopology(
+        base.session.rootPath,
+        next.session.rootPath,
+        "ses_update",
+      ).changed.map((c) => Object.keys(c.fields)),
+    ).toEqual([["endpoints"]]);
+  });
+
   it("reports added, changed, retired, re-verified, and unverified records — and a rename as a change", async () => {
     const base = makeCtx();
     await baseline(base);

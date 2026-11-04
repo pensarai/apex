@@ -150,7 +150,7 @@ export function buildUpdateBrief(
     const scope = scopeCommit(topology, update.trigger.changedFiles);
     work = `Trigger: new commits ${update.trigger.range} in the connected repository "${update.trigger.repository}". Clone it and read the changes (git diff ${update.trigger.range}).
 
-Records whose evidence cites a changed file — re-verify each against the new code and update it if it changed:
+Records whose evidence cites a changed file. A shared file (compose, a router, IaC) is cited by many records and most will be unaffected; check each against the diff and change only those whose facts the diff changes:
 Components:
 ${list(scope.components)}
 Controls:
@@ -192,8 +192,10 @@ ${mermaid}\`\`\`
 ${work}
 
 Rules for an update:
-- To change a record, document it again under its current name. To rename it, pass renameFrom so it keeps its identity.
-- Document what is new as usual, with flows and controls.
+- To change a record, call update_record with only the fields that changed and evidence for the change. Every other field stays exactly as written.
+- Never rewrite a record whose facts did not change — not to rephrase it, reformat its endpoints, or add detail you could have recorded before. An update's change set should list only what the system changed.
+- To rename a record, document it under the new name with renameFrom so it keeps its identity.
+- Document what is new with document_*, as usual, with its flows and controls.
 - Remove something only with retire_record and evidence that it is gone. Never retire a record because you did not look at it again.
 - Leave everything else untouched; records you do not revisit stay as they are.
 - Finish as usual: review_topology, then create_attack_surface_report.`;
