@@ -56,6 +56,7 @@ export { resolveModelRuntimeProfile } from "./modelRuntime";
 export {
   AVAILABLE_MODELS,
   getClaudeCapabilities,
+  getMaxOutputTokens,
   getModelInfo,
 } from "./models";
 export type {
