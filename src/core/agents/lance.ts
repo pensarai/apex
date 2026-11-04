@@ -107,6 +107,28 @@ export type LanceOutcome =
   | "cancelled"
   | "error";
 
+export type LanceOutcomeAnalysisKind =
+  | "objective_verified"
+  | "judge_accepted"
+  | "milestone_only"
+  | "claim_rejected"
+  | "verification_error"
+  | "claim_unverified"
+  | "no_success_claim"
+  | "resource_exhausted"
+  | "cancelled"
+  | "runtime_error"
+  | "awaiting_input";
+
+export interface LanceOutcomeAnalysis {
+  kind: LanceOutcomeAnalysisKind;
+  modelClaimedSuccess: boolean;
+  independentSuccess: boolean;
+  evaluatorAcceptedEvidence: boolean;
+  objectiveComplete: boolean | null;
+  reason: string;
+}
+
 type Usage = {
   requests: number;
   inputTokens: number;
@@ -141,6 +163,7 @@ export interface LanceMetrics {
   firstCandidate: { elapsedMs: number; toolCalls: number } | null;
   firstVerified: { elapsedMs: number; toolCalls: number } | null;
   verificationToTerminationMs: number | null;
+  outcomeAnalysis: LanceOutcomeAnalysis;
   elapsedMs: number;
   toolCalls: number;
   usage: Usage;
@@ -636,6 +659,139 @@ export class LanceRuntime {
     return usage;
   }
 
+  private outcomeAnalysis(): LanceOutcomeAnalysis {
+    const outcome = this.outcome ?? "error";
+    const evaluatorAcceptedEvidence = this.verification?.verified === true;
+    const objectiveComplete =
+      this.verification?.objectiveComplete ??
+      (evaluatorAcceptedEvidence ? true : null);
+    const independentSuccess = this.verified !== null;
+    const modelClaimedSuccess = this.submitted;
+
+    if (independentSuccess) {
+      return {
+        kind:
+          this.options.verificationSource === "apex_judge"
+            ? "judge_accepted"
+            : "objective_verified",
+        modelClaimedSuccess,
+        independentSuccess: true,
+        evaluatorAcceptedEvidence,
+        objectiveComplete: true,
+        reason:
+          this.options.verificationSource === "apex_judge"
+            ? "Apex judge accepted the submitted evidence as completing the objective"
+            : "External verifier confirmed the submitted evidence completed the objective",
+      };
+    }
+
+    if (this.verificationError) {
+      return {
+        kind: "verification_error",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence,
+        objectiveComplete,
+        reason: this.verificationError,
+      };
+    }
+
+    if (evaluatorAcceptedEvidence && objectiveComplete === false) {
+      return {
+        kind: "milestone_only",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: true,
+        objectiveComplete: false,
+        reason:
+          this.verification?.reason ??
+          "Verifier accepted the evidence but marked the full objective incomplete",
+      };
+    }
+
+    if (this.verification && !evaluatorAcceptedEvidence) {
+      return {
+        kind: "claim_rejected",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+        objectiveComplete,
+        reason:
+          this.verification.reason ??
+          "Verifier rejected the submitted evidence",
+      };
+    }
+
+    if (modelClaimedSuccess && !this.options.verifyObjective) {
+      return {
+        kind: "claim_unverified",
+        modelClaimedSuccess: true,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+        objectiveComplete: null,
+        reason:
+          "Model submitted success evidence but no independent verifier was configured",
+      };
+    }
+
+    if (outcome === "awaiting_input") {
+      return {
+        kind: "awaiting_input",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+        objectiveComplete: null,
+        reason: this.reason,
+      };
+    }
+
+    if (
+      outcome === "deadline_exhausted" ||
+      outcome === "step_limit" ||
+      outcome === "context_exhausted"
+    ) {
+      return {
+        kind: "resource_exhausted",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+        objectiveComplete: null,
+        reason: this.reason,
+      };
+    }
+
+    if (outcome === "cancelled") {
+      return {
+        kind: "cancelled",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+        objectiveComplete: null,
+        reason: this.reason,
+      };
+    }
+
+    if (outcome === "error") {
+      return {
+        kind: "runtime_error",
+        modelClaimedSuccess,
+        independentSuccess: false,
+        evaluatorAcceptedEvidence: false,
+        objectiveComplete: null,
+        reason: this.reason,
+      };
+    }
+
+    return {
+      kind: "no_success_claim",
+      modelClaimedSuccess,
+      independentSuccess: false,
+      evaluatorAcceptedEvidence: false,
+      objectiveComplete: null,
+      reason: this.reason,
+    };
+  }
+
   metrics(model: string): LanceMetrics {
     const elapsedMs = (this.endedAt ?? Date.now()) - this.startedAt;
     return {
@@ -674,6 +830,7 @@ export class LanceRuntime {
       verificationToTerminationMs: this.verified
         ? elapsedMs - this.verified.elapsedMs
         : null,
+      outcomeAnalysis: this.outcomeAnalysis(),
       elapsedMs,
       toolCalls: this.calls,
       usage: this.usage(),

@@ -88,6 +88,7 @@ Each completed attempt or interactive turn writes `lance-result.json` (schema ve
 | `usageBeforeSuccess`                              | Physical requests admitted before verification and their observed tokens/cost                                                                                                              |
 | `usage.usageComplete`                             | Whether every admitted request reported usage; interrupted/failed requests can be incomplete                                                                                               |
 | `modelSubmittedSuccess`, `harnessVerifiedSuccess` | Separate model claim and callback-confirmed objective                                                                                                                                      |
+| `outcomeAnalysis`                                 | Aggregatable eval bucket for the final state, separating verified success, judge acceptance, rejected claims, milestone-only evidence, unverified claims, resource exhaustion, and errors |
 | `policyViolations`                                | Denied unknown tool calls, child spawning, and attempted work after termination                                                                                                            |
 | `outcome`                                         | `completed`, `awaiting_input` (interactive only), `verified`, `judge_accepted`, `unverified`, `unsolved`, `deadline_exhausted`, `step_limit`, `context_exhausted`, `cancelled`, or `error` |
 
@@ -95,7 +96,7 @@ Each completed attempt or interactive turn writes `lance-result.json` (schema ve
 
 Tokens include the request that produced success. If its usage arrives during drain, it is attributed to the request admitted before verification. Missing usage is never treated as a complete zero-cost request. `costUsd` is null unless the host supplies rates and usage is complete; pricing is per million tokens and separates uncached input, cache reads/writes, and output. An external evaluator can apply its own versioned pricing catalog.
 
-`completion` records the agent's completion summary and timing independently of `verification`. `verificationError` records a failed check without converting the claim to success. `completed` means the agent requested a stop, not that an evaluation passed. `unverified` remains a readable legacy outcome.
+`completion` records the agent's completion summary and timing independently of `verification`. `verificationError` records a failed check without converting the claim to success. `completed` means the agent requested a stop, not that an evaluation passed. `outcomeAnalysis.kind` is the preferred rollup for eval dashboards because it distinguishes `objective_verified`, `judge_accepted`, `claim_rejected`, `milestone_only`, `claim_unverified`, `verification_error`, `resource_exhausted`, `no_success_claim`, `awaiting_input`, `cancelled`, and `runtime_error`. `unverified` remains a readable legacy outcome.
 
 `finish_unsolved` and a natural headless model stop without a completion request are non-solves; budget exhaustion is recorded separately. An ordinary interactive reply is not a non-solve. A hard interruption before result persistence is still a harness timeout, not a graceful Lance result.
 
