@@ -50,6 +50,7 @@ import type {
 export type SubagentType =
   | "pentest"
   | "code"
+  | "recon-worker"
   | "whitebox-attack-surface"
   | "blackbox-attack-surface"
   | "authentication"
@@ -77,6 +78,14 @@ export type SubagentSpec =
       stopWhen?: StopCondition<ToolSet>;
       excludeTools?: string[];
       projectThreatModel?: string;
+      attackSurfaceRegistry?: AttackSurfaceRegistry;
+    }
+  | {
+      type: "recon-worker";
+      goal: string;
+      target?: string;
+      codebasePath?: string;
+      excludeTools?: string[];
       attackSurfaceRegistry?: AttackSurfaceRegistry;
     }
   | {
@@ -460,6 +469,39 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
   return { run: () => agent.consume(), drained: () => agent.drained };
 };
 
+const runReconWorkerChild: SubagentRunner<"recon-worker"> = async (
+  spec,
+  ctx,
+) => {
+  const { ReconWorkerAgent } = await import("../specialized/reconWorker/agent");
+  const agent = new ReconWorkerAgent({
+    goal: spec.goal,
+    target: spec.target,
+    codebasePath: spec.codebasePath,
+    excludeTools: spec.excludeTools,
+    attackSurfaceRegistry: spec.attackSurfaceRegistry,
+    ...getModelSettings(ctx),
+    session: ctx.session,
+    abortSignal: ctx.abortSignal,
+    eventBus: ctx.eventBus,
+    subagentId: ctx.subagentId,
+    subagentName: ctx.subagentName,
+    sandbox: ctx.sandbox,
+    backends: ctx.backends,
+    credentialManager: ctx.credentialManager,
+    environmentVariables: ctx.environmentVariables,
+    secretValues: ctx.secretValues,
+    display: ctx.display,
+    onStepFinish: ctx.onStepFinish,
+    onCacheMetrics: ctx.onCacheMetrics,
+    languageModelMiddleware: ctx.languageModelMiddleware,
+    usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
+    streamIdFactory: ctx.streamIdFactory,
+  });
+  return { run: () => agent.consume(), drained: () => agent.drained };
+};
+
 const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
   spec,
   ctx,
@@ -570,6 +612,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
 const RUNNERS: { [T in SubagentType]: SubagentRunner<T> } = {
   pentest: runPentestChild,
   code: runCodeChild,
+  "recon-worker": runReconWorkerChild,
   "whitebox-attack-surface": runWhiteboxChild,
   "blackbox-attack-surface": runBlackboxChild,
   authentication: runAuthChild,

@@ -3,6 +3,11 @@ import {
   type AttackSurfaceResult,
   BlackboxAttackSurfaceAgent,
 } from "../agents/specialized/attackSurface/blackboxAgent";
+import {
+  GeneralizedAttackSurfaceAgent,
+  type GeneralizedAttackSurfaceAgentInput,
+  type GeneralizedAttackSurfaceResult,
+} from "../agents/specialized/attackSurface/generalizedAgent";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
 import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";
 
@@ -56,6 +61,28 @@ async function runBlackboxAttackSurface(
   console.log(`Assets: ${assetsPath}`);
 
   return { results, targets, resultsPath, assetsPath };
+}
+
+// ---------------------------------------------------------------------------
+// Generalized (origin-driven, app-level threat models)
+// ---------------------------------------------------------------------------
+
+export type {
+  GeneralizedAttackSurfaceAgentInput,
+  GeneralizedAttackSurfaceResult,
+} from "../agents/specialized/attackSurface/generalizedAgent";
+
+/**
+ * Run the generalized, origin-driven attack-surface agent. Given only an
+ * origin, it discovers the services hosted there, maps them to connected
+ * repositories where applicable, and produces application-level threat models
+ * and pentest objectives.
+ */
+export async function runGeneralizedAttackSurface(
+  input: GeneralizedAttackSurfaceAgentInput,
+): Promise<GeneralizedAttackSurfaceResult> {
+  const agent = new GeneralizedAttackSurfaceAgent(input);
+  return agent.consume();
 }
 
 // ---------------------------------------------------------------------------
