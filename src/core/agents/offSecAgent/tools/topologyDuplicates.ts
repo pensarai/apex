@@ -51,15 +51,17 @@ export function namesOverlap(a: string, b: string): boolean {
 }
 
 function hosts(record: TopologyRecord): Set<string> {
+  // App-link schemes (example://pay) are not network places, and one host can
+  // route paths to different services (/v1 legacy, /v2 its successor), so the
+  // path is part of the endpoint.
   const out = new Set<string>();
   for (const e of Array.isArray(record.endpoints) ? record.endpoints : []) {
     const text = String(e).trim();
+    const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(text)?.[1]?.toLowerCase();
+    if (scheme && scheme !== "http" && scheme !== "https") continue;
     try {
-      out.add(
-        new URL(
-          text.includes("://") ? text : `http://${text}`,
-        ).host.toLowerCase(),
-      );
+      const url = new URL(scheme ? text : `http://${text}`);
+      out.add(`${url.host.toLowerCase()}${url.pathname.replace(/\/+$/, "")}`);
     } catch {
       // An endpoint that is not a URL or host (a description) has no host to compare.
     }

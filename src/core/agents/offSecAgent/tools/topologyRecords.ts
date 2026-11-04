@@ -206,7 +206,7 @@ export function seedFromBaseline(
   return seeded;
 }
 
-/** Fields that describe a record's provenance, not the system. */
+/** Fields that describe a record's provenance or the agent's bookkeeping, not the system. */
 const PROVENANCE = new Set([
   "id",
   "recordedAt",
@@ -214,6 +214,7 @@ const PROVENANCE = new Set([
   "evidence",
   "status",
   "retiredReason",
+  "distinctFrom",
 ]);
 
 /**

@@ -89,6 +89,41 @@ describe("duplicate signals", () => {
     ).toBeUndefined();
   });
 
+  it("ignores app-link schemes, and keeps apart paths one host routes to different services", () => {
+    // Two clients handling the same deep link are not one component.
+    expect(
+      duplicateReason(
+        "component",
+        rec({
+          name: "PocketPay for Android",
+          kind: "client",
+          endpoints: ["pocketpay://transfer?to=1"],
+        }),
+        rec({
+          name: "PocketPay for iOS",
+          kind: "client",
+          endpoints: ["pocketpay://transfer?to=1"],
+        }),
+      ),
+    ).toBeUndefined();
+    // /v1 and /v2 on one gateway host are different services.
+    expect(
+      duplicateReason(
+        "component",
+        rec({
+          name: "PocketPay API v2",
+          kind: "application",
+          endpoints: ["http://api.pocketpay.example:20080/v2/"],
+        }),
+        rec({
+          name: "Legacy API v1",
+          kind: "application",
+          endpoints: ["http://api.pocketpay.example:20080/v1/"],
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
   it("keeps apart same-named boundaries under different parents, and accounts with different ids", () => {
     expect(
       duplicateReason(

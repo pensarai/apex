@@ -500,6 +500,20 @@ describe("diffTopology", () => {
     ]);
   });
 
+  it("does not count the agent's distinctFrom bookkeeping as a change", async () => {
+    const base = makeCtx();
+    await baseline(base);
+    const next = update(base);
+    await run(documentComponent(next), { ...db, distinctFrom: ["Shop API"] });
+    const change = diffTopology(
+      base.session.rootPath,
+      next.session.rootPath,
+      "ses_update",
+    );
+    expect(change.changed).toEqual([]);
+    expect(change.reverified.map((r) => r.name)).toEqual(["Postgres"]);
+  });
+
   it("calls a record re-documented with no change re-verified, not changed", async () => {
     const base = makeCtx();
     await baseline(base);
