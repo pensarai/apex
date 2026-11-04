@@ -53,39 +53,29 @@ const __apexHeaders = ${JSON.stringify(policy.headers)};
 const __apexEnforceScope = ${JSON.stringify(policy.enforceScope)};
 if (__apexEnforceScope || Object.keys(__apexHeaders).length > 0) {
   await context.route('**/*', async route => {
+    if (__apexEnforceScope) await route.abort('blockedbyclient');
+    else await route.continue();
+  });
+  await context.route(parsed => {
+    const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+    const port = parsed.port
+      ? Number(parsed.port)
+      : parsed.protocol === 'http:'
+        ? 80
+        : parsed.protocol === 'https:'
+          ? 443
+          : undefined;
+    const hostAllowed = __apexAllowedHosts.some(value => {
+      const normalized = value.toLowerCase().replace(/\\.$/, '');
+      const wildcard = normalized.startsWith('*.');
+      const base = wildcard ? normalized.slice(2) : normalized;
+      return hostname === base || (wildcard && hostname.endsWith('.' + base));
+    });
+    return hostAllowed &&
+      (__apexAllowedPorts.length === 0 ||
+        (port !== undefined && __apexAllowedPorts.includes(port)));
+  }, async route => {
     const request = route.request();
-    let allowed = false;
-    try {
-      const parsed = new URL(request.url());
-      const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
-      const port = parsed.port
-        ? Number(parsed.port)
-        : parsed.protocol === 'http:'
-          ? 80
-          : parsed.protocol === 'https:'
-            ? 443
-            : undefined;
-      const hostAllowed = __apexAllowedHosts.some(value => {
-        const normalized = value.toLowerCase().replace(/\\.$/, '');
-        const wildcard = normalized.startsWith('*.');
-        const base = wildcard ? normalized.slice(2) : normalized;
-        return hostname === base || (wildcard && hostname.endsWith('.' + base));
-      });
-      allowed =
-        hostAllowed &&
-        (__apexAllowedPorts.length === 0 ||
-          (port !== undefined && __apexAllowedPorts.includes(port)));
-    } catch {
-      allowed = false;
-    }
-    if (!allowed) {
-      if (__apexEnforceScope) {
-        await route.abort('blockedbyclient');
-        return;
-      }
-      await route.continue();
-      return;
-    }
     const requestHeaders = Object.fromEntries(
       Object.entries(await request.allHeaders()).filter(
         ([name]) => !name.startsWith(':'),
