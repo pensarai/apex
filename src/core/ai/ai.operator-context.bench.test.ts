@@ -163,7 +163,7 @@ it("measures a synthetic long tool loop through the real stream and context path
     expect(summaryCalls).toBeGreaterThan(0);
     expect(compactionEvents).toBe(summaryCalls);
     expect(summaryPrompts[0]).toContain("probe-0");
-    expect(summaryPrompts[0]).not.toContain(
+    expect(summaryPrompts[0]).toContain(
       "Synthetic benchmark; no external target.",
     );
     expect(Math.max(...providerInputTokens)).toBeLessThan(18_000);
@@ -286,7 +286,7 @@ it.each([
       expect(summaryPrompt.includes("source-31:")).toBe(true);
       expect(
         summaryPrompt.includes("Keep all source evidence available."),
-      ).toBe(false);
+      ).toBe(true);
       expect(resumedPrompt.includes("The first source is source-0.")).toBe(
         true,
       );
@@ -1172,11 +1172,7 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
     const stream = streamResponse({
       model: MODEL,
       prompt: "Continue the task.",
-      messages: [
-        { role: "user", content: "Old synthetic evidence." },
-        { role: "assistant", content: "Noted." },
-        { role: "user", content: "Latest request." },
-      ],
+      messages: [{ role: "user", content: "Old synthetic evidence." }],
       onSummarized,
       silent: true,
       authConfig: {
@@ -1218,7 +1214,6 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
       pinnedToolCallIds: [],
     });
     expect(resumedPrompt).not.toContain("Old synthetic evidence.");
-    expect(resumedPrompt).toContain("Latest request.");
   } finally {
     state.model = null;
   }

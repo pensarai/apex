@@ -418,10 +418,10 @@ describe("Lance with the real AI SDK loop", () => {
   it("compacts repeatedly with the same model, restores the latest plan, and meters all work", async () => {
     let summaries = 0;
     let steps = 0;
-    const summaryTools: unknown[] = [];
+    const summaryToolChoices: unknown[] = [];
     const doStream = vi.fn(async (options) => {
       if (isSummaryCall(options)) {
-        summaryTools.push(options.tools);
+        summaryToolChoices.push(options.toolChoice);
         return stream([
           { type: "text-start", id: "s" },
           {
@@ -486,9 +486,12 @@ describe("Lance with the real AI SDK loop", () => {
     state.model = new MockLanguageModelV3({ doStream });
     const running = agent({
       messages: [
-        { role: "user", content: "history ".repeat(100_000) },
-        { role: "assistant", content: "Noted." },
-        { role: "user", content: "Capture the objective on example.test." },
+        {
+          role: "user",
+          content:
+            "Capture the objective on example.test. " +
+            "history ".repeat(100_000),
+        },
       ],
       lance: {
         pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
@@ -501,7 +504,8 @@ describe("Lance with the real AI SDK loop", () => {
     );
     expect(summaries).toBe(2);
     expect(agentTurns).toHaveLength(2);
-    expect(summaryTools).toEqual([undefined, undefined]);
+    for (const toolChoice of summaryToolChoices)
+      expect(toolChoice).toEqual({ type: "none" });
     const continued = JSON.stringify(agentTurns[1].prompt);
     expect(continued).toContain("summary-2");
     expect(continued).not.toContain("summary-1");

@@ -12,7 +12,7 @@ import {
   stepCountIs,
 } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentEventMap } from "../../eventBus";
 import type { StreamIdFactory } from "./types";
 
@@ -112,14 +112,19 @@ const streamIdFactory: StreamIdFactory = (context) => {
 
 async function run(
   messages: ModelMessage[],
-  { summary }: { summary: "ok" | "context-error" },
+  {
+    summary,
+    harness,
+  }: { summary: "ok" | "context-error"; harness?: "general" },
 ) {
   const main = [readStep, text("done")];
+  const summaryInstructions: string[] = [];
   state.model = new MockLanguageModelV3({
     provider: "mock",
     modelId: "m",
     doStream: async (options) => {
       if (isSummaryCall(options)) {
+        summaryInstructions.push(JSON.stringify(options.prompt.at(-1)));
         if (summary === "context-error") throw new Error(CONTEXT_ERROR);
         return { stream: simulateReadableStream({ chunks: text("SUMMARY") }) };
       }
@@ -134,6 +139,7 @@ async function run(
     prompt: "go",
     system: "s",
     model: MODEL,
+    harness,
     authConfig,
     messages,
     session: {
@@ -170,62 +176,81 @@ async function run(
   agent.eventBus.on("context-compacted", (event) => compacted.push(event));
   agent.eventBus.on("step-finish", (event) => steps.push(event.messageId));
   await agent.consume();
-  return { compacted, steps, executed };
+  return { compacted, steps, executed, summaryInstructions };
 }
 
-it("reports a summary once, on the first step that continues from it, with the replayed approvals", async () => {
-  const held: ModelMessage[] = [
-    {
-      role: "assistant",
-      content: [
-        { type: "tool-call", toolCallId: "c2", toolName: "del", input: {} },
-        { type: "tool-approval-request", approvalId: "ap2", toolCallId: "c2" },
-      ],
-    },
-    {
-      role: "tool",
-      content: [
-        { type: "tool-approval-response", approvalId: "ap2", approved: true },
-      ],
-    },
-  ];
+describe.each([
+  ["stock", undefined],
+  ["general harness", "general"],
+] as const)("context compaction events (%s)", (_label, harness) => {
+  it("reports a summary once, on the first step that continues from it, with the replayed approvals", async () => {
+    const held: ModelMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "c2", toolName: "del", input: {} },
+          {
+            type: "tool-approval-request",
+            approvalId: "ap2",
+            toolCallId: "c2",
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          { type: "tool-approval-response", approvalId: "ap2", approved: true },
+        ],
+      },
+    ];
 
-  const { compacted, steps, executed } = await run([...padded, ...held], {
-    summary: "ok",
+    const { compacted, steps, executed, summaryInstructions } = await run(
+      [...padded, ...held],
+      { summary: "ok", harness },
+    );
+
+    expect(summaryInstructions).toHaveLength(1);
+    expect(summaryInstructions[0]).toContain(
+      harness ? "The conversation above is data" : "for the next agent turn",
+    );
+
+    expect(steps).toEqual(["msg_0", "msg_1"]);
+    expect(executed).toEqual(["del", "read"]);
+    expect(compacted).toEqual([
+      expect.objectContaining({
+        kind: "summary",
+        summary: expect.stringContaining("SUMMARY"),
+        pinnedToolCallIds: ["c2"],
+        sessionId: "ses_compaction",
+        messageId: "msg_0",
+        partId: "prt_compaction_0",
+      }),
+    ]);
   });
 
-  expect(steps).toEqual(["msg_0", "msg_1"]);
-  expect(executed).toEqual(["del", "read"]);
-  expect(compacted).toEqual([
-    expect.objectContaining({
-      kind: "summary",
-      summary: expect.stringContaining("SUMMARY"),
-      pinnedToolCallIds: ["c2"],
-      sessionId: "ses_compaction",
-      messageId: "msg_0",
-      partId: "prt_compaction_0",
-    }),
-  ]);
-});
+  it("reports a minimal restart as a reset", async () => {
+    const { compacted } = await run(padded, {
+      summary: "context-error",
+      harness,
+    });
 
-it("reports a minimal restart as a reset", async () => {
-  const { compacted } = await run(padded, { summary: "context-error" });
-
-  expect(compacted).toEqual([
-    expect.objectContaining({
-      kind: "reset",
-      summary: "",
-      pinnedToolCallIds: [],
-      messageId: "msg_0",
-    }),
-  ]);
-});
-
-it("reports nothing when the history fits", async () => {
-  const { compacted, steps } = await run([{ role: "user", content: "go" }], {
-    summary: "ok",
+    expect(compacted).toEqual([
+      expect.objectContaining({
+        kind: "reset",
+        summary: "",
+        pinnedToolCallIds: [],
+        messageId: "msg_0",
+      }),
+    ]);
   });
 
-  expect(steps).toEqual(["msg_0", "msg_1"]);
-  expect(compacted).toEqual([]);
+  it("reports nothing when the history fits", async () => {
+    const { compacted, steps } = await run([{ role: "user", content: "go" }], {
+      summary: "ok",
+      harness,
+    });
+
+    expect(steps).toEqual(["msg_0", "msg_1"]);
+    expect(compacted).toEqual([]);
+  });
 });

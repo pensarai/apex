@@ -69,13 +69,6 @@ function model() {
 
 const SUMMARIZE_FN = "apex.context.summarize";
 
-// Earlier history no fit can shrink; the latest request stays small enough to replay.
-const irreducibleHistory: ModelMessage[] = [
-  { role: "user", content: "irreducible ".repeat(100_000) },
-  { role: "assistant", content: "noted" },
-  { role: "user", content: "keep going" },
-];
-
 // Summary and resumed turn both arrive via doStream; the instruction separates them.
 function isSummaryCall(options: { prompt: unknown }): boolean {
   return JSON.stringify(options.prompt).includes("Compact this conversation");
@@ -267,7 +260,9 @@ describe("compaction observability", () => {
       prompt: "original task",
       model: MODEL,
       silent: true,
-      messages: irreducibleHistory,
+      messages: [
+        { role: "user" as const, content: "irreducible ".repeat(100_000) },
+      ],
     };
     await otel.shutdown();
     const baseline = model();
@@ -503,20 +498,12 @@ describe("compaction observability", () => {
       String(compact.attributes["apex.compaction.evidence.after.json"]),
     );
     expect(after.messages[0].content).toContain("A compact summary");
-    expect(after.messages[1]).toEqual({
-      role: "user",
-      content: "continue researching",
-    });
     // [0] is the summarization call; the resumed agent turn follows it.
     expect(summaryModel.doStreamCalls[1]?.prompt).toMatchObject([
       { role: "system", content: after.system },
       {
         role: "user",
         content: [{ type: "text", text: after.messages[0].content }],
-      },
-      {
-        role: "user",
-        content: [{ type: "text", text: "continue researching" }],
       },
     ]);
   });
@@ -840,7 +827,7 @@ describe("compaction observability", () => {
           model: MODEL,
           silent: true,
           sessionId: "ses_fallback",
-          messages: irreducibleHistory,
+          messages: [{ role: "user", content: "irreducible ".repeat(100_000) }],
         }),
       ),
     );
@@ -870,10 +857,7 @@ describe("compaction observability", () => {
       JSON.parse(
         String(reset?.attributes["apex.compaction.evidence.after.json"]),
       )?.messages,
-    ).toEqual([
-      { role: "user", content: "original task" },
-      { role: "user", content: "keep going" },
-    ]);
+    ).toEqual([{ role: "user", content: "original task" }]);
     // A resumed agent turn must carry the reset's span id. Summarizer attempts are
     // `ai.streamText` spans too now, so they are excluded rather than assumed last.
     expect(
