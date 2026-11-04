@@ -40,7 +40,11 @@ an explicit `reasoning` overrides it. A different model falls back to legacy
 inputs and that model's compatibility defaults. Only an explicit root override
 updates an existing session's preference; compatibility defaults and delegated
 children do not rewrite it. Children receive the parent's canonical setting.
-Streaming, structured output, tool repair, and compaction apply the same selection. Manual thinking budgets are bounded by the
+Streaming, structured output, and compaction apply the same selection. Auxiliary
+argument repair disables optional thinking only on Bedrock models whose reasoning
+capabilities permit it, using the SDK's forced JSON-tool path with the same model
+and schema. Primary-agent reasoning and mandatory-thinking models are unchanged;
+repair telemetry records its effective reasoning options. Manual thinking budgets are bounded by the
 actual output limit, including the smaller compaction limit. OTel generation
 metadata records `reasoningRequested` and `reasoningParameters` beside normal
 usage and latency data.

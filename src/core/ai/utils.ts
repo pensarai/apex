@@ -323,7 +323,38 @@ export function getProviderModel(
         >["credentialProvider"],
         fetch: bedrockFetch as typeof globalThis.fetch,
       });
-      providerModel = bedrock(model);
+      providerModel = wrapLanguageModel({
+        model: bedrock(model),
+        middleware: {
+          specificationVersion: "v3",
+          transformParams: async ({ params }) => {
+            const reasoning = params.providerOptions?.bedrock?.reasoningConfig;
+            if (
+              !model.includes("anthropic") ||
+              typeof reasoning !== "object" ||
+              reasoning === null ||
+              Array.isArray(reasoning) ||
+              reasoning.type !== "enabled" ||
+              typeof reasoning.budgetTokens !== "number"
+            )
+              return params;
+            // Bedrock's SDK adds thinking to maxOutputTokens; Apex reserves the total.
+            const total = Math.min(
+              params.maxOutputTokens ?? reasoning.budgetTokens + 4096,
+              getMaxOutputTokens(model),
+            );
+            if (total <= reasoning.budgetTokens) {
+              throw new Error(
+                "Bedrock output limit must exceed the thinking budget",
+              );
+            }
+            return {
+              ...params,
+              maxOutputTokens: total - reasoning.budgetTokens,
+            };
+          },
+        },
+      });
       break;
     }
 
@@ -716,6 +747,14 @@ export function checkIfContextLengthError(error: unknown): boolean {
   const errorCode = String(
     typeof errObj.code === "string" ? errObj.code : "",
   ).toLowerCase();
+
+  // Reducing input cannot repair an invalid output-token request.
+  if (
+    errorMessage.includes(
+      "maximum tokens you requested exceeds the model limit",
+    )
+  )
+    return false;
 
   return (
     errorMessage.includes("context length") ||
