@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { duplicatePairs, likelyDuplicates } from "./topologyDuplicates";
 import type { MermaidTopology } from "./topologyMermaid";
 import {
   flowKey,
@@ -138,10 +139,34 @@ function identify(
   kind: "boundary" | "component" | "control",
   name: string,
   renameFrom: string | undefined,
+  candidate?: Record<string, unknown>,
 ): { id: string } | { error: Record<string, unknown> } {
   const known = documented(ctx, kind);
   const current = known.get(name.toLowerCase());
-  if (!renameFrom) return { id: current?.id ?? newRecordId(kind) };
+  if (!renameFrom && current) return { id: current.id };
+  if (!renameFrom) {
+    // A new boundary or component that looks like one already documented —
+    // often a parallel worker naming the same thing its own way.
+    if (candidate && kind !== "control") {
+      const matches = likelyDuplicates(kind, { ...candidate, id: "" }, [
+        ...known.values(),
+      ]);
+      if (matches.length)
+        return {
+          error: {
+            success: false,
+            error: "possible_duplicate",
+            message: `This ${kind} looks like one already documented: ${matches
+              .map((m) => `"${m.record.name}" (${m.reason})`)
+              .join(
+                "; ",
+              )}. If it is the same thing, document it under that exact name to update it. If it is different, call again with distinctFrom naming it.`,
+            existing: matches.map((m) => m.record.name),
+          },
+        };
+    }
+    return { id: newRecordId(kind) };
+  }
   const original = known.get(renameFrom.toLowerCase());
   if (!original)
     return {
@@ -168,6 +193,13 @@ const renameFromSchema = z
   .optional()
   .describe(
     "Only to rename: the record's exact current name. It keeps its identity, and everything that references it follows the new name.",
+  );
+
+const distinctFromSchema = z
+  .array(z.string())
+  .optional()
+  .describe(
+    "Names of documented records this one resembles but is not — only after a possible_duplicate error, when they really are different things.",
   );
 
 function unknownReference(
@@ -226,6 +258,7 @@ Call again with the same name to update a boundary.`,
         ),
       description: z.string().optional(),
       renameFrom: renameFromSchema,
+      distinctFrom: distinctFromSchema,
       evidence: evidenceSchema,
       toolCallDescription,
     }),
@@ -241,7 +274,13 @@ Call again with the same name to update a boundary.`,
           boundaries.keys(),
           "Document the parent boundary first.",
         );
-      const identity = identify(ctx, "boundary", input.name, input.renameFrom);
+      const identity = identify(
+        ctx,
+        "boundary",
+        input.name,
+        input.renameFrom,
+        input,
+      );
       if ("error" in identity) return identity.error;
       const { toolCallDescription: _, renameFrom: __, ...record } = input;
       const filepath = save(ctx, "boundary", input.name, {
@@ -335,6 +374,7 @@ Call again with the same name to update a component — never create a second re
         .optional()
         .describe("For a collapsed group (e.g. 12 queues), the member names."),
       renameFrom: renameFromSchema,
+      distinctFrom: distinctFromSchema,
       evidence: evidenceSchema,
       toolCallDescription,
     }),
@@ -363,7 +403,13 @@ Call again with the same name to update a component — never create a second re
             "Document the application with document_component (kind: application) first, or use its exact name.",
           );
       }
-      const identity = identify(ctx, "component", input.name, input.renameFrom);
+      const identity = identify(
+        ctx,
+        "component",
+        input.name,
+        input.renameFrom,
+        input,
+      );
       if ("error" in identity) return identity.error;
       const { toolCallDescription: _, renameFrom: __, ...record } = input;
       const filepath = save(ctx, "component", input.name, {
@@ -596,6 +642,179 @@ Never retire something only because you did not look at it again, or to replace 
   });
 }
 
+export function mergeRecords(ctx: ToolContext) {
+  return tool({
+    description: `Fold a duplicate boundary or component into the record that should remain — for two records documented under different names for one thing (review_topology reports likely pairs as possible-duplicate).
+
+Everything that pointed at the duplicate moves to the kept record: flows (a flow that becomes a copy of one the kept record already has is retired), controls, the applications that use it, and — for a boundary — the components and boundaries inside it. The duplicate is then retired. Document the kept record again afterwards if the duplicate held details it lacks.`,
+    inputSchema: z.object({
+      kind: z.enum(["boundary", "component"]),
+      keep: z.string().describe("Exact name of the record to keep."),
+      duplicate: z
+        .string()
+        .describe("Exact name of the record to fold into it and retire."),
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const known = documented(ctx, input.kind);
+      const keep = known.get(input.keep.toLowerCase());
+      const dup = known.get(input.duplicate.toLowerCase());
+      if (!keep || !dup)
+        return unknownReference(
+          input.kind,
+          keep ? input.duplicate : input.keep,
+          known.keys(),
+          "Give the exact current names of both records.",
+        );
+      if (keep.id === dup.id)
+        return {
+          success: false,
+          error: "same_record",
+          message: "keep and duplicate are the same record.",
+        };
+      const topology = loadTopology(ctx.session.rootPath);
+      const isDup = (id: unknown, name: unknown) =>
+        id === dup.id ||
+        (id === undefined &&
+          String(name).toLowerCase() === String(dup.name).toLowerCase());
+      const swap = (ids: unknown, names: unknown) => {
+        const nameList = Array.isArray(names) ? names.map(String) : [];
+        const idList = Array.isArray(ids)
+          ? ids.map(String)
+          : nameList.map(() => undefined);
+        const pairs = nameList.map((n, i) =>
+          isDup(idList[i], n) ? [keep.id, String(keep.name)] : [idList[i], n],
+        );
+        const seen = new Set<string>();
+        const kept = pairs.filter(([id, n]) => {
+          const k = String(id ?? n).toLowerCase();
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        return { ids: kept.map(([id]) => id), names: kept.map(([, n]) => n) };
+      };
+      let moved = 0;
+      let retiredFlows = 0;
+
+      if (input.kind === "component") {
+        const keys = new Set(
+          topology.flows
+            .filter((f) => !isDup(f.fromId, f.from) && !isDup(f.toId, f.to))
+            .map((f) =>
+              flowKey(
+                String(f.fromId ?? f.from),
+                String(f.toId ?? f.to),
+                f.label,
+              ),
+            ),
+        );
+        for (const f of topology.flows) {
+          const fromDup = isDup(f.fromId, f.from);
+          const toDup = isDup(f.toId, f.to);
+          if (!fromDup && !toDup) continue;
+          const fromId = fromDup ? keep.id : f.fromId;
+          const toId = toDup ? keep.id : f.toId;
+          const key = flowKey(
+            String(fromId ?? f.from),
+            String(toId ?? f.to),
+            f.label,
+          );
+          const name = `${f.from}__${f.to}__${f.label}`;
+          if (fromId === toId || keys.has(key)) {
+            save(ctx, "flow", name, {
+              ...f,
+              status: "retired",
+              retiredReason: `Merged into "${keep.name}"`,
+            });
+            retiredFlows++;
+            continue;
+          }
+          keys.add(key);
+          save(ctx, "flow", name, {
+            ...f,
+            ...(fromDup ? { from: keep.name, fromId: keep.id } : {}),
+            ...(toDup ? { to: keep.name, toId: keep.id } : {}),
+          });
+          moved++;
+        }
+        for (const c of topology.components) {
+          if (
+            c.id === dup.id ||
+            !(
+              Array.isArray(c.usedBy) &&
+              c.usedBy.some((n, i) =>
+                isDup((c.usedByIds as unknown[] | undefined)?.[i], n),
+              )
+            )
+          )
+            continue;
+          const { ids, names } = swap(c.usedByIds, c.usedBy);
+          save(ctx, "component", String(c.name), {
+            ...c,
+            usedBy: names,
+            usedByIds: ids,
+          });
+          moved++;
+        }
+      } else {
+        for (const c of topology.components)
+          if (isDup(c.boundaryId, c.boundary)) {
+            save(ctx, "component", String(c.name), {
+              ...c,
+              boundary: keep.name,
+              boundaryId: keep.id,
+            });
+            moved++;
+          }
+        for (const b of topology.boundaries)
+          if (
+            b.id !== dup.id &&
+            b.parent !== undefined &&
+            isDup(b.parentId, b.parent)
+          ) {
+            save(ctx, "boundary", String(b.name), {
+              ...b,
+              parent: keep.name,
+              parentId: keep.id,
+            });
+            moved++;
+          }
+      }
+      for (const c of topology.controls) {
+        const ids = c.appliesToIds as unknown[] | undefined;
+        if (
+          !(
+            Array.isArray(c.appliesTo) &&
+            c.appliesTo.some((n, i) => isDup(ids?.[i], n))
+          )
+        )
+          continue;
+        const swapped = swap(c.appliesToIds, c.appliesTo);
+        save(ctx, "control", String(c.name), {
+          ...c,
+          appliesTo: swapped.names,
+          appliesToIds: swapped.ids,
+        });
+        moved++;
+      }
+      save(ctx, input.kind, String(dup.name), {
+        ...dup,
+        status: "retired",
+        retiredReason: `Merged into "${keep.name}"`,
+      });
+      return {
+        success: true,
+        kept: keep.name,
+        retired: dup.name,
+        referencesMoved: moved,
+        flowsRetired: retiredFlows,
+        message: `Merged '${dup.name}' into '${keep.name}': ${moved} reference(s) moved, ${retiredFlows} duplicate flow(s) retired.`,
+      };
+    },
+  });
+}
+
 /** One problem `review_topology` found, with the fix it expects. */
 export interface TopologyIssue {
   check:
@@ -605,6 +824,7 @@ export interface TopologyIssue {
     | "public-without-host"
     | "client-off-device"
     | "references-retired"
+    | "possible-duplicate"
     | "unconnected";
   subject: string;
   fix: string;
@@ -703,6 +923,16 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
         fix: `It applies to the retired '${gone}': update appliesTo, or retire the control if nothing it protects remains.`,
       });
   }
+  for (const kind of ["boundary", "component"] as const)
+    for (const p of duplicatePairs(
+      kind,
+      kind === "boundary" ? boundaries : components,
+    ))
+      issues.push({
+        check: "possible-duplicate",
+        subject: `${p.a.name} / ${p.b.name}`,
+        fix: `They look like one ${kind} (${p.reason}). If they are, merge_records keeps one and folds the other into it; if not, document one again with distinctFrom naming the other.`,
+      });
   return issues;
 }
 
@@ -755,6 +985,24 @@ export function readDocumentedTopology(sessionRoot: string): MermaidTopology {
       gaps: optional(r.gaps),
     })),
   };
+}
+
+/**
+ * What a recon worker is told about the map when it is spawned, so it adds
+ * to the records the orchestrator and other workers made instead of
+ * documenting the same things under its own names.
+ */
+export function describeMapForWorker(sessionRoot: string): string {
+  const topology = loadTopology(sessionRoot);
+  if (!topology.boundaries.length && !topology.components.length) return "";
+  const line = (r: TopologyRecord, where: unknown) =>
+    `- ${r.name} (${r.kind}${where ? `, in ${where}` : ""})`;
+  return `## Already documented
+These records exist. Reuse their exact names: document one again under the same name to add to it, and attach flows and controls to these names. Create a record only for something not listed — never a second record for one of these under another name.
+Boundaries:
+${topology.boundaries.map((b) => line(b, b.parent)).join("\n") || "- none"}
+Components:
+${topology.components.map((c) => line(c, c.boundary)).join("\n") || "- none"}`;
 }
 
 /**

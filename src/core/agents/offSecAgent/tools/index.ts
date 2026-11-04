@@ -50,6 +50,7 @@ export {
   documentComponent,
   documentControl,
   documentFlow,
+  mergeRecords,
   retireRecord,
   reviewTopology,
 } from "./documentTopology";
@@ -243,6 +244,7 @@ import {
   documentComponent,
   documentControl,
   documentFlow,
+  mergeRecords,
   retireRecord,
   reviewTopology,
 } from "./documentTopology";
@@ -383,6 +385,7 @@ const TOOL_REGISTRY = [
   { name: "document_flow", factory: documentFlow },
   { name: "review_topology", factory: reviewTopology },
   { name: "retire_record", factory: retireRecord },
+  { name: "merge_records", factory: mergeRecords },
   { name: "document_control", factory: documentControl },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
@@ -663,6 +666,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_flow",
   "review_topology",
   "retire_record",
+  "merge_records",
   "document_control",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
@@ -735,6 +739,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "document_flow",
   "review_topology",
   "retire_record",
+  "merge_records",
   "document_control",
   // Whitebox jobs
   "run_whitebox_scan",

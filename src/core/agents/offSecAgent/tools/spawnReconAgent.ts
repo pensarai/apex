@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseTargetUrl } from "../../../../util/url";
 import { getModelSettings } from "../../../ai";
 import { type SpawnOptions, spawnBatch } from "../subagentSpawner";
+import { describeMapForWorker } from "./documentTopology";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
@@ -153,10 +154,11 @@ function reconSpawnOptions(
   parentToolCallId: string,
   onText: (text: string) => void,
 ): SpawnOptions<void> {
+  const map = describeMapForWorker(ctx.session.rootPath);
   return {
     spec: {
       type: "recon-worker",
-      goal: item.goal,
+      goal: map ? `${item.goal}\n\n${map}` : item.goal,
       target: item.target,
       codebasePath: item.codebasePath,
       attackSurfaceRegistry: ctx.attackSurfaceRegistry,
