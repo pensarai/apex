@@ -106,6 +106,22 @@ describe("duplicate signals", () => {
         }),
       ),
     ).toBeUndefined();
+    // Two apps listing the same APIs they call (as an update run recorded them) are not one app.
+    const calls = [
+      "http://graphql.pocketpay.example:20080/graphql",
+      "http://rtdb.pocketpay.example:20080",
+    ];
+    expect(
+      duplicateReason(
+        "component",
+        rec({
+          name: "PocketPay for Android",
+          kind: "client",
+          endpoints: calls,
+        }),
+        rec({ name: "PocketPay for iOS", kind: "client", endpoints: calls }),
+      ),
+    ).toBeUndefined();
     // /v1 and /v2 on one gateway host are different services.
     expect(
       duplicateReason(

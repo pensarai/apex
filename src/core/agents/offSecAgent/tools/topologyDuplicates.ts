@@ -89,7 +89,8 @@ export function duplicateReason(
   b: TopologyRecord,
 ): string | undefined {
   if (a.id === b.id || a.kind !== b.kind || distinct(a, b)) return undefined;
-  if (kind === "component") {
+  // Clients do not answer on hosts; two apps that call the same APIs are not one app.
+  if (kind === "component" && a.kind !== "client") {
     const [x, y] = [hosts(a), hosts(b)];
     const shared = [...x].filter((h) => y.has(h));
     if (shared.length) return `both answer on ${shared.join(", ")}`;
