@@ -1,14 +1,14 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import type { MermaidTopology } from "./topologyMermaid";
+import {
+  flowKey,
+  loadTopology,
+  newRecordId,
+  type RecordKind,
+  type TopologyRecord,
+  writeRecord,
+} from "./topologyRecords";
 import type { ToolContext } from "./types";
 
 /**
@@ -100,61 +100,75 @@ export const CONTROL_KINDS = [
   "logging",
 ] as const;
 
-type RecordKind = "boundary" | "component" | "flow" | "control";
+const COLLECTION = {
+  boundary: "boundaries",
+  component: "components",
+  control: "controls",
+} as const;
 
-function sanitize(name: string): string {
-  const cleaned = name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
-  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "unnamed";
-}
-
-function topologyDir(ctx: ToolContext): string {
-  return join(ctx.session.rootPath, "topology");
-}
-
-function writeRecord(
-  ctx: ToolContext,
-  kind: RecordKind,
-  key: string,
-  record: Record<string, unknown>,
-): string {
-  const dir = topologyDir(ctx);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filepath = join(dir, `${kind}_${sanitize(key)}_${timestamp}.json`);
-  writeFileSync(
-    filepath,
-    JSON.stringify(
-      {
-        ...record,
-        recordedAt: new Date().toISOString(),
-        sessionId: ctx.session.id,
-      },
-      null,
-      2,
-    ),
-  );
-  return filepath;
-}
-
-/** Latest record per lower-cased name for a kind, so references can be checked. */
+/** Active records of a kind by lower-cased current name, so references can be checked. */
 function documented(
   ctx: ToolContext,
   kind: "boundary" | "component" | "control",
-): Map<string, Record<string, unknown>> {
-  const dir = topologyDir(ctx);
-  const byName = new Map<string, Record<string, unknown>>();
-  if (!existsSync(dir)) return byName;
-  for (const file of readdirSync(dir).sort()) {
-    if (!file.startsWith(`${kind}_`) || !file.endsWith(".json")) continue;
-    const record = JSON.parse(readFileSync(join(dir, file), "utf8")) as Record<
-      string,
-      unknown
-    >;
-    if (typeof record.name === "string")
-      byName.set(record.name.toLowerCase(), record);
-  }
-  return byName;
+): Map<string, TopologyRecord> {
+  return new Map(
+    loadTopology(ctx.session.rootPath)[COLLECTION[kind]].map((r) => [
+      String(r.name).toLowerCase(),
+      r,
+    ]),
+  );
 }
+
+function save(
+  ctx: ToolContext,
+  kind: RecordKind,
+  key: string,
+  record: TopologyRecord,
+): string {
+  return writeRecord(ctx.session.rootPath, ctx.session.id, kind, key, record);
+}
+
+/**
+ * The id a boundary, component, or control write takes: the record named
+ * `renameFrom` (a rename keeps identity), else the record already holding
+ * `name`, else a new id. Refuses a rename onto a name another record holds.
+ */
+function identify(
+  ctx: ToolContext,
+  kind: "boundary" | "component" | "control",
+  name: string,
+  renameFrom: string | undefined,
+): { id: string } | { error: Record<string, unknown> } {
+  const known = documented(ctx, kind);
+  const current = known.get(name.toLowerCase());
+  if (!renameFrom) return { id: current?.id ?? newRecordId(kind) };
+  const original = known.get(renameFrom.toLowerCase());
+  if (!original)
+    return {
+      error: unknownReference(
+        kind,
+        renameFrom,
+        known.keys(),
+        "renameFrom must be the exact current name of a documented record.",
+      ),
+    };
+  if (current && current.id !== original.id)
+    return {
+      error: {
+        success: false,
+        error: "name_taken",
+        message: `Another ${kind} is already named "${name}". Retire or rename it first.`,
+      },
+    };
+  return { id: original.id };
+}
+
+const renameFromSchema = z
+  .string()
+  .optional()
+  .describe(
+    "Only to rename: the record's exact current name. It keeps its identity, and everything that references it follows the new name.",
+  );
 
 function unknownReference(
   what: string,
@@ -211,22 +225,30 @@ Call again with the same name to update a boundary.`,
           "Name of an already-documented boundary this one sits inside.",
         ),
       description: z.string().optional(),
+      renameFrom: renameFromSchema,
       evidence: evidenceSchema,
       toolCallDescription,
     }),
     execute: async (input) => {
-      if (input.parent) {
-        const boundaries = documented(ctx, "boundary");
-        if (!boundaries.has(input.parent.toLowerCase()))
-          return unknownReference(
-            "boundary",
-            input.parent,
-            boundaries.keys(),
-            "Document the parent boundary first.",
-          );
-      }
-      const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(ctx, "boundary", input.name, record);
+      const boundaries = documented(ctx, "boundary");
+      const parent = input.parent
+        ? boundaries.get(input.parent.toLowerCase())
+        : undefined;
+      if (input.parent && !parent)
+        return unknownReference(
+          "boundary",
+          input.parent,
+          boundaries.keys(),
+          "Document the parent boundary first.",
+        );
+      const identity = identify(ctx, "boundary", input.name, input.renameFrom);
+      if ("error" in identity) return identity.error;
+      const { toolCallDescription: _, renameFrom: __, ...record } = input;
+      const filepath = save(ctx, "boundary", input.name, {
+        ...record,
+        id: identity.id,
+        ...(parent ? { parentId: parent.id } : {}),
+      });
       return {
         success: true,
         name: input.name,
@@ -312,35 +334,50 @@ Call again with the same name to update a component — never create a second re
         .array(z.string())
         .optional()
         .describe("For a collapsed group (e.g. 12 queues), the member names."),
+      renameFrom: renameFromSchema,
       evidence: evidenceSchema,
       toolCallDescription,
     }),
     execute: async (input) => {
       const boundaries = documented(ctx, "boundary");
-      if (!boundaries.has(input.boundary.toLowerCase()))
+      const boundary = boundaries.get(input.boundary.toLowerCase());
+      if (!boundary)
         return unknownReference(
           "boundary",
           input.boundary,
           boundaries.keys(),
           "Document it with document_boundary first.",
         );
+      const applications = new Map(
+        [...documented(ctx, "component")].filter(
+          ([, record]) => record.kind === "application",
+        ),
+      );
       if (input.usedBy?.length) {
-        const applications = new Set(
-          [...documented(ctx, "component")]
-            .filter(([, record]) => record.kind === "application")
-            .map(([name]) => name),
-        );
         const missing = firstMissing(input.usedBy, applications);
         if (missing)
           return unknownReference(
             "application",
             missing,
-            applications,
+            applications.keys(),
             "Document the application with document_component (kind: application) first, or use its exact name.",
           );
       }
-      const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(ctx, "component", input.name, record);
+      const identity = identify(ctx, "component", input.name, input.renameFrom);
+      if ("error" in identity) return identity.error;
+      const { toolCallDescription: _, renameFrom: __, ...record } = input;
+      const filepath = save(ctx, "component", input.name, {
+        ...record,
+        id: identity.id,
+        boundaryId: boundary.id,
+        ...(input.usedBy?.length
+          ? {
+              usedByIds: input.usedBy.map(
+                (n) => (applications.get(n.toLowerCase()) as TopologyRecord).id,
+              ),
+            }
+          : {}),
+      });
       return {
         success: true,
         name: input.name,
@@ -381,12 +418,32 @@ export function documentFlow(ctx: ToolContext) {
           components.keys(),
           "Document it with document_component first.",
         );
+      const fromId = (
+        components.get(input.from.toLowerCase()) as TopologyRecord
+      ).id;
+      const toId = (components.get(input.to.toLowerCase()) as TopologyRecord)
+        .id;
+      const key = flowKey(fromId, toId, input.label);
+      // Flows recorded before ids carry names only; resolve those by name.
+      const idOf = (name: unknown, id: unknown) =>
+        typeof id === "string"
+          ? id
+          : (components.get(String(name).toLowerCase())?.id ?? "");
+      const existing = loadTopology(ctx.session.rootPath).flows.find(
+        (f) =>
+          flowKey(idOf(f.from, f.fromId), idOf(f.to, f.toId), f.label) === key,
+      );
       const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(
+      const filepath = save(
         ctx,
         "flow",
         `${input.from}__${input.to}__${input.label}`,
-        record,
+        {
+          ...record,
+          id: existing?.id ?? newRecordId("flow"),
+          fromId,
+          toId,
+        },
       );
       return {
         success: true,
@@ -428,24 +485,33 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
         .describe(
           "Where it does not apply, what can route around it, what it trusts, or weaknesses observed. Omit only when you found none.",
         ),
+      renameFrom: renameFromSchema,
       evidence: evidenceSchema,
       toolCallDescription,
     }),
     execute: async (input) => {
-      const layers = new Set([
-        ...documented(ctx, "boundary").keys(),
-        ...documented(ctx, "component").keys(),
+      const layers = new Map([
+        ...documented(ctx, "boundary"),
+        ...documented(ctx, "component"),
       ]);
       const missing = firstMissing(input.appliesTo, layers);
       if (missing)
         return unknownReference(
           "layer",
           missing,
-          layers,
+          layers.keys(),
           "Document it with document_boundary or document_component first.",
         );
-      const { toolCallDescription: _, ...record } = input;
-      const filepath = writeRecord(ctx, "control", input.name, record);
+      const identity = identify(ctx, "control", input.name, input.renameFrom);
+      if ("error" in identity) return identity.error;
+      const { toolCallDescription: _, renameFrom: __, ...record } = input;
+      const filepath = save(ctx, "control", input.name, {
+        ...record,
+        id: identity.id,
+        appliesToIds: input.appliesTo.map(
+          (n) => (layers.get(n.toLowerCase()) as TopologyRecord).id,
+        ),
+      });
       return {
         success: true,
         name: input.name,
@@ -453,6 +519,78 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
         appliesTo: input.appliesTo,
         filepath,
         message: `Control '${input.name}' documented`,
+      };
+    },
+  });
+}
+
+export function retireRecord(ctx: ToolContext) {
+  return tool({
+    description: `Retire a boundary, component, flow, or control that no longer exists — the only way to remove something from the map. Use it in an update run when evidence shows the thing is gone: a host that no longer resolves or answers, a resource removed from IaC or absent from the cloud inventory, a route deleted from code.
+
+Never retire something only because you did not look at it again, or to replace it with a renamed record (rename with renameFrom instead). Retiring a component does not retire its flows or controls; review_topology lists the ones left pointing at it.`,
+    inputSchema: z.object({
+      kind: z.enum(["boundary", "component", "flow", "control"]),
+      name: z
+        .string()
+        .optional()
+        .describe("Exact current name, for a boundary, component, or control."),
+      from: z.string().optional().describe("For a flow: its source component."),
+      to: z.string().optional().describe("For a flow: its target component."),
+      label: z.string().optional().describe("For a flow: its label."),
+      reason: z
+        .string()
+        .describe(
+          "What shows it is gone, e.g. 'api-old.example.com no longer resolves', 'queue removed from infra/queues.ts in abc123'.",
+        ),
+      evidence: evidenceSchema,
+      toolCallDescription,
+    }),
+    execute: async (input) => {
+      const topology = loadTopology(ctx.session.rootPath);
+      let record: TopologyRecord | undefined;
+      if (input.kind === "flow") {
+        record = topology.flows.find(
+          (f) =>
+            String(f.from).toLowerCase() === input.from?.toLowerCase() &&
+            String(f.to).toLowerCase() === input.to?.toLowerCase() &&
+            String(f.label ?? "").toLowerCase() ===
+              (input.label ?? "").toLowerCase(),
+        );
+        if (!record)
+          return unknownReference(
+            "flow",
+            `${input.from} → ${input.to} (${input.label})`,
+            topology.flows.map((f) => `${f.from} → ${f.to} (${f.label})`),
+            "Give the flow's exact from, to, and label.",
+          );
+      } else {
+        const known = documented(ctx, input.kind);
+        record = input.name ? known.get(input.name.toLowerCase()) : undefined;
+        if (!record)
+          return unknownReference(
+            input.kind,
+            input.name ?? "",
+            known.keys(),
+            "Give the exact current name.",
+          );
+      }
+      const name =
+        input.kind === "flow"
+          ? `${record.from}__${record.to}__${record.label}`
+          : String(record.name);
+      const filepath = save(ctx, input.kind, name, {
+        ...record,
+        status: "retired",
+        retiredReason: input.reason,
+        evidence: input.evidence,
+      });
+      return {
+        success: true,
+        kind: input.kind,
+        id: record.id,
+        filepath,
+        message: `Retired ${input.kind} '${name.replace(/__/g, " → ")}'`,
       };
     },
   });
@@ -466,35 +604,26 @@ export interface TopologyIssue {
     | "names-two-parts"
     | "public-without-host"
     | "client-off-device"
+    | "references-retired"
     | "unconnected";
   subject: string;
   fix: string;
 }
 
-function latestRecords(
-  ctx: ToolContext,
-  prefix: string,
-): Record<string, unknown>[] {
-  const dir = topologyDir(ctx);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
-    .sort()
-    .map(
-      (f) =>
-        JSON.parse(readFileSync(join(dir, f), "utf8")) as Record<
-          string,
-          unknown
-        >,
-    );
-}
-
 /** Deterministic checks over the documented topology. */
 export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
-  const boundaries = [...documented(ctx, "boundary").values()];
-  const components = [...documented(ctx, "component").values()];
-  const flows = latestRecords(ctx, "flow_");
+  const topology = loadTopology(ctx.session.rootPath);
+  const boundaries = topology.boundaries;
+  const components = topology.components;
+  const flows = topology.flows;
   const lower = (v: unknown) => String(v ?? "").toLowerCase();
+  const retired = new Set(
+    topology.retired
+      .filter((r) => r.kind === "component" || r.kind === "boundary")
+      .map((r) => lower(r.record.name)),
+  );
+  const pointsAtRetired = (names: unknown[]) =>
+    names.find((n) => retired.has(lower(n)));
   const subnetParents = new Set(
     boundaries.filter((b) => b.kind === "subnet").map((b) => lower(b.parent)),
   );
@@ -556,6 +685,24 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
         fix: "Document the flows that reach it and that it makes, or remove it if it is not on an attack path.",
       });
   }
+  for (const f of flows) {
+    const gone = pointsAtRetired([f.from, f.to]);
+    if (gone)
+      issues.push({
+        check: "references-retired",
+        subject: `${f.from} → ${f.to} (${f.label})`,
+        fix: `It reaches the retired '${gone}': retire the flow too, or document the component again if it still exists.`,
+      });
+  }
+  for (const c of topology.controls) {
+    const gone = pointsAtRetired(Array.isArray(c.appliesTo) ? c.appliesTo : []);
+    if (gone)
+      issues.push({
+        check: "references-retired",
+        subject: String(c.name),
+        fix: `It applies to the retired '${gone}': update appliesTo, or retire the control if nothing it protects remains.`,
+      });
+  }
   return issues;
 }
 
@@ -579,16 +726,11 @@ Resolve every issue by documenting again with the same name (or splitting a comp
   });
 }
 
-/**
- * What a session has documented so far, for a continuation pass that picks up
- * where an earlier pass stopped.
- */
-/** The documented topology in a session: the latest record per name, and every flow version (last wins downstream). */
+/** The active documented topology in a session, references resolved to current names. */
 export function readDocumentedTopology(sessionRoot: string): MermaidTopology {
-  const ctx = { session: { rootPath: sessionRoot } } as ToolContext;
-  const latest = (kind: "boundary" | "component" | "control") => [
-    ...documented(ctx, kind).values(),
-  ];
+  const topology = loadTopology(sessionRoot);
+  const latest = (kind: "boundary" | "component" | "control") =>
+    topology[COLLECTION[kind]];
   const optional = (v: unknown) => (v == null ? undefined : String(v));
   return {
     boundaries: latest("boundary").map((r) => ({
@@ -602,7 +744,7 @@ export function readDocumentedTopology(sessionRoot: string): MermaidTopology {
       boundary: String(r.boundary),
       exposure: optional(r.exposure),
     })),
-    flows: latestRecords(ctx, "flow_").map((r) => ({
+    flows: topology.flows.map((r) => ({
       from: String(r.from),
       to: String(r.to),
       label: optional(r.label),
@@ -615,6 +757,10 @@ export function readDocumentedTopology(sessionRoot: string): MermaidTopology {
   };
 }
 
+/**
+ * What a session has documented so far, for a continuation pass that picks up
+ * where an earlier pass stopped.
+ */
 export function describeDocumentedTopology(
   sessionRoot: string,
   pass: number,
@@ -622,7 +768,7 @@ export function describeDocumentedTopology(
   const ctx = { session: { rootPath: sessionRoot } } as ToolContext;
   const names = (kind: "boundary" | "component" | "control") =>
     [...documented(ctx, kind).values()].map((r) => String(r.name));
-  const flows = latestRecords(ctx, "flow_").length;
+  const flows = loadTopology(sessionRoot).flows.length;
   const issues = reviewTopologyRecords(ctx);
   const list = (items: string[]) => (items.length ? items.join("; ") : "none");
   return `## Continue (pass ${pass + 1})

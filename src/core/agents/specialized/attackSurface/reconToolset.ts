@@ -51,6 +51,7 @@ export const RECON_WORKER_TOOLS: string[] = [
 export const GENERALIZED_ATTACK_SURFACE_TOOLS: string[] = [
   ...RECON_WORKER_TOOLS,
   "review_topology",
+  "retire_record",
   "spawn_recon_agent",
   "create_attack_surface_report",
 ];
