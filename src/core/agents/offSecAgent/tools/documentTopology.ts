@@ -8,6 +8,7 @@ import {
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import type { MermaidTopology } from "./topologyMermaid";
 import type { ToolContext } from "./types";
 
 /**
@@ -582,6 +583,38 @@ Resolve every issue by documenting again with the same name (or splitting a comp
  * What a session has documented so far, for a continuation pass that picks up
  * where an earlier pass stopped.
  */
+/** The documented topology in a session: the latest record per name, and every flow version (last wins downstream). */
+export function readDocumentedTopology(sessionRoot: string): MermaidTopology {
+  const ctx = { session: { rootPath: sessionRoot } } as ToolContext;
+  const latest = (kind: "boundary" | "component" | "control") => [
+    ...documented(ctx, kind).values(),
+  ];
+  const optional = (v: unknown) => (v == null ? undefined : String(v));
+  return {
+    boundaries: latest("boundary").map((r) => ({
+      name: String(r.name),
+      kind: String(r.kind),
+      parent: optional(r.parent),
+    })),
+    components: latest("component").map((r) => ({
+      name: String(r.name),
+      kind: String(r.kind),
+      boundary: String(r.boundary),
+      exposure: optional(r.exposure),
+    })),
+    flows: latestRecords(ctx, "flow_").map((r) => ({
+      from: String(r.from),
+      to: String(r.to),
+      label: optional(r.label),
+    })),
+    controls: latest("control").map((r) => ({
+      name: String(r.name),
+      appliesTo: Array.isArray(r.appliesTo) ? r.appliesTo.map(String) : [],
+      gaps: optional(r.gaps),
+    })),
+  };
+}
+
 export function describeDocumentedTopology(
   sessionRoot: string,
   pass: number,
