@@ -4,12 +4,66 @@ import { tool } from "ai";
 import { z } from "zod";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
+import {
+  classifyEntraSignInError,
+  ENTRA_ERROR_CODE_PATTERN,
+} from "./entraSignInErrors";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("complete_authentication"));
 
 const AUTH_DIR = "auth";
 const AUTH_DATA_FILENAME = "auth-data.json";
+
+const completeAuthenticationInputSchema = z.object({
+  success: z.boolean().describe("Whether authentication was successful"),
+  summary: z.string().describe("Summary of authentication process and result"),
+  exportedCookies: z
+    .string()
+    .optional()
+    .describe(
+      "Cookie header string from authentication (e.g. from browser_get_cookies cookieHeader field or Set-Cookie response). Format: 'name1=value1; name2=value2'",
+    ),
+  exportedHeaders: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe(
+      'Auth headers to include in future requests (e.g. {"Authorization": "Bearer <token>"})',
+    ),
+  strategy: z
+    .string()
+    .optional()
+    .describe(
+      "Authentication strategy used (browser, form_post, json_post, basic_auth, bearer, api_key)",
+    ),
+  authBarrier: z
+    .object({
+      type: z.enum([
+        "captcha",
+        "mfa",
+        "oauth_consent",
+        "rate_limit",
+        "unknown",
+      ]),
+      details: z.string(),
+    })
+    .optional()
+    .describe("Auth barrier if one was encountered"),
+  entraErrorCode: z
+    .string()
+    .regex(ENTRA_ERROR_CODE_PATTERN)
+    .optional()
+    .describe(
+      "The AADSTS error code shown on a Microsoft Entra sign-in error page (e.g. AADSTS53003). When set, the run is recorded as a failed sign-in with the reason for that code.",
+    ),
+  toolCallDescription: z
+    .string()
+    .describe("A concise description of what this tool call is doing"),
+});
+
+type CompleteAuthenticationInput = z.infer<
+  typeof completeAuthenticationInputSchema
+>;
 
 /**
  * Factory for the `complete_authentication` tool.
@@ -42,47 +96,9 @@ so downstream agents can make authenticated requests. Pass:
 On success the credentials are persisted to the session's auth/ directory for reuse.
 
 This tool marks the end of the authentication flow.`,
-    inputSchema: z.object({
-      success: z.boolean().describe("Whether authentication was successful"),
-      summary: z
-        .string()
-        .describe("Summary of authentication process and result"),
-      exportedCookies: z
-        .string()
-        .optional()
-        .describe(
-          "Cookie header string from authentication (e.g. from browser_get_cookies cookieHeader field or Set-Cookie response). Format: 'name1=value1; name2=value2'",
-        ),
-      exportedHeaders: z
-        .record(z.string(), z.string())
-        .optional()
-        .describe(
-          'Auth headers to include in future requests (e.g. {"Authorization": "Bearer <token>"})',
-        ),
-      strategy: z
-        .string()
-        .optional()
-        .describe(
-          "Authentication strategy used (browser, form_post, json_post, basic_auth, bearer, api_key)",
-        ),
-      authBarrier: z
-        .object({
-          type: z.enum([
-            "captcha",
-            "mfa",
-            "oauth_consent",
-            "rate_limit",
-            "unknown",
-          ]),
-          details: z.string(),
-        })
-        .optional()
-        .describe("Auth barrier if one was encountered"),
-      toolCallDescription: z
-        .string()
-        .describe("A concise description of what this tool call is doing"),
-    }),
-    execute: async (result) => {
+    inputSchema: completeAuthenticationInputSchema,
+    execute: async (input) => {
+      const result = applyEntraSignInError(input);
       log.info(
         `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}`,
       );
@@ -133,4 +149,21 @@ This tool marks the end of the authentication flow.`,
       };
     },
   });
+}
+
+export function applyEntraSignInError(
+  input: CompleteAuthenticationInput,
+): CompleteAuthenticationInput {
+  if (!input.entraErrorCode) return input;
+  const { code, reason, barrier } = classifyEntraSignInError(
+    input.entraErrorCode,
+  );
+  return {
+    ...input,
+    success: false,
+    exportedCookies: "",
+    exportedHeaders: {},
+    summary: `Entra sign-in failed (${code}): ${reason}. ${input.summary}`,
+    authBarrier: { type: barrier, details: `${code}: ${reason}` },
+  };
 }

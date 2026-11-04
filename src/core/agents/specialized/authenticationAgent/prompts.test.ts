@@ -33,4 +33,11 @@ describe("AUTH_SUBAGENT_SYSTEM_PROMPT", () => {
     expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain("accounts.google.com");
     expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain("Google employee ID");
   });
+
+  it("includes the Microsoft Entra ID sign-in strategy", () => {
+    expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain(
+      "## Sign in with Microsoft Entra ID",
+    );
+    expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain("`entraErrorCode`");
+  });
 });
