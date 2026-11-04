@@ -1,4 +1,4 @@
-type EntraBarrierType = "mfa" | "oauth_consent" | "rate_limit" | "unknown";
+type EntraBarrierType = "mfa" | "oauth_consent" | "unknown";
 
 interface EntraSignInError {
   reason: string;
@@ -14,8 +14,9 @@ const ENTRA_SIGN_IN_ERRORS: Record<string, EntraSignInError> = {
     barrier: "unknown",
   },
   "50053": {
-    reason: "Account locked after too many sign-in attempts",
-    barrier: "rate_limit",
+    reason:
+      "Account locked or sign-in blocked from this IP; the tenant's sign-in logs tell which",
+    barrier: "unknown",
   },
   "50055": { reason: "Password expired", barrier: "unknown" },
   "50057": { reason: "Account disabled", barrier: "unknown" },

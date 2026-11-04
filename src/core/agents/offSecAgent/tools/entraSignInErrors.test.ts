@@ -21,8 +21,8 @@ describe("classifyEntraSignInError", () => {
     ],
     [
       "AADSTS50053",
-      "Account locked after too many sign-in attempts",
-      "rate_limit",
+      "Account locked or sign-in blocked from this IP; the tenant's sign-in logs tell which",
+      "unknown",
     ],
     ["AADSTS50126", "Invalid username or password", "unknown"],
     ["AADSTS65001", "Application consent required", "oauth_consent"],
