@@ -62,88 +62,92 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
     expect(modelRequiresThinking(id)).toBe(required);
   });
 
-  it.each([
-    true,
-    false,
-  ])("sends valid structured output with thinking preference %s", async (enableThinking) => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) => completion(id),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const model = getProviderModel(id, { anthropicAPIKey: "test-key" });
-    await model.doGenerate({
-      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
-      temperature: 0.2,
-      topP: 0.9,
-      topK: 10,
-      responseFormat: {
-        type: "json",
-        schema: {
-          type: "object",
-          properties: { ok: { type: "boolean" } },
-          required: ["ok"],
-          additionalProperties: false,
-        },
-      },
-      providerOptions: buildReasoningProviderOptions(id, {
-        enableThinking,
-        thinkingEffort: "medium",
-      }),
-    });
-    const call = fetchMock.mock.calls[0];
-    if (!call) throw new Error("Expected a Claude request");
-    expect(String(call[0])).toBe("https://api.anthropic.com/v1/messages");
-    const body = JSON.parse(String(call[1]?.body));
-    if (boundModels.has(id) && (enableThinking || required)) {
-      expect(body.thinking.block_binding).toEqual({
-        prefix_mismatch_behavior: "drop_block",
-      });
-      expect(new Headers(call[1]?.headers).get("anthropic-beta")).toContain(
-        "thinking-binding-controls-2026-08-01",
+  it.each([true, false])(
+    "sends valid structured output with thinking preference %s",
+    async (enableThinking) => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completion(id),
       );
-    } else {
-      expect(body.thinking.block_binding).toBeUndefined();
-    }
-    expect(body).toMatchObject({
-      model: id,
-      max_tokens: 128_000,
-      output_config: {
-        ...(enableThinking || required ? { effort: "medium" } : {}),
-        format: { type: "json_schema" },
-      },
-      thinking: { type: enableThinking || required ? "adaptive" : "disabled" },
-    });
-    expect(body.temperature).toBeUndefined();
-    expect(body.top_p).toBeUndefined();
-    expect(body.top_k).toBeUndefined();
-    expect(body.tool_choice).toBeUndefined();
-    expect(body.tools).toBeUndefined();
-  });
+      vi.stubGlobal("fetch", fetchMock);
+      const model = getProviderModel(id, { anthropicAPIKey: "test-key" });
+      await model.doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 10,
+        responseFormat: {
+          type: "json",
+          schema: {
+            type: "object",
+            properties: { ok: { type: "boolean" } },
+            required: ["ok"],
+            additionalProperties: false,
+          },
+        },
+        providerOptions: buildReasoningProviderOptions(id, {
+          enableThinking,
+          thinkingEffort: "medium",
+        }),
+      });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected a Claude request");
+      expect(String(call[0])).toBe("https://api.anthropic.com/v1/messages");
+      const body = JSON.parse(String(call[1]?.body));
+      if (boundModels.has(id) && (enableThinking || required)) {
+        expect(body.thinking.block_binding).toEqual({
+          prefix_mismatch_behavior: "drop_block",
+        });
+        expect(new Headers(call[1]?.headers).get("anthropic-beta")).toContain(
+          "thinking-binding-controls-2026-08-01",
+        );
+      } else {
+        expect(body.thinking.block_binding).toBeUndefined();
+      }
+      expect(body).toMatchObject({
+        model: id,
+        max_tokens: 128_000,
+        output_config: {
+          ...(enableThinking || required ? { effort: "medium" } : {}),
+          format: { type: "json_schema" },
+        },
+        thinking: {
+          type: enableThinking || required ? "adaptive" : "disabled",
+        },
+      });
+      expect(body.temperature).toBeUndefined();
+      expect(body.top_p).toBeUndefined();
+      expect(body.top_k).toBeUndefined();
+      expect(body.tool_choice).toBeUndefined();
+      expect(body.tools).toBeUndefined();
+    },
+  );
 
-  it.each([
-    "xhigh",
-    "max",
-  ] as const)("preserves the %s adaptive effort through SDK serialization", async (thinkingEffort) => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) => completion(id),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const model = getProviderModel(id, { anthropicAPIKey: "test-key" });
-    await model.doGenerate({
-      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
-      providerOptions: buildReasoningProviderOptions(id, {
-        enableThinking: true,
-        thinkingEffort,
-      }),
-    });
-    const call = fetchMock.mock.calls[0];
-    if (!call) throw new Error("Expected a Claude request");
-    expect(JSON.parse(String(call[1]?.body))).toMatchObject({
-      model: id,
-      thinking: { type: "adaptive" },
-      output_config: { effort: thinkingEffort },
-    });
-  });
+  it.each(["xhigh", "max"] as const)(
+    "preserves the %s adaptive effort through SDK serialization",
+    async (thinkingEffort) => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completion(id),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const model = getProviderModel(id, { anthropicAPIKey: "test-key" });
+      await model.doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+        providerOptions: buildReasoningProviderOptions(id, {
+          enableThinking: true,
+          thinkingEffort,
+        }),
+      });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected a Claude request");
+      expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+        model: id,
+        thinking: { type: "adaptive" },
+        output_config: { effort: thinkingEffort },
+      });
+    },
+  );
 
   it("preserves signed thinking and tool calls across turns", async () => {
     const events = [
@@ -294,33 +298,33 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
 });
 
 describe("Anthropic Claude Haiku 5.5 effort", () => {
-  it.each([
-    "xhigh",
-    "max",
-  ] as const)("sends the %s effort with adaptive thinking", async (effort) => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        completion("claude-haiku-5-5"),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+  it.each(["xhigh", "max"] as const)(
+    "sends the %s effort with adaptive thinking",
+    async (effort) => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completion("claude-haiku-5-5"),
+      );
+      vi.stubGlobal("fetch", fetchMock);
 
-    await getProviderModel("claude-haiku-5-5", {
-      anthropicAPIKey: "test-key",
-    }).doGenerate({
-      prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
-      providerOptions: buildReasoningProviderOptions("claude-haiku-5-5", {
-        enableThinking: true,
-        thinkingEffort: effort,
-      }),
-    });
+      await getProviderModel("claude-haiku-5-5", {
+        anthropicAPIKey: "test-key",
+      }).doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+        providerOptions: buildReasoningProviderOptions("claude-haiku-5-5", {
+          enableThinking: true,
+          thinkingEffort: effort,
+        }),
+      });
 
-    const call = fetchMock.mock.calls[0];
-    if (!call) throw new Error("Expected a Claude request");
-    expect(JSON.parse(String(call[1]?.body))).toMatchObject({
-      thinking: { type: "adaptive" },
-      output_config: { effort },
-    });
-  });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected a Claude request");
+      expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+        thinking: { type: "adaptive" },
+        output_config: { effort },
+      });
+    },
+  );
 
   it("uses the documented medium effort by default", async () => {
     const fetchMock = vi.fn(

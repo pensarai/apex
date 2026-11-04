@@ -4,9 +4,9 @@ import {
   BlackboxAttackSurfaceAgent,
 } from "../agents/specialized/attackSurface/blackboxAgent";
 import {
-  GeneralizedAttackSurfaceAgent,
   type GeneralizedAttackSurfaceAgentInput,
   type GeneralizedAttackSurfaceResult,
+  runGeneralizedReconToReport,
 } from "../agents/specialized/attackSurface/generalizedAgent";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
 import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";
@@ -81,8 +81,7 @@ export type {
 export async function runGeneralizedAttackSurface(
   input: GeneralizedAttackSurfaceAgentInput,
 ): Promise<GeneralizedAttackSurfaceResult> {
-  const agent = new GeneralizedAttackSurfaceAgent(input);
-  return agent.consume();
+  return runGeneralizedReconToReport(input);
 }
 
 // ---------------------------------------------------------------------------

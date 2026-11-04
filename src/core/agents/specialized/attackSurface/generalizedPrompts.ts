@@ -53,6 +53,7 @@ export function buildGeneralizedAttackSurfacePrompt(
   origins: readonly string[],
   connectedRepositories: ReadonlyArray<{ name: string; url: string }>,
   operatorPrompt: string | undefined,
+  continuation?: string,
 ): string {
   const repoBlock =
     connectedRepositories.length > 0
@@ -70,7 +71,9 @@ export function buildGeneralizedAttackSurfacePrompt(
       ? `ORIGIN: ${origins[0]}`
       : `ORIGINS (one system):\n${origins.map((o) => `- ${o}`).join("\n")}`;
 
+  const continuationBlock = continuation ? `\n${continuation}\n` : "";
+
   return `${originBlock}
-${repoBlock}${operatorBlock}
+${repoBlock}${operatorBlock}${continuationBlock}
 Begin now. Probe each origin, map it to connected source, document the boundaries, components, and flows behind it with evidence, analyze the controls at every layer, and finish by calling create_attack_surface_report.`;
 }

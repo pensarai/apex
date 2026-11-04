@@ -556,3 +556,27 @@ Resolve every issue by documenting again with the same name (or splitting a comp
     },
   });
 }
+
+/**
+ * What a session has documented so far, for a continuation pass that picks up
+ * where an earlier pass stopped.
+ */
+export function describeDocumentedTopology(
+  sessionRoot: string,
+  pass: number,
+): string {
+  const ctx = { session: { rootPath: sessionRoot } } as ToolContext;
+  const names = (kind: "boundary" | "component" | "control") =>
+    [...documented(ctx, kind).values()].map((r) => String(r.name));
+  const flows = latestRecords(ctx, "flow_").length;
+  const issues = reviewTopologyRecords(ctx);
+  const list = (items: string[]) => (items.length ? items.join("; ") : "none");
+  return `## Continue (pass ${pass + 1})
+An earlier pass stopped before calling create_attack_surface_report. Everything it documented is kept; do not re-document it unless you are correcting it, and do not start over.
+- Boundaries: ${list(names("boundary"))}
+- Components: ${list(names("component"))}
+- Controls: ${list(names("control"))}
+- Flows: ${flows}
+- review_topology issues: ${issues.length ? issues.map((i) => `${i.check}: ${i.subject}`).join("; ") : "none"}
+Pick up from here: finish mapping the components, flows, and controls that are still missing, resolve the review_topology issues, then call create_attack_surface_report. Keep calling tools until the report is written.`;
+}

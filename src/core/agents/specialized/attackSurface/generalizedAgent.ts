@@ -4,6 +4,7 @@ import { hasToolCall, stepCountIs } from "ai";
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
+import { describeDocumentedTopology } from "../../offSecAgent/tools/documentTopology";
 import {
   buildGeneralizedAttackSurfacePrompt,
   GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
@@ -26,6 +27,11 @@ export interface GeneralizedAttackSurfaceAgentInput
    * the environment can't fulfill.
    */
   excludeTools?: string[];
+  /**
+   * Set when an earlier pass stopped before its report: what is already
+   * documented, so this pass continues instead of starting over.
+   */
+  continuation?: string;
 }
 
 /** Typed result returned by {@link GeneralizedAttackSurfaceAgent.consume}. */
@@ -76,6 +82,7 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
       [...new Set([state.target, ...opts.session.targets])],
       opts.session.config?.connectedRepositories ?? [],
       opts.session.config?.prompt,
+      opts.continuation,
     ),
   resolveResult: (opts) => {
     const resultsPath = join(
@@ -105,6 +112,42 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
  * objectives — no per-endpoint enumeration. It can fan out scoped recon
  * workers that share its toolset.
  */
+/** Passes allowed after the first when a pass stops before its report. */
+export const MAX_RECON_CONTINUATIONS = 3;
+
+/**
+ * Run the generalized agent until it writes its report.
+ *
+ * A model step with no tool call ends a pass, so a model that pauses to think
+ * (or returns nothing) would end the run having documented little. The
+ * session holds everything documented so far, so a continuation pass is told
+ * what exists and what review_topology still flags, and picks up from there.
+ * After {@link MAX_RECON_CONTINUATIONS} passes without a report the run fails.
+ */
+export async function runGeneralizedReconToReport(
+  input: GeneralizedAttackSurfaceAgentInput,
+  createAgent: (input: GeneralizedAttackSurfaceAgentInput) => {
+    consume(): Promise<GeneralizedAttackSurfaceResult>;
+  } = (i) => new GeneralizedAttackSurfaceAgent(i),
+): Promise<GeneralizedAttackSurfaceResult> {
+  let result = await createAgent(input).consume();
+  for (
+    let pass = 1;
+    !result.results && pass <= MAX_RECON_CONTINUATIONS;
+    pass++
+  ) {
+    result = await createAgent({
+      ...input,
+      continuation: describeDocumentedTopology(input.session.rootPath, pass),
+    }).consume();
+  }
+  if (!result.results)
+    throw new Error(
+      `Generalized recon for ${input.target} stopped before create_attack_surface_report after ${MAX_RECON_CONTINUATIONS} continuation passes (session ${input.session.id})`,
+    );
+  return result;
+}
+
 export class GeneralizedAttackSurfaceAgent extends AgentRuntime<
   GeneralizedAttackSurfaceAgentInput,
   GeneralizedAttackSurfaceResult,
