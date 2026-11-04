@@ -538,8 +538,11 @@ describe("recorded attempts at the model boundary", () => {
       doStream: async () => textStream("A compact summary"),
       doGenerate: async () => generated("A compact summary"),
     });
+    // The latest user message is replayed verbatim, so the oversized turn is an earlier one.
     const messages: ModelMessage[] = [
       { role: "user", content: "irreducible ".repeat(100_000) },
+      { role: "assistant", content: "Noted." },
+      { role: "user", content: "Continue." },
     ];
 
     const response = streamResponse({
