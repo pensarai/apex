@@ -123,7 +123,8 @@ export type SystemPentestScope = {
 export type StreamIdFactoryContext =
   | { kind: "message"; stepIndex: number }
   | { kind: "text-part"; stepIndex: number; textPartIndex: number }
-  | { kind: "tool-part"; toolCallId: string };
+  | { kind: "tool-part"; toolCallId: string }
+  | { kind: "compaction-part"; stepIndex: number };
 
 /**
  * Mints message/part ids for streamed events. Defaults to random ULIDs

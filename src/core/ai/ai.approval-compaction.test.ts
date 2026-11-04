@@ -296,6 +296,36 @@ describe("pending approvals across context compaction", () => {
   });
 });
 
+describe("step cap across a compaction restart", () => {
+  const readStep = (id: string): LanguageModelV3StreamPart[] => [
+    { type: "stream-start", warnings: [] },
+    { type: "tool-call", toolCallId: id, toolName: "read", input: '{"a":"x"}' },
+    finish("tool-calls"),
+  ];
+
+  it("counts steps before the restart against the same stopWhen", async () => {
+    const t = setup();
+    const onSummarized = vi.fn();
+    await t.drive(
+      t.model({
+        main: [
+          readStep("r1"),
+          "context-error",
+          readStep("r2"),
+          readStep("r3"),
+          readStep("r4"),
+          "ok",
+        ],
+      }),
+      [user],
+      { extra: { stopWhen: stepCountIs(3), onSummarized } },
+    );
+    expect(onSummarized).toHaveBeenCalledOnce();
+    expect(t.executed).toEqual(["read", "read", "read"]);
+    expect(t.mainPrompts).toHaveLength(4);
+  });
+});
+
 describe("splitPendingApprovals", () => {
   const call = (id: string) => ({
     type: "tool-call" as const,
@@ -336,6 +366,7 @@ describe("splitPendingApprovals", () => {
     expect(splitPendingApprovals([...head, ...pinned])).toEqual({
       head,
       pinned,
+      pinnedToolCallIds: ["a", "b"],
     });
   });
 
@@ -358,6 +389,7 @@ describe("splitPendingApprovals", () => {
     expect(splitPendingApprovals(messages)).toEqual({
       head: messages,
       pinned: [],
+      pinnedToolCallIds: [],
     });
   });
 

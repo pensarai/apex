@@ -138,6 +138,20 @@ export type AgentEventMap = {
     /** The assistant message (`msg_…`) that just closed this step. */
     messageId?: string;
   };
+  /**
+   * The model continued from a context reset; `messageId` is the first step
+   * after it. Emitted once per reset, and only once the model resumed.
+   */
+  "context-compacted": {
+    kind: "summary" | "reset";
+    summary: string;
+    /** Approved/denied calls replayed verbatim after the reset. */
+    pinnedToolCallIds: string[];
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
+  };
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
   "trace-record": {
@@ -181,6 +195,7 @@ const CHILD_BUS_FORWARD_POLICY: {
   "subagent-spawn": "forward",
   "subagent-complete": "forward",
   "step-finish": "forward",
+  "context-compacted": "forward",
   "command-output": "forward",
   error: "forward",
   "trace-record": "forward",

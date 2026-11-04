@@ -606,9 +606,11 @@ function generateToolResultSummary(toolName: string, text: string): string {
 export function splitPendingApprovals(messages: ModelMessage[]): {
   head: ModelMessage[];
   pinned: ModelMessage[];
+  pinnedToolCallIds: string[];
 } {
   const last = messages.at(-1);
-  if (last?.role !== "tool") return { head: messages, pinned: [] };
+  if (last?.role !== "tool")
+    return { head: messages, pinned: [], pinnedToolCallIds: [] };
   const resolved = new Set<string>();
   const callIdByApprovalId = new Map<string, string>();
   for (const message of messages) {
@@ -628,7 +630,8 @@ export function splitPendingApprovals(messages: ModelMessage[]): {
     pendingCallIds.add(toolCallId);
     pendingApprovalIds.add(part.approvalId);
   }
-  if (pendingCallIds.size === 0) return { head: messages, pinned: [] };
+  if (pendingCallIds.size === 0)
+    return { head: messages, pinned: [], pinnedToolCallIds: [] };
   const start = messages.findIndex(
     (message) =>
       message.role === "assistant" &&
@@ -640,5 +643,9 @@ export function splitPendingApprovals(messages: ModelMessage[]): {
             pendingApprovalIds.has(part.approvalId)),
       ),
   );
-  return { head: messages.slice(0, start), pinned: messages.slice(start) };
+  return {
+    head: messages.slice(0, start),
+    pinned: messages.slice(start),
+    pinnedToolCallIds: [...pendingCallIds],
+  };
 }

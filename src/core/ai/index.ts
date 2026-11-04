@@ -2,6 +2,7 @@ export type {
   AIModel,
   AIModelProvider,
   CacheMetrics,
+  ContextCompaction,
   GenerateObjectOpts,
   ModelInfo,
   NormalizedStepUsage,

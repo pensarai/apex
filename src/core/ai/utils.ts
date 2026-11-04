@@ -475,7 +475,7 @@ async function summarizeConversation(
     compaction,
   }: { model: LanguageModel; compaction?: CompactionTelemetry },
 ): Promise<StreamTextResult<ToolSet, never>> {
-  const { head, pinned } = splitPendingApprovals(messages);
+  const { head, pinned, pinnedToolCallIds } = splitPendingApprovals(messages);
   const cacheBreakpoint = cacheBreakpointFor(opts.model);
   // Keep tool schemas in the cached prefix without allowing compaction to execute them.
   const summaryTools = opts.tools
@@ -731,7 +731,11 @@ async function summarizeConversation(
   compaction?.finish("completed");
 
   // Notify callers that context was reset so they can discard stale history.
-  opts.onSummarized?.(summary);
+  opts.onSummarized?.({
+    kind: "summary",
+    summary: summaryWithTasks,
+    pinnedToolCallIds,
+  });
 
   // Successful proactive compaction resets the error-recovery depth.
   const nextRestartDepth =
