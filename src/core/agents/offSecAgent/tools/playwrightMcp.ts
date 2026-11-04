@@ -491,14 +491,12 @@ export class PlaywrightMcpSession {
 
     this.headerPolicy =
       headerPolicy &&
-      (headerPolicy.enforceScope ||
-        (headerPolicy.allowedHosts.length > 0 &&
-          Object.keys(headerPolicy.headers).length > 0))
+      headerPolicy.allowedHosts.length > 0 &&
+      Object.keys(headerPolicy.headers).length > 0
         ? {
             allowedHosts: [...headerPolicy.allowedHosts],
             allowedPorts: [...headerPolicy.allowedPorts],
             headers: { ...headerPolicy.headers },
-            enforceScope: headerPolicy.enforceScope,
           }
         : undefined;
   }

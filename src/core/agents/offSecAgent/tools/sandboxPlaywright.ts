@@ -344,7 +344,6 @@ async function runPlaywrightScript(
       allowedHosts: [],
       allowedPorts: [],
       headers: {},
-      enforceScope: false,
     },
   );
   const script = `

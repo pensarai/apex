@@ -139,9 +139,8 @@ describe("SandboxBrowserBackend", () => {
     );
 
     const script = generatedPlaywrightScript(commands);
-    expect(script).toContain("const __apexEnforceScope = false;");
-    expect(script).not.toContain("__enforceScope");
-    expect(script).not.toContain("__allowedHosts");
+    expect(script).not.toContain("route.abort");
+    expect(script).not.toContain("EnforceScope");
     expect(script).toContain("serviceWorkers: 'block'");
   });
 

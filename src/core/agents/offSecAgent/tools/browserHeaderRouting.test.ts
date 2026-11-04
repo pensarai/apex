@@ -40,24 +40,6 @@ describe("resolveBrowserHeaderPolicy", () => {
     });
   });
 
-  it("leaves page traffic unenforced so redirects and auth hops load", () => {
-    expect(
-      resolveBrowserHeaderPolicy(
-        {
-          targets: ["https://app.example.com"],
-          config: {
-            scopeConstraints: {
-              strictScope: true,
-              allowedHosts: ["app.example.com"],
-              allowedPorts: [443],
-            },
-          },
-        },
-        "https://app.example.com/login",
-      ).enforceScope,
-    ).toBe(false);
-  });
-
   it("injects nothing when no target scope exists", () => {
     expect(
       resolveBrowserHeaderPolicy({
@@ -67,7 +49,6 @@ describe("resolveBrowserHeaderPolicy", () => {
       allowedHosts: [],
       allowedPorts: [],
       headers: {},
-      enforceScope: false,
     });
   });
 
@@ -118,7 +99,6 @@ describe("browserHeaderRouteFunction", () => {
         allowedHosts: ["*.example.com"],
         allowedPorts: [443],
         headers: { "X-Scoped-Secret": "secret" },
-        enforceScope: true,
         ...overrides,
       })})`,
       {},
@@ -138,11 +118,8 @@ describe("browserHeaderRouteFunction", () => {
     };
   }
 
-  it.each([
-    true,
-    false,
-  ])("fetches one scoped hop with headers with scope enforcement %s", async (enforceScope) => {
-    const handler = await installRoute({ enforceScope });
+  it("fetches one scoped hop with headers, then fulfills the browser request", async () => {
+    const handler = await installRoute();
     const continueRequest = vi.fn(async () => {});
     const fetchedResponse = {
       status: () => 200,
@@ -176,9 +153,10 @@ describe("browserHeaderRouteFunction", () => {
     expect(continueRequest).not.toHaveBeenCalled();
   });
 
-  it("aborts out-of-scope requests when scope enforcement is active", async () => {
+  it("lets an out-of-scope request load without engagement headers", async () => {
     const handler = await installRoute();
     const continueRequest = vi.fn(async () => {});
+    const fetchRequest = vi.fn();
     const abortRequest = vi.fn(async () => {});
 
     await handler({
@@ -187,30 +165,11 @@ describe("browserHeaderRouteFunction", () => {
         allHeaders: async () => ({ accept: "application/json" }),
       }),
       continue: continueRequest,
-      fetch: vi.fn(),
-      fulfill: vi.fn(),
-      abort: abortRequest,
-    });
-
-    expect(abortRequest).toHaveBeenCalledWith("blockedbyclient");
-    expect(continueRequest).not.toHaveBeenCalled();
-  });
-
-  it("continues unscoped requests without injecting headers when enforcement is disabled", async () => {
-    const handler = await installRoute({ enforceScope: false });
-    const continueRequest = vi.fn(async () => {});
-    const fetchRequest = vi.fn();
-    const abortRequest = vi.fn();
-    await handler({
-      request: () => ({
-        url: () => "https://outside.example.net/data",
-        allHeaders: async () => ({}),
-      }),
-      continue: continueRequest,
       fetch: fetchRequest,
       fulfill: vi.fn(),
       abort: abortRequest,
     });
+
     expect(continueRequest).toHaveBeenCalledWith();
     expect(fetchRequest).not.toHaveBeenCalled();
     expect(abortRequest).not.toHaveBeenCalled();
@@ -219,7 +178,7 @@ describe("browserHeaderRouteFunction", () => {
   it("uses the destination host rather than matching userinfo", async () => {
     const handler = await installRoute();
     const continueRequest = vi.fn(async () => {});
-    const abortRequest = vi.fn(async () => {});
+    const fetchRequest = vi.fn();
 
     await handler({
       request: () => ({
@@ -227,20 +186,19 @@ describe("browserHeaderRouteFunction", () => {
         allHeaders: async () => ({ accept: "application/json" }),
       }),
       continue: continueRequest,
-      fetch: vi.fn(),
+      fetch: fetchRequest,
       fulfill: vi.fn(),
-      abort: abortRequest,
+      abort: vi.fn(),
     });
 
-    expect(abortRequest).toHaveBeenCalledWith("blockedbyclient");
-    expect(continueRequest).not.toHaveBeenCalled();
+    expect(continueRequest).toHaveBeenCalledWith();
+    expect(fetchRequest).not.toHaveBeenCalled();
   });
 
   it("does not inject headers on an unlisted port", async () => {
     const handler = await installRoute();
     const continueRequest = vi.fn(async () => {});
     const fetchRequest = vi.fn();
-    const abortRequest = vi.fn(async () => {});
 
     await handler({
       request: () => ({
@@ -250,18 +208,21 @@ describe("browserHeaderRouteFunction", () => {
       continue: continueRequest,
       fetch: fetchRequest,
       fulfill: vi.fn(),
-      abort: abortRequest,
+      abort: vi.fn(),
     });
 
-    expect(abortRequest).toHaveBeenCalledWith("blockedbyclient");
-    expect(continueRequest).not.toHaveBeenCalled();
+    expect(continueRequest).toHaveBeenCalledWith();
     expect(fetchRequest).not.toHaveBeenCalled();
   });
 
-  it("aborts a redirect response before the browser follows it", async () => {
+  it("hands an in-scope redirect to the browser to follow", async () => {
     const handler = await installRoute();
     const abortRequest = vi.fn(async () => {});
     const fulfillRequest = vi.fn(async () => {});
+    const redirect = {
+      status: () => 302,
+      headers: () => ({ location: "https://outside.example.net/final" }),
+    };
 
     await handler({
       request: () => ({
@@ -269,15 +230,12 @@ describe("browserHeaderRouteFunction", () => {
         allHeaders: async () => ({ accept: "text/html" }),
       }),
       continue: vi.fn(),
-      fetch: vi.fn(async () => ({
-        status: () => 302,
-        headers: () => ({ location: "https://outside.example.net/final" }),
-      })),
+      fetch: vi.fn(async () => redirect),
       fulfill: fulfillRequest,
       abort: abortRequest,
     });
 
-    expect(abortRequest).toHaveBeenCalledWith("blockedbyclient");
-    expect(fulfillRequest).not.toHaveBeenCalled();
+    expect(fulfillRequest).toHaveBeenCalledWith({ response: redirect });
+    expect(abortRequest).not.toHaveBeenCalled();
   });
 });

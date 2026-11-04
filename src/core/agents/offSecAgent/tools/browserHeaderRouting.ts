@@ -13,8 +13,6 @@ export interface BrowserHeaderPolicy {
   readonly allowedHosts: string[];
   readonly allowedPorts: number[];
   readonly headers: HeaderRecord;
-  /** Abort off-scope page requests and redirects. Session policies leave this off. */
-  readonly enforceScope: boolean;
 }
 
 export function resolveBrowserHeaderPolicy(
@@ -39,22 +37,18 @@ export function resolveBrowserHeaderPolicy(
     allowedHosts,
     allowedPorts,
     headers: headers ?? {},
-    // Redirects and auth hops must load in the page; explicit navigations are
-    // still held to the run's hosts by the tool policy.
-    enforceScope: false,
   };
 }
 
+/** Adds engagement headers to in-scope page requests; navigation scope is the tool policy's job. */
 export function browserHeaderRouteBody(policy: BrowserHeaderPolicy): string {
   return `
 const __apexAllowedHosts = ${JSON.stringify(policy.allowedHosts)};
 const __apexAllowedPorts = ${JSON.stringify(policy.allowedPorts)};
 const __apexHeaders = ${JSON.stringify(policy.headers)};
-const __apexEnforceScope = ${JSON.stringify(policy.enforceScope)};
-if (__apexEnforceScope || Object.keys(__apexHeaders).length > 0) {
+if (Object.keys(__apexHeaders).length > 0) {
   await context.route('**/*', async route => {
-    if (__apexEnforceScope) await route.abort('blockedbyclient');
-    else await route.continue();
+    await route.continue();
   });
   await context.route(parsed => {
     const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
@@ -85,14 +79,6 @@ if (__apexEnforceScope || Object.keys(__apexHeaders).length > 0) {
       headers: { ...requestHeaders, ...__apexHeaders },
       maxRedirects: 0,
     });
-    if (
-      __apexEnforceScope &&
-      [301, 302, 303, 307, 308].includes(response.status()) &&
-      response.headers()['location']
-    ) {
-      await route.abort('blockedbyclient');
-      return;
-    }
     await route.fulfill({ response });
   });
 }
