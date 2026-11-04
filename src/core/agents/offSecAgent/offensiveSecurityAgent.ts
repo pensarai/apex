@@ -9,7 +9,7 @@ import type {
   TextStreamPart,
   ToolSet,
 } from "ai";
-import { hasToolCall, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import {
   normalizeStepUsage,
   resolveModelRuntimeProfile,
@@ -349,6 +349,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
+  private readonly requiresResponse: boolean;
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
@@ -536,6 +537,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
     this.agentMode = input.mode ?? "default";
+    this.requiresResponse = Boolean(input.responseSchema);
     this.abortSignal = input.abortSignal;
     this.streamIdFactory = input.streamIdFactory;
     this.contextRecorder = input.contextRecorder;
@@ -878,9 +880,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      const responseStop: StopCondition<ToolSet> = () =>
+        this._responseToolFired;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
@@ -1334,6 +1335,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const tracker = new ToolLifecycleTracker();
       let streamError: unknown;
       let hasStreamError = false;
+      let responseError: unknown;
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
@@ -1353,6 +1355,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
           diagnostics.observeChunk(chunk);
+          if (
+            chunk.type === "tool-error" &&
+            chunk.toolName === RESPONSE_TOOL_NAME
+          )
+            responseError = chunk.error;
           this.applyStreamPart(chunk, { ids, tracker, diagnostics });
           bus.emitStreamPart(chunk, ids);
         }
@@ -1391,6 +1398,13 @@ export class OffensiveSecurityAgent<TResult = void> {
 
       if (this.abortSignal?.aborted) {
         throw agentAbortReason(this.abortSignal);
+      }
+
+      if (this.requiresResponse && !this._responseToolFired) {
+        throw new Error(
+          `Structured agent ${this.busSessionId} ended without a validated response`,
+          { cause: responseError },
+        );
       }
 
       if (this.resolveResult) {

@@ -713,22 +713,30 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     seams,
   };
 
-  assertDepth(1, seams.limits);
-  await seams.fanOut.spawnMany(
-    appsResult.apps,
-    async (app, appIndex) => {
-      await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
+  try {
+    assertDepth(1, seams.limits);
+    await seams.fanOut.spawnMany(
+      appsResult.apps,
+      async (app, appIndex) => {
+        await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
 
-      completedAppCount++;
+        completedAppCount++;
 
-      eventBus?.emit("app-analysis-progress", {
-        totalApps,
-        completedApps: completedAppCount,
-        appName: app.name,
-      });
-    },
-    { concurrency: DEFAULT_CONCURRENCY },
-  );
+        eventBus?.emit("app-analysis-progress", {
+          totalApps,
+          completedApps: completedAppCount,
+          appName: app.name,
+        });
+      },
+      { concurrency: DEFAULT_CONCURRENCY },
+    );
+  } catch (error) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "failed",
+    });
+    throw error;
+  }
 
   eventBus?.emit("subagent-complete", {
     subagentId: WORKFLOW_UMBRELLA_ID,

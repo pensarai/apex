@@ -28,6 +28,17 @@ vi.mock("../../../ai", async (importOriginal) => {
         )) {
           yield { type: "tool-result", output };
         }
+        for await (const output of opts.tools.response.execute(
+          {
+            result: {
+              endpointsDocumented: 1,
+              summary: "Documented GET /hello",
+            },
+          },
+          { toolCallId: "child-response", messages: [] },
+        )) {
+          yield { type: "tool-result", output };
+        }
       })(),
       response: Promise.resolve({ messages: [] }),
     }),
