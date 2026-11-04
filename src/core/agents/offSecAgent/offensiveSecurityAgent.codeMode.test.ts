@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import {
+  type StopCondition,
   simulateReadableStream,
   streamText,
   type ToolExecutionOptions,
@@ -18,14 +20,28 @@ import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 import type { OffensiveSecurityAgentInput } from "./types";
 
 const observed = vi.hoisted(() => ({
-  requests: [] as { tools: ToolSet; activeTools: string[]; system: string }[],
+  requests: [] as {
+    tools: ToolSet;
+    activeTools: string[];
+    system: string;
+    stopWhen?: StopCondition<ToolSet> | Array<StopCondition<ToolSet>>;
+  }[],
   streamError: undefined as Error | undefined,
+  streamResultFactory: undefined as
+    | ((request: {
+        tools: ToolSet;
+        stopWhen?: StopCondition<ToolSet> | Array<StopCondition<ToolSet>>;
+      }) => ReturnType<typeof streamText>)
+    | undefined,
 }));
 
 vi.mock("../../ai", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../ai")>()),
   streamResponse: (request: (typeof observed.requests)[number]) => {
     observed.requests.push(request);
+    if (observed.streamResultFactory) {
+      return observed.streamResultFactory(request);
+    }
     return {
       fullStream: (async function* () {
         if (observed.streamError) throw observed.streamError;
@@ -45,6 +61,7 @@ afterEach(async () => {
     rmSync(root, { recursive: true, force: true });
   observed.requests.length = 0;
   observed.streamError = undefined;
+  observed.streamResultFactory = undefined;
 });
 
 function makeAgent(options: Partial<OffensiveSecurityAgentInput<void>> = {}) {
@@ -95,6 +112,142 @@ async function executeDirect(tools: ToolSet, name: string) {
 }
 
 describe("agent code mode", () => {
+  it("continues after an invalid response tool call and succeeds on a later valid one", async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async () => {
+        const call = calls++;
+        const chunks = [
+          { type: "stream-start", warnings: [] },
+          call === 0
+            ? {
+                type: "tool-call" as const,
+                toolCallId: "invalid_response",
+                toolName: "response",
+                input: JSON.stringify({ result: {} }),
+              }
+            : {
+                type: "tool-call" as const,
+                toolCallId: "valid_response",
+                toolName: "response",
+                input: JSON.stringify({ result: { done: true } }),
+              },
+          {
+            type: "finish" as const,
+            finishReason: { unified: "tool-calls", raw: "tool_calls" },
+            usage: {
+              inputTokens: {
+                total: 1,
+                noCache: 1,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 1, text: 1, reasoning: 0 },
+            },
+          },
+        ] as unknown as LanguageModelV3StreamPart[];
+        return {
+          stream: simulateReadableStream({
+            chunks,
+          }),
+        };
+      },
+    });
+    observed.streamResultFactory = (request) =>
+      streamText({
+        model,
+        tools: request.tools,
+        stopWhen: request.stopWhen,
+        prompt: "submit results",
+      });
+
+    const { agent } = makeAgent({
+      activeTools: ["response"],
+      responseSchema: z.object({ done: z.boolean() }),
+    });
+
+    await expect(agent.consume()).resolves.toEqual({ done: true });
+    expect(calls).toBe(2);
+  });
+
+  it("rejects when an invalid response tool call is followed by natural finish", async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async () => {
+        const call = calls++;
+        const chunks = (call === 0
+          ? [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: "invalid_response",
+                toolName: "response",
+                input: JSON.stringify({ result: {} }),
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls",
+                  raw: "tool_calls",
+                },
+                usage: {
+                  inputTokens: {
+                    total: 1,
+                    noCache: 1,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 1, text: 1, reasoning: 0 },
+                },
+              },
+            ]
+          : [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "natural" },
+              {
+                type: "text-delta",
+                id: "natural",
+                delta: "done",
+              },
+              { type: "text-end", id: "natural" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 1,
+                    noCache: 1,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 1, text: 1, reasoning: 0 },
+                },
+              },
+            ]) as unknown as LanguageModelV3StreamPart[];
+        return {
+          stream: simulateReadableStream({
+            chunks,
+          }),
+        };
+      },
+    });
+    observed.streamResultFactory = (request) =>
+      streamText({
+        model,
+        tools: request.tools,
+        stopWhen: request.stopWhen,
+        prompt: "submit results",
+      });
+
+    const { agent } = makeAgent({
+      activeTools: ["response"],
+      responseSchema: z.object({ done: z.boolean() }),
+    });
+
+    await expect(agent.consume()).rejects.toThrow();
+    expect(calls).toBe(2);
+  });
+
   it("executes findings, checkpoint, and response contracts together in one SDK step", async () => {
     let release = () => {};
     const held = new Promise<void>((resolve) => {

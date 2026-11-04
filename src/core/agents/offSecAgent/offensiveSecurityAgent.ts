@@ -8,7 +8,7 @@ import type {
   TextStreamPart,
   ToolSet,
 } from "ai";
-import { hasToolCall, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import {
   normalizeStepUsage,
   resolveModelRuntimeProfile,
@@ -325,6 +325,12 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Raw structured result submitted to the response tool, retained for root-span output. */
   private _responseToolResult: unknown;
 
+  /** True when this run requires a schema-validated response tool result. */
+  private readonly responseRequired: boolean;
+
+  /** Last response tool validation/execution error observed before a valid capture. */
+  private responseToolError: unknown;
+
   /** Resolves the instant `response` captures the result, so {@link consume} can return early and drain in the background. */
   private _resolveResponseCaptured!: (result: TResult) => void;
   private _rejectResponseCaptured!: (err: unknown) => void;
@@ -538,6 +544,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.contextRecorder = input.contextRecorder;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
+    this.responseRequired = Boolean(input.responseSchema);
 
     // -- Resolve agent working directory ----------------------------------------
     // Explicit input wins over session config; command cwd and file-tool
@@ -874,9 +881,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      const responseStop = (() =>
+        this._responseToolFired) as StopCondition<ToolSet>;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
@@ -1389,6 +1395,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         throw agentAbortReason(this.abortSignal);
       }
 
+      if (this.responseRequired && !this._responseToolFired) {
+        throw responseCaptureFailure(this.responseToolError);
+      }
+
       if (this.resolveResult) {
         if (this._responseToolFired) {
           return undefined as TResult;
@@ -1631,6 +1641,13 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
       default:
         // Tool-input/delta, tool-call, tool-error, tool-result → tracker.
+        if (
+          chunk.type === "tool-error" &&
+          (chunk as { toolName?: string }).toolName === RESPONSE_TOOL_NAME &&
+          !this._responseToolFired
+        ) {
+          this.responseToolError = (chunk as { error?: unknown }).error;
+        }
         tracker.observePart(chunk);
     }
   }
@@ -1896,4 +1913,19 @@ function safePreview(value: unknown): string {
   } catch {
     return "[unserializable result]";
   }
+}
+
+function responseCaptureFailure(cause: unknown): Error {
+  if (cause instanceof Error) {
+    return cause;
+  }
+  const detail =
+    cause === undefined
+      ? "no response tool call executed successfully"
+      : typeof cause === "string"
+        ? cause
+        : safePreview(cause);
+  return new Error(
+    `Structured response tool did not capture a valid result: ${detail}`,
+  );
 }
