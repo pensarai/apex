@@ -59,6 +59,7 @@ import { createHoonifyModel } from "./providers/hoonify";
 import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
 import {
+  compactedHistoryNotice,
   SUMMARIZER_SYSTEM_PROMPT,
   SUMMARY_INSTRUCTION,
   summaryRequest,
@@ -655,8 +656,9 @@ async function summarizeConversation(
     ? (opts._initialPrompt ?? opts.prompt)
     : opts.prompt;
   const originalLength = originalPrompt.length;
-  const enhancedPrompt =
-    originalLength > 100000
+  const enhancedPrompt = latestUser
+    ? compactedHistoryNotice(summaryWithTasks)
+    : originalLength > 100000
       ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
       : opts.primaryModelOnly
         ? `${originalPrompt}\n\nContinue the task using this conversation summary. Later user corrections in the summary take precedence over the original request:\n${summaryWithTasks}`

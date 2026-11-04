@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { AgentEventBus } from "../eventBus";
 import { splitPendingApprovals } from "./contextManagement";
+import { compactedHistoryNotice } from "./summaryTranscript";
 
 const state: { model?: MockLanguageModelV3 } = {};
 vi.mock("./utils", async () => ({
@@ -333,6 +334,21 @@ describe("latest user message across compaction", () => {
     expect(resumed).toHaveLength(2);
     expect(resumed[1]).toEqual(request);
     expect(JSON.stringify(resumed)).not.toContain(PADDING);
+  });
+
+  it("follows a summary framed as this conversation's history, not a hand-off", async () => {
+    const t = setup();
+    await t.drive(
+      t.model({ main: ["ok"], summary: "ok" }),
+      [user, { role: "assistant", content: PADDING }, request],
+      { contextLength: SMALL },
+    );
+    const resumed = t.prepared[0];
+    expect(resumed[0]).toEqual({
+      role: "user",
+      content: compactedHistoryNotice("sum"),
+    });
+    expect(resumed[1]).toEqual(request);
   });
 
   it("fails with a typed error instead of paraphrasing one the window cannot hold", async () => {
