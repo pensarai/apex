@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import type { ModelMessage, ToolSet } from "ai";
 import { persistToolOutput } from "../agents/offSecAgent/tools/toolOutput";
+import type { AgentHarness } from "./ai";
 import {
   beginCompaction,
   type CompactionContext,
@@ -668,4 +669,14 @@ export function splitResumeTail(
   )
     return split;
   return { ...split, latestUser };
+}
+
+/** What a compaction replays after the summary: pending approvals, and under the general harness the latest user message too. */
+export function splitResumeHistory(
+  messages: ModelMessage[],
+  opts: { harness?: AgentHarness; prompt: string; _initialPrompt?: string },
+): ReturnType<typeof splitResumeTail> {
+  return opts.harness === "general"
+    ? splitResumeTail(messages, [opts.prompt, opts._initialPrompt])
+    : splitPendingApprovals(messages);
 }

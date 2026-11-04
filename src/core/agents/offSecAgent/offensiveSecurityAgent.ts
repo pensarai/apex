@@ -1086,6 +1086,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.mode === "lance"
             ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
             : baseWithFacts + workspaceSection,
+        harness: input.harness,
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
         runContextCompaction: this.lanceRuntime?.runContextCompaction,

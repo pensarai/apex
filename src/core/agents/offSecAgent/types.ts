@@ -16,6 +16,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentHarness,
   AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
@@ -231,6 +232,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * @default "default"
    */
   mode?: AgentMode;
+  /** Opts into the general agent harness's compaction and step-cap handling. */
+  harness?: AgentHarness;
   lance?: import("../lance").LanceOptions;
 
   /** Session providing paths for findings, POCs, logs, etc. */

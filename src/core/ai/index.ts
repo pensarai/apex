@@ -1,4 +1,5 @@
 export type {
+  AgentHarness,
   AIModel,
   AIModelProvider,
   CacheMetrics,
@@ -31,6 +32,7 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export { compactedHistoryNotice } from "./compactionPrompts";
 export { IncompleteModelStreamError } from "./incompleteModelStream";
 export type {
   InferenceAttempt,
@@ -89,6 +91,5 @@ export {
   resolveReasoningSetting,
   validateReasoningSetting,
 } from "./reasoning";
-export { compactedHistoryNotice } from "./summaryTranscript";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";

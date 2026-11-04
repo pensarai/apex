@@ -56,7 +56,7 @@ import {
   estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
-  splitResumeTail,
+  splitResumeHistory,
   truncateWithMarker,
 } from "./contextManagement";
 import { projectFailedToolCalls } from "./failedToolCallHistory";
@@ -1137,10 +1137,7 @@ function wrapStreamWithErrorHandler(
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
                   const { latestUser, pinned, pinnedToolCallIds } =
-                    splitResumeTail(messagesForSummary, [
-                      opts.prompt,
-                      opts._initialPrompt,
-                    ]);
+                    splitResumeHistory(messagesForSummary, opts);
                   const resumeMessages = resumeMessagesWithPinned(
                     minimalPrompt,
                     { latestUser, pinned },
@@ -1407,6 +1404,8 @@ export function buildReasoningProviderOptions(
     : buildModelReasoningOptions(model, setting, opts);
 }
 
+export type AgentHarness = "general";
+
 /**
  * A context reset the resumed stream continues from: a `summary` of the
  * dropped history, or a `reset` that kept none of it. Pinned calls are the
@@ -1425,6 +1424,13 @@ export interface CacheMetrics {
 }
 
 export interface StreamResponseOpts {
+  /**
+   * Opts into the general agent harness's context handling: the latest user
+   * message is replayed verbatim after a compaction under the shared resume
+   * notice, a compaction summarizes under its own instruction, and the step
+   * cap spans compaction and retry restarts. Unset keeps the default shapes.
+   */
+  harness?: AgentHarness;
   /** Disables model repair and general recovery; compaction requires explicit admission. */
   primaryModelOnly?: boolean;
   runContextCompaction?: <T>(work: () => Promise<T>) => Promise<T>;
@@ -1678,7 +1684,7 @@ function streamResponseWithinOperation(
       step.response?.id !== "summarization" &&
       step.response?.id !== "tool-repair"
     ) {
-      streamSteps.push(step);
+      if (opts.harness === "general") streamSteps.push(step);
       if (step.response?.messages)
         responseMessageLength = step.response.messages.length;
     }
