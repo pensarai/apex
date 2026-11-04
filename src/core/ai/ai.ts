@@ -1583,8 +1583,8 @@ function streamResponseWithinOperation(
     rateLimit: 0,
     idleResume: 0,
   };
-  (opts as InternalStreamResponseOpts)[STREAM_STEPS] ??= [];
-  const streamSteps = (opts as InternalStreamResponseOpts)[STREAM_STEPS];
+  const streamSteps = ((opts as InternalStreamResponseOpts)[STREAM_STEPS] ??=
+    []);
   const priorSteps = [...streamSteps];
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
