@@ -1,6 +1,11 @@
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { LANCE_DESCRIPTION } from "../../../core/agents/lance";
+import {
+  DEFAULT_LANCE_BUDGET,
+  type LanceBudget,
+  lanceBudgetSchema,
+} from "../../../core/agents/lanceBudget";
 import type { FindingPolicy } from "../../../core/agents/offSecAgent";
 import { useConfig } from "../../context/config";
 import { Dialog } from "../../context/dialog";
@@ -22,7 +27,13 @@ const MODES = [
   { value: "lance", label: "Lance", description: LANCE_DESCRIPTION },
 ] as const;
 type ExecutionMode = (typeof MODES)[number]["value"];
-type FocusedSetting = "mode" | "judge" | "save";
+type SelectSetting = "mode" | "judge" | "budget";
+type FocusedSetting = SelectSetting | "limit" | "save";
+const BUDGETS = [
+  { value: "steps", label: "Steps", initial: 200 },
+  { value: "tokens", label: "Tokens", initial: 1000000 },
+  { value: "time", label: "Time", initial: 900 },
+] as const;
 const FINDING_POLICIES: { value: FindingPolicy; label: string }[] = [
   { value: "native", label: "Enabled (Apex judge)" },
   { value: "external", label: "Disabled" },
@@ -49,12 +60,33 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
   const [draftFindingPolicy, setDraftFindingPolicy] = useState<FindingPolicy>(
     config.data.findingPolicy ?? "native",
   );
-  const [openSelect, setOpenSelect] = useState<"mode" | "judge" | null>(null);
+  const savedBudget = config.data.lanceBudget ?? DEFAULT_LANCE_BUDGET;
+  const [budgetKind, setBudgetKind] = useState<LanceBudget["kind"]>(
+    savedBudget.kind,
+  );
+  const [budgetLimit, setBudgetLimit] = useState(
+    String(
+      savedBudget.kind === "time"
+        ? savedBudget.limit / 1000
+        : savedBudget.limit,
+    ),
+  );
+  const chooseBudget = (index: number) => {
+    const choice = BUDGETS[index]!;
+    if (choice.value !== budgetKind) setBudgetLimit(String(choice.initial));
+    setBudgetKind(choice.value);
+  };
+  const [openSelect, setOpenSelect] = useState<SelectSetting | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [focusedSetting, setFocusedSetting] = useState<FocusedSetting>("mode");
   const selectedMode = MODES.find((mode) => mode.value === draftMode)!;
   const judgeAvailable = draftMode !== "standard";
-  const choices = openSelect === "mode" ? MODES : FINDING_POLICIES;
+  const choices =
+    openSelect === "mode"
+      ? MODES
+      : openSelect === "budget"
+        ? BUDGETS
+        : FINDING_POLICIES;
 
   const toggleFocused = () => {
     if (focusedSetting === "mode") {
@@ -64,6 +96,12 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
             MODES.length
         ]!.value,
       );
+    } else if (focusedSetting === "budget") {
+      chooseBudget(
+        (BUDGETS.findIndex((b) => b.value === budgetKind) + 1) % BUDGETS.length,
+      );
+    } else if (focusedSetting === "limit") {
+      setFocusedSetting("save");
     } else if (focusedSetting === "judge") {
       setDraftFindingPolicy((policy) =>
         policy === "native" ? "external" : "native",
@@ -71,25 +109,30 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     }
     setOpenSelect(null);
   };
-  const openChoices = (setting: "mode" | "judge") => {
+  const openChoices = (setting: SelectSetting) => {
     setFocusedSetting(setting);
     setHighlightedIndex(
       setting === "mode"
         ? MODES.findIndex((mode) => mode.value === draftMode)
-        : FINDING_POLICIES.findIndex(
-            (policy) => policy.value === draftFindingPolicy,
-          ),
+        : setting === "budget"
+          ? BUDGETS.findIndex((b) => b.value === budgetKind)
+          : FINDING_POLICIES.findIndex(
+              (policy) => policy.value === draftFindingPolicy,
+            ),
     );
     setOpenSelect(setting);
   };
   const selectChoice = (index: number) => {
     if (openSelect === "mode") setDraftMode(MODES[index]!.value);
+    else if (openSelect === "budget") chooseBudget(index);
     else setDraftFindingPolicy(FINDING_POLICIES[index]!.value);
     setOpenSelect(null);
   };
   const moveFocus = (direction: number) => {
     const settings: FocusedSetting[] = judgeAvailable
-      ? ["mode", "judge", "save"]
+      ? draftMode === "lance"
+        ? ["mode", "judge", "budget", "limit", "save"]
+        : ["mode", "judge", "save"]
       : ["mode", "save"];
     setFocusedSetting(
       (focused) =>
@@ -104,10 +147,28 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     setSaving(true);
     setError(null);
     try {
+      const parsedBudget = lanceBudgetSchema.safeParse({
+        kind: budgetKind,
+        limit: Number(budgetLimit) * (budgetKind === "time" ? 1000 : 1),
+      });
+      if (draftMode === "lance" && !parsedBudget.success) {
+        setError(
+          budgetKind === "time"
+            ? "Enter a duration from 0.002 to 2147483.647 seconds."
+            : "Enter a positive whole-number limit.",
+        );
+        setSaving(false);
+        return;
+      }
+      const budget =
+        draftMode === "lance" && parsedBudget.success
+          ? parsedBudget.data
+          : undefined;
       await config.update({
         strikeMode: draftMode === "strike",
         lanceMode: draftMode === "lance",
         findingPolicy: draftFindingPolicy,
+        ...(budget ? { lanceBudget: budget } : {}),
       });
       onClose();
     } catch (cause) {
@@ -118,7 +179,15 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
       );
       setSaving(false);
     }
-  }, [config, draftMode, draftFindingPolicy, onClose, saving]);
+  }, [
+    config,
+    draftMode,
+    draftFindingPolicy,
+    budgetKind,
+    budgetLimit,
+    onClose,
+    saving,
+  ]);
 
   useKeyboard((key) => {
     if (key.name === "tab") {
@@ -146,17 +215,19 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     } else if (key.name === "return") {
       key.preventDefault();
       if (focusedSetting === "save") void saveSettings();
+      else if (focusedSetting === "limit") setFocusedSetting("save");
       else openChoices(focusedSetting);
     }
   });
 
-  const choiceList = (setting: "mode" | "judge") =>
+  const choiceList = (setting: SelectSetting) =>
     openSelect === setting && (
       <box flexDirection="column" overflow="hidden">
         {choices.map((choice, index) => (
           <box
             key={choice.value}
             flexDirection="row"
+            flexShrink={0}
             paddingLeft={1}
             overflow="hidden"
             backgroundColor={
@@ -192,9 +263,14 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
             : []),
         ]}
       >
-        <box flexDirection="column" gap={compact ? 0 : 1} overflow="hidden">
+        <box
+          flexDirection="column"
+          gap={compact || draftMode === "lance" ? 0 : 1}
+          overflow="hidden"
+        >
           <box
             flexDirection="row"
+            flexShrink={0}
             justifyContent="space-between"
             overflow="hidden"
             backgroundColor={
@@ -211,12 +287,17 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
           </box>
           {choiceList("mode")}
           {(!compact || !openSelect) && (
-            <text fg={colors.textMuted}>{selectedMode.description}</text>
+            <text fg={colors.textMuted}>
+              {compact && draftMode === "lance"
+                ? "Minimal offensive-capability mode."
+                : selectedMode.description}
+            </text>
           )}
           {judgeAvailable && (
             <>
               <box
                 flexDirection="row"
+                flexShrink={0}
                 justifyContent="space-between"
                 overflow="hidden"
                 backgroundColor={
@@ -251,14 +332,72 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
               )}
             </>
           )}
-          {!openSelect && (
-            <text fg={colors.textMuted}>
-              New sessions only.
-              {draftMode === "lance" ? " Lance has a 15-minute budget." : ""}
-            </text>
+          {draftMode === "lance" && (
+            <>
+              <box
+                flexDirection="row"
+                flexShrink={0}
+                justifyContent="space-between"
+                overflow="hidden"
+                backgroundColor={
+                  focusedSetting === "budget"
+                    ? colors.backgroundSelected
+                    : undefined
+                }
+                onMouseDown={() => openChoices("budget")}
+              >
+                <text
+                  fg={
+                    focusedSetting === "budget" ? colors.primary : colors.text
+                  }
+                >
+                  {focusedSetting === "budget" ? "❯ " : "  "}Run budget
+                </text>
+                <text fg={colors.primary}>
+                  {BUDGETS.find((b) => b.value === budgetKind)!.label} ▾
+                </text>
+              </box>
+              {choiceList("budget")}
+              <box
+                flexDirection="row"
+                flexShrink={0}
+                justifyContent="space-between"
+                overflow="hidden"
+                onMouseDown={() => {
+                  setOpenSelect(null);
+                  setFocusedSetting("limit");
+                }}
+              >
+                <text
+                  fg={focusedSetting === "limit" ? colors.primary : colors.text}
+                >
+                  {focusedSetting === "limit" ? "❯ " : "  "}Limit (
+                  {budgetKind === "time" ? "seconds" : budgetKind})
+                </text>
+                <input
+                  width={18}
+                  value={budgetLimit}
+                  onInput={setBudgetLimit}
+                  focused={focusedSetting === "limit" && !openSelect}
+                  textColor={colors.text}
+                  focusedTextColor={colors.text}
+                  backgroundColor={colors.backgroundElement}
+                  focusedBackgroundColor={colors.backgroundSelected}
+                />
+              </box>
+              {!compact && !openSelect && (
+                <text fg={colors.textMuted}>
+                  {budgetKind === "tokens"
+                    ? "Input + output, including cache, compaction and judge. Checked after requests."
+                    : "One budget per turn. Other budget types are disabled."}
+                </text>
+              )}
+            </>
           )}
+          {!openSelect && <text fg={colors.textMuted}>New sessions only.</text>}
           <box
             flexDirection="row"
+            flexShrink={0}
             overflow="hidden"
             backgroundColor={
               focusedSetting === "save" && !openSelect

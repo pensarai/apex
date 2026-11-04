@@ -351,7 +351,8 @@ describe("Lance terminal policy", () => {
     runtime.finish();
     expect(runtime.metrics("m").outcome).toBe("unsolved");
     const limited = new LanceRuntime();
-    for (let i = 0; i < LANCE_CONFIG.maxSteps; i++) limited.stepFinished();
+    for (let i = 0; i < LANCE_CONFIG.defaultBudget.limit; i++)
+      limited.stepFinished();
     limited.finish();
     expect(limited.metrics("m").outcome).toBe("step_limit");
   });

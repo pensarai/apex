@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { type LanceBudget, lanceBudgetSchema } from "../agents/lanceBudget";
 import type { FindingPolicy } from "../agents/offSecAgent";
 import type { ReasoningSetting } from "../ai";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
@@ -70,6 +71,7 @@ export interface Config {
   // Default workflow for newly created TUI operator sessions.
   strikeMode?: boolean;
   lanceMode?: boolean;
+  lanceBudget?: LanceBudget;
   findingPolicy?: FindingPolicy;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
@@ -136,6 +138,10 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     strikeMode: parsedConfig.strikeMode ?? DEFAULT_CONFIG.strikeMode,
     lanceMode: parsedConfig.lanceMode === true,
+    lanceBudget:
+      parsedConfig.lanceBudget === undefined
+        ? undefined
+        : lanceBudgetSchema.parse(parsedConfig.lanceBudget),
     findingPolicy:
       parsedConfig.findingPolicy === "external" ? "external" : "native",
     surfaceIntegrationEnabled:

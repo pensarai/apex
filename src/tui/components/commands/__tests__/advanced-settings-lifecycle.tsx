@@ -7,9 +7,11 @@ import type { Config } from "../../../../core/config/config";
 
 const scenario = process.argv[2];
 assert.ok(
-  scenario === "native" ||
+  scenario === "lance-time" ||
+    scenario === "native" ||
     scenario === "external" ||
     scenario === "compact" ||
+    scenario === "lance-time" ||
     scenario === "lance" ||
     scenario === "lance-compact" ||
     scenario === "resume-lance",
@@ -23,6 +25,8 @@ mock.module(join(import.meta.dirname, "../../../context/config.tsx"), () => ({
     data: {
       strikeMode: false,
       lanceMode: scenario === "resume-lance",
+      lanceBudget:
+        scenario === "resume-lance" ? { kind: "steps", limit: 750 } : undefined,
       findingPolicy: scenario === "resume-lance" ? "external" : "native",
     },
     update: async (patch: Partial<Config>) => {
@@ -70,8 +74,12 @@ try {
   assert.ok(!initialFrame.includes("Strike Mode"), initialFrame);
   assert.ok(!initialFrame.includes("Lance Mode"), initialFrame);
   assert.ok(initialFrame.includes("Save settings"), initialFrame);
-  assert.deepEqual(saved, []);
+  assert.equal(
+    initialFrame.includes("Run budget"),
+    scenario === "resume-lance",
+  );
   const lance =
+    scenario === "lance-time" ||
     scenario === "lance" ||
     scenario === "lance-compact" ||
     scenario === "resume-lance";
@@ -98,9 +106,7 @@ try {
   );
   assert.ok(selectedFrame.includes("Finding judge"), selectedFrame);
   assert.ok(
-    selectedFrame.includes(
-      lance ? "minimal offensive-capability" : "Focused research",
-    ),
+    selectedFrame.includes(lance ? "offensive-capability" : "Focused research"),
     selectedFrame,
   );
   assert.ok(selectedFrame.includes("Save settings"), selectedFrame);
@@ -149,6 +155,31 @@ try {
     await press("ARROW_DOWN");
   }
   await press("ARROW_DOWN");
+  if (lance) {
+    assert.ok((await frame()).includes("❯ Run budget"));
+    await press("TAB");
+    assert.ok((await frame()).includes("Tokens ▾"));
+    if (scenario === "lance-time") {
+      await press("TAB");
+      assert.ok((await frame()).includes("Time ▾"));
+    }
+    await press("ARROW_DOWN");
+    assert.ok(
+      (await frame()).includes(
+        scenario === "lance-time" ? "Limit (seconds)" : "Limit (tokens)",
+      ),
+    );
+    await press("END");
+    for (let i = 0; i < 7; i++) await press("BACKSPACE");
+    await act(async () =>
+      setup.mockInput.typeText(scenario === "lance-time" ? "3600" : "2500000"),
+    );
+    await settle();
+    assert.ok(
+      (await frame()).includes(scenario === "lance-time" ? "3600" : "2500000"),
+    );
+    await press("ARROW_DOWN");
+  }
   assert.ok((await frame()).includes("❯ Save settings"));
   const beforeSave = await frame();
   await press("TAB");
@@ -156,7 +187,19 @@ try {
   assert.deepEqual(saved, []);
   await press("RETURN");
   assert.deepEqual(saved, [
-    { strikeMode: !lance, lanceMode: lance, findingPolicy: policy },
+    {
+      strikeMode: !lance,
+      lanceMode: lance,
+      findingPolicy: policy,
+      ...(lance
+        ? {
+            lanceBudget:
+              scenario === "lance-time"
+                ? { kind: "time", limit: 3600000 }
+                : { kind: "tokens", limit: 2500000 },
+          }
+        : {}),
+    },
   ]);
   assert.equal(closes, 1);
 } finally {
