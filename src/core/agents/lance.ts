@@ -319,10 +319,14 @@ export class LanceRuntime {
       this.stop("token_limit", "Lance token budget exhausted");
   }
 
-  check(): void {
-    this.checkTokenBudget();
+  private checkDeadline(): void {
     if (!this.outcome && Date.now() >= this.softDeadlineAt)
       this.stop("deadline_exhausted", "Soft deadline reached");
+  }
+
+  check(): void {
+    this.checkTokenBudget();
+    this.checkDeadline();
     this.signal.throwIfAborted();
   }
 
@@ -602,7 +606,9 @@ export class LanceRuntime {
     const result = await this.untilAbort(
       this.options.verifyObjective(candidate, this.signal),
     );
-    this.check();
+    // Preserve the verdict from an admitted request before closing token admission.
+    this.checkDeadline();
+    this.signal.throwIfAborted();
     this.verification = result;
     this.verifierId = result.verifierId;
     if (
@@ -623,14 +629,14 @@ export class LanceRuntime {
           : "Host verifier confirmed the objective",
       );
     }
+    this.checkTokenBudget();
     return result;
   }
 
   finish(error?: unknown): void {
     this.checkTokenBudget();
     if (this.timer) clearTimeout(this.timer);
-    if (!this.outcome && Date.now() >= this.softDeadlineAt)
-      this.stop("deadline_exhausted", "Soft deadline reached");
+    this.checkDeadline();
     if (!this.outcome) {
       if (!error && !this.signal.aborted && this.options.interactive) {
         this.stop("awaiting_input", "Turn complete; awaiting user input");

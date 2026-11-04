@@ -172,11 +172,11 @@ try {
     await press("END");
     for (let i = 0; i < 7; i++) await press("BACKSPACE");
     await act(async () =>
-      setup.mockInput.typeText(scenario === "lance-time" ? "3600" : "2500000"),
+      setup.mockInput.typeText(scenario === "lance-time" ? "1.001" : "2500000"),
     );
     await settle();
     assert.ok(
-      (await frame()).includes(scenario === "lance-time" ? "3600" : "2500000"),
+      (await frame()).includes(scenario === "lance-time" ? "1.001" : "2500000"),
     );
     await press("ARROW_DOWN");
   }
@@ -195,7 +195,7 @@ try {
         ? {
             lanceBudget:
               scenario === "lance-time"
-                ? { kind: "time", limit: 3600000 }
+                ? { kind: "time", limit: 1001 }
                 : { kind: "tokens", limit: 2500000 },
           }
         : {}),

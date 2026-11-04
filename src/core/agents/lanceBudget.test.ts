@@ -112,6 +112,37 @@ describe("Lance selected budget", () => {
     expect(runtime.metrics("m").reason).toContain("did not report token usage");
     expect(runtime.signal.aborted).toBe(true);
   });
+  it.each([
+    true,
+    false,
+  ])("preserves a judge verdict before enforcing an exhausted token budget: %s", async (verified) => {
+    const runtime = new LanceRuntime({
+      budget: { kind: "tokens", limit: 100 },
+      verificationSource: "apex_judge",
+      verifyObjective: async () => {
+        await request(runtime, "judge", 100, 10);
+        return { verified, verifierId: "judge-fixture" };
+      },
+    });
+    await Promise.resolve(
+      runtime.tools({}).submit_objective.execute!(
+        { evidence: "candidate" },
+        { toolCallId: "submit", messages: [] },
+      ),
+    ).catch(() => {});
+    runtime.finish();
+    expect(runtime.metrics("m")).toMatchObject({
+      outcome: verified ? "judge_accepted" : "token_limit",
+      verification: { verified, verifierId: "judge-fixture" },
+      modelJudgedSuccess: verified,
+      usage: { inputTokens: 100, outputTokens: 10, usageComplete: true },
+    });
+    const next = vi.fn();
+    await expect(
+      runtime.middleware.wrapStream!({ doStream: next } as never),
+    ).rejects.toThrow();
+    expect(next).not.toHaveBeenCalled();
+  });
   it("rejects invalid limits and mixed budget types at the public runtime boundary", () => {
     for (const limit of [
       0,

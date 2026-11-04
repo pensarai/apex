@@ -149,7 +149,10 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
     try {
       const parsedBudget = lanceBudgetSchema.safeParse({
         kind: budgetKind,
-        limit: Number(budgetLimit) * (budgetKind === "time" ? 1000 : 1),
+        limit:
+          budgetKind === "time"
+            ? Math.round(Number(budgetLimit) * 1000)
+            : Number(budgetLimit),
       });
       if (draftMode === "lance" && !parsedBudget.success) {
         setError(
