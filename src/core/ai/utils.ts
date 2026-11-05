@@ -54,6 +54,7 @@ import {
 } from "./compactionTelemetry";
 import {
   estimateMessageTokens,
+  estimateTokens,
   estimateToolsOverheadTokens,
   extractTaskSummaryFromMessages,
   fitMessagesToContext,
@@ -472,6 +473,44 @@ export function getProviderModel(
   return providerModel;
 }
 
+/** Same margin `fitMessagesToContext` subtracts before it will send. */
+const RESUME_FIT_SAFETY_MARGIN_TOKENS = 10_000;
+
+/**
+ * Whether `prompt` plus the replayed tail, system prompt, and tool schemas
+ * fit the model's window. Overflow recovery uses this to stop reattaching a
+ * prompt the provider just rejected.
+ */
+function resumedPromptFits(
+  prompt: string,
+  opts: StreamResponseOpts,
+  parts: { latestUser?: ModelMessage; pinned: ModelMessage[] },
+): boolean {
+  const resumePrompt: ModelMessage = { role: "user", content: prompt };
+  const replayed = parts.latestUser
+    ? [parts.latestUser, ...parts.pinned]
+    : parts.pinned;
+  const history =
+    replayed.length > 0 ? [resumePrompt, ...replayed] : [resumePrompt];
+  const overhead =
+    estimateToolsOverheadTokens(opts.tools) +
+    1_000 +
+    (opts.system ? estimateTokens(opts.system) : 0);
+  const budget =
+    getContextWindow(
+      opts.model,
+      opts.authConfig?.customProviders,
+      opts.authConfig?.hoonifyModels,
+    ) -
+    getMaxOutputTokens(
+      opts.model,
+      opts.authConfig?.customProviders,
+      opts.authConfig?.hoonifyModels,
+    ) -
+    RESUME_FIT_SAFETY_MARGIN_TOKENS;
+  return estimateMessageTokens(history) + overhead <= budget;
+}
+
 async function summarizeConversation(
   messages: ModelMessage[],
   opts: StreamResponseOpts,
@@ -707,21 +746,34 @@ async function summarizeConversation(
     .filter(Boolean)
     .join("\n\n");
 
-  // For very long prompts, replace with just the summary instead of appending
+  // For very long prompts, replace with just the summary instead of appending.
   // Lance replaces prior summaries instead of appending them on every compaction.
   const originalPrompt = opts.primaryModelOnly
     ? (opts._initialPrompt ?? opts.prompt)
     : opts.prompt;
   const originalLength = originalPrompt.length;
+  const summaryOnlyPrompt = `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`;
+  const appendedPrompt = opts.primaryModelOnly
+    ? `${originalPrompt}\n\nContinue the task using this conversation summary. Later user corrections in the summary take precedence over the original request:\n${summaryWithTasks}`
+    : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
   // The general harness always replays the latest user message, alone or inside the pinned tail.
-  const enhancedPrompt =
+  // Overflow recovery must not append the original prompt again when that
+  // resume still would not fit: each cycle reattaches the same prefix and
+  // burns a restart until ContextLengthExhaustedError.
+  let enhancedPrompt =
     opts.harness === "general"
       ? compactedHistoryNotice(summaryWithTasks)
-      : originalLength > 100000
-        ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
-        : opts.primaryModelOnly
-          ? `${originalPrompt}\n\nContinue the task using this conversation summary. Later user corrections in the summary take precedence over the original request:\n${summaryWithTasks}`
-          : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
+      : originalLength > 100_000
+        ? summaryOnlyPrompt
+        : appendedPrompt;
+  if (
+    opts.harness !== "general" &&
+    opts._compactionTrigger !== "proactive" &&
+    enhancedPrompt === appendedPrompt &&
+    !resumedPromptFits(enhancedPrompt, opts, { latestUser, pinned })
+  ) {
+    enhancedPrompt = summaryOnlyPrompt;
+  }
   const resumeMessages = resumeMessagesWithPinned(
     enhancedPrompt,
     { latestUser, pinned },
