@@ -161,6 +161,15 @@ it.each([
   await f.agent.drained;
 });
 
+it("rejects a structured run without a response call", async () => {
+  const f = fixture({ calls: 0 });
+  await expect(f.consume()).rejects.toThrow(
+    "Structured agent ses_response_context ended without a validated response",
+  );
+  await f.agent.drained;
+  expect(f.resolved).toEqual([]);
+});
+
 it("preserves custom resolvers for non-structured runs", async () => {
   const f = fixture({ calls: 0, structured: false });
   await expect(f.consume()).resolves.toBe("fallback");

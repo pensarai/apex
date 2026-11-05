@@ -141,6 +141,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
+  /** Exposes the local discovery agent's drain; the host owns aborting its input signal. */
+  registerOwnedAgentDrain?: (drain: () => Promise<void>) => void;
   eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
@@ -564,6 +566,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       : {}),
     abortSignal,
   });
+  input.registerOwnedAgentDrain?.(() => appsAgent.abortAndDrain());
 
   log.info(
     `Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
@@ -575,7 +578,16 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     input: { codebasePath },
   });
 
-  const appsResult = await agentLimiter(() => appsAgent.consume());
+  let appsResult: AppsDiscoveryResult;
+  try {
+    appsResult = await agentLimiter(() => appsAgent.consume());
+  } catch (error) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "failed",
+    });
+    throw error;
+  }
 
   if (input.incremental) {
     if (!hooks?.backends)
@@ -713,22 +725,30 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     seams,
   };
 
-  assertDepth(1, seams.limits);
-  await seams.fanOut.spawnMany(
-    appsResult.apps,
-    async (app, appIndex) => {
-      await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
+  try {
+    assertDepth(1, seams.limits);
+    await seams.fanOut.spawnMany(
+      appsResult.apps,
+      async (app, appIndex) => {
+        await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
 
-      completedAppCount++;
+        completedAppCount++;
 
-      eventBus?.emit("app-analysis-progress", {
-        totalApps,
-        completedApps: completedAppCount,
-        appName: app.name,
-      });
-    },
-    { concurrency: DEFAULT_CONCURRENCY },
-  );
+        eventBus?.emit("app-analysis-progress", {
+          totalApps,
+          completedApps: completedAppCount,
+          appName: app.name,
+        });
+      },
+      { concurrency: DEFAULT_CONCURRENCY },
+    );
+  } catch (error) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "failed",
+    });
+    throw error;
+  }
 
   eventBus?.emit("subagent-complete", {
     subagentId: WORKFLOW_UMBRELLA_ID,
