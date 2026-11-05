@@ -59,7 +59,6 @@ import {
   splitResumeHistory,
   truncateWithMarker,
 } from "./contextManagement";
-import { withCutOffToolCallGuard } from "./cutOffToolCalls";
 import { projectFailedToolCalls } from "./failedToolCallHistory";
 import { isIncompleteModelStreamError } from "./incompleteModelStream";
 import {
@@ -1711,9 +1710,7 @@ function streamResponseWithinOperation(
     nativeRecovery?.model ??
     (() => {
       const baseProviderModel = withNativeRolloutEvidenceModel(
-        withModelCallDiagnostics(
-          withCutOffToolCallGuard(getProviderModel(model, authConfig)),
-        ),
+        withModelCallDiagnostics(getProviderModel(model, authConfig)),
         {
           requestedModelId: model,
           operationKind: "agent.stream",
@@ -2560,9 +2557,7 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
   } = opts;
 
   const baseProviderModel = withNativeRolloutEvidenceModel(
-    withModelCallDiagnostics(
-      withCutOffToolCallGuard(getProviderModel(model, authConfig)),
-    ),
+    withModelCallDiagnostics(getProviderModel(model, authConfig)),
     {
       requestedModelId: model,
       operationKind: nativeRolloutOperation(opts.operation),
