@@ -9,6 +9,7 @@ import {
   type LanguageModelMiddleware,
   type ModelMessage,
   Output,
+  type StepResult,
   type StopCondition,
   type StreamTextOnFinishCallback,
   type StreamTextOnStepFinishCallback,
@@ -55,14 +56,18 @@ import {
   estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
+  splitResumeHistory,
   truncateWithMarker,
 } from "./contextManagement";
 import { withCutOffToolCallGuard } from "./cutOffToolCalls";
+import { projectFailedToolCalls } from "./failedToolCallHistory";
+import { isIncompleteModelStreamError } from "./incompleteModelStream";
 import {
   getInferenceRecorder,
   type InferenceRecorder,
   runWithInferenceRecorder,
 } from "./inference-attempt";
+import { ModelStreamDrainError } from "./modelStreamDrain";
 import {
   type ClaudeThinkingEffort,
   getMaxOutputTokens,
@@ -702,6 +707,14 @@ function shouldSummarizeBeforeFitting(
   );
 }
 
+function retryBudgetOf(opts: StreamResponseOpts): StreamRetryBudget {
+  const budget = (opts as InternalStreamResponseOpts)[STREAM_RETRY_BUDGET];
+  if (!budget) {
+    throw new Error("stream recovery wrapper reached without a retry budget");
+  }
+  return budget;
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -709,13 +722,21 @@ function wrapStreamWithErrorHandler(
   opts: StreamResponseOpts,
   model: LanguageModel,
   silent?: boolean,
-  rateLimitRetryCount: number = 0,
-  idleResumeCount: number = 0,
   generationSpans?: GenerationSpanTracker,
   drainIdleStream?: (reason: unknown) => Promise<void>,
+  settleAttempt?: () => Promise<void>,
 ): StreamTextResult<ToolSet, never> {
+  const budget = retryBudgetOf(opts);
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
+  // Result fields must describe the attempt that produced the consumed
+  // chunks, not the attempt that failed and was replaced.
+  let finalAttempt: StreamTextResult<ToolSet, never> = originalStream;
+  let consumptionStarted = false;
+  let settleAttempts!: () => void;
+  const attemptsSettled = new Promise<void>((resolve) => {
+    settleAttempts = resolve;
+  });
 
   const handler = {
     get(_target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
@@ -731,7 +752,9 @@ function wrapStreamWithErrorHandler(
           const toolGate = createToolExecutionGate();
 
           wrappedStream = (async function* () {
+            consumptionStarted = true;
             let streamError: unknown;
+            let currentStepHadToolCall = false;
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
@@ -739,6 +762,7 @@ function wrapStreamWithErrorHandler(
                 toolGate.shouldEnforceIdleTimeout,
               )) {
                 toolGate.observe(chunk);
+                if (chunk.type === "tool-call") currentStepHadToolCall = true;
 
                 // [response-debug] Log AI-SDK-level response-tool chunks / finish-step, below the consume() loop.
                 if (RESPONSE_DEBUG) {
@@ -784,6 +808,14 @@ function wrapStreamWithErrorHandler(
                 // must not observe step-close-out after a fatal error.
                 if (streamError !== undefined) {
                   continue;
+                }
+
+                // Retry caps bound consecutive failures; a completed step is
+                // progress, so a long run is not charged for old recoveries.
+                if (chunk.type === "finish-step") {
+                  currentStepHadToolCall = false;
+                  budget.rateLimit = 0;
+                  budget.idleResume = 0;
                 }
 
                 yield chunk;
@@ -833,19 +865,26 @@ function wrapStreamWithErrorHandler(
                 throw error;
               }
 
-              if (isStreamIdleTimeoutError(error))
-                await drainIdleStream?.(error);
+              const incomplete = isIncompleteModelStreamError(error);
+              const transportInterruption =
+                isStreamIdleTimeoutError(error) || incomplete;
+              if (transportInterruption) await drainIdleStream?.(error);
+              if (
+                opts.abortSignal?.aborted ||
+                (incomplete && currentStepHadToolCall)
+              )
+                throw error;
 
-              // Handle stream idle timeout — resume from accumulated messages
+              // Resume interrupted transport from accumulated messages after drain.
               if (
                 !isCtxError &&
-                isStreamIdleTimeoutError(error) &&
-                idleResumeCount < MAX_IDLE_RESUME_RETRIES &&
+                transportInterruption &&
+                budget.idleResume < MAX_IDLE_RESUME_RETRIES &&
                 messagesContainer.current.length > 0
               ) {
-                const nextIdleCount = idleResumeCount + 1;
+                const nextIdleCount = ++budget.idleResume;
                 await getInferenceRecorder(opts)?.retry({
-                  authority: "stream-idle",
+                  authority: incomplete ? "stream-incomplete" : "stream-idle",
                   count: nextIdleCount,
                   maxRetries: MAX_IDLE_RESUME_RETRIES,
                   delayMs: 0,
@@ -853,7 +892,7 @@ function wrapStreamWithErrorHandler(
                 // Surfaced on silent sub-agents too when stream-debugging.
                 if (!silent || STREAM_DEBUG) {
                   log.warn(
-                    `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
+                    `Stream interrupted (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
                   );
                 }
 
@@ -862,17 +901,9 @@ function wrapStreamWithErrorHandler(
                   messages: messagesContainer.current,
                 });
 
-                const wrappedRetriedStream = wrapStreamWithErrorHandler(
-                  retriedStream,
-                  messagesContainer,
-                  opts,
-                  model,
-                  silent,
-                  rateLimitRetryCount,
-                  nextIdleCount,
-                );
+                finalAttempt = retriedStream;
 
-                for await (const chunk of wrappedRetriedStream.fullStream) {
+                for await (const chunk of retriedStream.fullStream) {
                   yield chunk;
                 }
                 return;
@@ -882,9 +913,9 @@ function wrapStreamWithErrorHandler(
               if (
                 !isCtxError &&
                 checkIfRateLimitError(error) &&
-                rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
+                budget.rateLimit < MAX_RATE_LIMIT_RETRIES
               ) {
-                const nextRetryCount = rateLimitRetryCount + 1;
+                const nextRetryCount = ++budget.rateLimit;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
                 const recorder = getInferenceRecorder(opts);
                 await recorder?.retry({
@@ -914,17 +945,9 @@ function wrapStreamWithErrorHandler(
                       : undefined,
                 });
 
-                const wrappedRetriedStream = wrapStreamWithErrorHandler(
-                  retriedStream,
-                  messagesContainer,
-                  opts,
-                  model,
-                  silent,
-                  nextRetryCount,
-                  idleResumeCount,
-                );
+                finalAttempt = retriedStream;
 
-                for await (const chunk of wrappedRetriedStream.fullStream) {
+                for await (const chunk of retriedStream.fullStream) {
                   yield chunk;
                 }
                 return;
@@ -1015,16 +1038,8 @@ function wrapStreamWithErrorHandler(
                       messages: fitted.messages,
                       _restartDepth: postReactiveDepth + 1,
                     });
-                    const wrappedRetry = wrapStreamWithErrorHandler(
-                      retried,
-                      messagesContainer,
-                      opts,
-                      model,
-                      silent,
-                      rateLimitRetryCount,
-                      idleResumeCount,
-                    );
-                    for await (const chunk of wrappedRetry.fullStream) {
+                    finalAttempt = retried;
+                    for await (const chunk of retried.fullStream) {
                       yield chunk;
                     }
                     return;
@@ -1083,6 +1098,7 @@ function wrapStreamWithErrorHandler(
                     },
                     model,
                   );
+                  finalAttempt = summarizationStream;
                   for await (const chunk of summarizationStream.fullStream) {
                     yield chunk;
                   }
@@ -1117,11 +1133,32 @@ function wrapStreamWithErrorHandler(
                       `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
                     );
                   }
-                  opts.onSummarized?.("");
                   const minimalPrompt =
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
+                  const {
+                    latestUser: tail,
+                    pinned,
+                    pinnedToolCallIds,
+                  } = splitResumeHistory(messagesForSummary, opts.harness);
+                  // An untruncated restart prompt already resends the latest user message.
+                  const latestUser =
+                    tail?.content === minimalPrompt ? undefined : tail;
+                  const resumeMessages = resumeMessagesWithPinned(
+                    minimalPrompt,
+                    { latestUser, pinned },
+                    opts,
+                    postReactiveDepth + 1,
+                  );
+                  const restartMessages = resumeMessages ?? [
+                    { role: "user" as const, content: minimalPrompt },
+                  ];
+                  opts.onSummarized?.({
+                    kind: "reset",
+                    summary: "",
+                    pinnedToolCallIds,
+                  });
                   const reset = beginCompaction("reset", {
                     trigger: "summary_overflow",
                     model: opts.model,
@@ -1141,14 +1178,11 @@ function wrapStreamWithErrorHandler(
                   );
                   reset?.measure(
                     "after",
-                    () =>
-                      estimateMessageTokens([
-                        { role: "user", content: minimalPrompt },
-                      ]),
-                    1,
+                    () => estimateMessageTokens(restartMessages),
+                    restartMessages.length,
                   );
                   reset?.capture("after", () => ({
-                    messages: [{ role: "user", content: minimalPrompt }],
+                    messages: restartMessages,
                     system: opts.system,
                   }));
                   reset?.finish("completed");
@@ -1158,9 +1192,10 @@ function wrapStreamWithErrorHandler(
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
-                    messages: undefined,
+                    messages: resumeMessages,
                     _restartDepth: postReactiveDepth + 1,
                   });
+                  finalAttempt = fallback;
                   for await (const chunk of fallback.fullStream) {
                     yield chunk;
                   }
@@ -1173,16 +1208,38 @@ function wrapStreamWithErrorHandler(
                 }
                 throw error;
               }
+            } finally {
+              try {
+                await settleAttempt?.();
+              } finally {
+                settleAttempts();
+              }
             }
           })();
         }
         return wrappedStream;
       }
 
-      // For all other properties, return the original
-      return (originalStream as unknown as Record<string | symbol, unknown>)[
-        prop
-      ];
+      const value = (
+        originalStream as unknown as Record<string | symbol, unknown>
+      )[prop];
+      if (!isPromiseLike(value)) return value;
+      // Recovery only happens while `fullStream` is consumed, so a result read
+      // without it belongs to the original attempt.
+      const fromFinalAttempt = (original: () => unknown) =>
+        consumptionStarted
+          ? attemptsSettled.then(() =>
+              finalAttempt === originalStream
+                ? original()
+                : (finalAttempt as unknown as Record<string | symbol, unknown>)[
+                    prop
+                  ],
+            )
+          : original();
+      return Promise.resolve(value).then(
+        (resolved) => fromFinalAttempt(() => resolved),
+        (rejected) => fromFinalAttempt(() => Promise.reject(rejected)),
+      );
     },
   };
 
@@ -1354,6 +1411,19 @@ export function buildReasoningProviderOptions(
     : buildModelReasoningOptions(model, setting, opts);
 }
 
+export type AgentHarness = "general";
+
+/**
+ * A context reset the resumed stream continues from: a `summary` of the
+ * dropped history, or a `reset` that kept none of it. Pinned calls are the
+ * approved/denied calls replayed verbatim after it.
+ */
+export interface ContextCompaction {
+  kind: "summary" | "reset";
+  summary: string;
+  pinnedToolCallIds: string[];
+}
+
 /** Cache token metrics extracted from Anthropic providerMetadata */
 export interface CacheMetrics {
   cacheReadInputTokens: number;
@@ -1361,6 +1431,13 @@ export interface CacheMetrics {
 }
 
 export interface StreamResponseOpts {
+  /**
+   * Opts into the general agent harness's context handling: the latest user
+   * message is replayed verbatim after a compaction under the shared resume
+   * notice, a compaction summarizes under its own instruction, and the step
+   * cap spans compaction and retry restarts. Unset keeps the default shapes.
+   */
+  harness?: AgentHarness;
   /** Disables model repair and general recovery; compaction requires explicit admission. */
   primaryModelOnly?: boolean;
   runContextCompaction?: <T>(work: () => Promise<T>) => Promise<T>;
@@ -1394,7 +1471,7 @@ export interface StreamResponseOpts {
    * so that subsequent persistence writes only include the summary +
    * new messages (not the full pre-summarization history).
    */
-  onSummarized?: (summary: string) => void;
+  onSummarized?: (compaction: ContextCompaction) => void;
   /** The fitted context and prior generated-message count for transcript writers. */
   onContextPrepared?: (context: {
     messages: ModelMessage[];
@@ -1445,9 +1522,43 @@ interface NativeStreamRecovery {
   run<T>(fn: () => T): T;
 }
 
+const STREAM_RETRY_BUDGET = Symbol("stream-retry-budget");
+
+/** Shared by every re-entry of one logical stream; never across agents. */
+interface StreamRetryBudget {
+  rateLimit: number;
+  idleResume: number;
+}
+
+/** Steps completed by every re-entry of one logical stream, so stop conditions span restarts. */
+const STREAM_STEPS = Symbol("stream-steps");
+
 type InternalStreamResponseOpts = StreamResponseOpts & {
   [NATIVE_STREAM_RECOVERY]?: NativeStreamRecovery;
+  [STREAM_RETRY_BUDGET]?: StreamRetryBudget;
+  [STREAM_STEPS]?: StepResult<ToolSet>[];
 };
+
+/** Evaluates each condition over the steps earlier re-entries already completed plus this stream's. */
+function spanningPriorSteps(
+  stopWhen: StreamResponseOpts["stopWhen"],
+  priorSteps: StepResult<ToolSet>[],
+): StreamResponseOpts["stopWhen"] {
+  if (stopWhen === undefined || priorSteps.length === 0) return stopWhen;
+  return (Array.isArray(stopWhen) ? stopWhen : [stopWhen]).map(
+    (condition): StopCondition<ToolSet> =>
+      ({ steps }) =>
+        condition({ steps: [...priorSteps, ...steps] }),
+  );
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
 
 export function streamResponse(
   opts: StreamResponseOpts,
@@ -1482,6 +1593,14 @@ function streamResponseWithinOperation(
     // structured-output tool is included when listed and inert when omitted.
     ...resolveEffectiveTools(opts.tools, opts.activeTools),
   };
+  (opts as InternalStreamResponseOpts)[STREAM_RETRY_BUDGET] ??= {
+    rateLimit: 0,
+    idleResume: 0,
+  };
+  const streamSteps: StepResult<ToolSet>[] =
+    (opts as InternalStreamResponseOpts)[STREAM_STEPS] ?? [];
+  (opts as InternalStreamResponseOpts)[STREAM_STEPS] = streamSteps;
+  const priorSteps = [...streamSteps];
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
@@ -1570,10 +1689,11 @@ function streamResponseWithinOperation(
     }
     if (
       step.response?.id !== "summarization" &&
-      step.response?.id !== "tool-repair" &&
-      step.response?.messages
+      step.response?.id !== "tool-repair"
     ) {
-      responseMessageLength = step.response.messages.length;
+      if (opts.harness === "general") streamSteps.push(step);
+      if (step.response?.messages)
+        responseMessageLength = step.response.messages.length;
     }
     if (
       onCacheMetrics &&
@@ -1771,6 +1891,25 @@ function streamResponseWithinOperation(
     openRouterProviderOptions,
   );
 
+  const repairCapabilities = getReasoningCapabilities(
+    model,
+    authConfig?.customProviders,
+  );
+  const disableRepairThinking =
+    repairCapabilities.transport === "bedrock" &&
+    !!repairCapabilities.thinking &&
+    repairCapabilities.canDisable;
+  const repairReasoningOptions = disableRepairThinking
+    ? buildModelReasoningOptions(model, "disabled", {
+        customProviders: authConfig?.customProviders,
+        maxOutputTokens,
+      })
+    : reasoningProviderOptions;
+  const repairProviderOptions = mergeProviderOptions(
+    repairReasoningOptions,
+    openRouterProviderOptions,
+  );
+
   let rateLimitRetryCount = 0;
 
   // Make `activeTools` authoritative: advertise, execute, and enumerate only
@@ -1790,6 +1929,20 @@ function streamResponseWithinOperation(
       ? AbortSignal.any([abortSignal, attemptAbort.signal])
       : attemptAbort.signal;
     let cancelModelStream: ((reason: unknown) => Promise<void>) | undefined;
+    const repairs = new Set<Promise<unknown>>();
+    let repairDrainFailure: unknown;
+    const isDrainFailure = (error: unknown): boolean => {
+      for (let cause = error, depth = 0; cause != null && depth < 6; depth++) {
+        const name = (cause as { name?: unknown }).name;
+        if (
+          name === "ModelStreamDrainError" ||
+          name === "ModelStreamDrainTimeoutError"
+        )
+          return true;
+        cause = (cause as { cause?: unknown }).cause;
+      }
+      return false;
+    };
     // Cancelling the SDK fullStream only detaches its subscriber.
     const attemptModel = wrapLanguageModel({
       model: providerModel,
@@ -1800,24 +1953,43 @@ function streamResponseWithinOperation(
           let reader:
             | ReadableStreamDefaultReader<LanguageModelV3StreamPart>
             | undefined;
-          cancelModelStream = async (reason) => {
-            try {
-              const source = await pending;
-              await (reader
-                ? reader.cancel(reason)
-                : source.stream.cancel(reason));
-            } catch (error) {
-              if (
-                !(error instanceof Error) ||
-                (error.name !== "AbortError" &&
-                  !isStreamIdleTimeoutError(error))
-              ) {
-                throw error;
+          let sourceSettled = false;
+          let cancellation: Promise<void> | undefined;
+          const cancelSource = (reason: unknown): Promise<void> => {
+            if (cancellation) return cancellation;
+            if (sourceSettled) return Promise.resolve();
+            const cancel = async () => {
+              // Request cancellation before abort listeners can close the source.
+              const acquiredReader = reader;
+              if (acquiredReader) return acquiredReader.cancel(reason);
+              let source: Awaited<typeof pending>;
+              try {
+                source = await pending;
+              } catch {
+                // Rejected acquisition has no source left to cancel.
+                return;
               }
-            }
+              return reader
+                ? reader.cancel(reason)
+                : source.stream.cancel(reason);
+            };
+            cancellation = cancel().catch((cause: unknown) => {
+              throw new ModelStreamDrainError(cause);
+            });
+            return cancellation;
           };
+          cancelModelStream = cancelSource;
           const source = await pending;
           reader = source.stream.getReader();
+          // An errored stream's cancel rejects its stored error without cancelling again.
+          void reader.closed.then(
+            () => {
+              sourceSettled = true;
+            },
+            () => {
+              sourceSettled = true;
+            },
+          );
           const ownedReader = reader;
           return {
             ...source,
@@ -1827,42 +1999,68 @@ function streamResponseWithinOperation(
                 if (next.done) controller.close();
                 else controller.enqueue(next.value);
               },
-              cancel: (reason) => ownedReader.cancel(reason),
+              cancel: cancelSource,
             }),
           };
         },
       },
     });
-    const drainIdleStream = async (reason: unknown) => {
-      attemptAbort.abort(reason);
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          cancelModelStream?.(reason),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () =>
-                reject(
-                  Object.assign(
-                    new Error(
-                      "Stalled model stream did not drain within 30 seconds",
+    let attemptDrain: Promise<void> | undefined;
+    const drainIdleStream = (reason: unknown): Promise<void> => {
+      if (attemptDrain) return attemptDrain;
+      const firstReason = attemptSignal.aborted ? attemptSignal.reason : reason;
+      const cancellation = cancelModelStream?.(firstReason);
+      const pendingRepairs = [...repairs];
+      attemptAbort.abort(firstReason);
+      attemptDrain = (async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            Promise.all([
+              cancellation,
+              ...pendingRepairs.map((repair) =>
+                repair.catch((error: unknown) => {
+                  if (isDrainFailure(error)) throw error;
+                }),
+              ),
+            ]),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(
+                    Object.assign(
+                      new Error(
+                        "Stalled model stream did not drain within 30 seconds",
+                      ),
+                      { name: "ModelStreamDrainTimeoutError" },
                     ),
-                    { name: "ModelStreamDrainTimeoutError" },
                   ),
-                ),
-              30_000,
-            );
-          }),
-        ]);
-      } finally {
-        clearTimeout(timer);
+                30_000,
+              );
+            }),
+          ]);
+          if (repairDrainFailure !== undefined) throw repairDrainFailure;
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+      return attemptDrain;
+    };
+    const settleAttempt = async () => {
+      if (attemptSignal.aborted || repairs.size > 0) {
+        await drainIdleStream(
+          attemptSignal.aborted
+            ? attemptSignal.reason
+            : new DOMException("Model stream consumption ended", "AbortError"),
+        );
       }
+      if (repairDrainFailure !== undefined) throw repairDrainFailure;
     };
     const responseOptions: Parameters<typeof streamText>[0] = {
       model: attemptModel,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
-      stopWhen,
+      stopWhen: spanningPriorSteps(stopWhen, priorSteps),
       toolChoice,
       tools: effectiveTools,
       maxRetries: 3,
@@ -1900,7 +2098,10 @@ function streamResponseWithinOperation(
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
-        let stepMessages = step.messages;
+        let stepMessages = projectFailedToolCalls(
+          step.messages,
+          step.steps.flatMap((previous) => previous.toolCalls),
+        );
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
@@ -2007,193 +2208,219 @@ function streamResponseWithinOperation(
       onStepFinish,
       abortSignal: attemptSignal,
       activeTools: allowedTools,
-      experimental_repairToolCall: async ({
-        toolCall,
-        inputSchema,
-        tools,
-        error,
-      }) => {
-        opts.onInvalidToolCall?.(toolCall.toolName);
-        if (opts.primaryModelOnly) return null;
-        // [response-debug] Log when repair fires for `response` (streamed args failed Zod validation), bypassing `silent`.
-        if (RESPONSE_DEBUG && toolCall.toolName === RESPONSE_TOOL_NAME) {
-          const raw = toolCall.input;
-          const rawLen =
-            typeof raw === "string" ? raw.length : JSON.stringify(raw).length;
-          log.warn(
-            `[response-debug] experimental_repairToolCall FIRED for response ` +
-              `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
-          );
-        }
-
-        // Fail closed for security-sensitive tools: never let repair invent or
-        // replace arguments (e.g. a spawn `target`). Returning null drops the
-        // invalid call instead of executing a model-synthesized one.
-        if (isRepairFailClosedTool(toolCall.toolName)) {
-          if (!silent) {
+      experimental_repairToolCall: (options) => {
+        attemptSignal.throwIfAborted();
+        const repair = Promise.resolve().then(async () => {
+          attemptSignal.throwIfAborted();
+          const { toolCall, inputSchema, tools, error } = options;
+          opts.onInvalidToolCall?.(toolCall.toolName);
+          if (opts.primaryModelOnly) return null;
+          // [response-debug] Log when repair fires for `response` (streamed args failed Zod validation), bypassing `silent`.
+          if (RESPONSE_DEBUG && toolCall.toolName === RESPONSE_TOOL_NAME) {
+            const raw = toolCall.input;
+            const rawLen =
+              typeof raw === "string" ? raw.length : JSON.stringify(raw).length;
             log.warn(
-              `Tool-call repair disabled for security-sensitive tool "${toolCall.toolName}" — failing closed (no argument synthesis).`,
+              `[response-debug] experimental_repairToolCall FIRED for response ` +
+                `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
             );
           }
-          return null;
-        }
 
-        try {
-          if (!silent) {
-            log.debug(`Repairing tool call: ${toolCall.toolName}`, {
-              error: error.message || String(error),
-            });
-
-            // Log specific details for common enum errors
-            if (
-              error.message &&
-              (error.message.includes("severity") ||
-                error.message.includes("riskLevel"))
-            ) {
-              log.debug(
-                "Enum validation error — tool call repair will normalize the value",
-              );
-            }
-          }
-
-          // Get the actual tool definition which contains the Zod schema
-          const tool = tools[toolCall.toolName];
-          if (!tool?.inputSchema) {
+          // Fail closed for security-sensitive tools: never let repair invent or
+          // replace arguments (e.g. a spawn `target`). Returning null drops the
+          // invalid call instead of executing a model-synthesized one.
+          if (isRepairFailClosedTool(toolCall.toolName)) {
             if (!silent) {
               log.warn(
-                `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
+                `Tool-call repair disabled for security-sensitive tool "${toolCall.toolName}" — failing closed (no argument synthesis).`,
               );
             }
             return null;
           }
 
-          const jsonSchema = await inputSchema({ toolName: toolCall.toolName });
+          try {
+            if (!silent) {
+              log.debug(`Repairing tool call: ${toolCall.toolName}`, {
+                error: error.message || String(error),
+              });
 
-          // Bound input + schema so the repair call can't itself overflow.
-          const rawInput = toolCall.input;
-          const inputAsText =
-            typeof rawInput === "string" ? rawInput : JSON.stringify(rawInput);
-          const boundedInput = truncateWithMarker(
-            inputAsText,
-            MAX_TOOL_INPUT_CHARS,
-          );
-          const boundedSchema = truncateWithMarker(
-            JSON.stringify(jsonSchema),
-            MAX_SCHEMA_CHARS,
-            "schema",
-          );
-
-          const {
-            output: repairedArgs,
-            usage: repairUsage,
-            providerMetadata: repairProviderMetadata,
-          } = await runWithNativeRolloutOperation(
-            { operationKind: "tool.repair", sessionId },
-            () =>
-              generateText({
-                model: providerModel,
-                maxOutputTokens,
-                providerOptions: {
-                  ...providerOptions,
-                  // Durable runtime: tool-call repair fires only when a
-                  // replayed tool call fails validation — nondeterministically
-                  // vs the first run — so it must stay off the checkpoint
-                  // journal. The agent-runtime middleware reads this namespace
-                  // and runs the call without a durable step; the underlying
-                  // provider ignores it.
-                  pensarRuntime: { ephemeral: true },
-                },
-                output: Output.object({
-                  schema: tool.inputSchema, // Use the actual Zod schema from the tool
-                }),
-                prompt: [
-                  `The model tried to call the tool "${toolCall.toolName}"` +
-                    ` with the following inputs:`,
-                  boundedInput,
-                  `The tool accepts the following schema:`,
-                  boundedSchema,
-                  `Error encountered: ${error}`,
-                  "Please fix the inputs to match the schema.",
-                  "",
-                  "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-                  "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-                ].join("\n"),
-                abortSignal,
-                experimental_telemetry: createAiTelemetrySettings({
-                  operation: "apex.tool.repair",
-                  sessionId,
-                  reasoning: {
-                    requested: reasoning ?? "legacy-default",
-                    parameters: JSON.stringify(reasoningProviderOptions ?? {}),
-                  },
-                }),
-              }),
-          );
-
-          // Report tool repair token usage if onStepFinish callback is
-          // provided. Awaited: the callback persists messages and records
-          // usage — a detached invocation would leak unhandled rejections
-          // into the tool loop. Provider metadata and cache details flow
-          // through so repair usage stays attributable.
-          if (onStepFinish && repairUsage) {
-            try {
-              await onStepFinish({
-                text: "",
-                reasoning: undefined,
-                reasoningDetails: [],
-                files: [],
-                sources: [],
-                toolCalls: [],
-                toolResults: [],
-                finishReason: "stop",
-                usage: {
-                  inputTokens: repairUsage.inputTokens ?? 0,
-                  outputTokens: repairUsage.outputTokens ?? 0,
-                  totalTokens: repairUsage.totalTokens ?? 0,
-                  ...(repairUsage.inputTokenDetails
-                    ? { inputTokenDetails: repairUsage.inputTokenDetails }
-                    : {}),
-                },
-                warnings: [],
-                request: {},
-                response: {
-                  id: "tool-repair",
-                  timestamp: new Date(),
-                  modelId: "",
-                  messages: messagesContainer.current,
-                },
-                providerMetadata: repairProviderMetadata,
-                stepType: "initial",
-                isContinued: false,
-              } as unknown as Parameters<
-                StreamTextOnStepFinishCallback<ToolSet>
-              >[0]);
-            } catch (callbackError) {
-              if (!silent) {
-                log.warn("Error reporting tool repair usage", {
-                  error: String(callbackError),
-                });
+              // Log specific details for common enum errors
+              if (
+                error.message &&
+                (error.message.includes("severity") ||
+                  error.message.includes("riskLevel"))
+              ) {
+                log.debug(
+                  "Enum validation error — tool call repair will normalize the value",
+                );
               }
             }
-          }
 
-          if (repairedArgs === undefined || repairedArgs === null) {
+            // Get the actual tool definition which contains the Zod schema
+            const tool = tools[toolCall.toolName];
+            if (!tool?.inputSchema) {
+              if (!silent) {
+                log.warn(
+                  `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
+                );
+              }
+              return null;
+            }
+
+            const jsonSchema = await inputSchema({
+              toolName: toolCall.toolName,
+            });
+
+            // Bound input + schema so the repair call can't itself overflow.
+            const rawInput = toolCall.input;
+            const inputAsText =
+              typeof rawInput === "string"
+                ? rawInput
+                : JSON.stringify(rawInput);
+            const boundedInput = truncateWithMarker(
+              inputAsText,
+              MAX_TOOL_INPUT_CHARS,
+            );
+            const boundedSchema = truncateWithMarker(
+              JSON.stringify(jsonSchema),
+              MAX_SCHEMA_CHARS,
+              "schema",
+            );
+
+            const {
+              output: repairedArgs,
+              usage: repairUsage,
+              providerMetadata: repairProviderMetadata,
+            } = await runWithNativeRolloutOperation(
+              { operationKind: "tool.repair", sessionId },
+              () =>
+                generateText({
+                  model: providerModel,
+                  maxOutputTokens,
+                  providerOptions: {
+                    ...repairProviderOptions,
+                    // Durable runtime: tool-call repair fires only when a
+                    // replayed tool call fails validation — nondeterministically
+                    // vs the first run — so it must stay off the checkpoint
+                    // journal. The agent-runtime middleware reads this namespace
+                    // and runs the call without a durable step; the underlying
+                    // provider ignores it.
+                    pensarRuntime: { ephemeral: true },
+                  },
+                  output: Output.object({
+                    schema: tool.inputSchema, // Use the actual Zod schema from the tool
+                  }),
+                  prompt: [
+                    `The model tried to call the tool "${toolCall.toolName}"` +
+                      ` with the following inputs:`,
+                    boundedInput,
+                    `The tool accepts the following schema:`,
+                    boundedSchema,
+                    `Error encountered: ${error}`,
+                    "Please fix the inputs to match the schema.",
+                    "",
+                    "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+                    "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+                  ].join("\n"),
+                  abortSignal: attemptSignal,
+                  experimental_telemetry: createAiTelemetrySettings({
+                    operation: "apex.tool.repair",
+                    sessionId,
+                    reasoning: {
+                      requested: disableRepairThinking
+                        ? "disabled"
+                        : (reasoning ?? "legacy-default"),
+                      parameters: JSON.stringify(repairReasoningOptions ?? {}),
+                    },
+                  }),
+                }),
+            );
+
+            attemptSignal.throwIfAborted();
+
+            // Report tool repair token usage if onStepFinish callback is
+            // provided. Awaited: the callback persists messages and records
+            // usage — a detached invocation would leak unhandled rejections
+            // into the tool loop. Provider metadata and cache details flow
+            // through so repair usage stays attributable.
+            if (onStepFinish && repairUsage) {
+              try {
+                await onStepFinish({
+                  text: "",
+                  reasoning: undefined,
+                  reasoningDetails: [],
+                  files: [],
+                  sources: [],
+                  toolCalls: [],
+                  toolResults: [],
+                  finishReason: "stop",
+                  usage: {
+                    inputTokens: repairUsage.inputTokens ?? 0,
+                    outputTokens: repairUsage.outputTokens ?? 0,
+                    totalTokens: repairUsage.totalTokens ?? 0,
+                    ...(repairUsage.inputTokenDetails
+                      ? { inputTokenDetails: repairUsage.inputTokenDetails }
+                      : {}),
+                  },
+                  warnings: [],
+                  request: {},
+                  response: {
+                    id: "tool-repair",
+                    timestamp: new Date(),
+                    modelId: "",
+                    messages: messagesContainer.current,
+                  },
+                  providerMetadata: repairProviderMetadata,
+                  stepType: "initial",
+                  isContinued: false,
+                } as unknown as Parameters<
+                  StreamTextOnStepFinishCallback<ToolSet>
+                >[0]);
+              } catch (callbackError) {
+                if (isDrainFailure(callbackError)) throw callbackError;
+                if (!silent) {
+                  log.warn("Error reporting tool repair usage", {
+                    error: String(callbackError),
+                  });
+                }
+              }
+            }
+
+            attemptSignal.throwIfAborted();
+            if (repairedArgs === undefined || repairedArgs === null) {
+              if (!silent) {
+                log.warn(
+                  `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+                );
+              }
+              return null;
+            }
+            return { ...toolCall, input: JSON.stringify(repairedArgs) };
+          } catch (repairError) {
+            if (isDrainFailure(repairError)) throw repairError;
+            attemptSignal.throwIfAborted();
             if (!silent) {
-              log.warn(
-                `Tool call repair for "${toolCall.toolName}" produced no valid output`,
-              );
+              log.warn("Error repairing tool call", {
+                error: String(repairError),
+              });
             }
             return null;
           }
-          return { ...toolCall, input: JSON.stringify(repairedArgs) };
-        } catch (repairError) {
-          if (!silent) {
-            log.warn("Error repairing tool call", {
-              error: String(repairError),
-            });
-          }
-          return null;
-        }
+        });
+        repairs.add(repair);
+        void repair.then(
+          () => {
+            repairs.delete(repair);
+          },
+          (error: unknown) => {
+            if (isDrainFailure(error)) {
+              repairDrainFailure = error;
+              attemptAbort.abort(error);
+            }
+            repairs.delete(repair);
+          },
+        );
+        return repair;
       },
       onFinish,
     };
@@ -2222,10 +2449,9 @@ function streamResponseWithinOperation(
       recoveryOpts,
       providerModel,
       silent,
-      0,
-      0,
       generationSpans,
       drainIdleStream,
+      settleAttempt,
     );
   } catch (error) {
     // Check if the error is related to context length
@@ -2480,6 +2706,63 @@ export class ContextLengthExhaustedError extends Error {
     this.name = "ContextLengthExhaustedError";
     this.restartDepth = restartDepth;
   }
+}
+
+/** Approved calls cannot be summarized away, so an oversized replay is terminal. */
+export class PendingApprovalExceedsContextError extends ContextLengthExhaustedError {
+  constructor(restartDepth: number) {
+    super(
+      "Pending tool approvals do not fit in the model's context window",
+      restartDepth,
+    );
+    this.name = "PendingApprovalExceedsContextError";
+  }
+}
+
+/** The latest user message is never paraphrased, so one the window cannot hold is terminal. */
+export class LatestUserMessageExceedsContextError extends ContextLengthExhaustedError {
+  constructor(restartDepth: number) {
+    super(
+      "The latest user message does not fit in the model's context window",
+      restartDepth,
+    );
+    this.name = "LatestUserMessageExceedsContextError";
+  }
+}
+
+/** Resume history for a compacted turn: undefined when nothing is replayed. */
+export function resumeMessagesWithPinned(
+  prompt: string,
+  { latestUser, pinned }: { latestUser?: ModelMessage; pinned: ModelMessage[] },
+  opts: StreamResponseOpts,
+  restartDepth: number,
+): ModelMessage[] | undefined {
+  const resumePrompt: ModelMessage = { role: "user", content: prompt };
+  const replayed = latestUser ? [latestUser, ...pinned] : pinned;
+  if (replayed.length === 0) return undefined;
+  const messages: ModelMessage[] = [resumePrompt, ...replayed];
+  const overhead =
+    estimateToolsOverheadTokens(opts.tools) +
+    1_000 +
+    (opts.system ? estimateTokens(opts.system) : 0);
+  const budget =
+    getContextWindow(
+      opts.model,
+      opts.authConfig?.customProviders,
+      opts.authConfig?.hoonifyModels,
+    ) -
+    getMaxOutputTokens(
+      opts.model,
+      opts.authConfig?.customProviders,
+      opts.authConfig?.hoonifyModels,
+    );
+  const fits = (history: ModelMessage[]) =>
+    estimateMessageTokens(history) + overhead <= budget;
+  if (latestUser && !fits([resumePrompt, latestUser]))
+    throw new LatestUserMessageExceedsContextError(restartDepth);
+  if (!fits(messages))
+    throw new PendingApprovalExceedsContextError(restartDepth);
+  return messages;
 }
 
 const MAX_RESTART_DEPTH = 3;

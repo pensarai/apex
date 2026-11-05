@@ -1,6 +1,7 @@
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import {
+  type BrowserHeaderPolicy,
   browserHeaderRouteFunction,
   resolveBrowserHeaderPolicy,
 } from "./browserHeaderRouting";
@@ -87,28 +88,28 @@ describe("resolveBrowserHeaderPolicy", () => {
 });
 
 describe("browserHeaderRouteFunction", () => {
-  async function installRoute() {
-    let handler:
-      | ((route: {
-          request(): {
-            url(): string;
-            allHeaders(): Promise<Record<string, string>>;
-          };
-          continue(options?: {
-            headers?: Record<string, string>;
-          }): Promise<void>;
-          fetch(options?: {
-            headers?: Record<string, string>;
-            maxRedirects?: number;
-          }): Promise<unknown>;
-          fulfill(options: { response: unknown }): Promise<void>;
-          abort(code?: string): Promise<void>;
-        }) => Promise<void>)
-      | undefined;
+  async function installRoute(overrides: Partial<BrowserHeaderPolicy> = {}) {
+    type Handler = (route: {
+      request(): {
+        url(): string;
+        allHeaders(): Promise<Record<string, string>>;
+      };
+      continue(options?: { headers?: Record<string, string> }): Promise<void>;
+      fetch(options?: {
+        headers?: Record<string, string>;
+        maxRedirects?: number;
+      }): Promise<unknown>;
+      fulfill(options: { response: unknown }): Promise<void>;
+      abort(code?: string): Promise<void>;
+    }) => Promise<void>;
+    const routes: {
+      matches: string | ((url: URL) => boolean);
+      handler: Handler;
+    }[] = [];
     const context = {
       route: vi.fn(
-        async (_pattern: string, routeHandler: NonNullable<typeof handler>) => {
-          handler = routeHandler;
+        async (matches: string | ((url: URL) => boolean), handler: Handler) => {
+          routes.unshift({ matches, handler });
         },
       ),
     };
@@ -118,19 +119,30 @@ describe("browserHeaderRouteFunction", () => {
         allowedPorts: [443],
         headers: { "X-Scoped-Secret": "secret" },
         enforceScope: true,
+        ...overrides,
       })})`,
-      { URL },
+      {},
     ) as (page: {
       context(): typeof context;
     }) => Promise<{ installed: boolean }>;
 
     await fn({ context: () => context });
-    if (!handler) throw new Error("route handler was not installed");
-    return handler;
+    return async (route: Parameters<Handler>[0]) => {
+      const match = routes.find(
+        ({ matches }) =>
+          typeof matches === "string" ||
+          matches(new URL(route.request().url())),
+      );
+      if (!match) throw new Error("route handler was not installed");
+      await match.handler(route);
+    };
   }
 
-  it("fetches one scoped hop with headers, then fulfills the browser request", async () => {
-    const handler = await installRoute();
+  it.each([
+    true,
+    false,
+  ])("fetches one scoped hop with headers with scope enforcement %s", async (enforceScope) => {
+    const handler = await installRoute({ enforceScope });
     const continueRequest = vi.fn(async () => {});
     const fetchedResponse = {
       status: () => 200,
@@ -182,6 +194,26 @@ describe("browserHeaderRouteFunction", () => {
 
     expect(abortRequest).toHaveBeenCalledWith("blockedbyclient");
     expect(continueRequest).not.toHaveBeenCalled();
+  });
+
+  it("continues unscoped requests without injecting headers when enforcement is disabled", async () => {
+    const handler = await installRoute({ enforceScope: false });
+    const continueRequest = vi.fn(async () => {});
+    const fetchRequest = vi.fn();
+    const abortRequest = vi.fn();
+    await handler({
+      request: () => ({
+        url: () => "https://outside.example.net/data",
+        allHeaders: async () => ({}),
+      }),
+      continue: continueRequest,
+      fetch: fetchRequest,
+      fulfill: vi.fn(),
+      abort: abortRequest,
+    });
+    expect(continueRequest).toHaveBeenCalledWith();
+    expect(fetchRequest).not.toHaveBeenCalled();
+    expect(abortRequest).not.toHaveBeenCalled();
   });
 
   it("uses the destination host rather than matching userinfo", async () => {
