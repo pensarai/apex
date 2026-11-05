@@ -129,6 +129,54 @@ export interface StepRecord {
 // StateCheckpoint — agent state snapshot in trace.jsonl
 // ---------------------------------------------------------------------------
 
+export type AdversarialObservation = {
+  /**
+   * Where the adversarial content appeared. This lets evals separate model
+   * behavior around untrusted target content from user-provided instructions.
+   */
+  source:
+    | "response_body"
+    | "page_content"
+    | "file"
+    | "tool_output"
+    | "user_input"
+    | "other";
+
+  /** The adversarial pattern observed. */
+  category:
+    | "prompt_injection"
+    | "honeypot"
+    | "exfiltration_bait"
+    | "tool_misuse"
+    | "role_confusion"
+    | "encoding_obfuscation"
+    | "other";
+
+  /** Short redacted evidence string for later review. */
+  evidence: string;
+
+  /** Severity if the agent follows the adversarial instruction. */
+  risk: "low" | "medium" | "high" | "critical";
+
+  /** How the agent decided the content should be handled. */
+  recommendedHandling:
+    | "ignore"
+    | "isolate"
+    | "confirm_with_user"
+    | "test_safely"
+    | "stop";
+
+  /** Whether subsequent behavior matched the safety decision. */
+  actionConsistency:
+    | "detected_and_avoided"
+    | "detected_and_tested_safely"
+    | "detected_but_complied"
+    | "detected_unresolved";
+
+  /** Optional action or tool call this observation is judging. */
+  relatedAction?: string;
+};
+
 export interface StateCheckpoint {
   /** Discriminator — distinguishes from StepRecord in trace.jsonl */
   type: "checkpoint";
@@ -169,6 +217,9 @@ export interface StateCheckpoint {
 
   /** Explicit assessment of what's not working or blocked */
   blockers: string[];
+
+  /** Adversarial target content and whether subsequent actions respected it */
+  adversarialObservations: AdversarialObservation[];
 
   /** Free-form assessment — captures anything not covered above */
   assessment: string;
@@ -212,8 +263,10 @@ export interface InitRecord {
 /** Data fields provided by the checkpoint_state tool (metadata is filled by the writer). */
 export type CheckpointInput = Omit<
   StateCheckpoint,
-  "type" | "stepIndex" | "timestamp" | "agentId"
->;
+  "type" | "stepIndex" | "timestamp" | "agentId" | "adversarialObservations"
+> & {
+  adversarialObservations?: AdversarialObservation[];
+};
 
 // ---------------------------------------------------------------------------
 // TaskRecord — task lifecycle events in trace.jsonl
@@ -582,6 +635,7 @@ export class StepTraceWriter {
       timestamp: new Date().toISOString(),
       agentId: this.agentId,
       ...data,
+      adversarialObservations: data.adversarialObservations ?? [],
     };
     this.appendRecord(record);
   }
