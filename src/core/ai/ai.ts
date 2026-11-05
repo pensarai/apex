@@ -57,6 +57,7 @@ import {
   fitMessagesToContext,
   truncateWithMarker,
 } from "./contextManagement";
+import { projectFailedToolCalls } from "./failedToolCallHistory";
 import { isIncompleteModelStreamError } from "./incompleteModelStream";
 import {
   getInferenceRecorder,
@@ -2032,7 +2033,10 @@ function streamResponseWithinOperation(
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
-        let stepMessages = step.messages;
+        let stepMessages = projectFailedToolCalls(
+          step.messages,
+          step.steps.flatMap((previous) => previous.toolCalls),
+        );
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
