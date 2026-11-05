@@ -106,6 +106,8 @@ export type AgentEventMap = {
     parentSubagentId?: string;
     /** Parent agent's session id (`ses_…`). Auto-populated by {@link AgentEventBus.attachChild}. */
     parentSessionId?: string;
+    /** AI SDK tool call that launched this child, when the spawner was given one. */
+    parentToolCallId?: string;
   };
   "subagent-complete": {
     subagentId: string;
