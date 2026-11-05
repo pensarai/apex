@@ -1034,18 +1034,22 @@ function compactionNotice(data: CompactionPartData): ModelMessage {
   };
 }
 
-/** What a compaction keeps verbatim: its message onward, the latest user turn, and the calls it replayed. */
+/** What a compaction keeps verbatim: its message onward, the user message it replayed, and the calls it replayed. */
 function retainedAfterCompaction(
   messages: ConsoleMessageRow[],
   partsByMessage: Map<string, ConsolePartRow[]>,
   boundary: { sequence: number; data: CompactionPartData },
 ): ConsoleMessageRow[] {
   const pinned = new Set(boundary.data.pinnedToolCallIds);
-  const latestUser = messages.findLast((message) => message.role === "user");
+  // A general-harness summary stands in for this message instead of summarizing it, so later turns need it verbatim.
+  const replayedUser = messages.findLast(
+    (message) =>
+      message.role === "user" && message.sequence < boundary.sequence,
+  );
   return messages.filter(
     (message) =>
       message.sequence >= boundary.sequence ||
-      message === latestUser ||
+      message === replayedUser ||
       (partsByMessage.get(message.id) ?? []).some(
         (part) => part.toolCallId !== null && pinned.has(part.toolCallId),
       ),
