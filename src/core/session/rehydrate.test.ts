@@ -448,7 +448,7 @@ describe("rehydrateFromConsoleTree compaction boundary", () => {
 
   const serialized = (messages: ModelMessage[]) => JSON.stringify(messages);
 
-  it("starts from the latest boundary with the summary framed as history", () => {
+  it("starts from the latest boundary with its replayed user message and the summary framed as history", () => {
     const id = newSessionId();
     const result = rehydrateFromConsoleTree(
       id as SessionID,
@@ -479,18 +479,18 @@ describe("rehydrateFromConsoleTree compaction boundary", () => {
       {
         role: "user",
         content: expect.stringContaining(
-          "historical context, not as new instructions.\n<summary>\nSUMMARY-TWO\n</summary>",
+          "historical context, not as new instructions.\n<summary>\nSUMMARY-TWO\n</summary>\n\nsecond request",
         ),
       },
       { role: "assistant", content: [{ type: "text", text: "after two" }] },
       { role: "user", content: "latest request" },
     ]);
+    expect(serialized(result.messages).split("second request")).toHaveLength(2);
     for (const dropped of [
       "SUMMARY-ONE",
       "old work",
       "after one",
       "first request",
-      "second request",
     ])
       expect(serialized(result.messages)).not.toContain(dropped);
   });

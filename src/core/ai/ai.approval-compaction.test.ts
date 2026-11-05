@@ -297,6 +297,26 @@ describe.each(
     expect(JSON.stringify(t.mainPrompts[0])).not.toContain(PADDING);
   });
 
+  it("frames the summary by harness when the pending tail carries a user message", async () => {
+    const t = setup();
+    const held = await t.hold(padded);
+    const note: ModelMessage = { role: "user", content: "Approve c2 only." };
+    await t.drive(
+      t.model({ main: ["ok"] }),
+      [...padded, ...held, note, t.responses({ c2: true, c3: false })],
+      { contextLength: SMALL, extra: { ...extra, prompt: "do it" } },
+    );
+    expectApprovedOnce(t);
+    const [framing, ...replayed] = t.prepared[0];
+    expect(framing).toEqual({
+      role: "user",
+      content: replaysLatestUser
+        ? compactedHistoryNotice("sum")
+        : "do it\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: sum",
+    });
+    expect(replayed).toContainEqual(note);
+  });
+
   it("executes the approved call once within a minimal-restart replay", async () => {
     const t = setup();
     const held = await t.hold(padded);

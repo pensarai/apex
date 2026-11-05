@@ -61,6 +61,7 @@ export { ModelStreamDrainError } from "./modelStreamDrain";
 export {
   AVAILABLE_MODELS,
   getClaudeCapabilities,
+  getMaxOutputTokens,
   getModelInfo,
 } from "./models";
 export type {
