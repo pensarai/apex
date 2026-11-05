@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { agentLogsDir } from "./agentScratch";
@@ -78,8 +87,9 @@ export function persistToolOutput(
     const hex = digest.subarray(0, 16).toString("hex");
     const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     const file = join(directory, `${id}.txt`);
+    let fd: number;
     try {
-      writeFileSync(file, text, { flag: "wx", mode: 0o600 });
+      fd = openSync(file, "wx", 0o600);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const existing = lstatSync(file);
@@ -91,9 +101,46 @@ export function persistToolOutput(
       ) {
         throw new Error("retained output is not an ordinary matching file");
       }
+      return `${REFERENCE_PREFIX}${id}`;
     }
+    const failures: unknown[] = [];
+    try {
+      writeFileSync(fd, text);
+    } catch (error) {
+      failures.push(error);
+      try {
+        const owned = fstatSync(fd);
+        const current = lstatSync(file);
+        if (
+          current.isFile() &&
+          current.nlink === 1 &&
+          current.dev === owned.dev &&
+          current.ino === owned.ino
+        )
+          unlinkSync(file);
+      } catch (cleanup) {
+        failures.push(cleanup);
+      }
+    }
+    try {
+      closeSync(fd);
+    } catch (cleanup) {
+      failures.push(cleanup);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Retained output cleanup failed");
     return `${REFERENCE_PREFIX}${id}`;
   } catch (error) {
+    if (error instanceof AggregateError) {
+      const failures = error.errors.map(
+        (failure) => new Error(unavailableToolOutputMessage(failure)),
+      );
+      throw new AggregateError(
+        failures,
+        failures.map((failure) => failure.message).join("; "),
+      );
+    }
     throw new Error(unavailableToolOutputMessage(error));
   }
 }
