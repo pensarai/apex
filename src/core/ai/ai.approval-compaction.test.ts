@@ -482,6 +482,38 @@ describe("latest user message across compaction", () => {
     expect(resumed).toHaveLength(1);
     expect(String(resumed[0].content).startsWith("continue\n\n")).toBe(true);
   });
+
+  it("keeps a request longer than the restart prompt verbatim after a minimal restart", async () => {
+    const t = setup();
+    const long = `Delete endpoint a. ${"Keep b exactly as it is. ".repeat(200)}`;
+    await t.drive(
+      t.model({ main: ["ok"], summary: "context-error" }),
+      [
+        { role: "assistant", content: PADDING },
+        { role: "user", content: long },
+      ],
+      { contextLength: SMALL, extra: { ...general, prompt: long } },
+    );
+    expect(long.length).toBeGreaterThan(4_000);
+    expect(t.prepared[0]).toContainEqual({ role: "user", content: long });
+  });
+
+  it("replays it after a minimal restart when only the initial prompt matches it", async () => {
+    const t = setup();
+    await t.drive(
+      t.model({ main: ["ok"], summary: "context-error" }),
+      [{ role: "assistant", content: PADDING }, request],
+      {
+        contextLength: SMALL,
+        extra: {
+          ...general,
+          prompt: "continue",
+          _initialPrompt: request.content,
+        },
+      },
+    );
+    expect(t.prepared[0]).toContainEqual(request);
+  });
 });
 
 const conversation: ModelMessage[] = [
