@@ -53,6 +53,9 @@ vi.mock("../observability", async () => {
     );
   return { ...actual, withModelCallDiagnostics: (model: unknown) => model };
 });
+vi.mock("./cutOffToolCalls", () => ({
+  withCutOffToolCallGuard: (model: unknown) => model,
+}));
 
 const { generateObjectResponse, onUsage, runWithStepContext, streamResponse } =
   await import("./ai");
