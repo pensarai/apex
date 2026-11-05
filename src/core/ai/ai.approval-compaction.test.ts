@@ -439,6 +439,39 @@ describe("latest user message across compaction", () => {
     ]);
   });
 
+  it("stock: continues from the summary when reattaching the prompt would overflow again", async () => {
+    const original = `Login at https://app.example/login. ${"x".repeat(90_000)}`;
+    expect(original.length).toBeLessThan(100_000);
+    const t = setup();
+    let calls = 0;
+    const mock = new MockLanguageModelV3({
+      provider: "mock",
+      modelId: "m",
+      doStream: async (options) => {
+        if (isSummaryCall(options)) {
+          return { stream: simulateReadableStream({ chunks: text("sum") }) };
+        }
+        calls += 1;
+        const blob = JSON.stringify(options.prompt);
+        if (
+          calls === 1 ||
+          blob.includes("Login at https://app.example/login")
+        ) {
+          throw new Error(CONTEXT_ERROR);
+        }
+        return { stream: simulateReadableStream({ chunks: text("done") }) };
+      },
+    });
+    await t.drive(mock, [user, { role: "assistant", content: "page loaded" }], {
+      contextLength: 30_000,
+      extra: { prompt: original, system: "s".repeat(20_000) },
+    });
+    const resumed = String(t.prepared.at(-1)?.[0]?.content);
+    expect(resumed).toContain("Please respond based on this summary");
+    expect(resumed).toContain("sum");
+    expect(resumed).not.toContain("Login at https://app.example/login");
+  });
+
   it("follows a summary framed as this conversation's history, not a hand-off", async () => {
     const t = setup();
     await t.drive(

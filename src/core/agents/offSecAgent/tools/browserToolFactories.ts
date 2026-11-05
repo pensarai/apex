@@ -11,6 +11,7 @@ import type {
   BrowserScreenshotResult,
   BrowserSnapshotResult,
 } from "../../../tools/backends/types";
+import { capBrowserSnapshot } from "./browserSnapshotText";
 
 const BrowserNavigateInput = z.object({
   url: z.string().describe("Full URL to navigate to"),
@@ -314,7 +315,11 @@ Example workflow:
 2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
 3. Call browser_fill with ref="e3" to fill that specific element`,
         inputSchema: BrowserSnapshotInput,
-        execute: (): Promise<BrowserSnapshotResult> => backend.snapshot(),
+        execute: async (): Promise<BrowserSnapshotResult> => {
+          const result = await backend.snapshot();
+          if (!result.snapshot) return result;
+          return { ...result, snapshot: capBrowserSnapshot(result.snapshot) };
+        },
       }),
 
     browser_click: () =>
