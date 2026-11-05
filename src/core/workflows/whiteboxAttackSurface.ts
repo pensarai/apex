@@ -575,7 +575,16 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     input: { codebasePath },
   });
 
-  const appsResult = await agentLimiter(() => appsAgent.consume());
+  let appsResult: AppsDiscoveryResult;
+  try {
+    appsResult = await agentLimiter(() => appsAgent.consume());
+  } catch (error) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "failed",
+    });
+    throw error;
+  }
 
   if (input.incremental) {
     if (!hooks?.backends)
