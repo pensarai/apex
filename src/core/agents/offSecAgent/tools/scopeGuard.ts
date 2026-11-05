@@ -12,7 +12,6 @@
  */
 
 import { parseTargetUrl } from "../../../../util/url";
-import { isTestDomain } from "../../../session/testDomains";
 import type { ResolverSession } from "../../../http/targetHeaders";
 import {
   getRegistrableDomain,
@@ -21,6 +20,7 @@ import {
   getUrlPort,
   isHostInScope,
 } from "../../../http/targetScope";
+import { isTestDomain } from "../../../session/testDomains";
 import type { ToolContext } from "./types";
 
 export { getRegistrableDomain };
