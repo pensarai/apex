@@ -54,6 +54,9 @@ vi.mock("ai", async () => {
 vi.mock("./ai", () => ({
   buildOpenRouterProviderOptions: vi.fn(() => undefined),
   buildReasoningProviderOptions: vi.fn(() => undefined),
+  // resumedPromptFits reads the window here. 200k is getContextWindow's
+  // fallback, and this prompt is short, so the fit check stays on the append path.
+  getContextWindow: vi.fn(() => 200_000),
   mergeProviderOptions: vi.fn(() => undefined),
   recordContextRestart: vi.fn(async () => {}),
   resumeMessagesWithPinned: vi.fn(() => undefined),
