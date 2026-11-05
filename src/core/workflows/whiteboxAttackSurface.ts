@@ -141,6 +141,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
+  /** Exposes the local discovery agent's drain; the host owns aborting its input signal. */
+  registerOwnedAgentDrain?: (drain: () => Promise<void>) => void;
   eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
@@ -564,6 +566,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       : {}),
     abortSignal,
   });
+  input.registerOwnedAgentDrain?.(() => appsAgent.abortAndDrain());
 
   log.info(
     `Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,

@@ -183,6 +183,7 @@ describe("whitebox Phase 1 umbrella lifecycle with a real CodeAgent", () => {
   });
 
   it("keeps one successful completion for a validated empty discovery", async () => {
+    const drain = vi.spyOn(CodeAgent.prototype, "abortAndDrain");
     const f = fixture({
       repoType: "single-app",
       packageManager: "bun",
@@ -201,5 +202,68 @@ describe("whitebox Phase 1 umbrella lifecycle with a real CodeAgent", () => {
     ]);
     expect(f.calls()).toBe(1);
     expect(f.spawnMany).not.toHaveBeenCalled();
+    expect(drain).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    false,
+    true,
+  ])("registers the owned discovery drain before consume (incremental=%s)", async (incremental) => {
+    const f = fixture();
+    const consume = vi.spyOn(CodeAgent.prototype, "consume");
+    let finishDrain!: () => void;
+    const pendingDrain = new Promise<void>((resolve) => {
+      finishDrain = resolve;
+    });
+    const drain = vi
+      .spyOn(CodeAgent.prototype, "abortAndDrain")
+      .mockReturnValue(pendingDrain);
+    const registerOwnedAgentDrain =
+      vi.fn<(drain: () => Promise<void>) => void>();
+    const input = {
+      ...f.input,
+      registerOwnedAgentDrain,
+      ...(incremental
+        ? {
+            incremental: {
+              diffPath: join(f.input.session.rootPath, "diff"),
+              assetsPath: join(f.input.session.rootPath, "assets"),
+              existingResult: {
+                repoType: "single-app",
+                packageManager: "bun",
+                apps: [],
+                summary: {
+                  totalApps: 0,
+                  totalPages: 0,
+                  totalApiEndpoints: 0,
+                  totalPentestObjectives: 0,
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
+    await expect(runWhiteboxAttackSurfaceWorkflow(input)).rejects.toThrow(
+      "ended without a validated response",
+    );
+    expect(registerOwnedAgentDrain).toHaveBeenCalledOnce();
+    expect(registerOwnedAgentDrain.mock.invocationCallOrder[0]).toBeLessThan(
+      consume.mock.invocationCallOrder[0],
+    );
+    expect(drain).not.toHaveBeenCalled();
+    const registeredDrain = registerOwnedAgentDrain.mock.calls[0][0];
+    const settled = vi.fn();
+    const cleanup = registeredDrain().then(settled);
+    expect(drain.mock.contexts[0]).toBe(consume.mock.contexts[0]);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    finishDrain();
+    await cleanup;
+    expect(settled).toHaveBeenCalledOnce();
+
+    const failure = new Error("Discovery drain failed");
+    drain.mockRejectedValueOnce(failure);
+    await expect(registeredDrain()).rejects.toBe(failure);
   });
 });
