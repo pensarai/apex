@@ -19,8 +19,6 @@ export {
   createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
-// Out-of-band hits on host-owned test domains (session `testDomains`).
-export { readCallbackHits } from "./callbackHits";
 // Callback helper tools — narrow nonce-correlated listener surface over the
 // whitebox job infra (Fast Strike blind/out-of-band testing).
 export {
@@ -200,7 +198,6 @@ export { writePlan } from "./writePlan";
 // ---------------------------------------------------------------------------
 
 import type { ToolSet } from "ai";
-import { sessionTestDomains } from "../../../callbacks";
 import { addMemory } from "./addMemory";
 import { applyPatch } from "./applyPatch";
 import {
@@ -212,7 +209,6 @@ import {
   type createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
-import { readCallbackHits } from "./callbackHits";
 import {
   pollCallbackListener,
   startCallbackListener,
@@ -401,11 +397,6 @@ const TOOL_REGISTRY = [
   { name: "start_callback_listener", factory: startCallbackListener },
   { name: "poll_callback_listener", factory: pollCallbackListener },
   { name: "stop_callback_listener", factory: stopCallbackListener },
-  {
-    name: "read_callback_hits",
-    factory: readCallbackHits,
-    available: (ctx) => sessionTestDomains(ctx.session).length > 0,
-  },
 
   // Reporting / benchmark tools
   { name: "provide_comparison_results", factory: provideComparisonResults },
@@ -658,7 +649,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "start_callback_listener",
   "poll_callback_listener",
   "stop_callback_listener",
-  "read_callback_hits",
   // "generate_report",
   "provide_comparison_results",
   // Memory

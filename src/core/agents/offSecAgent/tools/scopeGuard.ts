@@ -12,7 +12,7 @@
  */
 
 import { parseTargetUrl } from "../../../../util/url";
-import { isTestDomain } from "../../../callbacks";
+import { isTestDomain } from "../../../session/testDomains";
 import type { ResolverSession } from "../../../http/targetHeaders";
 import {
   getRegistrableDomain,

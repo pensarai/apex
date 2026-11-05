@@ -251,10 +251,10 @@ const SessionConfigObject = z.object({
   scopeConstraints: ScopeConstraintsObject.optional(),
   /**
    * Hosts the host application owns for out-of-band testing (blind SSRF,
-   * host-header and similar payloads). Requests to them are recorded and read
-   * back with `read_callback_hits`. Testing destinations, not targets: payloads
-   * may name them, but they are never scanned, reported on, or sent target
-   * credentials or headers.
+   * host-header and similar payloads). The host records requests to them and
+   * hands the finding judge the ones a PoC's URLs received. Testing
+   * destinations, not targets: payloads may name them, but they are never
+   * scanned, reported on, or sent target credentials or headers.
    */
   testDomains: z.array(z.string().min(1)).optional(),
   authCredentials: z

@@ -19,10 +19,12 @@ import type {
 const log = scopedLogger(() => createLogger("FindingJudge"));
 
 export type {
+  CallbackEvidence,
   FindingJudgeAgentOutput,
   FindingJudgeInput,
   FindingJudgeResult,
   FindingType,
+  RecordedCallback,
 } from "./types";
 
 export type FindingJudgeRuntimeContext = Pick<
