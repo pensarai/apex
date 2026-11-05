@@ -76,6 +76,26 @@ export type AgentEventMap = {
     messageId?: string;
     partId?: string;
   };
+  /** A tool call is held until the caller answers `approvalId`. */
+  "tool-approval-request": {
+    toolCallId: string;
+    approvalId: string;
+    toolName: string;
+    input: unknown;
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
+  };
+  /** A held tool call was denied, so it will not execute. */
+  "tool-output-denied": {
+    toolCallId: string;
+    toolName: string;
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
+  };
   "subagent-spawn": {
     subagentId: string;
     /** The spawned child's own session id (`ses_…`). */
@@ -156,6 +176,8 @@ const CHILD_BUS_FORWARD_POLICY: {
   "tool-call-delta": "forward",
   "tool-call-complete": "forward",
   "tool-result": "forward",
+  "tool-approval-request": "forward",
+  "tool-output-denied": "forward",
   "subagent-spawn": "forward",
   "subagent-complete": "forward",
   "step-finish": "forward",
@@ -286,6 +308,8 @@ export class AgentEventBus {
    *   tool-input-delta  → tool-call-delta
    *   tool-call         → tool-call-complete
    *   tool-result       → tool-result
+   *   tool-approval-request → tool-approval-request
+   *   tool-output-denied    → tool-output-denied
    *   error             → error
    *
    * `ids` accepts a bare `subagentId` string for backward compatibility, or
@@ -383,6 +407,28 @@ export class AgentEventBus {
         });
         break;
       }
+      case "tool-approval-request":
+        this.emit("tool-approval-request", {
+          toolCallId: chunk.toolCall.toolCallId,
+          approvalId: chunk.approvalId,
+          toolName: chunk.toolCall.toolName,
+          input: chunk.toolCall.input,
+          subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.toolPartId?.(chunk.toolCall.toolCallId),
+        });
+        break;
+      case "tool-output-denied":
+        this.emit("tool-output-denied", {
+          toolCallId: chunk.toolCallId,
+          toolName: chunk.toolName,
+          subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.toolPartId?.(chunk.toolCallId),
+        });
+        break;
       case "error":
         this.emit("error", {
           error: (chunk as { type: "error"; error: unknown }).error,

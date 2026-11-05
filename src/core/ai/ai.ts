@@ -55,6 +55,7 @@ import {
   estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
+  splitPendingApprovals,
   truncateWithMarker,
 } from "./contextManagement";
 import { projectFailedToolCalls } from "./failedToolCallHistory";
@@ -1130,11 +1131,20 @@ function wrapStreamWithErrorHandler(
                       `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
                     );
                   }
-                  opts.onSummarized?.("");
                   const minimalPrompt =
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
+                  const resumeMessages = resumeMessagesWithPinned(
+                    minimalPrompt,
+                    splitPendingApprovals(messagesForSummary).pinned,
+                    opts,
+                    postReactiveDepth + 1,
+                  );
+                  const restartMessages = resumeMessages ?? [
+                    { role: "user" as const, content: minimalPrompt },
+                  ];
+                  opts.onSummarized?.("");
                   const reset = beginCompaction("reset", {
                     trigger: "summary_overflow",
                     model: opts.model,
@@ -1154,14 +1164,11 @@ function wrapStreamWithErrorHandler(
                   );
                   reset?.measure(
                     "after",
-                    () =>
-                      estimateMessageTokens([
-                        { role: "user", content: minimalPrompt },
-                      ]),
-                    1,
+                    () => estimateMessageTokens(restartMessages),
+                    restartMessages.length,
                   );
                   reset?.capture("after", () => ({
-                    messages: [{ role: "user", content: minimalPrompt }],
+                    messages: restartMessages,
                     system: opts.system,
                   }));
                   reset?.finish("completed");
@@ -1171,7 +1178,7 @@ function wrapStreamWithErrorHandler(
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
-                    messages: undefined,
+                    messages: resumeMessages,
                     _restartDepth: postReactiveDepth + 1,
                   });
                   finalAttempt = fallback;
@@ -2639,6 +2646,49 @@ export class ContextLengthExhaustedError extends Error {
     this.name = "ContextLengthExhaustedError";
     this.restartDepth = restartDepth;
   }
+}
+
+/** Approved calls cannot be summarized away, so an oversized replay is terminal. */
+export class PendingApprovalExceedsContextError extends ContextLengthExhaustedError {
+  constructor(restartDepth: number) {
+    super(
+      "Pending tool approvals do not fit in the model's context window",
+      restartDepth,
+    );
+    this.name = "PendingApprovalExceedsContextError";
+  }
+}
+
+/** Resume history for a compacted turn: undefined when nothing is pending. */
+export function resumeMessagesWithPinned(
+  prompt: string,
+  pinned: ModelMessage[],
+  opts: StreamResponseOpts,
+  restartDepth: number,
+): ModelMessage[] | undefined {
+  if (pinned.length === 0) return undefined;
+  const messages: ModelMessage[] = [
+    { role: "user", content: prompt },
+    ...pinned,
+  ];
+  const overhead =
+    estimateToolsOverheadTokens(opts.tools) +
+    1_000 +
+    (opts.system ? estimateTokens(opts.system) : 0);
+  const budget =
+    getContextWindow(
+      opts.model,
+      opts.authConfig?.customProviders,
+      opts.authConfig?.hoonifyModels,
+    ) -
+    getMaxOutputTokens(
+      opts.model,
+      opts.authConfig?.customProviders,
+      opts.authConfig?.hoonifyModels,
+    );
+  if (estimateMessageTokens(messages) + overhead > budget)
+    throw new PendingApprovalExceedsContextError(restartDepth);
+  return messages;
 }
 
 const MAX_RESTART_DEPTH = 3;
