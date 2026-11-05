@@ -209,6 +209,21 @@ export {
   resumeRecordedAgent,
   runRecordedAgent,
 } from "./recordedRun";
+export type {
+  SiemAlertEvidence,
+  SiemLogEvent,
+  SiemLogSearch,
+  SiemLogSearchQuery,
+  SiemLogSearchResult,
+  SiemTriageAgentInput,
+  SiemTriageResult,
+} from "./siemTriage";
+export {
+  runSiemTriageAgent,
+  SiemTriageResultSchema,
+  SiemTriageSeveritySchema,
+  SiemTriageVerdictSchema,
+} from "./siemTriage";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,
