@@ -7,6 +7,7 @@ import type { SpecializedAgentInput } from "../../offSecAgent";
 import { describeDocumentedTopology } from "../../offSecAgent/tools/documentTopology";
 import type { TopologyChangeSet } from "../../offSecAgent/tools/topologyRecords";
 import {
+  buildCredentialsBlock,
   buildGeneralizedAttackSurfacePrompt,
   GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
 } from "./generalizedPrompts";
@@ -95,6 +96,12 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
       opts.session.config?.prompt,
       opts.continuation,
       opts.updateBrief,
+      buildCredentialsBlock(
+        (
+          opts.credentialManager ?? opts.session.credentialManager
+        )?.formatForPrompt(),
+        opts.session.config?.authenticationInstructions,
+      ),
     ),
   resolveResult: (opts) => {
     const resultsPath = join(

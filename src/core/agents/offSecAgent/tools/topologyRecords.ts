@@ -74,33 +74,75 @@ function sanitize(name: string): string {
   return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "unnamed";
 }
 
-interface Stored {
+/** One record file: its name, its kind, and the version it holds. */
+export interface StoredTopologyRecord {
   kind: RecordKind;
   file: string;
   record: TopologyRecord;
 }
+type Stored = StoredTopologyRecord;
 
-function readStored(sessionRoot: string): Stored[] {
+/** Parse one record file's contents; undefined for a file that is not a record. */
+export function parseRecordFile(
+  file: string,
+  raw: Record<string, unknown>,
+): StoredTopologyRecord | undefined {
+  const kind = KINDS.find((k) => file.startsWith(`${k}_`));
+  if (!kind || !file.endsWith(".json")) return undefined;
+  const id = typeof raw.id === "string" ? raw.id : legacyId(kind, raw);
+  return { kind, file, record: { ...raw, id } };
+}
+
+/** Every record file in a session, in write order. */
+export function readRecordFiles(sessionRoot: string): StoredTopologyRecord[] {
   const dir = topologyDir(sessionRoot);
   if (!existsSync(dir)) return [];
   const stored: Stored[] = [];
   for (const file of readdirSync(dir)) {
-    const kind = KINDS.find((k) => file.startsWith(`${k}_`));
-    if (!kind || !file.endsWith(".json")) continue;
-    const raw = JSON.parse(readFileSync(join(dir, file), "utf8")) as Record<
-      string,
-      unknown
-    >;
-    const id = typeof raw.id === "string" ? raw.id : legacyId(kind, raw);
-    stored.push({ kind, file, record: { ...raw, id } });
+    if (!file.endsWith(".json")) continue;
+    const parsed = parseRecordFile(
+      file,
+      JSON.parse(readFileSync(join(dir, file), "utf8")) as Record<
+        string,
+        unknown
+      >,
+    );
+    if (parsed) stored.push(parsed);
   }
-  // Order by write time; the filename breaks ties within one millisecond.
-  return stored.sort(
+  return sortStored(stored);
+}
+
+// Order by write time; the filename breaks ties within one millisecond.
+function sortStored(stored: Stored[]): Stored[] {
+  return [...stored].sort(
     (a, b) =>
       String(a.record.recordedAt ?? "").localeCompare(
         String(b.record.recordedAt ?? ""),
       ) || a.file.localeCompare(b.file),
   );
+}
+
+/** Write record files into a session, e.g. ones a host persisted elsewhere. Existing files are kept. */
+export function writeRecordFiles(
+  sessionRoot: string,
+  stored: StoredTopologyRecord[],
+): number {
+  const dir = topologyDir(sessionRoot);
+  mkdirSync(dir, { recursive: true });
+  let written = 0;
+  for (const s of stored) {
+    const path = join(dir, s.file);
+    if (s.file !== sanitizeFile(s.file))
+      throw new Error(`writeRecordFiles: unsafe record file name ${s.file}`);
+    if (existsSync(path)) continue;
+    writeFileSync(path, JSON.stringify(s.record, null, 2));
+    written++;
+  }
+  return written;
+}
+
+function sanitizeFile(file: string): string {
+  return file.replace(/[^A-Za-z0-9-_.]/g, "_").replace(/^\.+/, "_");
 }
 
 export interface LoadedTopology {
@@ -119,9 +161,15 @@ export interface LoadedTopology {
  * id references resolved to the referenced record's current name.
  */
 export function loadTopology(sessionRoot: string): LoadedTopology {
+  return resolveTopology(readRecordFiles(sessionRoot));
+}
+
+/** {@link loadTopology} over record files held anywhere (e.g. a database), in any order. */
+export function resolveTopology(
+  stored: StoredTopologyRecord[],
+): LoadedTopology {
   const latest = new Map<string, Stored>();
-  for (const s of readStored(sessionRoot))
-    latest.set(`${s.kind}:${s.record.id}`, s);
+  for (const s of sortStored(stored)) latest.set(`${s.kind}:${s.record.id}`, s);
   const all = [...latest.values()];
 
   const nameById = new Map<string, string>();
@@ -211,7 +259,7 @@ export function seedFromBaseline(
     );
   mkdirSync(dir, { recursive: true });
   const latest = new Map<string, Stored>();
-  for (const s of readStored(baselineSessionRoot))
+  for (const s of readRecordFiles(baselineSessionRoot))
     latest.set(`${s.kind}:${s.record.id}`, s);
   let seeded = 0;
   for (const s of latest.values()) {
@@ -310,8 +358,19 @@ export function diffTopology(
   sessionRoot: string,
   sessionId: string,
 ): TopologyChangeSet {
-  const before = loadTopology(baselineSessionRoot);
-  const after = loadTopology(sessionRoot);
+  return diffLoadedTopology(
+    loadTopology(baselineSessionRoot),
+    loadTopology(sessionRoot),
+    sessionId,
+  );
+}
+
+/** {@link diffTopology} over topologies already loaded. */
+export function diffLoadedTopology(
+  before: LoadedTopology,
+  after: LoadedTopology,
+  sessionId: string,
+): TopologyChangeSet {
   const index = (t: LoadedTopology) => {
     const m = new Map<string, { kind: RecordKind; record: TopologyRecord }>();
     for (const kind of KINDS)

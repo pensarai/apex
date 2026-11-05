@@ -18,7 +18,10 @@ import {
 import {
   diffTopology,
   loadTopology,
+  readRecordFiles,
+  resolveTopology,
   seedFromBaseline,
+  writeRecordFiles,
 } from "./topologyRecords";
 import type { ToolContext } from "./types";
 
@@ -274,6 +277,39 @@ describe("retire_record", () => {
       success: false,
       error: "unknown_component",
     });
+  });
+});
+
+describe("record files held outside the session", () => {
+  it("resolve the same topology in any order as the session's own files", async () => {
+    const ctx = makeCtx();
+    await baseline(ctx);
+    await run(documentComponent(ctx), {
+      ...app("Storefront API"),
+      renameFrom: "Shop API",
+    });
+    const files = readRecordFiles(ctx.session.rootPath);
+    expect(resolveTopology([...files].reverse())).toEqual(
+      loadTopology(ctx.session.rootPath),
+    );
+  });
+
+  it("write back into a session without overwriting what is there, and refuse unsafe names", async () => {
+    const source = makeCtx();
+    await baseline(source);
+    const files = readRecordFiles(source.session.rootPath);
+    const target = makeCtx("ses_recovered");
+    expect(writeRecordFiles(target.session.rootPath, files)).toBe(files.length);
+    expect(writeRecordFiles(target.session.rootPath, files)).toBe(0);
+    expect(loadTopology(target.session.rootPath)).toEqual(
+      loadTopology(source.session.rootPath),
+    );
+    const [first] = files;
+    expect(() =>
+      writeRecordFiles(target.session.rootPath, [
+        { ...first!, file: "../component_x_1.json" },
+      ]),
+    ).toThrow("unsafe record file name");
   });
 });
 

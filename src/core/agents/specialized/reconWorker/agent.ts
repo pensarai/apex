@@ -2,6 +2,7 @@ import { stepCountIs } from "ai";
 import { AgentRuntime } from "../../agentRuntime";
 import { type AgentDefinition, defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
+import { buildCredentialsBlock } from "../attackSurface/generalizedPrompts";
 import { RECON_WORKER_TOOLS } from "../attackSurface/reconToolset";
 import { buildReconWorkerPrompt, RECON_WORKER_SYSTEM_PROMPT } from "./prompts";
 
@@ -35,7 +36,17 @@ export function reconWorkerDefinition(): AgentDefinition<ReconWorkerInput> {
     target: (opts) => opts.target,
     stopWhen: (opts) => opts.stopWhen ?? stepCountIs(10000),
     prompt: (opts) =>
-      buildReconWorkerPrompt(opts.goal, opts.target, opts.codebasePath),
+      buildReconWorkerPrompt(
+        opts.goal,
+        opts.target,
+        opts.codebasePath,
+        buildCredentialsBlock(
+          (
+            opts.credentialManager ?? opts.session.credentialManager
+          )?.formatForPrompt(),
+          opts.session.config?.authenticationInstructions,
+        ),
+      ),
   });
 }
 

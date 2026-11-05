@@ -58,12 +58,28 @@ Work the surface in this order:
 
 Discipline: ground everything in evidence — the map is facts, and every threat follows from them; never invent a boundary, component, control, domain, or repository mapping you cannot support; stay within the authorized scope.`;
 
+/**
+ * The credentials the host supplied, as references (never secrets), and how to
+ * use them to map what an authenticated user reaches. Empty without credentials.
+ */
+export function buildCredentialsBlock(
+  credentialReferences: string | undefined,
+  authenticationInstructions: string | undefined,
+): string {
+  if (!credentialReferences && !authenticationInstructions) return "";
+  return `
+## Credentials
+Map the authenticated surface too, not only what an anonymous visitor sees. Log in with each credential that covers an origin: browser_navigate to its login URL, then browser_fill with its credentialId and credentialField — never type or record a secret value. http_request and execute_command add a credential's tokens and headers to in-scope requests automatically. Record what each role reaches as evidence on the components and controls (what authentication and authorization actually enforce), and put the role a threat needs in its preconditions.
+${credentialReferences ?? ""}${authenticationInstructions ? `\nAuthentication instructions from the operator:\n${authenticationInstructions}\n` : ""}`;
+}
+
 export function buildGeneralizedAttackSurfacePrompt(
   origins: readonly string[],
   connectedRepositories: ReadonlyArray<{ name: string; url: string }>,
   operatorPrompt: string | undefined,
   continuation?: string,
   update?: string,
+  credentials?: string,
 ): string {
   const repoBlock =
     connectedRepositories.length > 0
@@ -85,7 +101,7 @@ export function buildGeneralizedAttackSurfacePrompt(
   const updateBlock = update ? `\n${update}\n` : "";
 
   return `${originBlock}
-${repoBlock}${operatorBlock}${updateBlock}${continuationBlock}
+${repoBlock}${credentials ?? ""}${operatorBlock}${updateBlock}${continuationBlock}
 ${
   update
     ? "Begin now. Update the map from what the trigger points at, keep everything else, and finish by calling create_attack_surface_report."

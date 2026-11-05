@@ -30,6 +30,13 @@ export type ReconTrigger =
       kind: "schedule";
       /** What changed in the cloud inventory since the baseline, when one was collected. */
       cloudChanges?: string;
+    }
+  | {
+      kind: "scope";
+      /** Origins added to the system since the baseline. */
+      addedOrigins: string[];
+      /** Connected repositories added since the baseline, by name. */
+      addedRepositories: string[];
     };
 
 export interface ReconUpdate {
@@ -148,7 +155,7 @@ export function buildUpdateBrief(
   let work: string;
   if (update.trigger.kind === "commit") {
     const scope = scopeCommit(topology, update.trigger.changedFiles);
-    work = `Trigger: new commits ${update.trigger.range} in the connected repository "${update.trigger.repository}". Clone it and read the changes (git diff ${update.trigger.range}).
+    work = `Trigger: new commits ${update.trigger.range} in the connected repository "${update.trigger.repository}". Clone it and read the changed files below at the new revision (when the clone has history, git diff ${update.trigger.range} shows each change).
 
 Records whose evidence cites a changed file. A shared file (compose, a router, IaC) is cited by many records and most will be unaffected; check each against the diff and change only those whose facts the diff changes:
 Components:
@@ -162,6 +169,15 @@ Changed files no record cites — read each for components, flows, or controls t
 ${list(scope.unmapped)}
 
 Probe live only what these changes affect; the rest of the map stands.`;
+  } else if (update.trigger.kind === "scope") {
+    work = `Trigger: the system's scope grew. Map what was added as a first run would — probe each new origin, clone each new repository, and document its boundaries, components, flows, controls, and threats with evidence — and connect it to the existing map: the identity providers, datastores, edges, and third parties it shares with what is already documented.
+
+New origins:
+${list(update.trigger.addedOrigins)}
+New repositories:
+${list(update.trigger.addedRepositories)}
+
+Change an existing record only when the new scope changes its facts (a component now also serves a new origin, a control now also covers it).`;
   } else {
     const hosts = topology.components
       .filter(

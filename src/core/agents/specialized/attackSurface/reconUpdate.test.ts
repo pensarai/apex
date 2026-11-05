@@ -256,6 +256,26 @@ describe("runGeneralizedReconToReport with an update", () => {
     expect(brief).toContain("new bucket shop-exports (public)");
   });
 
+  it("briefs a scope run to map the added origins and repositories into the existing map", async () => {
+    const base = await baseline();
+    const { input } = updateInput(base, {
+      kind: "scope",
+      addedOrigins: ["https://admin.shop.example"],
+      addedRepositories: ["admin-portal"],
+    });
+    const seen: GeneralizedAttackSurfaceAgentInput[] = [];
+    const result = await runGeneralizedReconToReport(input, (i) => {
+      seen.push(i);
+      return { consume: async () => reported };
+    });
+    const brief = seen[0]?.updateBrief ?? "";
+    expect(result.skipped).toBeUndefined();
+    expect(brief).toContain("scope grew");
+    expect(brief).toContain("- https://admin.shop.example");
+    expect(brief).toContain("- admin-portal");
+    expect(brief).not.toContain("scheduled re-check");
+  });
+
   it("keeps the update brief on continuation passes", async () => {
     const base = await baseline();
     const { input } = updateInput(base, { kind: "schedule" });
