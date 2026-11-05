@@ -6,6 +6,7 @@ const PROVIDER_DISPLAY_NAMES: Record<AIModelProvider, string> = {
   google: "Google",
   openrouter: "OpenRouter",
   concentrate: "Concentrate",
+  inference: "Inference.net",
   bedrock: "AWS Bedrock",
   "bedrock-mantle": "Bedrock Mantle",
   pensar: "Pensar",

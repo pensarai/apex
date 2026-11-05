@@ -6,6 +6,7 @@ import {
 } from "@ai-sdk/provider";
 
 import { getClaudeCapabilities } from "../models";
+import type { ReasoningEffort } from "../reasoning";
 
 export const CONCENTRATE_BASE_URL = "https://api.concentrate.ai/v1";
 export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
@@ -13,12 +14,106 @@ export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
 export const CONCENTRATE_REASONING_MODEL_IDS: ReadonlySet<string> = new Set([
   "concentrate:mimo-v2.6-pro",
   "concentrate:kimi-k3",
+  "concentrate:kimi-k3-1-pro",
   "concentrate:qwen3.8-max",
   "concentrate:qwen3.8-27b",
   "concentrate:deepseek-v4-1-flash",
   "concentrate:deepseek-v4-1-flash-1017",
   "concentrate:deepseek-v4-pro-0813",
 ]);
+
+// Published per-upstream efforts from https://api.concentrate.ai/v1/models.
+export const CONCENTRATE_QWEN_REASONING_EFFORTS: Readonly<
+  Record<string, readonly ReasoningEffort[]>
+> = {
+  "concentrate:qwen3.5-27b": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.5-9b": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.6-27b": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.7-max": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.7-plus": ["none", "medium"],
+  "concentrate:qwen3.7-flash": ["none", "medium"],
+  "concentrate:qwen3.8-flash": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+  ],
+  "concentrate:qwen3.8-omni-flash": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.6-plus": ["none", "medium"],
+  "concentrate:qwen3.6-flash": ["none", "medium"],
+  "concentrate:qwen3.6-35b": ["none", "low", "medium", "high"],
+  "concentrate:qwen3.5-122b-a10b": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.5-plus": ["none", "medium"],
+  "concentrate:qwen3.5-flash": ["none", "medium"],
+  "concentrate:qwen3.5-397b-a17b": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+  "concentrate:qwen3.5-35b-a3b": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ],
+};
 
 const RETRYABLE_STATUSES = new Set([424, 429, 500, 503, 504]);
 
@@ -150,6 +245,7 @@ export function createConcentrateModel(
     concentrate.responses(upstreamModelId),
     modelId === CONCENTRATE_GLM_5_3_MODEL_ID ||
       CONCENTRATE_REASONING_MODEL_IDS.has(modelId) ||
+      !!CONCENTRATE_QWEN_REASONING_EFFORTS[modelId] ||
       /^gpt-6[.-]/.test(upstreamModelId) ||
       !!getClaudeCapabilities(modelId),
   );

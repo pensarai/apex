@@ -13,17 +13,26 @@ const selected = getModelInfo(
     ? "claude-sonnet-4-5"
     : scenario === "unknown"
       ? "gpt-4o"
-      : "claude-opus-5-5",
+      : scenario === "inference"
+        ? "inference:deepseek-v4.1-flash-1017-cyber"
+        : "claude-opus-5-5",
 );
-const config = {
-  anthropicAPIKey: "test",
-  openAiAPIKey: "test",
-  responsibleUseAccepted: true,
-} as Config;
-mock.module(
-  join(import.meta.dirname, "../../../../core/providers/utils.ts"),
-  () => ({ getAvailableModels: () => [selected] }),
-);
+const config: Config =
+  scenario === "inference"
+    ? {
+        inferenceAPIKey: "test",
+        responsibleUseAccepted: true,
+      }
+    : {
+        anthropicAPIKey: "test",
+        openAiAPIKey: "test",
+        responsibleUseAccepted: true,
+      };
+if (scenario !== "inference")
+  mock.module(
+    join(import.meta.dirname, "../../../../core/providers/utils.ts"),
+    () => ({ getAvailableModels: () => [selected] }),
+  );
 mock.module(join(import.meta.dirname, "../../../context/config.tsx"), () => ({
   useConfig: () => ({ data: config, update: async () => {} }),
 }));
@@ -31,14 +40,17 @@ const { ModelPicker } = await import("../ModelPicker");
 const { ThemeProvider, registerBuiltinThemes } = await import("../../../theme");
 registerBuiltinThemes();
 const changed: ReasoningSetting[] = [];
+const selections: string[] = [];
 function Harness() {
   const [reasoning, setReasoning] = useState<ReasoningSetting>("default");
   return (
     <ThemeProvider>
       <ModelPicker
         config={config}
-        selectedModel={selected}
-        onSelectModel={() => {}}
+        selectedModel={
+          scenario === "inference" ? getModelInfo("gpt-4o") : selected
+        }
+        onSelectModel={(model) => selections.push(model.id)}
         reasoning={reasoning}
         onReasoningChange={(next) => {
           changed.push(next);
@@ -60,8 +72,13 @@ async function frame() {
 }
 try {
   const initial = await frame();
-  assert.ok(initial.includes(selected.name), initial);
-  if (scenario === "unknown") {
+  assert.ok(
+    initial.includes(
+      scenario === "inference" ? "Inference.net" : selected.name,
+    ),
+    initial,
+  );
+  if (scenario === "unknown" || scenario === "inference") {
     assert.ok(!initial.includes("Effort:"), initial);
     assert.ok(!initial.includes("Extended Thinking:"), initial);
     await act(async () => setup.mockInput.pressKey("ARROW_LEFT"));
@@ -69,6 +86,16 @@ try {
     await act(async () => setup.mockInput.pressKey("ARROW_RIGHT"));
     await frame();
     assert.deepEqual(changed, []);
+    if (scenario === "inference") {
+      assert.ok(initial.includes("Inference.net"), initial);
+      await act(async () => setup.mockInput.typeText("inference.net cyber"));
+      const search = await frame();
+      assert.ok(search.includes("Results (1)"), search);
+      assert.ok(search.includes(selected.name), search);
+      await act(async () => setup.mockInput.pressKey("RETURN"));
+      await frame();
+      assert.deepEqual(selections, [selected.id]);
+    }
   } else {
     assert.ok(
       initial.includes(

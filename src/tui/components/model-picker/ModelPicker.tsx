@@ -36,6 +36,7 @@ const providerOrder: AIModelProvider[] = [
   "google",
   "openrouter",
   "concentrate",
+  "inference",
   "bedrock",
   "bedrock-mantle",
   "inception",

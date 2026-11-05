@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { type LanceBudget, lanceBudgetSchema } from "../agents/lanceBudget";
 import type { FindingPolicy } from "../agents/offSecAgent";
 import type { ReasoningSetting } from "../ai";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
@@ -26,6 +27,7 @@ export interface Config {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
+  inferenceAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   hoonifyAPIKey?: string | null;
   /** Runtime catalog; fetched using the current key and never persisted. */
@@ -41,6 +43,7 @@ export interface Config {
   runloopAPIKey?: string | null;
   // Direct search
   braveAPIKey?: string | null;
+  exaAPIKey?: string | null;
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
@@ -68,6 +71,7 @@ export interface Config {
   // Default workflow for newly created TUI operator sessions.
   strikeMode?: boolean;
   lanceMode?: boolean;
+  lanceBudget?: LanceBudget;
   findingPolicy?: FindingPolicy;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
@@ -134,6 +138,10 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     strikeMode: parsedConfig.strikeMode ?? DEFAULT_CONFIG.strikeMode,
     lanceMode: parsedConfig.lanceMode === true,
+    lanceBudget:
+      parsedConfig.lanceBudget === undefined
+        ? undefined
+        : lanceBudgetSchema.parse(parsedConfig.lanceBudget),
     findingPolicy:
       parsedConfig.findingPolicy === "external" ? "external" : "native",
     surfaceIntegrationEnabled:
@@ -150,6 +158,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
     concentrateAPIKey:
       parsedConfig.concentrateAPIKey ?? process.env.CONCENTRATE_API_KEY,
+    inferenceAPIKey:
+      parsedConfig.inferenceAPIKey ?? process.env.INFERENCE_API_KEY,
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     hoonifyAPIKey: parsedConfig.hoonifyAPIKey ?? process.env.HOONIFY_API_KEY,
@@ -161,6 +171,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     daytonaOrgId: parsedConfig.daytonaOrgId ?? process.env.DAYTONA_ORG_ID,
     runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
     braveAPIKey: parsedConfig.braveAPIKey ?? process.env.BRAVE_API_KEY,
+    exaAPIKey: parsedConfig.exaAPIKey ?? process.env.EXA_API_KEY,
   };
 }
 

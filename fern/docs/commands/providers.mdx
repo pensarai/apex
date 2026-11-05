@@ -35,6 +35,10 @@ Apex supports the following AI providers:
   <Card title="AWS Bedrock" icon="aws" iconType="brands">
     Amazon Bedrock AI models for enterprise deployments.
   </Card>
+  <Card title="Inference.net" icon="microchip">
+    DeepSeek V4.1 Flash 1017 Cyber. Requires approved model access for your
+    team.
+  </Card>
   <Card title="Hoonify" icon="microchip">
     Open models served by Hoonify. Available models are discovered using your
     API key.
@@ -72,6 +76,12 @@ Apex supports the following AI providers:
 </Steps>
 
 ## Provider Setup
+
+For Inference.net, create an API key at [inference.net](https://inference.net),
+select **Inference.net** in `/providers`, then select **DeepSeek V4.1 Flash 1017
+Cyber** in `/models`. You can also set `INFERENCE_API_KEY`. Your team must have
+[approved access](https://inference.net/model-access/deepseek-v4.1-flash-1017-cyber)
+to this model; a valid key alone does not grant access.
 
 For Hoonify, create a subscription key at [app.hoonify.ai](https://app.hoonify.ai),
 select **Hoonify** in `/providers`, and choose a discovered model in `/models`.

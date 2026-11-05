@@ -1,0 +1,142 @@
+---
+title: "Console API"
+description: "Read and manage Pensar Console pentests, issues, fixes, logs, apps, endpoints, knowledge, and domains from TypeScript"
+---
+
+The Console API functions are typed wrappers around the Pensar Console REST API. They're what the `pensar issues`, `pensar pentests`, `pensar apps`, and related CLI commands call.
+
+Every function authenticates with the credentials from `pensar login` (or `PENSAR_API_KEY`), and operates on the selected workspace. See [Pensar Console authentication](/apex/sdk/configuration#pensar-console-authentication). They throw `Error` on non-2xx responses. See [Console API errors](/apex/sdk/errors-and-cancellation#console-api-errors).
+
+```ts title="Import"
+import { dispatchPentest, listIssues, updateIssue } from "@pensar/apex/core/api";
+```
+
+<Note>
+  Functions that take an `issueId` accept either the issue UUID or its label, such as `VULN-000123`.
+</Note>
+
+## Pentests
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `dispatchPentest(opts?)` | `DispatchPentestResult` | Queue a Console pentest of the workspace |
+| `listScans()` | `ScanSummary[]` | List pentests |
+| `getScan(scanId)` | `ScanDetail` | Pentest status, issue count, and report readiness |
+| `listPentestTargets(pentestId)` | `PentestTargetSummary[]` | Endpoints exercised by a pentest |
+
+<ParamField path="dispatchPentest(opts)" type="{ branch?: string; scanLevel?: 'priority' | 'full'; endpointIds?: string[]; knowledgeEntryIds?: string[] }">
+`scanLevel` sets scan depth: `priority` (the server default) or `full`. Pass `endpointIds` (1–1000 endpoint UUIDs) to test specific existing endpoints. Endpoint launches run at full depth and can't be combined with `branch` or `priority` depth. Pass `knowledgeEntryIds` to give agents specific knowledge entries. Resolves with `{ scanId, label, status: "queued", message }`. See [`pensar pentests`](/apex/cli-commands/pensar-pentests) for details.
+</ParamField>
+
+## Issues
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `listIssues(filters?)` | `IssueSummary[]` | List issues, filtered by `scanId`, `status`, `severity`, or `branch` |
+| `getIssue(issueId)` | `IssueDetail` | Full issue detail, including CVSS, CWEs, and location |
+| `getIssueEvidence(issueId)` | `IssueEvidence` | POC, POC output, and reproduction steps |
+| `updateIssue(issueId, data)` | `UpdateIssueResult` | Change status, close with a disposition, or flag a false positive |
+| `retestIssue(issueId)` | `RetestIssueResult` | Queue a retest of the issue |
+| `listIssueRetests(issueId)` | `IssueRetest[]` | Retest history |
+| `listIssueComments(issueId, options?)` | `IssueCommentPage` | Paginated comments (`page`, `pageSize`) |
+| `createIssueComment(issueId, body)` | `IssueCommentSummary` | Post a comment |
+| `linkPullRequest(issueId, url)` | `LinkPullRequestResult` | Link an external fix PR; the issue closes when it merges |
+| `listIssuePullRequests(issueId)` | `PullRequestSummary[]` | PRs linked to an issue |
+
+<ParamField path="updateIssue(issueId, data)" type="{ status?: 'open' | 'closed' | 'false-positive' | 'in-review'; closedDisposition?: 'resolved' | 'duplicate' | 'wont-fix' | 'out-of-scope' | 'risk-accepted'; duplicateOf?: string; closedReason?: string; closedComments?: string; userFlaggedFalsePositive?: boolean; userFlaggedFalsePositiveReason?: string }">
+  `duplicateOf` (the UUID or label of the original) is only sent with the `duplicate` disposition. The accepted dispositions are exported as `CLOSED_DISPOSITIONS`.
+</ParamField>
+
+## Fixes
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `listFixes(issueId)` | `FixSummary[]` | Fixes Pensar generated for an issue |
+| `getFix(fixId)` | `FixDetail` | The fix's diff and explanation |
+
+## Agent logs
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `listAgentLogs(issueId, opts?)` | `ListAgentLogsResult` | Logs of the agent that found an issue |
+| `searchAgentLogs(issueId, query, opts?)` | `SearchAgentLogsResult` | Full-text search over those logs, with `contextLines` |
+| `listTargetLogs(targetId, opts?)` | `ListTargetLogsResult` | Logs for one pentest target |
+| `searchTargetLogs(targetId, query, opts?)` | `SearchTargetLogsResult` | Search one target's logs |
+
+Filter options: `level` (`debug`, `info`, `warn`, `error`), `role` (`assistant`, `user`, `system`, `tool-call`, `tool-result`), and `limit` for list calls.
+
+## Apps and endpoints
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `listApps(opts?)` | `ListAppsPage` | One page of apps (`limit` default 100, max 200, plus `offset`) |
+| `listAppsAll()` | `AppSummary[]` | Every app, fetched page by page |
+| `searchApps(query, opts?)` | `SearchAppsResult` | Substring search over apps |
+| `getApp(appId)` | `AppDetail` | App detail |
+| `createApp(data)` | `AppDetail` | Create an app (`name` and `description` required) |
+| `updateApp(appId, data)` | `AppDetail` | Update an app |
+| `deleteApp(appId)` | `DeleteResult` | Delete an app |
+| `listEndpoints(appId, filters?)` | `ListEndpointsPage` | One page of an app's endpoints, filtered by `type` or `minRiskScore` |
+| `listEndpointsAll(appId, filters?)` | `EndpointSummary[]` | Every endpoint, fetched page by page |
+| `searchEndpoints(query, opts?)` | `SearchEndpointsResult` | Search endpoints across the workspace or within one `applicationId` |
+| `getEndpoint(endpointId)` | `EndpointDetail` | Full endpoint, including objectives, threat model, and risk breakdown |
+| `createEndpoint(appId, data)` | `EndpointDetail` | Add an endpoint (`endpoint` and `description` required) |
+| `updateEndpoint(endpointId, data)` | `EndpointDetail` | Update or move an endpoint |
+| `deleteEndpoint(endpointId)` | `DeleteResult` | Delete an endpoint |
+
+List and search responses return lean summaries. Call `getApp` or `getEndpoint` for the full record.
+
+## Knowledge
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `listKnowledge(filters?)` | `KnowledgeEntry[]` | List entries, filtered by `category`, `status`, or `tags` |
+| `getKnowledge(id)` | `KnowledgeEntry` | One entry |
+| `createKnowledge(input)` | `KnowledgeEntry` | Add an entry agents can use in future pentests |
+| `updateKnowledge(id, input)` | `KnowledgeEntry` | Update an entry |
+| `archiveKnowledge(id)` | `KnowledgeEntry` | Archive an entry |
+
+Categories (`KNOWLEDGE_CATEGORIES`): `false_positive_pattern`, `technology_context`, `testing_history`, `user_note`, `agent_learning`. Statuses (`KNOWLEDGE_STATUSES`): `active`, `stale`, `archived`.
+
+## Domains
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `listDomains()` | `{ domains: DomainSummary[] }` | Workspace domains, with `verified` status |
+| `createDomain({ url })` | `DomainSummary` | Add a domain. Idempotent: the URL is canonicalized. New domains start unverified, and reconnaissance doesn't start. |
+
+## Example
+
+```ts title="Triage open critical issues"
+import {
+  createIssueComment,
+  getIssueEvidence,
+  listIssues,
+  updateIssue,
+} from "@pensar/apex/core/api";
+
+const issues = await listIssues({ status: "open", severity: "critical" });
+
+for (const issue of issues) {
+  const evidence = await getIssueEvidence(issue.id);
+  if (!evidence.poc) {
+    await updateIssue(issue.id, {
+      status: "in-review",
+    });
+    await createIssueComment(issue.id, "No POC attached; needs manual verification.");
+    continue;
+  }
+  console.log(`${issue.issueLabel ?? issue.id}: ${issue.title} (${issue.url})`);
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="pensar issues" icon="terminal" href="/apex/cli-commands/pensar-issues">
+    CLI wrapper with full field descriptions
+  </Card>
+  <Card title="pensar apps" icon="terminal" href="/apex/cli-commands/pensar-apps">
+    Manage apps and endpoints from the CLI
+  </Card>
+</CardGroup>

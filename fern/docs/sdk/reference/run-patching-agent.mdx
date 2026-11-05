@@ -1,0 +1,122 @@
+---
+title: "runPatchingAgent"
+description: "Fix a security vulnerability in a codebase and get a pull request title and description"
+---
+
+```ts title="Signature"
+function runPatchingAgent(input: PatchingAgentInput): Promise<PatchResult>;
+```
+
+Reads, searches, and edits code in `cwd` to fix the vulnerability you describe. It then checks the fix by running the project's lint, type-check, and tests. The changes are left in the working tree, so you decide how to commit and open the pull request.
+
+If you don't pass an `eventBus`, the agent's text and tool calls are printed to stdout.
+
+<Warning>
+  The agent edits files and runs commands in `cwd`. Point it at a disposable clone or a sandbox, not a working copy with uncommitted changes.
+</Warning>
+
+```ts title="Import"
+import { runPatchingAgent } from "@pensar/apex/core/api";
+```
+
+## Parameters
+
+<ParamField path="cwd" type="string" required={true}>
+  Root of the repository to patch.
+</ParamField>
+
+<ParamField path="vulnerability" type="VulnerabilityDetails" required={true}>
+  The vulnerability to fix.
+</ParamField>
+
+<Indent>
+  <ParamField path="name" type="string" required={true}>
+    Vulnerability title.
+  </ParamField>
+  <ParamField path="severity" type="string" required={true}>
+    Severity, for example `HIGH`.
+  </ParamField>
+  <ParamField path="description" type="string" required={true}>
+    What's wrong and why.
+  </ParamField>
+  <ParamField path="location" type="string">
+    File path of the vulnerable code.
+  </ParamField>
+  <ParamField path="startLineNumber" type="number | null">
+    First vulnerable line.
+  </ParamField>
+  <ParamField path="endLineNumber" type="number | null">
+    Last vulnerable line.
+  </ParamField>
+  <ParamField path="cweMapping" type="string[]">
+    CWE IDs, for example `["CWE-89"]`.
+  </ParamField>
+  <ParamField path="poc" type="{ fileName: string; contents: string }">
+    Proof of concept the agent can use to confirm the fix.
+  </ParamField>
+</Indent>
+
+<ParamField path="session" type="SessionInfo" required={true}>
+  Session for logs and artifacts. See [`sessions.create()`](/apex/sdk/reference/sessions).
+</ParamField>
+
+<ParamField path="model" type="AIModel" required={true}>
+  Model ID. See [Models](/apex/sdk/configuration#models).
+</ParamField>
+
+<ParamField path="authConfig" type="AIAuthConfig">
+  AI provider credentials.
+</ParamField>
+
+<ParamField path="eventBus" type="AgentEventBus">
+  Streaming events. When omitted, output is printed to stdout.
+</ParamField>
+
+<ParamField path="abortSignal" type="AbortSignal">
+  Cancels the run.
+</ParamField>
+
+## Returns
+
+`Promise<PatchResult>`
+
+<ParamField path="filesChanged" type="{ filePath: string; changesDescription: string }[]">
+  Every file the agent modified, with a description of each change.
+</ParamField>
+
+<ParamField path="prTitle" type="string">
+  Suggested pull request title.
+</ParamField>
+
+<ParamField path="prDescription" type="string">
+  Suggested pull request description.
+</ParamField>
+
+## Example
+
+```ts
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { runPatchingAgent } from "@pensar/apex/core/api";
+import { config } from "@pensar/apex/core/config";
+import { sessions } from "@pensar/apex/core/session";
+
+const repo = "/tmp/my-app-clone";
+const patch = await runPatchingAgent({
+  cwd: repo,
+  vulnerability: {
+    name: "SQL injection in order search",
+    severity: "HIGH",
+    description: "The `q` parameter is concatenated into a raw SQL query.",
+    location: "src/orders/search.ts",
+    startLineNumber: 42,
+    endLineNumber: 48,
+    cweMapping: ["CWE-89"],
+  },
+  session: await sessions.create({ name: "Patch", targets: [repo] }),
+  model: "claude-opus-4-6",
+  authConfig: buildAuthConfig(await config.get()),
+});
+
+console.log(patch.prTitle);
+for (const f of patch.filesChanged) console.log(`${f.filePath}: ${f.changesDescription}`);
+```

@@ -233,6 +233,7 @@ async function resolveCliModel(): Promise<AIModel> {
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
         "  CONCENTRATE_API_KEY — Concentrate\n" +
+        "  INFERENCE_API_KEY  — Inference.net\n" +
         "  HOONIFY_API_KEY    — Hoonify\n" +
         "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
@@ -301,7 +302,9 @@ pentest options:
   --model <model>          AI model (default: auto-selected from configured provider)
   --task-driven             Enable task-driven architecture (experimental)
   --lance                 Minimal offensive-capability mode (requires --prompt)
-  --timeout-ms <ms>        Lance budget (default: 900000)
+  --max-steps <n>          Lance step budget (default: 200)
+  --max-tokens <n>         Lance input + output token budget
+  --timeout-ms <ms>        Lance time budget; choose one budget type
   --deadline-at <epoch-ms> Lance absolute harness deadline
   --fast-strike            Single-operator fast strike: skip attack-surface/swarm
                            phases, one tight recon→exploit loop against the target
@@ -374,6 +377,8 @@ async function runPentest() {
   const taskDriven = hasFlag("--task-driven");
   const fastStrike = hasFlag("--fast-strike");
   const lance = hasFlag("--lance");
+  const { parseLanceBudget } = await import("./cli/lance-budget");
+  const lanceOptions = parseLanceBudget(args);
   if (lance && (fastStrike || taskDriven || threatModelRaw)) {
     throw new Error(
       "Lance cannot be combined with Strike, task-driven, or threat-model workflows",
@@ -445,14 +450,7 @@ Model:   ${model}${reasoning ? `\nReasoning: ${reasoning}` : ""}${taskDriven ? "
       enableThinking,
       authConfig: buildAuthConfig(pensarConfig),
       findingPolicy: externalFindings ? "external" : pensarConfig.findingPolicy,
-      lance: {
-        ...(getArg("--timeout-ms")
-          ? { timeoutMs: Number(getArg("--timeout-ms")) }
-          : {}),
-        ...(getArg("--deadline-at")
-          ? { deadlineAt: Number(getArg("--deadline-at")) }
-          : {}),
-      },
+      lance: lanceOptions,
     });
     return;
   }

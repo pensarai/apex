@@ -1,0 +1,105 @@
+---
+title: "SDK Configuration"
+description: "Configure AI provider credentials, models, and Pensar Console authentication for the Apex SDK"
+---
+
+## AI provider credentials
+
+Every agent runner accepts an optional `authConfig` object with your AI provider credentials. There are two ways to build it.
+
+### From Apex configuration
+
+`config.get()` reads `~/.pensar/config.json`, the same file the TUI and `pensar` CLI write. For any provider key missing from the file it falls back to an environment variable. `buildAuthConfig()` converts the result into the `authConfig` shape agents expect:
+
+```ts
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { config } from "@pensar/apex/core/config";
+
+const authConfig = buildAuthConfig(await config.get());
+```
+
+This is the recommended approach. It picks up keys saved through `/providers`, a Pensar Console login from `pensar login`, and any of these environment variables:
+
+| Environment variable | Provider |
+| --- | --- |
+| `PENSAR_API_KEY` | Pensar Console (inference through the Pensar gateway) |
+| `ANTHROPIC_API_KEY` | Anthropic |
+| `OPENAI_API_KEY` | OpenAI |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Google |
+| `OPENROUTER_API_KEY` | OpenRouter |
+| `CONCENTRATE_API_KEY` | Concentrate |
+| `INFERENCE_API_KEY` | Inference.net |
+| `HOONIFY_API_KEY` | Hoonify |
+| `BEDROCK_API_KEY` | Amazon Bedrock |
+
+<Note>
+  `config.get()` creates `~/.pensar/config.json` with defaults if it doesn't exist yet. Values in the file take precedence over environment variables.
+</Note>
+
+### Explicit credentials
+
+To avoid reading or writing `~/.pensar/config.json` (for example, in a container), pass credentials directly:
+
+```ts
+const authConfig = {
+  anthropicAPIKey: process.env.ANTHROPIC_API_KEY,
+};
+```
+
+<ParamField path="anthropicAPIKey" type="string">
+  Anthropic API key.
+</ParamField>
+<ParamField path="openAiAPIKey" type="string">
+  OpenAI API key.
+</ParamField>
+<ParamField path="googleAPIKey" type="string">
+  Google Generative AI API key.
+</ParamField>
+<ParamField path="openRouterAPIKey" type="string">
+  OpenRouter API key.
+</ParamField>
+<ParamField path="pensarAPIKey" type="string">
+  Pensar Console API key. Routes inference through the Pensar gateway.
+</ParamField>
+<ParamField path="bedrock" type="{ apiKey?: string; accessKeyId?: string; secretAccessKey?: string; sessionToken?: string; region?: string }">
+  Amazon Bedrock credentials.
+</ParamField>
+<ParamField path="customProviders" type="CustomProviders">
+  OpenAI-compatible endpoints. Same shape as `customProviders` in `~/.pensar/config.json`. See [custom inference endpoints](https://github.com/pensarai/apex/blob/canary/docs/custom-inference.md).
+</ParamField>
+
+## Models
+
+Agents take a `model` string. It uses the same model IDs as the CLI's `--model` flag:
+
+| Provider | Example model ID |
+| --- | --- |
+| Anthropic | `claude-opus-4-6` |
+| OpenAI | `gpt-5.6-sol` |
+| Google | `gemini-3.1-pro-preview` |
+| OpenRouter | `anthropic/claude-opus-4.6` |
+| Pensar Console | `pensar:anthropic.claude-opus-4-6-v1` |
+| Amazon Bedrock | `anthropic.claude-opus-4-6-v1` |
+| Custom provider | `custom:<provider-id>:<model>` |
+
+The model you choose must belong to a provider whose credentials are in `authConfig`. For the full list, run `/models` in the TUI or see [Supported AI Providers](/apex/tui-slash-commands/models#supported-ai-providers).
+
+### Reasoning
+
+Agents accept a `reasoning` setting that controls extended thinking for models that support it:
+
+<ParamField path="reasoning" type="'default' | 'enabled' | 'disabled' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'" default="default">
+  `default` uses the model's standard behavior. `enabled` and `disabled` toggle thinking on models with a binary switch. The effort levels apply to models that support graded reasoning effort.
+</ParamField>
+
+## Pensar Console authentication
+
+The [Console API functions](/apex/sdk/reference/console-api) (`listIssues`, `dispatchPentest`, `listApps`, ...) don't take credentials as arguments. They read them from Apex configuration on every call: the session saved by `pensar login` first (refreshed automatically when it expires), then `PENSAR_API_KEY`. After `pensar login`, requests are scoped to the workspace you selected.
+
+Set these environment variables to point the SDK at a different Pensar deployment:
+
+| Environment variable | Default |
+| --- | --- |
+| `PENSAR_API_URL` | `https://api.pensar.dev` |
+| `PENSAR_CONSOLE_URL` | `https://console.pensar.dev` |
+| `PENSAR_GATEWAY_URL` | `https://gateway.pensar.dev` |

@@ -8,8 +8,11 @@ import type {
   ToolExecutionRecorder,
 } from "./runToolStore";
 
-/** Fixed dispatch policy for the ten recorded-run tools. */
+/** Fixed dispatch policy for recorded-run tools. */
 const TOOL_POLICIES = {
+  // Cells can retain state and dispatch effects; neither operation is replayable.
+  exec: "shell_state",
+  wait: "shell_state",
   read_file: "read_only",
   list_files: "read_only",
   grep: "read_only",

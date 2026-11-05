@@ -114,6 +114,19 @@ discovered model in `/models`. Headless commands accept
 `--model-provider hoonify --model <catalog-model-id>`. See
 [Hoonify setup](docs/hoonify.md) for model discovery, token budgets, and live checks.
 
+### Inference.net
+
+Connect **Inference.net** in `/providers` or set `INFERENCE_API_KEY`, then select
+**DeepSeek V4.1 Flash 1017 Cyber** in `/models`. This is the only Inference.net model
+currently available in Apex. Headless commands accept
+`--model inference:deepseek-v4.1-flash-1017-cyber`.
+
+Your team needs [approved model access](https://inference.net/model-access/deepseek-v4.1-flash-1017-cyber)
+before inference will succeed; saving a valid API key does not grant model access.
+Apex uses the provider's default reasoning behavior and the
+[catalog](https://api.inference.net/v1/models) limits of 1,040,000 context tokens
+and 393,216 output tokens.
+
 ### Custom inference endpoints
 
 Bring an OpenAI-compatible endpoint and bearer token through `customProviders`
@@ -121,6 +134,22 @@ configuration or the `APEX_CUSTOM_PROVIDERS` worker environment variable. Select
 it with `--model-provider <id> --model <model>`, or choose its declared models in
 the operator's `/models` picker. See [custom inference setup](docs/custom-inference.md)
 for GLM settings, headless job configuration, and a live connection test.
+
+### Web search
+
+Use your own Exa API key for direct web search with any model provider:
+
+```bash
+export EXA_API_KEY=your-exa-api-key
+pensar
+```
+
+You can also save the key as `exaAPIKey` in your existing
+`~/.pensar/config.json`. If a Brave key is configured (`BRAVE_API_KEY` or
+`braveAPIKey`), Brave takes precedence; remove that key to use Exa. Without
+either search key, Apex uses the existing Pensar web-search gateway, which
+requires Pensar authentication. Exa errors are returned directly without
+switching providers.
 
 ### Logging
 

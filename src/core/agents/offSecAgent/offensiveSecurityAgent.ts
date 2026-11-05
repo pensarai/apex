@@ -9,7 +9,18 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall, stepCountIs } from "ai";
-import { normalizeStepUsage, streamResponse } from "../../ai";
+import {
+  normalizeStepUsage,
+  resolveModelRuntimeProfile,
+  streamResponse,
+} from "../../ai";
+import {
+  buildCodeModeInstructions,
+  CanonicalCapabilityInvoker,
+  CodeModeRuntime,
+  createCodeModeTools,
+  resolveCodeModeToolPresentation,
+} from "../../code-mode";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
@@ -276,6 +287,7 @@ export function filterWorkspaceToolsForRun(
  * ```
  */
 export class OffensiveSecurityAgent<TResult = void> {
+  private codeModeRuntime?: CodeModeRuntime;
   /** The real SDK stream result — created exactly once, with backend-probed facts via {@link streamReady} or settled-or-unknown facts via the sync escape hatch. */
   private _streamResult: StreamTextResult<ToolSet, never> | null = null;
 
@@ -512,7 +524,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         ],
         stopWhen: [
           () => this.lanceRuntime!.terminal,
-          stepCountIs(LANCE_CONFIG.maxSteps),
+          ...(this.lanceRuntime.budget.kind === "steps"
+            ? [stepCountIs(this.lanceRuntime.budget.limit)]
+            : []),
         ],
         skillsRegistry: undefined,
       };
@@ -637,6 +651,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
+      toolProtocol: input.toolProtocol,
       eventBus: this.eventBus,
       onStepFinish: input.forwardUsageCallbacksToSpawnedAgents
         ? input.onStepFinish
@@ -873,6 +888,59 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    const canonicalActiveTools = activeTools;
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.mode === "lance" ? "direct" : input.toolProtocol,
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const selectedNames = activeTools.filter((name) =>
+        Object.hasOwn(canonicalTools, name),
+      );
+      if (input.responseSchema && !selectedNames.includes(RESPONSE_TOOL_NAME)) {
+        selectedNames.push(RESPONSE_TOOL_NAME);
+      }
+      const { direct, nested } = resolveCodeModeToolPresentation({
+        activeTools: selectedNames,
+        extraTools: Object.keys(input.extraTools ?? {}),
+        directTools: input.directTools,
+        nestedTools: input.nestedTools,
+      });
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools: nested,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+        getToolPartId: (toolCallId) =>
+          input.streamIdFactory?.({ kind: "tool-part", toolCallId }) ??
+          newPartId(),
+      });
+      this.codeModeRuntime = new CodeModeRuntime(
+        invoker,
+        nested,
+        input.onCodeCellComplete,
+      );
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        invoker.tools,
+        direct,
+      );
+      if (input.toolExecutionRecorder) {
+        const recorded = wrapRecordedTools(
+          { exec: tools.exec, wait: tools.wait },
+          input.toolExecutionRecorder,
+        );
+        tools = { ...tools, ...recorded };
+      }
+      activeTools = Object.keys(tools);
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+    }
+
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
@@ -942,7 +1010,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const workspaceSection = buildSessionWorkspaceSection(
       input.session,
       agentCwd,
-      activeTools,
+      canonicalActiveTools,
       fileWorkspaceRoot,
       input.findingPolicy,
     );
@@ -953,10 +1021,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     const assembleBaseSystemPrompt = (
       facts: RuntimeExecutionFacts | null,
     ): string => {
-      const sections: string[] = [baseSystemPrompt];
+      const sections: string[] = [
+        baseSystemPrompt,
+        codeModeInstructions,
+      ].filter(Boolean);
       if (facts) {
         sections.push(
-          buildRuntimeContextSection(facts, { platform: commandPlatform }),
+          buildRuntimeContextSection(facts, {
+            platform: commandPlatform,
+            codeModeEnabled: runtimeProfile.protocol !== "direct",
+          }),
         );
       }
       if (bundledAssets) sections.push(bundledAssets);
@@ -968,7 +1042,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // probe is a wasted subprocess.
     this.probesRuntime =
       input.mode !== "lance" &&
-      activeTools.some((name) => RUNTIME_CAPABLE_TOOL_NAMES.has(name));
+      canonicalActiveTools.some((name) => RUNTIME_CAPABLE_TOOL_NAMES.has(name));
 
     // -- Init record + stream --------------------------------------------------
     // Created by async initialization (streamReady) so the AI SDK telemetry
@@ -1001,7 +1075,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           : input.prompt,
         system:
           input.mode === "lance"
-            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}`
+            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
             : baseWithFacts + workspaceSection,
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
@@ -1591,6 +1665,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     try {
+      try {
+        await this.codeModeRuntime?.dispose();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
       // Dispose first — the 3s kill protocol is awaited, never
       // fire-and-forget: hosts rely on drained before closeout, so an
       // active command must settle (bounded) before finalization continues.
@@ -1719,6 +1798,7 @@ export class OffensiveSecurityAgent<TResult = void> {
    * so owned work settles before the host starts closeout.
    */
   async abortAndDrain(): Promise<void> {
+    await this.codeModeRuntime?.dispose();
     await this.disconnectOwnedBrowser();
     await this.disposeOwnedShell().catch(() => {});
     await this.callbackListeners.stopAll().catch(() => {});
@@ -1767,9 +1847,14 @@ function wrapToolsWithApprovalGate(
       // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool execute receives an opaque ExecuteContext we don't need to narrow.
       execute: async (args: Record<string, unknown>, options: any) => {
         const toolCallId =
+          options?.toolCallId ??
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+        const approvalSignal: AbortSignal | undefined =
+          signal && options?.abortSignal
+            ? AbortSignal.any([signal, options.abortSignal])
+            : (signal ?? options?.abortSignal);
         log.debug(`${name} (${toolCallId}): checking`);
         const cancelApproval = () => {
           for (const pending of gate.getPendingApprovals()) {
@@ -1778,8 +1863,10 @@ function wrapToolsWithApprovalGate(
           }
         };
         try {
-          signal?.throwIfAborted();
-          signal?.addEventListener("abort", cancelApproval, { once: true });
+          approvalSignal?.throwIfAborted();
+          approvalSignal?.addEventListener("abort", cancelApproval, {
+            once: true,
+          });
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
@@ -1788,10 +1875,11 @@ function wrapToolsWithApprovalGate(
           }
           throw err;
         } finally {
-          signal?.removeEventListener("abort", cancelApproval);
+          approvalSignal?.removeEventListener("abort", cancelApproval);
         }
         log.debug(`${name} (${toolCallId}): approved, executing`);
 
+        approvalSignal?.throwIfAborted();
         const result = await originalExecute(args, options);
         log.debug(`${name} (${toolCallId}): execute finished`);
         return result;

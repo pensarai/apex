@@ -549,6 +549,24 @@ describe("blockers", () => {
     );
   });
 
+  it.each([
+    "exec",
+    "wait",
+  ])("blocks recovery of in-memory code-mode state from %s", (toolName) => {
+    expectBlocked(
+      {
+        operations: [
+          makeOperation({
+            toolCallId: "tc_exec",
+            toolName,
+            policy: "shell_state",
+          }),
+        ],
+      },
+      "Code-mode cells and stored state",
+    );
+  });
+
   it("blocks pending approvals and approved-without-operation", () => {
     expectBlocked(
       {

@@ -28,6 +28,7 @@ const observed = vi.hoisted(() => ({
 }));
 
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: Record<string, unknown>) => {
     observed.streams.push(opts);
     observed.order.push("stream");

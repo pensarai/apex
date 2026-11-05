@@ -46,7 +46,7 @@ afterEach(async () => {
 describe.runIf(existsSync(CHROME_PATH))(
   "browser scoped redirect boundary",
   () => {
-    it("aborts an allowed-host redirect before the browser reaches an unlisted host", async () => {
+    it("follows an allowed-host redirect to an unlisted host without sending it engagement headers", async () => {
       let destinationReached = false;
       let secretReceived = false;
       const destinationPort = await listen((request, response) => {
@@ -121,12 +121,10 @@ describe.runIf(existsSync(CHROME_PATH))(
           await installRoute({ context: () => context });
 
           const page = await context.newPage();
-          await expect(
-            page.goto(`http://127.0.0.1:${initialPort}/start`, {
-              timeout: 5_000,
-              waitUntil: "domcontentloaded",
-            }),
-          ).rejects.toThrow();
+          await page.goto(`http://127.0.0.1:${initialPort}/start`, {
+            timeout: 5_000,
+            waitUntil: "domcontentloaded",
+          });
         } finally {
           await context.close();
         }
@@ -134,7 +132,7 @@ describe.runIf(existsSync(CHROME_PATH))(
         await browser.close();
       }
 
-      expect(destinationReached).toBe(false);
+      expect(destinationReached).toBe(true);
       expect(secretReceived).toBe(false);
     });
   },

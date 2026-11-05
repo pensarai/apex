@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 for (const scenario of [
+  {
+    name: "saves fractional seconds as integer milliseconds",
+    mode: "lance-time",
+  },
   { name: "selects Lance and independently enables its judge", mode: "lance" },
   {
     name: "keeps the Lance selector, judge, and Save visible at 60x18",

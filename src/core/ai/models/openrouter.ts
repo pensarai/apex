@@ -1,7 +1,28 @@
-// Curated manually — OpenRouter SDK doesn't enumerate specific model IDs.
-// Add or remove models here as needed.
-
 import type { ModelInfo } from "../ai";
+
+// Keep requests eligible for every active upstream that advertises tool calling.
+export const OPENROUTER_MAX_OUTPUT_TOKENS: Readonly<Record<string, number>> = {
+  "qwen/qwen3.8-max-prime": 131_072,
+  "qwen/qwen3.8-omni-flash": 131_072,
+  "qwen/qwen3.8-2.4t-a95b": 65_536,
+  "qwen/qwen3.7-flash": 65_536,
+  "qwen/qwen3.7-plus": 131_072,
+  "qwen/qwen3.7-max": 131_072,
+  "qwen/qwen3.5-plus-20260420": 65_536,
+  "qwen/qwen3.6-flash": 65_536,
+  "qwen/qwen3.6-35b-a3b": 32_768,
+  "qwen/qwen3.6-27b": 32_768,
+  "qwen/qwen3.6-plus": 65_536,
+  "qwen/qwen3.5-9b": 40_960,
+  "qwen/qwen3.5-35b-a3b": 16_384,
+  "qwen/qwen3.5-27b": 65_536,
+  "qwen/qwen3.5-122b-a10b": 65_536,
+  "qwen/qwen3.5-flash-02-23": 65_536,
+  "qwen/qwen3.5-397b-a17b": 32_768,
+  "qwen/qwen3-coder-next": 235_929,
+};
+
+// Curated manually — OpenRouter SDK doesn't enumerate specific model IDs.
 export const OPENROUTER_MODELS: ModelInfo[] = [
   {
     id: "anthropic/claude-haiku-5.5",
@@ -266,6 +287,114 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Laguna S 2.1",
     provider: "openrouter",
     contextLength: 1048576,
+  },
+  {
+    id: "qwen/qwen3.8-max-prime",
+    name: "Qwen3.8 Max Prime",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.8-omni-flash",
+    name: "Qwen3.8 Omni Flash",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.8-2.4t-a95b",
+    name: "Qwen3.8 2.4T A95B",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
+    id: "qwen/qwen3.7-flash",
+    name: "Qwen3.7 Flash",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.7-plus",
+    name: "Qwen3.7 Plus",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.7-max",
+    name: "Qwen3.7 Max",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.5-plus-20260420",
+    name: "Qwen3.5 Plus 2026-04-20",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.6-flash",
+    name: "Qwen3.6 Flash",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.6-35b-a3b",
+    name: "Qwen3.6 35B A3B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3.6-27b",
+    name: "Qwen3.6 27B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3.6-plus",
+    name: "Qwen3.6 Plus",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.5-9b",
+    name: "Qwen3.5-9B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3.5-35b-a3b",
+    name: "Qwen3.5-35B-A3B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3.5-27b",
+    name: "Qwen3.5-27B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3.5-122b-a10b",
+    name: "Qwen3.5-122B-A10B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3.5-flash-02-23",
+    name: "Qwen3.5-Flash",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
+    id: "qwen/qwen3.5-397b-a17b",
+    name: "Qwen3.5 397B A17B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "qwen/qwen3-coder-next",
+    name: "Qwen3 Coder Next",
+    provider: "openrouter",
+    contextLength: 262144,
   },
   {
     id: "qwen/qwen3.8-max-0902",
