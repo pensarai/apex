@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -816,6 +817,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
+    let resolveInStreamContext: ReturnType<typeof AsyncLocalStorage.snapshot>;
     if (input.responseSchema) {
       tools = {
         ...tools,
@@ -843,7 +845,7 @@ export class OffensiveSecurityAgent<TResult = void> {
                         Promise.race([sr.response, this._drainRejection]),
                     },
                   });
-                  return customResolve(guarded, result);
+                  return resolveInStreamContext(customResolve, guarded, result);
                 })
                 .then((resolved) => {
                   this._capturedResponse = resolved;
@@ -1052,6 +1054,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     // factory with settled-or-unknown facts — never host facts — guarded so
     // exactly one model stream exists either way.
     this.createStream = (facts) => {
+      // The detached resolver belongs to the stream owner, not its closing response tool.
+      resolveInStreamContext = AsyncLocalStorage.snapshot();
       // Hash only the base system prompt (excluding session workspace paths)
       // so the hash is stable across runs with identical prompt versions. No
       // step record can precede this init line: steps only originate from the

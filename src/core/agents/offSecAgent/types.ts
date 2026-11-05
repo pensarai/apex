@@ -145,6 +145,7 @@ export interface ToolExecutionContext {
     call: { toolCallId: string; toolName: string },
     execute: () => Promise<T>,
   ): Promise<T>;
+  finish?(call: { toolCallId: string; toolName: string }): Promise<void>;
 }
 
 export interface AgentHooks {
