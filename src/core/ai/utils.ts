@@ -713,13 +713,15 @@ async function summarizeConversation(
     ? (opts._initialPrompt ?? opts.prompt)
     : opts.prompt;
   const originalLength = originalPrompt.length;
-  const enhancedPrompt = latestUser
-    ? compactedHistoryNotice(summaryWithTasks)
-    : originalLength > 100000
-      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
-      : opts.primaryModelOnly
-        ? `${originalPrompt}\n\nContinue the task using this conversation summary. Later user corrections in the summary take precedence over the original request:\n${summaryWithTasks}`
-        : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
+  // The general harness always replays the latest user message, alone or inside the pinned tail.
+  const enhancedPrompt =
+    opts.harness === "general"
+      ? compactedHistoryNotice(summaryWithTasks)
+      : originalLength > 100000
+        ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
+        : opts.primaryModelOnly
+          ? `${originalPrompt}\n\nContinue the task using this conversation summary. Later user corrections in the summary take precedence over the original request:\n${summaryWithTasks}`
+          : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
   const resumeMessages = resumeMessagesWithPinned(
     enhancedPrompt,
     { latestUser, pinned },
