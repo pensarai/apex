@@ -180,6 +180,11 @@
       "import": "./build/lib/core/api/index.js",
       "types": "./build/lib/core/api/index.d.ts"
     },
+    "./core/callbacks": {
+      "default": "./build/lib/core/callbacks/index.js",
+      "import": "./build/lib/core/callbacks/index.js",
+      "types": "./build/lib/core/callbacks/index.d.ts"
+    },
     "./core/config": {
       "default": "./build/lib/core/config/index.js",
       "import": "./build/lib/core/config/index.js",
@@ -250,6 +255,7 @@
     "./src/core/agents/specialized/whiteboxAttackSurface": "./src/core/agents/specialized/whiteboxAttackSurface/index.ts",
     "./src/core/ai": "./src/core/ai/index.ts",
     "./src/core/api": "./src/core/api/index.ts",
+    "./src/core/callbacks": "./src/core/callbacks/index.ts",
     "./src/core/memory": "./src/core/memory/index.ts",
     "./src/core/observability": "./src/core/observability/index.ts",
     "./src/core/prompt-injections": "./src/core/prompt-injections/index.ts",

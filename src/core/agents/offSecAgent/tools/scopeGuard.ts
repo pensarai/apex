@@ -12,6 +12,7 @@
  */
 
 import { parseTargetUrl } from "../../../../util/url";
+import { isTestDomain } from "../../../callbacks";
 import type { ResolverSession } from "../../../http/targetHeaders";
 import {
   getRegistrableDomain,
@@ -132,6 +133,17 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
       allowedPorts,
     );
   }
+}
+
+/**
+ * {@link assertUrlInScope} for a plain request destination, which may also be
+ * one of the session's test domains. Never use it where the URL becomes a
+ * target (findings, subagent targets, auth flows): test domains are not.
+ */
+export function assertRequestInScope(url: string, ctx: ToolContext): void {
+  const hostname = extractHostname(url);
+  if (hostname && isTestDomain(hostname, ctx.session)) return;
+  assertUrlInScope(url, ctx);
 }
 
 /**
@@ -330,6 +342,8 @@ export function assertCommandInScope(command: string, ctx: ToolContext): void {
   const commandHosts = extractHostsFromCommand(command);
 
   for (const hostname of commandHosts) {
+    // Test domains appear in payloads (and self-checks) without being targets.
+    if (isTestDomain(hostname, ctx.session)) continue;
     if (!isHostAllowed(hostname, allowedHosts)) {
       throw new ScopeViolationError(hostname, allowedHosts);
     }
