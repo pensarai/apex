@@ -1136,12 +1136,14 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
-                  // Only the prompt actually resent carries the latest user message; a truncated one does not.
-                  const { latestUser, pinned, pinnedToolCallIds } =
-                    splitResumeHistory(messagesForSummary, {
-                      harness: opts.harness,
-                      prompt: minimalPrompt,
-                    });
+                  const {
+                    latestUser: tail,
+                    pinned,
+                    pinnedToolCallIds,
+                  } = splitResumeHistory(messagesForSummary, opts.harness);
+                  // An untruncated restart prompt already resends the latest user message.
+                  const latestUser =
+                    tail?.content === minimalPrompt ? undefined : tail;
                   const resumeMessages = resumeMessagesWithPinned(
                     minimalPrompt,
                     { latestUser, pinned },

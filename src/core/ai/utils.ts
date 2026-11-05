@@ -46,6 +46,7 @@ import {
 import {
   compactedHistoryNotice,
   GENERAL_HARNESS_SUMMARY_INSTRUCTION,
+  LATEST_USER_MESSAGE_STAND_IN,
 } from "./compactionPrompts";
 import {
   beginCompaction,
@@ -479,10 +480,21 @@ async function summarizeConversation(
     compaction,
   }: { model: LanguageModel; compaction?: CompactionTelemetry },
 ): Promise<StreamTextResult<ToolSet, never>> {
-  const { head, latestUser, pinned, pinnedToolCallIds } = splitResumeHistory(
-    messages,
-    opts,
-  );
+  const {
+    head: fullHead,
+    latestUser,
+    pinned,
+    pinnedToolCallIds,
+  } = splitResumeHistory(messages, opts.harness);
+  const latestUserAt = latestUser ? fullHead.lastIndexOf(latestUser) : -1;
+  const head =
+    latestUserAt < 0
+      ? fullHead
+      : [
+          ...fullHead.slice(0, latestUserAt),
+          { role: "user" as const, content: LATEST_USER_MESSAGE_STAND_IN },
+          ...fullHead.slice(latestUserAt + 1),
+        ];
   const cacheBreakpoint = cacheBreakpointFor(opts.model);
   // Keep tool schemas in the cached prefix without allowing compaction to execute them.
   const summaryTools = opts.tools

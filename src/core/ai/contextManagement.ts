@@ -651,32 +651,22 @@ export function splitPendingApprovals(messages: ModelMessage[]): {
   };
 }
 
-/**
- * What a compacted resume replays verbatim: the pending approvals, and the
- * latest user message unless the resume prompt already carries it.
- */
+/** What a compacted resume replays verbatim: the pending approvals and the latest user message. */
 export function splitResumeTail(
   messages: ModelMessage[],
-  resumePrompts: readonly (string | undefined)[],
 ): ReturnType<typeof splitPendingApprovals> & { latestUser?: ModelMessage } {
   const split = splitPendingApprovals(messages);
   if (split.pinned.some((message) => message.role === "user")) return split;
   const latestUser = split.head.findLast((message) => message.role === "user");
-  if (
-    !latestUser ||
-    (typeof latestUser.content === "string" &&
-      resumePrompts.includes(latestUser.content))
-  )
-    return split;
-  return { ...split, latestUser };
+  return latestUser ? { ...split, latestUser } : split;
 }
 
 /** What a compaction replays after the summary: pending approvals, and under the general harness the latest user message too. */
 export function splitResumeHistory(
   messages: ModelMessage[],
-  opts: { harness?: AgentHarness; prompt: string; _initialPrompt?: string },
+  harness?: AgentHarness,
 ): ReturnType<typeof splitResumeTail> {
-  return opts.harness === "general"
-    ? splitResumeTail(messages, [opts.prompt, opts._initialPrompt])
+  return harness === "general"
+    ? splitResumeTail(messages)
     : splitPendingApprovals(messages);
 }

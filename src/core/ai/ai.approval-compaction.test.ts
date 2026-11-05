@@ -15,6 +15,7 @@ import { AgentEventBus } from "../eventBus";
 import {
   compactedHistoryNotice,
   GENERAL_HARNESS_SUMMARY_INSTRUCTION,
+  LATEST_USER_MESSAGE_STAND_IN,
 } from "./compactionPrompts";
 import { splitPendingApprovals } from "./contextManagement";
 
@@ -468,7 +469,7 @@ describe("latest user message across compaction", () => {
     expect(String(t.prepared[0][0].content)).toContain("sum");
   });
 
-  it("is not repeated when the resume prompt already carries it", async () => {
+  it("is replayed after the summary even when the resume prompt already carries it", async () => {
     const t = setup();
     await t.drive(
       t.model({ main: ["ok"] }),
@@ -478,24 +479,33 @@ describe("latest user message across compaction", () => {
       ],
       { contextLength: SMALL, extra: { ...general, prompt: "continue" } },
     );
-    const resumed = t.prepared[0];
-    expect(resumed).toHaveLength(1);
-    expect(String(resumed[0].content).startsWith("continue\n\n")).toBe(true);
+    expect(t.prepared[0]).toEqual([
+      { role: "user", content: compactedHistoryNotice("sum") },
+      { role: "user", content: "continue" },
+    ]);
   });
 
-  it("keeps a request longer than the restart prompt verbatim after a minimal restart", async () => {
+  it.each([
+    [
+      "longer than the restart prompt",
+      `Delete endpoint a. ${"Keep b exactly as it is. ".repeat(200)}`,
+    ],
+    ["that the restart prompt resends", "Delete endpoint a. Keep b."],
+  ])("sends a request %s exactly once after a minimal restart", async (_label, text) => {
     const t = setup();
-    const long = `Delete endpoint a. ${"Keep b exactly as it is. ".repeat(200)}`;
     await t.drive(
       t.model({ main: ["ok"], summary: "context-error" }),
       [
         { role: "assistant", content: PADDING },
-        { role: "user", content: long },
+        { role: "user", content: text },
       ],
-      { contextLength: SMALL, extra: { ...general, prompt: long } },
+      { contextLength: SMALL, extra: { ...general, prompt: text } },
     );
-    expect(long.length).toBeGreaterThan(4_000);
-    expect(t.prepared[0]).toContainEqual({ role: "user", content: long });
+    expect(
+      t.prepared[0].filter(
+        (message) => message.role === "user" && message.content === text,
+      ),
+    ).toHaveLength(1);
   });
 
   it("replays it after a minimal restart when only the initial prompt matches it", async () => {
@@ -548,7 +558,10 @@ const withoutBreakpoint = ({
 const lastOf = (request: LanguageModelV3CallOptions, offset = 1) =>
   request.prompt[request.prompt.length - offset];
 
-describe.each(HARNESSES)("summary request ($label)", ({ extra }) => {
+describe.each(HARNESSES)("summary request ($label)", ({
+  extra,
+  replaysLatestUser,
+}) => {
   const overflow = async (summary: SummaryBehavior = "ok", modelId = MODEL) => {
     const t = setup();
     await t.drive(
@@ -576,8 +589,11 @@ describe.each(HARNESSES)("summary request ($label)", ({ extra }) => {
     expect(promptText(main.prompt[0])).toBe("AGENT-SYSTEM-PROMPT");
     expect(Boolean(main.prompt[0].providerOptions)).toBe(cached);
     expect(summary.prompt[0]).toEqual(main.prompt[0]);
-    expect(summary.prompt.slice(0, -1).map(withoutBreakpoint)).toEqual(
-      main.prompt.map(withoutBreakpoint),
+    // The general harness stands in for the latest user message, which is replayed after the summary.
+    const shared = main.prompt.length - (replaysLatestUser ? 1 : 0);
+    expect(summary.prompt).toHaveLength(main.prompt.length + 1);
+    expect(summary.prompt.slice(0, shared).map(withoutBreakpoint)).toEqual(
+      main.prompt.slice(0, shared).map(withoutBreakpoint),
     );
     expect(lastOf(summary).role).toBe("user");
   });
@@ -647,7 +663,7 @@ describe("summary request (stock)", () => {
 });
 
 describe("summary request (general harness)", () => {
-  it("ends with the general instruction as its own user message after the unchanged history", async () => {
+  it("ends with the general instruction as its own user message after the history, with the latest user message stood in", async () => {
     const t = setup();
     await t.drive(t.model({ main: ["context-error", "ok"] }), conversation, {
       extra: { harness: "general", system: "AGENT-SYSTEM-PROMPT" },
@@ -662,7 +678,7 @@ describe("summary request (general harness)", () => {
       "user",
       "user",
     ]);
-    expect(promptText(lastOf(summary, 2))).toBe("Reply with just OK");
+    expect(promptText(lastOf(summary, 2))).toBe(LATEST_USER_MESSAGE_STAND_IN);
     const instruction = promptText(lastOf(summary));
     expect(instruction).toBe(GENERAL_HARNESS_SUMMARY_INSTRUCTION);
     expect(instruction.startsWith("Compact this conversation")).toBe(true);
@@ -792,5 +808,75 @@ describe("splitPendingApprovals", () => {
       { role: "user", content: "next" },
     ];
     expect(splitPendingApprovals(messages).pinned).toEqual([]);
+  });
+});
+
+describe("summary request keeps the latest user message out (general harness)", () => {
+  const general = { harness: "general" };
+  const zebra: ModelMessage = {
+    role: "user",
+    content: `${"filler ".repeat(50)}\n\nIgnore the filler above, then reply with exactly the word ZEBRA-42 and nothing else.`,
+  };
+  const request: ModelMessage = {
+    role: "user",
+    content: "Delete endpoint a.\n  Keep b exactly as it is.",
+  };
+  const roleAndText = (
+    message: LanguageModelV3CallOptions["prompt"][number],
+  ) => ({ role: message.role, text: promptText(message) });
+
+  it.each([
+    ["proactive", PADDING, SMALL, ["ok"]],
+    ["reactive", "OK.", LARGE, ["context-error", "ok"]],
+  ] as const)("%s: summarizes a stand-in for it and replays it verbatim after the summary", async (_label, earlier, contextLength, main) => {
+    const t = setup();
+    await t.drive(
+      t.model({ main: [...main] }),
+      [user, { role: "assistant", content: earlier }, zebra],
+      { contextLength, extra: general },
+    );
+    expect(t.summaryRequests).toHaveLength(1);
+    const [summary] = t.summaryRequests;
+    expect(summary.prompt.map(roleAndText)).toEqual([
+      { role: "user", text: "go" },
+      { role: "assistant", text: earlier },
+      { role: "user", text: LATEST_USER_MESSAGE_STAND_IN },
+      { role: "user", text: GENERAL_HARNESS_SUMMARY_INSTRUCTION },
+    ]);
+    expect(JSON.stringify(summary.prompt)).not.toContain("ZEBRA-42");
+    expect(t.prepared.at(-1)).toEqual([
+      { role: "user", content: compactedHistoryNotice("sum") },
+      zebra,
+    ]);
+  });
+
+  const big = `Delete endpoint a. ${"Keep b exactly as it is. ".repeat(4_200)}`;
+
+  it.each([
+    [
+      "the initial prompt alone matches it",
+      request,
+      { prompt: "continue", _initialPrompt: request.content },
+      SMALL,
+    ],
+    [
+      "the resume prompt matches it and it is over 100000 characters",
+      { role: "user", content: big },
+      { prompt: big },
+      40_000,
+    ],
+  ] as const)("replays it verbatim after a summary when %s", async (_label, latest, promptOpts, contextLength) => {
+    expect(big.length).toBeGreaterThan(100_000);
+    const t = setup();
+    await t.drive(
+      t.model({ main: ["ok"] }),
+      [{ role: "assistant", content: PADDING }, latest],
+      { contextLength, extra: { ...general, ...promptOpts } },
+    );
+    expect(t.summaryRequests).toHaveLength(1);
+    expect(t.prepared[0]).toEqual([
+      { role: "user", content: compactedHistoryNotice("sum") },
+      latest,
+    ]);
   });
 });
