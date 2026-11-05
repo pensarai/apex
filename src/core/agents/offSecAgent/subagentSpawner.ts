@@ -629,6 +629,9 @@ class InProcessSubagentSpawner implements SubagentSpawner {
 
     opts.parentBus?.emit("subagent-spawn", {
       ...lifecycleBase,
+      ...(opts.parentToolCallId !== undefined
+        ? { parentToolCallId: opts.parentToolCallId }
+        : {}),
       name: opts.subagentName,
       input: opts.lifecycleInput,
     });
