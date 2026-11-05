@@ -34,6 +34,7 @@ export interface LifecycleChunk {
   result?: unknown;
   output?: unknown;
   preliminary?: boolean;
+  toolCall?: { toolCallId: string };
 }
 
 export class ToolLifecycleTracker {
@@ -89,6 +90,10 @@ export class ToolLifecycleTracker {
         });
         break;
       }
+      case "tool-approval-request":
+        // Held for approval, not unfinished: finish-step must not close it as "did not complete".
+        this.inFlight.delete(chunk.toolCall?.toolCallId as string);
+        break;
       case "tool-result":
         if (chunk.preliminary) break;
         this.inFlight.delete(chunk.toolCallId as string);

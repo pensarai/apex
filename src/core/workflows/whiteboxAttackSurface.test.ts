@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentHooks } from "../agents/offSecAgent";
 import type { AppInfo } from "../agents/specialized/whiteboxAttackSurface";
 import type { AIModel } from "../ai";
+import { AgentEventBus } from "../eventBus";
 import * as idModule from "../id/id";
 import * as surfaceModule from "../integrations/surface";
 import type { SessionInfo } from "../session";
@@ -764,4 +765,105 @@ it("uses the injected ID factory for surface endpoint children in dispatch order
     "web: GET /second:2",
   ]);
   expect(randomId).not.toHaveBeenCalled();
+});
+
+describe("whitebox discovery umbrella lifecycle", () => {
+  it("completes the umbrella once when Phase 2 fan-out rejects and preserves the cause", async () => {
+    const failure = new Error("All whitebox recon app children failed");
+    const eventBus = new AgentEventBus();
+    const completions: { subagentId: string; status: string }[] = [];
+    const errors: unknown[] = [];
+    eventBus.on("error", ({ error }) => {
+      errors.push(error);
+    });
+    eventBus.on("subagent-complete", (event) => {
+      completions.push(event);
+    });
+    await expect(
+      runWhiteboxAttackSurfaceWorkflow({
+        codebasePath: "/repo",
+        model: {} as AIModel,
+        session,
+        eventBus,
+        surfaceIntegrationEnabled: false,
+        seams: inProcessSeams({
+          ids: { newSessionId: () => "ses_discovery_umbrella" },
+          fanOut: {
+            spawnMany: async () => {
+              eventBus.emit("error", {
+                error: failure,
+                subagentId: "ses_pages_child",
+              });
+              throw failure;
+            },
+          },
+        }),
+      }),
+    ).rejects.toBe(failure);
+    expect(completions).toEqual([
+      { subagentId: "ses_discovery_umbrella", status: "failed" },
+    ]);
+    expect(errors).toEqual([failure]);
+  });
+  it("completes the umbrella once when Phase 2 is cancelled without replacing the abort reason", async () => {
+    const controller = new AbortController();
+    const failure = new DOMException("cancelled", "AbortError");
+    const eventBus = new AgentEventBus();
+    const completions: { subagentId: string; status: string }[] = [];
+    eventBus.on("subagent-complete", (event) => {
+      completions.push(event);
+    });
+    let cancel!: (reason: unknown) => void;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pending = runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      eventBus,
+      abortSignal: controller.signal,
+      surfaceIntegrationEnabled: false,
+      seams: inProcessSeams({
+        ids: { newSessionId: () => "ses_cancelled_umbrella" },
+        fanOut: {
+          spawnMany: () =>
+            new Promise<never>((_resolve, reject) => {
+              cancel = reject;
+              started();
+            }),
+        },
+      }),
+    });
+    await entered;
+    const rejected = expect(pending).rejects.toBe(failure);
+    controller.abort(failure);
+    cancel(controller.signal.reason);
+    await rejected;
+    expect(completions).toEqual([
+      { subagentId: "ses_cancelled_umbrella", status: "failed" },
+    ]);
+  });
+
+  it("keeps exactly one successful umbrella completion on the existing success path", async () => {
+    const eventBus = new AgentEventBus();
+    const completions: { subagentId: string; status: string }[] = [];
+    eventBus.on("subagent-complete", (event) => {
+      completions.push(event);
+    });
+    await runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      eventBus,
+      surfaceIntegrationEnabled: false,
+      seams: inProcessSeams({
+        ids: { newSessionId: (_name, ordinal) => `ses_success_${ordinal}` },
+      }),
+    });
+    expect(
+      completions.filter((event) => event.subagentId === "ses_success_0"),
+    ).toEqual([{ subagentId: "ses_success_0", status: "completed" }]);
+  });
 });

@@ -134,8 +134,8 @@ export const blackboxAttackSurfaceDefinition = defineAgent<
 
     return { results, targets, resultsPath, assetsPath };
   },
-  onStepFinish: (opts, state) => (e) => {
-    opts.onStepFinish?.(e);
+  onStepFinish: (opts, state) => async (e) => {
+    await opts.onStepFinish?.(e);
     const messages = e.response.messages;
     if (messages !== undefined) {
       writeFileSync(

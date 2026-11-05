@@ -30,6 +30,7 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export { IncompleteModelStreamError } from "./incompleteModelStream";
 export type {
   InferenceAttempt,
   InferenceRecorder,
@@ -53,6 +54,7 @@ export type {
   ModelRuntimeProfile,
 } from "./modelRuntime";
 export { resolveModelRuntimeProfile } from "./modelRuntime";
+export { ModelStreamDrainError } from "./modelStreamDrain";
 export {
   AVAILABLE_MODELS,
   getClaudeCapabilities,

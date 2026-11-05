@@ -175,6 +175,39 @@ import {
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
 
+describe("compaction retained-output ownership", () => {
+  it.each([
+    undefined,
+    "worker",
+  ])("ignores a custom message directory for owner %s", (subagentId) => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-compaction-owner-"));
+    streamResponseCalls.length = 0;
+    try {
+      const messagesDir = join(rootPath, "custom-transcript");
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: {
+          id: "ses_compaction_owner",
+          rootPath,
+          logsPath: join(rootPath, "logs"),
+          scratchpadPath: join(rootPath, "scratchpad"),
+        },
+        messagesDir,
+        subagentId,
+        activeTools: [],
+      } as never);
+      void agent.streamResult;
+      expect(streamResponseCalls[0].sessionPath).toBe(
+        subagentId ? join(rootPath, "subagents", subagentId) : rootPath,
+      );
+      expect(agent["messagesPath"]).toBe(join(messagesDir, "messages.json"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("assembled file-workspace instructions", () => {
   it("does not treat Fast Strike helper tools as permission to edit target source", () => {
     const rootPath = mkdtempSync(join(tmpdir(), "apex-fast-strike-scope-"));
