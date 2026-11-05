@@ -514,7 +514,12 @@ it("retries proactive compaction after a new tool result", async () => {
     expect(providerCalls).toBe(2);
     expect(retryPrompt).toContain("source-0:");
     expect(retryPrompt).toContain("new-evidence");
-    expect(onSummarized).toHaveBeenCalledWith("The first source is source-0.");
+    expect(onSummarized).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "summary",
+        summary: "The first source is source-0.",
+      }),
+    );
   } finally {
     state.model = null;
   }
@@ -1203,7 +1208,11 @@ it("uses minimal recovery when a reactive summary is rejected", async () => {
     expect(summaryCalls).toBe(2);
     expect(syntheticCalls).toBe(1);
     expect(syntheticResults).toBe(1);
-    expect(onSummarized).toHaveBeenCalledWith("");
+    expect(onSummarized).toHaveBeenCalledWith({
+      kind: "reset",
+      summary: "",
+      pinnedToolCallIds: [],
+    });
     expect(resumedPrompt).not.toContain("Old synthetic evidence.");
   } finally {
     state.model = null;

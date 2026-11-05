@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import type { ModelMessage, ToolSet } from "ai";
 import { persistToolOutput } from "../agents/offSecAgent/tools/toolOutput";
+import type { AgentHarness } from "./ai";
 import {
   beginCompaction,
   type CompactionContext,
@@ -606,9 +607,11 @@ function generateToolResultSummary(toolName: string, text: string): string {
 export function splitPendingApprovals(messages: ModelMessage[]): {
   head: ModelMessage[];
   pinned: ModelMessage[];
+  pinnedToolCallIds: string[];
 } {
   const last = messages.at(-1);
-  if (last?.role !== "tool") return { head: messages, pinned: [] };
+  if (last?.role !== "tool")
+    return { head: messages, pinned: [], pinnedToolCallIds: [] };
   const resolved = new Set<string>();
   const callIdByApprovalId = new Map<string, string>();
   for (const message of messages) {
@@ -628,7 +631,8 @@ export function splitPendingApprovals(messages: ModelMessage[]): {
     pendingCallIds.add(toolCallId);
     pendingApprovalIds.add(part.approvalId);
   }
-  if (pendingCallIds.size === 0) return { head: messages, pinned: [] };
+  if (pendingCallIds.size === 0)
+    return { head: messages, pinned: [], pinnedToolCallIds: [] };
   const start = messages.findIndex(
     (message) =>
       message.role === "assistant" &&
@@ -640,5 +644,29 @@ export function splitPendingApprovals(messages: ModelMessage[]): {
             pendingApprovalIds.has(part.approvalId)),
       ),
   );
-  return { head: messages.slice(0, start), pinned: messages.slice(start) };
+  return {
+    head: messages.slice(0, start),
+    pinned: messages.slice(start),
+    pinnedToolCallIds: [...pendingCallIds],
+  };
+}
+
+/** What a compacted resume replays verbatim: the pending approvals and the latest user message. */
+export function splitResumeTail(
+  messages: ModelMessage[],
+): ReturnType<typeof splitPendingApprovals> & { latestUser?: ModelMessage } {
+  const split = splitPendingApprovals(messages);
+  if (split.pinned.some((message) => message.role === "user")) return split;
+  const latestUser = split.head.findLast((message) => message.role === "user");
+  return latestUser ? { ...split, latestUser } : split;
+}
+
+/** What a compaction replays after the summary: pending approvals, and under the general harness the latest user message too. */
+export function splitResumeHistory(
+  messages: ModelMessage[],
+  harness?: AgentHarness,
+): ReturnType<typeof splitResumeTail> {
+  return harness === "general"
+    ? splitResumeTail(messages)
+    : splitPendingApprovals(messages);
 }

@@ -1,7 +1,9 @@
 export type {
+  AgentHarness,
   AIModel,
   AIModelProvider,
   CacheMetrics,
+  ContextCompaction,
   GenerateObjectOpts,
   ModelInfo,
   NormalizedStepUsage,
@@ -30,6 +32,7 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export { compactedHistoryNotice } from "./compactionPrompts";
 export { IncompleteModelStreamError } from "./incompleteModelStream";
 export type {
   InferenceAttempt,

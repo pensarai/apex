@@ -9,6 +9,7 @@ import {
   type LanguageModelMiddleware,
   type ModelMessage,
   Output,
+  type StepResult,
   type StopCondition,
   type StreamTextOnFinishCallback,
   type StreamTextOnStepFinishCallback,
@@ -55,7 +56,7 @@ import {
   estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
-  splitPendingApprovals,
+  splitResumeHistory,
   truncateWithMarker,
 } from "./contextManagement";
 import { projectFailedToolCalls } from "./failedToolCallHistory";
@@ -1135,16 +1136,28 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
+                  const {
+                    latestUser: tail,
+                    pinned,
+                    pinnedToolCallIds,
+                  } = splitResumeHistory(messagesForSummary, opts.harness);
+                  // An untruncated restart prompt already resends the latest user message.
+                  const latestUser =
+                    tail?.content === minimalPrompt ? undefined : tail;
                   const resumeMessages = resumeMessagesWithPinned(
                     minimalPrompt,
-                    splitPendingApprovals(messagesForSummary).pinned,
+                    { latestUser, pinned },
                     opts,
                     postReactiveDepth + 1,
                   );
                   const restartMessages = resumeMessages ?? [
                     { role: "user" as const, content: minimalPrompt },
                   ];
-                  opts.onSummarized?.("");
+                  opts.onSummarized?.({
+                    kind: "reset",
+                    summary: "",
+                    pinnedToolCallIds,
+                  });
                   const reset = beginCompaction("reset", {
                     trigger: "summary_overflow",
                     model: opts.model,
@@ -1397,6 +1410,19 @@ export function buildReasoningProviderOptions(
     : buildModelReasoningOptions(model, setting, opts);
 }
 
+export type AgentHarness = "general";
+
+/**
+ * A context reset the resumed stream continues from: a `summary` of the
+ * dropped history, or a `reset` that kept none of it. Pinned calls are the
+ * approved/denied calls replayed verbatim after it.
+ */
+export interface ContextCompaction {
+  kind: "summary" | "reset";
+  summary: string;
+  pinnedToolCallIds: string[];
+}
+
 /** Cache token metrics extracted from Anthropic providerMetadata */
 export interface CacheMetrics {
   cacheReadInputTokens: number;
@@ -1404,6 +1430,13 @@ export interface CacheMetrics {
 }
 
 export interface StreamResponseOpts {
+  /**
+   * Opts into the general agent harness's context handling: the latest user
+   * message is replayed verbatim after a compaction under the shared resume
+   * notice, a compaction summarizes under its own instruction, and the step
+   * cap spans compaction and retry restarts. Unset keeps the default shapes.
+   */
+  harness?: AgentHarness;
   /** Disables model repair and general recovery; compaction requires explicit admission. */
   primaryModelOnly?: boolean;
   runContextCompaction?: <T>(work: () => Promise<T>) => Promise<T>;
@@ -1437,7 +1470,7 @@ export interface StreamResponseOpts {
    * so that subsequent persistence writes only include the summary +
    * new messages (not the full pre-summarization history).
    */
-  onSummarized?: (summary: string) => void;
+  onSummarized?: (compaction: ContextCompaction) => void;
   /** The fitted context and prior generated-message count for transcript writers. */
   onContextPrepared?: (context: {
     messages: ModelMessage[];
@@ -1496,10 +1529,27 @@ interface StreamRetryBudget {
   idleResume: number;
 }
 
+/** Steps completed by every re-entry of one logical stream, so stop conditions span restarts. */
+const STREAM_STEPS = Symbol("stream-steps");
+
 type InternalStreamResponseOpts = StreamResponseOpts & {
   [NATIVE_STREAM_RECOVERY]?: NativeStreamRecovery;
   [STREAM_RETRY_BUDGET]?: StreamRetryBudget;
+  [STREAM_STEPS]?: StepResult<ToolSet>[];
 };
+
+/** Evaluates each condition over the steps earlier re-entries already completed plus this stream's. */
+function spanningPriorSteps(
+  stopWhen: StreamResponseOpts["stopWhen"],
+  priorSteps: StepResult<ToolSet>[],
+): StreamResponseOpts["stopWhen"] {
+  if (stopWhen === undefined || priorSteps.length === 0) return stopWhen;
+  return (Array.isArray(stopWhen) ? stopWhen : [stopWhen]).map(
+    (condition): StopCondition<ToolSet> =>
+      ({ steps }) =>
+        condition({ steps: [...priorSteps, ...steps] }),
+  );
+}
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
@@ -1546,6 +1596,10 @@ function streamResponseWithinOperation(
     rateLimit: 0,
     idleResume: 0,
   };
+  const streamSteps: StepResult<ToolSet>[] =
+    (opts as InternalStreamResponseOpts)[STREAM_STEPS] ?? [];
+  (opts as InternalStreamResponseOpts)[STREAM_STEPS] = streamSteps;
+  const priorSteps = [...streamSteps];
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
@@ -1634,10 +1688,11 @@ function streamResponseWithinOperation(
     }
     if (
       step.response?.id !== "summarization" &&
-      step.response?.id !== "tool-repair" &&
-      step.response?.messages
+      step.response?.id !== "tool-repair"
     ) {
-      responseMessageLength = step.response.messages.length;
+      if (opts.harness === "general") streamSteps.push(step);
+      if (step.response?.messages)
+        responseMessageLength = step.response.messages.length;
     }
     if (
       onCacheMetrics &&
@@ -2002,7 +2057,7 @@ function streamResponseWithinOperation(
       model: attemptModel,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
-      stopWhen,
+      stopWhen: spanningPriorSteps(stopWhen, priorSteps),
       toolChoice,
       tools: effectiveTools,
       maxRetries: 3,
@@ -2659,18 +2714,28 @@ export class PendingApprovalExceedsContextError extends ContextLengthExhaustedEr
   }
 }
 
-/** Resume history for a compacted turn: undefined when nothing is pending. */
+/** The latest user message is never paraphrased, so one the window cannot hold is terminal. */
+export class LatestUserMessageExceedsContextError extends ContextLengthExhaustedError {
+  constructor(restartDepth: number) {
+    super(
+      "The latest user message does not fit in the model's context window",
+      restartDepth,
+    );
+    this.name = "LatestUserMessageExceedsContextError";
+  }
+}
+
+/** Resume history for a compacted turn: undefined when nothing is replayed. */
 export function resumeMessagesWithPinned(
   prompt: string,
-  pinned: ModelMessage[],
+  { latestUser, pinned }: { latestUser?: ModelMessage; pinned: ModelMessage[] },
   opts: StreamResponseOpts,
   restartDepth: number,
 ): ModelMessage[] | undefined {
-  if (pinned.length === 0) return undefined;
-  const messages: ModelMessage[] = [
-    { role: "user", content: prompt },
-    ...pinned,
-  ];
+  const resumePrompt: ModelMessage = { role: "user", content: prompt };
+  const replayed = latestUser ? [latestUser, ...pinned] : pinned;
+  if (replayed.length === 0) return undefined;
+  const messages: ModelMessage[] = [resumePrompt, ...replayed];
   const overhead =
     estimateToolsOverheadTokens(opts.tools) +
     1_000 +
@@ -2686,7 +2751,11 @@ export function resumeMessagesWithPinned(
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
     );
-  if (estimateMessageTokens(messages) + overhead > budget)
+  const fits = (history: ModelMessage[]) =>
+    estimateMessageTokens(history) + overhead <= budget;
+  if (latestUser && !fits([resumePrompt, latestUser]))
+    throw new LatestUserMessageExceedsContextError(restartDepth);
+  if (!fits(messages))
     throw new PendingApprovalExceedsContextError(restartDepth);
   return messages;
 }

@@ -11,6 +11,7 @@ import type {
 } from "ai";
 import { stepCountIs } from "ai";
 import {
+  type ContextCompaction,
   normalizeStepUsage,
   resolveModelRuntimeProfile,
   streamResponse,
@@ -355,6 +356,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Per-run stream counters for deterministic id derivation via {@link streamIdFactory}. */
   private streamStepIndex = -1;
+
+  /** Reported on the next step, so only a reset the model continued from is announced. */
+  private pendingCompaction: ContextCompaction | null = null;
 
   private streamTextPartIndex = 0;
 
@@ -1082,6 +1086,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.mode === "lance"
             ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
             : baseWithFacts + workspaceSection,
+        harness: input.harness,
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
         runContextCompaction: this.lanceRuntime?.runContextCompaction,
@@ -1149,12 +1154,13 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.currentMessageId = null;
           await input.onStepFinish?.(event);
         },
-        onSummarized: () => {
+        onSummarized: (compaction) => {
           preparedContextRef.current = {
             messages: [],
             responseMessageOffset: 0,
           };
           traceWriter.markSummarized();
+          this.pendingCompaction = compaction;
         },
         onFinish: async (event) => {
           // Flush any pending persistence before finishing
@@ -1571,6 +1577,20 @@ export class OffensiveSecurityAgent<TResult = void> {
           }) ?? newMessageId();
         this.currentMessageId = ids.messageId;
         ids.textPartId = undefined;
+        if (this.pendingCompaction) {
+          bus.emit("context-compacted", {
+            ...this.pendingCompaction,
+            subagentId: sid,
+            sessionId: this.busSessionId,
+            messageId: ids.messageId,
+            partId:
+              this.streamIdFactory?.({
+                kind: "compaction-part",
+                stepIndex: this.streamStepIndex,
+              }) ?? newPartId(),
+          });
+          this.pendingCompaction = null;
+        }
         break;
       case "text-start":
         ids.textPartId =
