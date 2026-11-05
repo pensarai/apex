@@ -52,40 +52,44 @@ export function withCutOffToolCallGuard(
     },
     doStream: async (options) => {
       const result = await model.doStream(options);
+      const source = result.stream.getReader();
       const held: Extract<LanguageModelV3StreamPart, { type: "tool-call" }>[] =
         [];
-      return {
-        ...result,
-        stream: result.stream.pipeThrough(
-          new TransformStream<
-            LanguageModelV3StreamPart,
-            LanguageModelV3StreamPart
-          >({
-            transform(part, controller) {
-              if (part.type === "tool-call") {
-                held.push(part);
-                return;
-              }
-              if (part.type === "finish") {
-                if (CUT_OFF.has(part.finishReason.unified))
-                  warnDropped(
-                    held.map((call) => call.toolName),
-                    part.finishReason.unified,
-                  );
-                else for (const call of held) controller.enqueue(call);
-                held.length = 0;
-              }
-              controller.enqueue(part);
-            },
-            flush() {
+      // Not pipeThrough: cancelling a piped stream resolves before the source
+      // finishes cancelling, and callers wait on that to bound a stalled
+      // provider stream before they retry.
+      const stream = new ReadableStream<LanguageModelV3StreamPart>({
+        async pull(controller) {
+          for (;;) {
+            const { done, value: part } = await source.read();
+            if (done) {
               warnDropped(
                 held.map((call) => call.toolName),
                 "missing",
               );
-            },
-          }),
-        ),
-      };
+              controller.close();
+              return;
+            }
+            if (part.type === "tool-call") {
+              held.push(part);
+              continue;
+            }
+            if (part.type === "finish") {
+              if (CUT_OFF.has(part.finishReason.unified))
+                warnDropped(
+                  held.map((call) => call.toolName),
+                  part.finishReason.unified,
+                );
+              else for (const call of held) controller.enqueue(call);
+              held.length = 0;
+            }
+            controller.enqueue(part);
+            return;
+          }
+        },
+        cancel: (reason) => source.cancel(reason),
+      });
+      return { ...result, stream };
     },
   };
 }

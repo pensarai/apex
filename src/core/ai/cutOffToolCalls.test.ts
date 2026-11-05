@@ -68,6 +68,37 @@ describe("withCutOffToolCallGuard", () => {
     expect(parts).toEqual([]);
   });
 
+  it("cancelling the stream waits for the provider's stream to finish cancelling", async () => {
+    let releaseCancel!: () => void;
+    const providerCancelled = new Promise<void>((resolve) => {
+      releaseCancel = resolve;
+    });
+    const model = withCutOffToolCallGuard(
+      new MockLanguageModelV3({
+        doStream: async () => ({
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
+            start(controller) {
+              controller.enqueue({ type: "stream-start", warnings: [] });
+            },
+            cancel: () => providerCancelled,
+          }),
+        }),
+      }),
+    );
+    const { stream } = await model.doStream({} as never);
+    const reader = stream.getReader();
+    await reader.read();
+    let cancelled = false;
+    const cancelling = reader.cancel().then(() => {
+      cancelled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(cancelled).toBe(false);
+    releaseCancel();
+    await cancelling;
+    expect(cancelled).toBe(true);
+  });
+
   it("strips tool calls from a generated response that was cut off, keeping its text", async () => {
     const model = withCutOffToolCallGuard(
       new MockLanguageModelV3({
