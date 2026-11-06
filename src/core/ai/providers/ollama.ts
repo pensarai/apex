@@ -6,6 +6,7 @@ export function createOllamaModel(id: string, catalog?: OllamaCatalog) {
   return createOpenAICompatible({
     name: "ollama",
     baseURL: `${baseURL}/v1`,
+    includeUsage: true,
     supportsStructuredOutputs: true,
     transformRequestBody: (body) => ({
       ...body,

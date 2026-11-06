@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildUsageFooterLabels } from "../../../tui/components/usage-labels";
+import { SessionUsageStore } from "../../../tui/context/session-usage";
 import { resolveExplicitCliModel } from "../../cli/model";
 import { discoverOllama, type OllamaCatalog } from "../../ollama";
 import {
@@ -9,7 +11,7 @@ import {
   getSavedModelForConfig,
   hasAnyProviderConfigured,
 } from "../../providers/utils";
-import { getContextWindow, streamResponse } from "../ai";
+import { getContextWindow, normalizeStepUsage, streamResponse } from "../ai";
 import { getMaxOutputTokens, getModelInfo } from "../models";
 import { getReasoningCapabilities } from "../reasoning";
 import { buildAuthConfig, getProviderModel } from "../utils";
@@ -103,7 +105,10 @@ describe("auto-discovered Ollama inference", () => {
     );
   });
 
-  it("discovers, selects, and streams through an Ollama server without forwarding cloud credentials", async () => {
+  it.each([
+    true,
+    false,
+  ])("streams local inference into footer totals without cloud credentials (usage available: %s)", async (reportsUsage) => {
     vi.stubEnv("OPENAI_API_KEY", "must-not-forward");
     vi.stubEnv("LOCAL_MODEL_URL", "http://wrong-endpoint.invalid/v1");
     const requests: {
@@ -123,21 +128,37 @@ describe("auto-discovered Ollama inference", () => {
       }
       let body = "";
       for await (const chunk of req) body += chunk;
+      const requestBody = JSON.parse(body);
       requests.push({
         url: req.url,
         authorization: req.headers.authorization,
-        body: JSON.parse(body),
+        body: requestBody,
       });
       res.setHeader("content-type", "text/event-stream");
-      res.end(
+      res.write(
         `data: ${JSON.stringify({
           id: "probe",
           model: upstreamId,
           choices: [
             { index: 0, delta: { content: "LOCAL_OK" }, finish_reason: "stop" },
           ],
-        })}\n\ndata: [DONE]\n\n`,
+        })}\n\n`,
       );
+      if (reportsUsage && requestBody.stream_options?.include_usage) {
+        res.write(
+          `data: ${JSON.stringify({
+            id: "probe",
+            model: upstreamId,
+            choices: [],
+            usage: {
+              prompt_tokens: 123,
+              completion_tokens: 45,
+              total_tokens: 168,
+            },
+          })}\n\n`,
+        );
+      }
+      res.end("data: [DONE]\n\n");
     });
     await new Promise<void>((resolve) =>
       server.listen(0, "127.0.0.1", resolve),
@@ -151,21 +172,45 @@ describe("auto-discovered Ollama inference", () => {
       const config = { responsibleUseAccepted: true, ollama: discovered };
       const selected = getDefaultModelForConfig(config);
       if (!selected) throw new Error("No Ollama model available");
-      const response = streamResponse({
-        model: selected.id,
-        authConfig: buildAuthConfig(config),
-        prompt: "Say LOCAL_OK",
-        silent: true,
+      const usageStore = new SessionUsageStore();
+      usageStore.enterSession("ollama-session");
+      const onStepFinish = vi.fn((step) => {
+        usageStore.addSessionTokens("ollama-session", normalizeStepUsage(step));
       });
-      for await (const part of response.fullStream) {
-        if (part.type === "error") throw part.error;
+      for (const turn of [1, 2]) {
+        const response = streamResponse({
+          model: selected.id,
+          authConfig: buildAuthConfig(config),
+          prompt: "Say LOCAL_OK",
+          onStepFinish,
+          silent: true,
+        });
+        for await (const part of response.fullStream) {
+          if (part.type === "error") throw part.error;
+        }
+        expect(await response.text).toBe("LOCAL_OK");
+        expect(onStepFinish).toHaveBeenCalledTimes(turn);
+        const expectedInput = reportsUsage ? 123 * turn : 0;
+        const expectedOutput = reportsUsage ? 45 * turn : 0;
+        const usage = usageStore.getActiveSnapshot();
+        expect(usage.tokenUsage).toMatchObject({
+          inputTokens: expectedInput,
+          outputTokens: expectedOutput,
+        });
+        expect(
+          buildUsageFooterLabels({ ...usage, width: 120 }).tokensLabel,
+        ).toBe(`in ${expectedInput}  out ${expectedOutput}`);
       }
-      expect(await response.text).toBe("LOCAL_OK");
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(2);
       expect(requests[0]).toMatchObject({
         url: "/v1/chat/completions",
         authorization: undefined,
-        body: { model: upstreamId, stream: true, max_tokens: 4_096 },
+        body: {
+          model: upstreamId,
+          stream: true,
+          max_tokens: 4_096,
+          stream_options: { include_usage: true },
+        },
       });
       expect(requests[0].body).not.toHaveProperty("reasoning_effort");
     } finally {
