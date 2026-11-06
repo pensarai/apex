@@ -10,6 +10,7 @@
  * stable slot id (`pentest-agent-N`) for the swarm.
  */
 
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -364,8 +365,16 @@ export function reconcileManifestOnResume(
       !prev.assignment ||
       !f.assignment ||
       !isDeepStrictEqual(prev.assignment, f.assignment)
-    )
-      return f;
+    ) {
+      const previous = prev ?? existing.find((entry) => entry.id === f.id);
+      if (!previous) return f;
+      // Deterministic factories can repeat an old ID; chain identities to avoid its transcript.
+      const sessionId = `ses_${createHash("sha256")
+        .update(JSON.stringify([f.id, previous.id]))
+        .digest("hex")
+        .slice(0, 26)}`;
+      return { ...f, id: sessionId, sessionId };
+    }
     if (prev.status === "completed") return prev;
     return {
       ...f,
