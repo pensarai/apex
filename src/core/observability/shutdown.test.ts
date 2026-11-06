@@ -363,6 +363,32 @@ describe("installObservabilityExitHandlers", () => {
     expect(exitCalls).toEqual([1]);
   });
 
+  it.each([
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ] as const)("%s keeps its exit code when the interrupted command rejects", async (signal, code) => {
+    const shutdown = Promise.withResolvers<"completed">();
+    const exitWith = install({
+      forceFlush: async () => {},
+      shutdown: () => shutdown.promise,
+    });
+
+    process.emit(signal, signal);
+    const commandExit = exitWith(
+      1,
+      new Error("command aborted"),
+      "uncaughtException",
+    );
+    expect(exitCalls).toEqual([]);
+
+    shutdown.resolve("completed");
+    await expect(commandExit).rejects.toThrow("__test_exit__");
+
+    expect(cleanups).toEqual([`cleanup:${code}`]);
+    expect(exitCalls).toEqual([code]);
+    expect(errors).toEqual([]);
+  });
+
   it("a signal keeps its exit code when normal shutdown completes", async () => {
     const runtime = startWithProcessors([new HungProcessor()], 50);
     const exitWith = install(runtime);
