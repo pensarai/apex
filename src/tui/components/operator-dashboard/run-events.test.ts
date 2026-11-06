@@ -22,6 +22,11 @@ type EventCase = readonly [
 ];
 
 const EVENT_CASES: readonly EventCase[] = [
+  [
+    "model-loading",
+    "onModelLoading",
+    { model: "ollama:twil", status: "loading", elapsedMs: 0 },
+  ],
   ["text-delta", "onTextDelta", { text: "hello" }],
   [
     "tool-call-start",
@@ -659,6 +664,7 @@ describe("createRunEventProjections", () => {
       setError: () => {},
     });
     const subagents: SubagentEventSink = {
+      setModelLoading: vi.fn(),
       appendText: vi.fn(),
       addStreamingToolCall: vi.fn(),
       appendToolCallDelta: vi.fn(),
@@ -673,6 +679,7 @@ describe("createRunEventProjections", () => {
     const onCleared = vi.fn();
     const onRootToolCallStarted = vi.fn();
     const onPlanSubmitted = vi.fn();
+    const onModelLoading = vi.fn();
     const projections = createRunEventProjections({
       display,
       subagents,
@@ -681,6 +688,7 @@ describe("createRunEventProjections", () => {
       questions: { onAsked, onCleared },
       onRootToolCallStarted,
       onPlanSubmitted,
+      onModelLoading,
     });
     const bus = new Bus();
     const unbind = bindOperatorRunEvents(bus, {
@@ -699,8 +707,55 @@ describe("createRunEventProjections", () => {
       bus,
       unbind,
       getMessages: () => messages,
+      onModelLoading,
     };
   }
+
+  it.each([
+    "ready",
+    "failed",
+    "cancelled",
+  ] as const)("clears model loading on %s and routes child loading separately", (status) => {
+    const s = setup();
+    const child = new Bus();
+    Bus.attachChild(child, s.bus, "child-1");
+    const event = {
+      model: "ollama:twil",
+      status: "loading" as const,
+      elapsedMs: 0,
+    };
+    s.bus.emit("model-loading", event);
+    expect(s.onModelLoading).toHaveBeenLastCalledWith("ollama:twil");
+    child.emit("model-loading", event);
+    expect(s.subagents.setModelLoading).toHaveBeenLastCalledWith(
+      "child-1",
+      "ollama:twil",
+    );
+    expect(s.onModelLoading).toHaveBeenCalledTimes(1);
+    s.bus.emit("model-loading", { ...event, status });
+    child.emit("model-loading", { ...event, status });
+    expect(s.onModelLoading).toHaveBeenLastCalledWith(null);
+    expect(s.subagents.setModelLoading).toHaveBeenLastCalledWith(
+      "child-1",
+      null,
+    );
+    s.unbind();
+    s.bus.emit("model-loading", event);
+    expect(s.onModelLoading).toHaveBeenCalledTimes(2);
+    s.display.dispose();
+  });
+
+  it("ignores loading events from an obsolete run", () => {
+    const s = setup(false);
+    s.bus.emit("model-loading", {
+      model: "ollama:twil",
+      status: "loading",
+      elapsedMs: 0,
+    });
+    expect(s.onModelLoading).not.toHaveBeenCalled();
+    s.unbind();
+    s.display.dispose();
+  });
 
   it("routes root events to the display and subagent events to the sink", () => {
     const s = setup();

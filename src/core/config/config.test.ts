@@ -8,7 +8,13 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { discoverOllama } from "../ollama";
 import { get, init, update } from "./config";
+
+vi.mock("../ollama", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ollama")>()),
+  discoverOllama: vi.fn(async () => undefined),
+}));
 
 let homeDirectory: string;
 const originalConcentrateAPIKey = process.env.CONCENTRATE_API_KEY;
@@ -30,6 +36,35 @@ afterEach(() => {
 });
 
 describe("provider environment fallbacks", () => {
+  it("loads Ollama at startup without persisting discovery or changing a manual local endpoint", async () => {
+    const ollama = {
+      baseURL: "http://127.0.0.1:11434",
+      models: [
+        {
+          id: "twil:8b",
+          contextLength: 32_768,
+          maxOutputTokens: 4096,
+          running: true,
+        },
+      ],
+    };
+    vi.mocked(discoverOllama).mockResolvedValueOnce(ollama);
+    await init();
+    await update({
+      localModelUrl: "http://localhost:1234/v1",
+      localModelName: "manual",
+    });
+    const loaded = await get();
+    expect(loaded.ollama).toEqual(ollama);
+    expect(loaded.localModelUrl).toBe("http://localhost:1234/v1");
+    await update({ selectedModelId: "ollama:twil:8b", ollama });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.ollama).toBeUndefined();
+    expect(persisted.localModelName).toBe("manual");
+    expect((await get()).ollama).toBeUndefined();
+  });
   it("loads an Exa environment key and prefers a persisted key without saving the environment key", async () => {
     vi.stubEnv("EXA_API_KEY", "exa-env-key");
     expect((await get()).exaAPIKey).toBe("exa-env-key");

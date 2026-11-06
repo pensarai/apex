@@ -22,6 +22,7 @@ export {
 export { MessageRenderer } from "./message-renderer";
 // Message utilities
 export { getStableMessageKey } from "./message-utils";
+export { ModelLoadingIcon } from "./model-loading-icon";
 // Input components
 export {
   type AutocompleteOption,

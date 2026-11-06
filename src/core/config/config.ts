@@ -6,6 +6,7 @@ import type { FindingPolicy } from "../agents/offSecAgent";
 import type { ReasoningSetting } from "../ai";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
+import { discoverOllama, type OllamaCatalog } from "../ollama";
 import {
   type CustomProviders,
   loadCustomProviders,
@@ -47,6 +48,8 @@ export interface Config {
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
+  /** Discovered on this machine; never persisted. */
+  ollama?: OllamaCatalog;
   // Theme preferences
   theme?: string;
   themeMode?: "dark" | "light" | "auto";
@@ -164,6 +167,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     hoonifyAPIKey: parsedConfig.hoonifyAPIKey ?? process.env.HOONIFY_API_KEY,
     hoonifyModels: undefined,
+    ollama: undefined,
     hoonifyCatalogError: undefined,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,
     pensarAPIKey: parsedConfig.pensarAPIKey ?? process.env.PENSAR_API_KEY,
@@ -197,6 +201,7 @@ export async function get(): Promise<Config> {
           : "Could not load Hoonify models.";
     }
   }
+  loaded.ollama = await discoverOllama();
   return loaded;
 }
 
@@ -217,6 +222,7 @@ export async function update(config: Partial<Config>) {
     ? JSON.parse(await fs.readFile(file, "utf8"))
     : DEFAULT_CONFIG;
   const newConfig = { ...currentConfig, ...config };
+  delete newConfig.ollama;
   delete newConfig.hoonifyModels;
   delete newConfig.hoonifyCatalogError;
   await fs.writeFile(file, JSON.stringify(newConfig));
