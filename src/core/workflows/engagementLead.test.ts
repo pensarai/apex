@@ -525,6 +525,58 @@ describe("code-mode engagement lead", () => {
     expect(topLevelStep).not.toHaveBeenCalled();
   });
 
+  it("rejects an event wait when the signal was already aborted", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
+    plan.missions = plan.missions.slice(0, 1);
+    const abort = new AbortController();
+    let markWorkerStarted!: () => void;
+    const workerStarted = new Promise<void>((resolve) => {
+      markWorkerStarted = resolve;
+    });
+    let releaseWorker!: () => void;
+    const workerStopped = new Promise<void>((resolve) => {
+      releaseWorker = resolve;
+    });
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId !== "engagement-lead") {
+        markWorkerStarted();
+        await workerStopped;
+        throw new Error("Worker stopped after cancellation");
+      }
+      await workerStarted;
+      abort.abort(new Error("Engagement cancelled"));
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          tools(input).wait_for_engagement_event?.execute?.({}, {} as never),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("Wait ignored abort")),
+              50,
+            );
+          }),
+        ]);
+        throw new Error("Event wait unexpectedly resolved");
+      } finally {
+        clearTimeout(timer);
+        releaseWorker();
+      }
+    };
+    await expect(
+      runEngagementLead({
+        workflow: { ...workflow, abortSignal: abort.signal },
+        candidates,
+        findingsRegistry: {} as FindingsRegistry,
+        concurrency: 1,
+      }),
+    ).rejects.toThrow("Engagement cancelled");
+  });
+
   it("clears a worker that fails during synchronous construction", async () => {
     const { rootPath, workflow, plan } = setup();
     plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };

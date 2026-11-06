@@ -313,6 +313,7 @@ export async function runEngagementLead(
     waiters.clear();
   });
   const waitForMaterial = async (after: number): Promise<void> => {
+    abortSignal.throwIfAborted();
     if (eventVersion !== after || active.size === 0) return;
     await new Promise<void>((resolve, reject) => {
       const wake = () => {
