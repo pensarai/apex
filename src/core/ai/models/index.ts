@@ -4,6 +4,7 @@ import {
   resolveCustomModel,
 } from "../../config/customProviders";
 import { type HoonifyModel, resolveHoonifyModel } from "../../hoonify";
+import { type OllamaCatalog, resolveOllamaModel } from "../../ollama";
 import type { AIModel, ModelInfo } from "../ai";
 
 // Anthropic, OpenAI, Google, Bedrock — auto-generated from SDK type definitions.
@@ -45,6 +46,12 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {
+  if (model.startsWith("ollama:"))
+    return {
+      id: model,
+      name: model.slice("ollama:".length),
+      provider: "ollama",
+    };
   if (model.startsWith("hoonify:"))
     return {
       id: model,
@@ -91,7 +98,10 @@ export function getMaxOutputTokens(
   modelId: string,
   customProviders?: CustomProviders,
   hoonifyModels?: HoonifyModel[],
+  ollama?: OllamaCatalog,
 ): number {
+  if (modelId.startsWith("ollama:"))
+    return resolveOllamaModel(modelId, ollama).model.maxOutputTokens;
   if (modelId.startsWith("hoonify:"))
     return resolveHoonifyModel(modelId, hoonifyModels).maxOutputTokens;
   if (parseCustomModelId(modelId))

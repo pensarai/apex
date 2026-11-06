@@ -911,6 +911,7 @@ export default function OperatorDashboard({
               runModelId,
               config.data.customProviders,
               config.data.hoonifyModels,
+              config.data.ollama,
             ),
             modelId: runModelId,
           });

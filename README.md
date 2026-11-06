@@ -107,6 +107,24 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 | `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
 | `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
 
+### Ollama (local models)
+
+Start Ollama with a model installed, then open `/models` and select it under
+**Ollama (local)**. Apex discovers models automatically at startup and refreshes
+the list every five seconds, including when Ollama starts after Apex. No API key
+or manual endpoint setup is needed. Running models appear first.
+
+Discovery uses `http://127.0.0.1:11434` by default and honors `OLLAMA_HOST`.
+Headless commands accept `--model-provider ollama --model <ollama-model-name>`
+or `--model ollama:<ollama-model-name>`. Model names retain their full tags,
+including Hugging Face paths. Existing manual local endpoints remain separate.
+
+Apex uses the allocated context reported by Ollama for running models, with a
+conservative 4,096-token budget when that metadata is unavailable. Start a model
+with your desired Ollama context setting before using it for a larger session.
+Agent workflows require a model and Ollama template that support tool calls;
+discovery alone does not establish tool support.
+
 ### Hoonify inference
 
 Connect **Hoonify** in `/providers` or set `HOONIFY_API_KEY`, then select a

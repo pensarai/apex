@@ -218,6 +218,7 @@ async function resolveCliModel(): Promise<AIModel> {
     provider: getArg("--model-provider"),
     customProviders: pensarConfig.customProviders,
     hoonifyModels: pensarConfig.hoonifyModels,
+    ollama: pensarConfig.ollama,
     hoonifyCatalogError: pensarConfig.hoonifyCatalogError,
   });
   if (explicit) return explicit;
@@ -236,6 +237,7 @@ async function resolveCliModel(): Promise<AIModel> {
         "  INFERENCE_API_KEY  — Inference.net\n" +
         "  HOONIFY_API_KEY    — Hoonify\n" +
         "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
+        "\nOr start Ollama with a local model installed.\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
     );
     process.exit(1);
@@ -245,6 +247,7 @@ async function resolveCliModel(): Promise<AIModel> {
     model: defaultModel.id,
     customProviders: pensarConfig.customProviders,
     hoonifyModels: pensarConfig.hoonifyModels,
+    ollama: pensarConfig.ollama,
     hoonifyCatalogError: pensarConfig.hoonifyCatalogError,
   });
   return defaultModel.id;
@@ -348,6 +351,11 @@ Global options:
   --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
                      IPs, UUIDs, emails, paths, tokens, and apparent
                      company names so screenshots are safe to share.
+
+Ollama (local inference):
+  Start Ollama and select an auto-discovered model in /models. No API key needed.
+  Use --model-provider ollama --model <model-name> or --model ollama:<model-name>.
+  Set OLLAMA_HOST to use a different Ollama server.
 
 Hoonify inference:
   Set HOONIFY_API_KEY, then use --model-provider hoonify --model <catalog-model-id>

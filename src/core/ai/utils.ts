@@ -26,6 +26,7 @@ import type { CustomProviders } from "../config/customProviders";
 import type { HoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
+import type { OllamaCatalog } from "../ollama";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   type AIModel,
@@ -66,6 +67,7 @@ import { createAnthropicModel } from "./providers/anthropic";
 import { createConcentrateModel } from "./providers/concentrate";
 import { createCustomModel } from "./providers/custom";
 import { createHoonifyModel } from "./providers/hoonify";
+import { createOllamaModel } from "./providers/ollama";
 import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
 
@@ -113,6 +115,7 @@ export type AIAuthConfig = {
   inceptionAPIKey?: string;
   hoonifyAPIKey?: string;
   hoonifyModels?: HoonifyModel[];
+  ollama?: OllamaCatalog;
   pensarAPIKey?: string;
   // WorkOS CLI auth
   accessToken?: string;
@@ -150,6 +153,7 @@ export function buildAuthConfig(cfg: {
   inceptionAPIKey?: string | null;
   hoonifyAPIKey?: string | null;
   hoonifyModels?: HoonifyModel[];
+  ollama?: OllamaCatalog;
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -170,6 +174,7 @@ export function buildAuthConfig(cfg: {
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     hoonifyAPIKey: cfg.hoonifyAPIKey ?? undefined,
     hoonifyModels: cfg.hoonifyModels,
+    ollama: cfg.ollama,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
@@ -215,6 +220,8 @@ export function getProviderModel(
   let providerModel: LanguageModelV3;
 
   switch (provider) {
+    case "ollama":
+      return createOllamaModel(model, authConfig?.ollama);
     case "custom":
       return createCustomModel(model, authConfig?.customProviders);
     case "hoonify":
@@ -523,6 +530,7 @@ async function summarizeConversation(
       opts.model,
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
+      opts.authConfig?.ollama,
     ),
   );
   const summaryProviderOptions = mergeProviderOptions(
@@ -652,6 +660,7 @@ async function summarizeConversation(
             opts.model,
             opts.authConfig?.customProviders,
             opts.authConfig?.hoonifyModels,
+            opts.authConfig?.ollama,
           ) * fraction,
         ),
         maxOutputTokens: summaryOutputTokens,
