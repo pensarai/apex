@@ -338,8 +338,6 @@ export interface SubagentEventSink {
 
 export interface RunEventProjectionDeps {
   onModelLoading?: (model: string | null) => void;
-  /** The root run's cold Ollama load finished with this allocated context window. */
-  onModelReady?: (contextLength: number) => void;
   display: DisplayEventAdapter;
   subagents: SubagentEventSink;
   /** Patch the active run_pentest_workflow tool message's workflowData. */
@@ -384,9 +382,6 @@ export function createRunEventProjections(deps: RunEventProjectionDeps): {
         if (event.subagentId) {
           subagents.setModelLoading(event.subagentId, model);
         } else {
-          if (event.status === "ready" && event.contextLength !== undefined) {
-            deps.onModelReady?.(event.contextLength);
-          }
           deps.onModelLoading?.(model);
         }
       },

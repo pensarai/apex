@@ -4,6 +4,9 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildUsageFooterLabels } from "../../../tui/components/usage-labels";
+import { SessionUsageStore } from "../../../tui/context/session-usage";
+import { normalizeStepUsage } from "../../ai";
 import { AgentEventBus, type AgentEventMap } from "../../eventBus";
 import type { OllamaCatalog } from "../../ollama";
 import type { SessionInfo } from "../../session";
@@ -57,6 +60,11 @@ async function fixture({
             finish_reason: "stop",
           },
         ],
+        usage: {
+          prompt_tokens: 2_048,
+          completion_tokens: 12,
+          total_tokens: 2_060,
+        },
       })}\n\ndata: [DONE]\n\n`,
     );
   });
@@ -80,6 +88,10 @@ async function fixture({
     ],
   };
   const bus = new AgentEventBus();
+  const authConfig: { ollama?: OllamaCatalog } = { ollama: catalog };
+  const usageStore = new SessionUsageStore();
+  const stepTexts: string[] = [];
+  usageStore.enterSession("ses_ollama_loading");
   const events: AgentEventMap["model-loading"][] = [];
   const toolNames: string[] = [];
   bus.on("model-loading", (e) => events.push(e));
@@ -95,7 +107,19 @@ async function fixture({
     system: "Follow the user's instructions. ".repeat(psSupported ? 500 : 1),
     model,
     activeTools: [],
-    authConfig: { ollama: catalog },
+    authConfig,
+    onStepFinish: (step) => {
+      stepTexts.push(step.text);
+      const usage = normalizeStepUsage(step);
+      usageStore.addSessionTokens("ses_ollama_loading", usage);
+      if (step.contextWindow) {
+        usageStore.setRootContext("ses_ollama_loading", {
+          usedTokens: usage.inputTokens,
+          contextLimit: step.contextWindow,
+          modelId: model,
+        });
+      }
+    },
     eventBus: bus,
     abortSignal: controller.signal,
     session: {
@@ -117,6 +141,9 @@ async function fixture({
     toolNames,
     requests,
     catalog,
+    authConfig,
+    usageStore,
+    stepTexts,
     controller,
     async waitForLoad() {
       await vi.waitFor(() => expect(pendingLoad).toBeDefined());
@@ -133,6 +160,35 @@ async function fixture({
 }
 
 describe("Ollama agent loading lifecycle", () => {
+  it.each([
+    "stale",
+    "empty",
+    "missing",
+  ])("reports the loaded context and usage when discovery becomes %s", async (discovery) => {
+    const f = await fixture();
+    const run = f.agent.consume();
+    await f.waitForLoad();
+    if (discovery === "empty") f.catalog.models = [];
+    if (discovery === "missing") f.authConfig.ollama = undefined;
+    f.finishLoad();
+    await run;
+    const usage = f.usageStore.getActiveSnapshot();
+    expect(f.stepTexts).toEqual(["LOCAL_READY"]);
+    expect(usage.tokenUsage).toMatchObject({
+      inputTokens: 2_048,
+      outputTokens: 12,
+    });
+    expect(usage.contextUsage).toMatchObject({
+      usedTokens: 2_048,
+      contextLimit: 32_768,
+      modelId: model,
+    });
+    expect(buildUsageFooterLabels({ ...usage, width: 120 })).toEqual({
+      tokensLabel: "in 2.0k  out 12",
+      contextLabel: "context 6% / 32.8k",
+    });
+  });
+
   it.each([
     false,
     true,
@@ -181,6 +237,9 @@ describe("Ollama agent loading lifecycle", () => {
       "/v1/chat/completions",
     ]);
     expect(f.requests[1].body?.max_tokens).toBe(4_096);
+    expect(f.usageStore.getActiveSnapshot().contextUsage?.contextLimit).toBe(
+      32_768,
+    );
     expect(f.toolNames).not.toContain("summarize_conversation");
   });
 

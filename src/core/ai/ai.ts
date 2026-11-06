@@ -1459,7 +1459,12 @@ export interface StreamResponseOpts {
     | StopCondition<NoInfer<ToolSet>>[];
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: (
+    step: Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0] & {
+      /** Context limit used for this call; synthetic usage events may omit it. */
+      contextWindow?: number;
+    },
+  ) => ReturnType<StreamTextOnStepFinishCallback<ToolSet>>;
   /** Provider middleware applied only to this stream's model calls. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   /** Explicit undefined clears an inherited recorder for an unrecorded child. */
@@ -1710,7 +1715,8 @@ function streamResponseWithinOperation(
         cacheCreationInputTokens: stepUsage.cacheWriteTokens,
       });
     }
-    await userOnStepFinish?.(step);
+    // Preserve the SDK step's prototype getters (text, toolCalls, etc.).
+    await userOnStepFinish?.(Object.assign(step, { contextWindow }));
     await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
   const providerModel =

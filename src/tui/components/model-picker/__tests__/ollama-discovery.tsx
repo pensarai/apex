@@ -26,14 +26,26 @@ const { ThemeProvider, registerBuiltinThemes } = await import("../../../theme");
 registerBuiltinThemes();
 
 let online = false;
+let otherRunning = false;
 let currentConfig: Config | undefined;
+let updateConfig: ((value: Partial<Config>) => Promise<void>) | undefined;
 let selectedId = "";
 const upstreamId = "hf.co/webAI-Official/TwIL-8B:TwIL-8B-Q4_K_M-balanced.gguf";
-const server = createServer((_req, res) => {
+const otherModel = "qwen:8b";
+const server = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   res.end(
     JSON.stringify({
-      models: online ? [{ name: upstreamId, context_length: 32_768 }] : [],
+      models: !online
+        ? []
+        : req.url === "/api/ps"
+          ? [
+              {
+                name: otherRunning ? otherModel : upstreamId,
+                context_length: 32_768,
+              },
+            ]
+          : [{ name: upstreamId }, { name: otherModel }],
     }),
   );
 });
@@ -44,6 +56,7 @@ function Picker() {
   const config = useConfig();
   const { model, setModel } = useAgent();
   currentConfig = config.data;
+  updateConfig = config.update;
   selectedId = model.id;
   return (
     <ModelPicker
@@ -55,9 +68,7 @@ function Picker() {
 }
 
 const setup = await testRender(
-  <ConfigProvider
-    config={{ responsibleUseAccepted: true, inceptionAPIKey: "fake-key" }}
-  >
+  <ConfigProvider config={{ responsibleUseAccepted: true }}>
     <AgentProvider>
       <ThemeProvider>
         <Picker />
@@ -91,18 +102,36 @@ try {
   await waitFor(() => !!currentConfig?.ollama?.models.length);
   const discoveredFrame = await frame();
   assert.ok(discoveredFrame.includes("Ollama (local)"), discoveredFrame);
-  await act(async () => setup.mockInput.typeText("TwIL"));
-  assert.ok((await frame()).includes("TwIL-8B"));
+  assert.equal(selectedId, `ollama:${upstreamId}`);
+  assert.equal(updates.length, 0);
+  otherRunning = true;
+  await waitFor(() => currentConfig?.ollama?.models[0]?.id === otherModel);
+  assert.equal(
+    selectedId,
+    `ollama:${upstreamId}`,
+    "Discovery must not switch the automatic selection",
+  );
+  await act(async () => {
+    await updateConfig?.({ inceptionAPIKey: "fake-key" });
+  });
+  await frame();
+  assert.equal(
+    selectedId,
+    `ollama:${upstreamId}`,
+    "New credentials must not replace an already chosen local model",
+  );
+  await act(async () => setup.mockInput.typeText("qwen"));
+  assert.ok((await frame()).includes(otherModel));
   await act(async () => setup.mockInput.pressKey("RETURN"));
   await frame();
-  assert.equal(selectedId, `ollama:${upstreamId}`);
+  assert.equal(selectedId, `ollama:${otherModel}`);
   assert.equal(updates.at(-1)?.selectedModelId, selectedId);
   assert.deepEqual(updates.at(-1)?.recentModelIds, [selectedId]);
   assert.equal(updates.at(-1)?.ollama, undefined);
   online = false;
   await waitFor(() => currentConfig?.ollama?.models.length === 0);
-  assert.equal(selectedId, `ollama:${upstreamId}`);
-  assert.ok(!(await frame()).includes("TwIL-8B"));
+  assert.equal(selectedId, `ollama:${otherModel}`);
+  assert.ok(!(await frame()).includes(otherModel));
 } finally {
   await act(async () => setup.renderer.destroy());
   await new Promise<void>((resolve, reject) => {

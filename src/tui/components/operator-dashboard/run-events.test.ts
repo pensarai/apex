@@ -680,7 +680,6 @@ describe("createRunEventProjections", () => {
     const onRootToolCallStarted = vi.fn();
     const onPlanSubmitted = vi.fn();
     const onModelLoading = vi.fn();
-    const onModelReady = vi.fn();
     const projections = createRunEventProjections({
       display,
       subagents,
@@ -690,7 +689,6 @@ describe("createRunEventProjections", () => {
       onRootToolCallStarted,
       onPlanSubmitted,
       onModelLoading,
-      onModelReady,
     });
     const bus = new Bus();
     const unbind = bindOperatorRunEvents(bus, {
@@ -710,7 +708,6 @@ describe("createRunEventProjections", () => {
       unbind,
       getMessages: () => messages,
       onModelLoading,
-      onModelReady,
     };
   }
 
@@ -745,25 +742,6 @@ describe("createRunEventProjections", () => {
     s.unbind();
     s.bus.emit("model-loading", event);
     expect(s.onModelLoading).toHaveBeenCalledTimes(2);
-    s.display.dispose();
-  });
-
-  it("reports allocated context only for root ready events that carry it", () => {
-    const s = setup();
-    const child = new Bus();
-    Bus.attachChild(child, s.bus, "child-1");
-    const ready = {
-      model: "ollama:twil",
-      status: "ready" as const,
-      elapsedMs: 5,
-    };
-    s.bus.emit("model-loading", ready);
-    child.emit("model-loading", { ...ready, contextLength: 32_768 });
-    expect(s.onModelReady).not.toHaveBeenCalled();
-    s.bus.emit("model-loading", { ...ready, contextLength: 32_768 });
-    expect(s.onModelReady).toHaveBeenCalledTimes(1);
-    expect(s.onModelReady).toHaveBeenLastCalledWith(32_768);
-    s.unbind();
     s.display.dispose();
   });
 
