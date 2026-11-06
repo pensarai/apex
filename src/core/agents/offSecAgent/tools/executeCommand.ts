@@ -386,8 +386,8 @@ PROMPT-INJECTION PAYLOADS:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    toModelOutput: ({ output }) =>
-      toolOutputForModel(ctx, output as ExecuteCommandResult),
+    toModelOutput: ({ toolCallId, output }) =>
+      toolOutputForModel(ctx, toolCallId, output as ExecuteCommandResult),
     execute: async ({
       command,
       promptInjection,

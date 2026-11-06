@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trace } from "@opentelemetry/api";
@@ -146,7 +152,14 @@ describe("compaction observability", () => {
       ...options,
       telemetry: context,
     });
-    expect(observed.messages).toEqual(baseline.messages);
+    const withoutReferenceIds = (messages: ModelMessage[]) =>
+      JSON.stringify(messages).replace(
+        /tool-output:[0-9a-f-]{36}/g,
+        "tool-output:<opaque>",
+      );
+    expect(withoutReferenceIds(observed.messages)).toBe(
+      withoutReferenceIds(baseline.messages),
+    );
     expect(observed.estimatedInputTokens).toBe(baseline.estimatedInputTokens);
     const spans = otel.getFinishedSpans();
     expect(spans).toHaveLength(1);
@@ -308,8 +321,7 @@ describe("compaction observability", () => {
     }
   });
 
-  it("captures the transformation and distinguishes successful saves from silent write failures", () => {
-    mkdirSync(join(directory, "tool-results", "c0.txt"), { recursive: true });
+  it("captures the transformation and successful opaque saves", () => {
     const messages = toolHistory();
     const fitted = runWithAiPayloadCapture(true, () =>
       fitMessagesToContext(messages, {
@@ -332,8 +344,8 @@ describe("compaction observability", () => {
     expect(
       JSON.parse(String(attributes["apex.compaction.evidence.after.json"])),
     ).toEqual({ messages: fitted.messages, system: "research system" });
-    expect(attributes["apex.compaction.persistence.written"]).toBe(9);
-    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(1);
+    expect(attributes["apex.compaction.persistence.written"]).toBe(10);
+    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(0);
     const results = JSON.parse(
       String(attributes["apex.compaction.evidence.results.json"]),
     );
@@ -342,20 +354,48 @@ describe("compaction observability", () => {
       position: "1:0",
       toolCallId: "c0",
       method: "snip",
-      preservation: "write_failed",
+      preservation: "written",
       originalChars: 18_000,
-      inputChars: 18_000,
     });
     expect(results[1]).toMatchObject({
       toolCallId: "c1",
       preservation: "written",
     });
     expect(
-      readFileSync(join(directory, "tool-results", "c1.txt"), "utf8"),
+      readFileSync(
+        join(
+          directory,
+          "logs",
+          "tool-output",
+          `${results[1].path.slice("tool-output:".length)}.txt`,
+        ),
+        "utf8",
+      ),
     ).toBe("evidence ".repeat(2000));
     expect(attributes["apex.compaction.evidence.capture_ms"]).toEqual(
       expect.any(Number),
     );
+  });
+
+  it("records a failed save and stops without inventing a retained reference", () => {
+    mkdirSync(join(directory, "logs"));
+    writeFileSync(join(directory, "logs", "tool-output"), "blocked");
+    expect(() =>
+      fitMessagesToContext(toolHistory(), {
+        contextWindow: 400,
+        maxOutputTokens: 0,
+        overheadTokens: 0,
+        safetyMarginTokens: 0,
+        sessionPath: directory,
+        telemetry: context,
+      }),
+    ).toThrow("Referenced tool output is unavailable");
+    const { attributes } = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    );
+    expect(attributes["apex.compaction.persistence.written"]).toBe(0);
+    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(1);
   });
 
   it("does not treat old archive references or snipped outputs as verified files", () => {

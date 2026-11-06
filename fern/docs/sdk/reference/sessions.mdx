@@ -88,7 +88,7 @@ All fields are optional.
 ### Scope and safety
 
 <ParamField path="scopeConstraints" type="{ allowedHosts?: string[]; allowedPorts?: number[]; strictScope?: boolean }">
-  `allowedHosts` overrides the in-scope hosts derived from `targets`. It supports wildcards such as `*.example.com`. With `strictScope: true`, requests to out-of-scope hosts or ports fail, even after redirects or newly discovered assets.
+  `allowedHosts` overrides the in-scope hosts derived from `targets`. It supports wildcards such as `*.example.com`. With `strictScope: true`, requests to out-of-scope hosts or ports fail, even after redirects or newly discovered assets. In the browser this applies to the agent's own navigations: a page it has loaded can still follow redirects and load resources from other hosts, and only in-scope hosts receive engagement headers.
 </ParamField>
 
 <ParamField path="requestsPerSecond" type="number">

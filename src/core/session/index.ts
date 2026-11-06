@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ModelMessage } from "ai";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
+import { lanceBudgetSchema } from "../agents/lanceBudget";
 import type { AIAuthConfig, AIModel } from "../ai";
 import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
@@ -97,6 +98,7 @@ const OperatorSettingsObject = z.object({
   /** Run the top-level operator as a focused solo researcher without orchestration tools. */
   strikeMode: z.boolean().optional(),
   lanceMode: z.boolean().optional(),
+  lanceBudget: lanceBudgetSchema.optional(),
   findingPolicy: z.enum(["native", "external"]).optional(),
 });
 
@@ -1023,6 +1025,11 @@ export async function updateOperatorSettings(
     if (settings.enableSuggestions !== undefined) {
       session.config.operatorSettings.enableSuggestions =
         settings.enableSuggestions;
+    }
+    if (settings.lanceBudget !== undefined) {
+      session.config.operatorSettings.lanceBudget = lanceBudgetSchema.parse(
+        settings.lanceBudget,
+      );
     }
     if (settings.lanceMode !== undefined) {
       session.config.operatorSettings.lanceMode = settings.lanceMode;

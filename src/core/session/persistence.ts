@@ -20,6 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { compactedHistoryNotice } from "../ai";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
 import { getSessionRoot, normalizeMessages, type SessionInfo } from "./index";
@@ -857,7 +858,7 @@ export interface ConsolePartRow {
   messageId: string;
   sessionId: string;
   index: number;
-  type: "text" | "tool" | "file" | "subagent_ref";
+  type: "text" | "tool" | "file" | "subagent_ref" | "compaction";
   toolCallId: string | null;
   s3Key: string | null;
   data: unknown;
@@ -920,6 +921,11 @@ interface ToolPartData {
   toolCallId: string;
   tool: string;
   state: ToolState;
+}
+interface CompactionPartData {
+  kind: "summary" | "reset";
+  summary: string;
+  pinnedToolCallIds: string[];
 }
 
 /** Resolve a tool output blob to the AI-SDK structured tool-result `output`. */
@@ -1001,7 +1007,59 @@ function consoleMessageToModelMessages(
   return out;
 }
 
-/** Convert a whole Console session node (root or descendant) to ModelMessages. */
+function latestCompaction(
+  messages: ConsoleMessageRow[],
+  partsByMessage: Map<string, ConsolePartRow[]>,
+): { sequence: number; data: CompactionPartData } | undefined {
+  for (const message of [...messages].reverse()) {
+    const part = (partsByMessage.get(message.id) ?? [])
+      .filter((p) => p.type === "compaction")
+      .sort((a, b) => b.index - a.index)[0];
+    if (part)
+      return {
+        sequence: message.sequence,
+        data: part.data as CompactionPartData,
+      };
+  }
+  return undefined;
+}
+
+function compactionNotice(data: CompactionPartData): ModelMessage {
+  return {
+    role: "user",
+    content:
+      data.kind === "summary"
+        ? compactedHistoryNotice(data.summary)
+        : "The conversation before this point was discarded to fit the context window.",
+  };
+}
+
+/** What a compaction keeps verbatim: its message onward, the user message it replayed, and the calls it replayed. */
+function retainedAfterCompaction(
+  messages: ConsoleMessageRow[],
+  partsByMessage: Map<string, ConsolePartRow[]>,
+  boundary: { sequence: number; data: CompactionPartData },
+): ConsoleMessageRow[] {
+  const pinned = new Set(boundary.data.pinnedToolCallIds);
+  // A general-harness summary stands in for this message instead of summarizing it, so later turns need it verbatim.
+  const replayedUser = messages.findLast(
+    (message) =>
+      message.role === "user" && message.sequence < boundary.sequence,
+  );
+  return messages.filter(
+    (message) =>
+      message.sequence >= boundary.sequence ||
+      message === replayedUser ||
+      (partsByMessage.get(message.id) ?? []).some(
+        (part) => part.toolCallId !== null && pinned.has(part.toolCallId),
+      ),
+  );
+}
+
+/**
+ * Convert a whole Console session node (root or descendant) to ModelMessages,
+ * starting from its latest compaction when it has one.
+ */
 function nodeToModelMessages(node: ConsoleSessionNode): ModelMessage[] {
   const partsByMessage = new Map<string, ConsolePartRow[]>();
   for (const part of node.parts) {
@@ -1011,8 +1069,11 @@ function nodeToModelMessages(node: ConsoleSessionNode): ModelMessage[] {
   }
 
   const messages = [...node.messages].sort((a, b) => a.sequence - b.sequence);
-  const out: ModelMessage[] = [];
-  for (const message of messages) {
+  const boundary = latestCompaction(messages, partsByMessage);
+  const out: ModelMessage[] = boundary ? [compactionNotice(boundary.data)] : [];
+  for (const message of boundary
+    ? retainedAfterCompaction(messages, partsByMessage, boundary)
+    : messages) {
     out.push(
       ...consoleMessageToModelMessages(
         message,

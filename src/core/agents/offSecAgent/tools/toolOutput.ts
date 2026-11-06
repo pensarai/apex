@@ -1,5 +1,15 @@
-import { randomUUID } from "node:crypto";
-import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  closeSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { agentLogsDir } from "./agentScratch";
 import type { ToolContext } from "./types";
@@ -52,6 +62,87 @@ export async function resolveToolOutput(
     throw new Error("Tool-output reference is not an ordinary owned file");
   }
   return file;
+}
+
+export function persistToolOutput(
+  logsPath: string,
+  toolCallId: string,
+  text: string,
+): string {
+  try {
+    const directory = join(logsPath, "tool-output");
+    mkdirSync(directory, { recursive: true });
+    const info = lstatSync(directory);
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+      throw new Error("not an ordinary output directory");
+    }
+    // SDK prepareStep rebuilds raw history; unchanged output must reuse its spill.
+    const digest = createHash("sha256")
+      .update(toolCallId)
+      .update("\0")
+      .update(text)
+      .digest();
+    digest[6] = (digest[6] & 0x0f) | 0x40;
+    digest[8] = (digest[8] & 0x3f) | 0x80;
+    const hex = digest.subarray(0, 16).toString("hex");
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    const file = join(directory, `${id}.txt`);
+    let fd: number;
+    try {
+      fd = openSync(file, "wx", 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const existing = lstatSync(file);
+      if (
+        !existing.isFile() ||
+        existing.isSymbolicLink() ||
+        existing.nlink !== 1 ||
+        readFileSync(file, "utf8") !== text
+      ) {
+        throw new Error("retained output is not an ordinary matching file");
+      }
+      return `${REFERENCE_PREFIX}${id}`;
+    }
+    const failures: unknown[] = [];
+    try {
+      writeFileSync(fd, text);
+    } catch (error) {
+      failures.push(error);
+      try {
+        const owned = fstatSync(fd);
+        const current = lstatSync(file);
+        if (
+          current.isFile() &&
+          current.nlink === 1 &&
+          current.dev === owned.dev &&
+          current.ino === owned.ino
+        )
+          unlinkSync(file);
+      } catch (cleanup) {
+        failures.push(cleanup);
+      }
+    }
+    try {
+      closeSync(fd);
+    } catch (cleanup) {
+      failures.push(cleanup);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Retained output cleanup failed");
+    return `${REFERENCE_PREFIX}${id}`;
+  } catch (error) {
+    if (error instanceof AggregateError) {
+      const failures = error.errors.map(
+        (failure) => new Error(unavailableToolOutputMessage(failure)),
+      );
+      throw new AggregateError(
+        failures,
+        failures.map((failure) => failure.message).join("; "),
+      );
+    }
+    throw new Error(unavailableToolOutputMessage(error));
+  }
 }
 
 function utf8Prefix(text: string, bytes: number): string {
@@ -117,6 +208,7 @@ type TextToolResult = {
 
 export async function toolOutputForModel<T extends TextToolResult>(
   ctx: ToolContext,
+  toolCallId: string,
   output: T,
 ): Promise<{ type: "json"; value: T } | { type: "text"; value: string }> {
   const serialized = JSON.stringify(output);
@@ -136,18 +228,12 @@ export async function toolOutputForModel<T extends TextToolResult>(
   const status = `success=${output.success}${output.exitCode === undefined ? "" : `; exitCode=${output.exitCode}`}; capture=${output.truncated || output.stdoutTruncated || output.stderrTruncated ? "INCOMPLETE" : "as returned by executor"}`;
   let notice: string;
   try {
-    const directory = outputDirectory(ctx);
-    await mkdir(directory, { recursive: true });
-    const info = await lstat(directory);
-    if (!info.isDirectory() || info.isSymbolicLink()) {
-      throw new Error("not an ordinary output directory");
-    }
-    const id = randomUUID();
-    await writeFile(join(directory, `${id}.txt`), rendered, {
-      flag: "wx",
-      mode: 0o600,
-    });
-    notice = `${REFERENCE_PREFIX}${id}\nCaptured result saved. Use read_file (line or byte windows) or grep with this reference.`;
+    const reference = persistToolOutput(
+      agentLogsDir(ctx),
+      toolCallId,
+      rendered,
+    );
+    notice = `${reference}\nCaptured result saved. Use read_file (line or byte windows) or grep with this reference.`;
   } catch {
     notice = "Failed to save captured result. Omitted evidence is unavailable.";
   }

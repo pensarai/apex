@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -8,8 +9,9 @@ import type {
   TextStreamPart,
   ToolSet,
 } from "ai";
-import { hasToolCall, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import {
+  type ContextCompaction,
   normalizeStepUsage,
   resolveModelRuntimeProfile,
   streamResponse,
@@ -348,11 +350,15 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
+  private readonly requiresResponse: boolean;
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
   /** Per-run stream counters for deterministic id derivation via {@link streamIdFactory}. */
   private streamStepIndex = -1;
+
+  /** Reported on the next step, so only a reset the model continued from is announced. */
+  private pendingCompaction: ContextCompaction | null = null;
 
   private streamTextPartIndex = 0;
 
@@ -524,7 +530,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         ],
         stopWhen: [
           () => this.lanceRuntime!.terminal,
-          stepCountIs(LANCE_CONFIG.maxSteps),
+          ...(this.lanceRuntime.budget.kind === "steps"
+            ? [stepCountIs(this.lanceRuntime.budget.limit)]
+            : []),
         ],
         skillsRegistry: undefined,
       };
@@ -533,6 +541,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
     this.agentMode = input.mode ?? "default";
+    this.requiresResponse = Boolean(input.responseSchema);
     this.abortSignal = input.abortSignal;
     this.streamIdFactory = input.streamIdFactory;
     this.contextRecorder = input.contextRecorder;
@@ -814,6 +823,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
+    let resolveInStreamContext: ReturnType<typeof AsyncLocalStorage.snapshot>;
     if (input.responseSchema) {
       tools = {
         ...tools,
@@ -841,7 +851,7 @@ export class OffensiveSecurityAgent<TResult = void> {
                         Promise.race([sr.response, this._drainRejection]),
                     },
                   });
-                  return customResolve(guarded, result);
+                  return resolveInStreamContext(customResolve, guarded, result);
                 })
                 .then((resolved) => {
                   this._capturedResponse = resolved;
@@ -874,9 +884,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      const responseStop: StopCondition<ToolSet> = () =>
+        this._responseToolFired;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
@@ -1050,6 +1059,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     // factory with settled-or-unknown facts — never host facts — guarded so
     // exactly one model stream exists either way.
     this.createStream = (facts) => {
+      // The detached resolver belongs to the stream owner, not its closing response tool.
+      resolveInStreamContext = AsyncLocalStorage.snapshot();
       // Hash only the base system prompt (excluding session workspace paths)
       // so the hash is stable across runs with identical prompt versions. No
       // step record can precede this init line: steps only originate from the
@@ -1073,8 +1084,9 @@ export class OffensiveSecurityAgent<TResult = void> {
           : input.prompt,
         system:
           input.mode === "lance"
-            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}`
+            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
             : baseWithFacts + workspaceSection,
+        harness: input.harness,
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
         runContextCompaction: this.lanceRuntime?.runContextCompaction,
@@ -1106,12 +1118,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             this.writer.setLatest(persistedMessages(context.messages));
           }
         },
-        // Per-subagent so the overflow tool-result dumps land next to this
-        // agent's messages.json (`subagents/{id}/tool-results/`) and a host
-        // can reclaim them when the subagent finishes, instead of piling up
-        // at the shared session root for the whole scan (ENOSPC). Falls back
-        // to the session root for the root/operator agent.
-        sessionPath: messagesDir,
+        // Match retained-output ownership even with a custom messagesDir.
+        sessionPath: input.subagentId
+          ? join(input.session.rootPath, "subagents", input.subagentId)
+          : input.session.rootPath,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
           const auxiliaryModelEvent =
@@ -1144,12 +1154,13 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.currentMessageId = null;
           await input.onStepFinish?.(event);
         },
-        onSummarized: () => {
+        onSummarized: (compaction) => {
           preparedContextRef.current = {
             messages: [],
             responseMessageOffset: 0,
           };
           traceWriter.markSummarized();
+          this.pendingCompaction = compaction;
         },
         onFinish: async (event) => {
           // Flush any pending persistence before finishing
@@ -1330,6 +1341,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const tracker = new ToolLifecycleTracker();
       let streamError: unknown;
       let hasStreamError = false;
+      let responseError: unknown;
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
@@ -1349,6 +1361,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
           diagnostics.observeChunk(chunk);
+          if (
+            chunk.type === "tool-error" &&
+            chunk.toolName === RESPONSE_TOOL_NAME
+          )
+            responseError = chunk.error;
           this.applyStreamPart(chunk, { ids, tracker, diagnostics });
           bus.emitStreamPart(chunk, ids);
         }
@@ -1387,6 +1404,13 @@ export class OffensiveSecurityAgent<TResult = void> {
 
       if (this.abortSignal?.aborted) {
         throw agentAbortReason(this.abortSignal);
+      }
+
+      if (this.requiresResponse && !this._responseToolFired) {
+        throw new Error(
+          `Structured agent ${this.busSessionId} ended without a validated response`,
+          { cause: responseError },
+        );
       }
 
       if (this.resolveResult) {
@@ -1553,6 +1577,20 @@ export class OffensiveSecurityAgent<TResult = void> {
           }) ?? newMessageId();
         this.currentMessageId = ids.messageId;
         ids.textPartId = undefined;
+        if (this.pendingCompaction) {
+          bus.emit("context-compacted", {
+            ...this.pendingCompaction,
+            subagentId: sid,
+            sessionId: this.busSessionId,
+            messageId: ids.messageId,
+            partId:
+              this.streamIdFactory?.({
+                kind: "compaction-part",
+                stepIndex: this.streamStepIndex,
+              }) ?? newPartId(),
+          });
+          this.pendingCompaction = null;
+        }
         break;
       case "text-start":
         ids.textPartId =

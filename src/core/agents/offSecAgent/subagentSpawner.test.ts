@@ -179,6 +179,35 @@ describe("inProcessSubagentSpawner", () => {
     expect(lifecycle).toEqual(["spawn", "failed"]);
   });
 
+  it("names the launching tool call on subagent-spawn only when one is given", async () => {
+    drain = createDrain();
+    constructorError = new Error("construction failed");
+    const parentBus = new AgentEventBus();
+    const spawns: Record<string, unknown>[] = [];
+    parentBus.on("subagent-spawn", (event) => spawns.push({ ...event }));
+    const spawnChild = (parentToolCallId?: string) =>
+      inProcessSubagentSpawner.spawn({
+        spec: {
+          type: "pentest",
+          target: "https://example.com",
+          objectives: ["Test"],
+        },
+        runtime: {
+          session: {} as SessionInfo,
+          model: "test-model" as AIModel,
+        },
+        parentBus,
+        subagentId: "child-session",
+        ...(parentToolCallId ? { parentToolCallId } : {}),
+      });
+
+    await expect(spawnChild("call-spawn")).rejects.toThrow();
+    await expect(spawnChild()).rejects.toThrow();
+
+    expect(spawns[0]).toMatchObject({ parentToolCallId: "call-spawn" });
+    expect(spawns[1]).not.toHaveProperty("parentToolCallId");
+  });
+
   it("emits a failed completion when the error callback fails", async () => {
     drain = createDrain();
     constructorError = new Error("construction failed");

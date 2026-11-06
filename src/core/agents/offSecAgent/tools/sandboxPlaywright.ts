@@ -51,11 +51,7 @@ import {
   parseViewportSize,
 } from "./camoufox";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
-import {
-  getAllowedHosts,
-  getAllowedPorts,
-  resolverSessionFromCtx,
-} from "./scopeGuard";
+import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -335,10 +331,6 @@ async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
  *   {@link BAKED_CAMOUFOX_DIR} — forces `launchOptions()` to resolve the
  *   baked binary regardless of the exec environment's ambient
  *   `CAMOUFOX_INSTALL_DIR`. Undefined lets camoufox-js use its own default.
- * @param allowedHosts - Exact hosts and explicit wildcard grants for browser
- *   navigation and subresources.
- * @param allowedPorts - Permitted destination ports; empty means unrestricted.
- * @param enforceScope - Fail closed when the immutable policy has no hosts.
  */
 async function runPlaywrightScript(
   sandbox: UnifiedSandbox,
@@ -346,16 +338,12 @@ async function runPlaywrightScript(
   timeout = 60,
   headerPolicy?: BrowserHeaderPolicy,
   installDirOverride?: string,
-  allowedHosts: string[] = [],
-  allowedPorts: number[] = [],
-  enforceScope = false,
 ): Promise<unknown> {
   const headerRoute = browserHeaderRouteBody(
     headerPolicy ?? {
       allowedHosts: [],
       allowedPorts: [],
       headers: {},
-      enforceScope: false,
     },
   );
   const script = `
@@ -368,18 +356,6 @@ const fs = require('fs');
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
   }
 
-  const __allowedHosts = ${JSON.stringify(allowedHosts)};
-  const __allowedPorts = ${JSON.stringify(allowedPorts)};
-  const __enforceScope = ${JSON.stringify(enforceScope)};
-  const __hostAllowed = (hostname) => {
-    const lower = hostname.toLowerCase().replace(/\\.$/, '');
-    return __allowedHosts.some((entry) => {
-      const normalized = entry.toLowerCase().replace(/\\.$/, '');
-      const wildcard = normalized.startsWith('*.');
-      const base = wildcard ? normalized.slice(2) : normalized;
-      return lower === base || (wildcard && lower.endsWith('.' + base));
-    });
-  };
   // Use the sandbox's virtual display if one is present — Camoufox is far less
   // detectable headful. Falls back to plain headless, which is still fully
   // fingerprint-spoofed (just a weaker stealth posture, never vanilla Chromium).
@@ -424,31 +400,6 @@ const fs = require('fs');
       serviceWorkers: 'block',
     });
     ${headerRoute}
-    await context.route('**/*', async route => {
-      const requestUrl = route.request().url();
-      let parsed;
-      try {
-        parsed = new URL(requestUrl);
-      } catch {
-        await route.abort('blockedbyclient');
-        return;
-      }
-      if (
-        __enforceScope &&
-        (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-        (
-          !__hostAllowed(parsed.hostname) ||
-          (
-            __allowedPorts.length > 0 &&
-            !__allowedPorts.includes(Number(parsed.port || (parsed.protocol === 'http:' ? 80 : 443)))
-          )
-        )
-      ) {
-        await route.abort('blockedbyclient');
-        return;
-      }
-      await route.fallback();
-    });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
 
@@ -597,12 +548,6 @@ export function SandboxBrowserBackend(
   const sandbox = ctx.sandbox!;
   const evidenceDir = join(ctx.session.rootPath, "evidence");
   const targetUrl = ctx.target ?? "";
-  const allowedHosts = getAllowedHosts(ctx);
-  const allowedPorts = getAllowedPorts(ctx);
-  const enforceScope =
-    allowedHosts.length > 0 ||
-    allowedPorts.length > 0 ||
-    ctx.session.config?.scopeConstraints?.strictScope === true;
 
   // Shared setup gate — only runs once per sandbox.
   let setupPromise: Promise<void> | null = null;
@@ -632,9 +577,6 @@ export function SandboxBrowserBackend(
         timeout,
         headerPolicy,
         installDirOverride,
-        allowedHosts,
-        allowedPorts,
-        enforceScope,
       ),
     );
     scriptQueue = next.then(

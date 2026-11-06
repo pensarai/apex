@@ -10,6 +10,7 @@ export interface ModelRetryDecision {
   authority:
     | "stream-rate-limit"
     | "stream-idle"
+    | "stream-incomplete"
     | "object-rate-limit"
     | "context-restart";
   count: number;

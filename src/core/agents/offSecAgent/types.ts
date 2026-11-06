@@ -16,6 +16,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentHarness,
   AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
@@ -123,7 +124,8 @@ export type SystemPentestScope = {
 export type StreamIdFactoryContext =
   | { kind: "message"; stepIndex: number }
   | { kind: "text-part"; stepIndex: number; textPartIndex: number }
-  | { kind: "tool-part"; toolCallId: string };
+  | { kind: "tool-part"; toolCallId: string }
+  | { kind: "compaction-part"; stepIndex: number };
 
 /**
  * Mints message/part ids for streamed events. Defaults to random ULIDs
@@ -145,6 +147,7 @@ export interface ToolExecutionContext {
     call: { toolCallId: string; toolName: string },
     execute: () => Promise<T>,
   ): Promise<T>;
+  finish?(call: { toolCallId: string; toolName: string }): Promise<void>;
 }
 
 export interface AgentHooks {
@@ -229,6 +232,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * @default "default"
    */
   mode?: AgentMode;
+  /** Opts into the general agent harness's compaction and step-cap handling. */
+  harness?: AgentHarness;
   lance?: import("../lance").LanceOptions;
 
   /** Session providing paths for findings, POCs, logs, etc. */

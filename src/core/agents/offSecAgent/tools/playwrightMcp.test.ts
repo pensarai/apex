@@ -229,7 +229,6 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
         allowedHosts: ["example.com"],
         allowedPorts: [443],
         headers: { "X-Scoped-Secret": "secret" },
-        enforceScope: true,
       },
     }) as unknown as {
       buildMcpLaunch(id: string): Promise<{ cfg: unknown }>;
@@ -246,7 +245,6 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
         allowedHosts: ["example.com"],
         allowedPorts: [443],
         headers: { "X-Scoped-Secret": "secret" },
-        enforceScope: true,
       },
     });
     const callTool = vi.fn(async (_request: unknown) => ({}));

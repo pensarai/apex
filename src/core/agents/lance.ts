@@ -11,6 +11,11 @@ import { join } from "node:path";
 import type { LanguageModelV3Usage } from "@ai-sdk/provider";
 import { type LanguageModelMiddleware, type ToolSet, tool } from "ai";
 import { z } from "zod";
+import {
+  DEFAULT_LANCE_BUDGET,
+  type LanceBudget,
+  lanceBudgetSchema,
+} from "./lanceBudget";
 import type { SubagentSpawner } from "./offSecAgent/subagentSpawner";
 
 export const LANCE_DESCRIPTION =
@@ -24,14 +29,13 @@ Use update_plan for multi-step work when useful and file tools for a small task-
 Use only the supplied tools. Never delegate, start child agents or background model jobs, load skills or cross-session memory, or perform production reporting, documentation, threat modeling, or completeness review. Task-local working notes and plans are allowed; they never gate completion.
 Decide what to investigate, when to pivot, and when the user's task is finished. Call finish_task with a concise result as soon as you believe the task is complete; do not keep exploring or wait for a judge to tell you to finish. No flag, PoC, or external verifier is required for standalone tasks.
 Use submit_objective to check candidate evidence when useful. A claim or a verified milestone is not necessarily a complete evaluation. The external evaluator defines success; Apex stops execution when it confirms the whole objective. Rejected evidence informs your next decision, but does not prevent you from finishing.
-If viable leads are exhausted, call finish_unsolved with a short reason. Work within the supplied deadline. Preserve all authorization, scope, approval, and command-safety restrictions.`;
+If viable leads are exhausted, call finish_unsolved with a short reason. Work within the supplied execution budget. Preserve all authorization, scope, approval, and command-safety restrictions.`;
 
 export const LANCE_CONFIG = Object.freeze({
-  version: "lance-v4",
-  promptVersion: "lance-prompt-v3",
-  timeoutMs: 900_000,
+  version: "lance-v5",
+  promptVersion: "lance-prompt-v4",
   shutdownReserveMs: 10_000,
-  maxSteps: 200,
+  defaultBudget: DEFAULT_LANCE_BUDGET,
   tools: Object.freeze([
     "execute_command",
     "http_request",
@@ -74,6 +78,7 @@ export interface ObjectiveVerification {
 }
 
 export interface LanceOptions {
+  budget?: LanceBudget;
   /** TUI turns may yield to the user; headless attempts finish on model stop. */
   interactive?: boolean;
   verificationSource?: "harness" | "apex_judge";
@@ -103,6 +108,7 @@ export type LanceOutcome =
   | "unsolved"
   | "deadline_exhausted"
   | "step_limit"
+  | "token_limit"
   | "context_exhausted"
   | "cancelled"
   | "error";
@@ -118,7 +124,7 @@ type Usage = {
 };
 
 export interface LanceMetrics {
-  schemaVersion: 1;
+  schemaVersion: 2;
   mode: "lance";
   executionKind: "headless_attempt" | "interactive_turn";
   configVersion: string;
@@ -126,8 +132,10 @@ export interface LanceMetrics {
   promptSha256: string;
   model: string;
   startedAt: string;
-  deadlineAt: string;
-  softDeadlineAt: string;
+  budget: LanceBudget;
+  steps: number;
+  deadlineAt: string | null;
+  softDeadlineAt: string | null;
   outcome: LanceOutcome;
   reason: string;
   completion: { summary: string; elapsedMs: number; toolCalls: number } | null;
@@ -172,6 +180,7 @@ export class LanceRuntime {
   readonly controller = new AbortController();
   readonly signal: AbortSignal;
   readonly startedAt = Date.now();
+  readonly budget: LanceBudget;
   readonly deadlineAt: number;
   readonly softDeadlineAt: number;
   private timer?: ReturnType<typeof setTimeout>;
@@ -180,6 +189,7 @@ export class LanceRuntime {
   private endedAt?: number;
   private calls = 0;
   private steps = 0;
+  private tokens = 0;
   private submitted = false;
   private completion: LanceMetrics["completion"] = null;
   private verification: ObjectiveVerification | null = null;
@@ -210,14 +220,37 @@ export class LanceRuntime {
     ) {
       throw new Error("Lance pricing rates must be finite nonnegative numbers");
     }
-    const timeout = options.timeoutMs ?? LANCE_CONFIG.timeoutMs;
-    this.deadlineAt = options.deadlineAt ?? this.startedAt + timeout;
+    if (
+      options.budget &&
+      (options.timeoutMs !== undefined || options.deadlineAt !== undefined)
+    ) {
+      throw new Error("Choose one Lance budget: steps, tokens, or time");
+    }
+    if (options.timeoutMs !== undefined) {
+      lanceBudgetSchema.parse({ kind: "time", limit: options.timeoutMs });
+    }
+    this.budget = lanceBudgetSchema.parse(
+      options.budget ??
+        (options.deadlineAt !== undefined || options.timeoutMs !== undefined
+          ? {
+              kind: "time",
+              limit:
+                options.deadlineAt !== undefined
+                  ? options.deadlineAt - this.startedAt
+                  : options.timeoutMs,
+            }
+          : LANCE_CONFIG.defaultBudget),
+    );
+    this.deadlineAt =
+      this.budget.kind === "time"
+        ? this.startedAt + this.budget.limit
+        : Infinity;
     const remaining = this.deadlineAt - this.startedAt;
     const reserve =
       options.shutdownReserveMs ??
       Math.min(LANCE_CONFIG.shutdownReserveMs, Math.max(1, remaining / 10));
     if (
-      !Number.isFinite(this.deadlineAt) ||
+      (this.budget.kind === "time" && !Number.isFinite(this.deadlineAt)) ||
       !Number.isFinite(reserve) ||
       reserve <= 0 ||
       reserve >= remaining
@@ -238,7 +271,7 @@ export class LanceRuntime {
   }
 
   start(): void {
-    if (this.timer || this.outcome) return;
+    if (this.timer || this.outcome || this.budget.kind !== "time") return;
     this.timer = setTimeout(
       () => this.stop("deadline_exhausted", "Soft deadline reached"),
       Math.max(0, this.softDeadlineAt - Date.now()),
@@ -247,8 +280,10 @@ export class LanceRuntime {
   }
 
   stepFinished(): void {
-    if (++this.steps >= LANCE_CONFIG.maxSteps)
+    this.steps++;
+    if (this.budget.kind === "steps" && this.steps >= this.budget.limit)
       this.stop("step_limit", "Lance step budget exhausted");
+    this.checkTokenBudget();
   }
 
   async untilAbort<T>(work: PromiseLike<T>): Promise<T> {
@@ -278,9 +313,20 @@ export class LanceRuntime {
     this.controller.abort(new LanceTerminal(reason));
   }
 
-  check(): void {
+  private checkTokenBudget(): void {
+    if (this.budget.kind !== "tokens") return;
+    if (this.tokens >= this.budget.limit)
+      this.stop("token_limit", "Lance token budget exhausted");
+  }
+
+  private checkDeadline(): void {
     if (!this.outcome && Date.now() >= this.softDeadlineAt)
       this.stop("deadline_exhausted", "Soft deadline reached");
+  }
+
+  check(): void {
+    this.checkTokenBudget();
+    this.checkDeadline();
     this.signal.throwIfAborted();
   }
 
@@ -381,13 +427,31 @@ export class LanceRuntime {
   ): void {
     const input = usage.inputTokens;
     const output = usage.outputTokens;
-    if (input.total !== undefined && output.total !== undefined) {
+    if (
+      input.total !== undefined &&
+      output.total !== undefined &&
+      Number.isFinite(input.total) &&
+      input.total >= 0 &&
+      Number.isFinite(output.total) &&
+      output.total >= 0
+    ) {
+      this.tokens +=
+        input.total +
+        output.total -
+        (request.usage
+          ? request.usage.inputTokens + request.usage.outputTokens
+          : 0);
       request.usage = {
         inputTokens: input.total,
         outputTokens: output.total,
         cacheReadTokens: input.cacheRead ?? 0,
         cacheWriteTokens: input.cacheWrite ?? 0,
       };
+    } else if (this.budget.kind === "tokens") {
+      this.stop(
+        "error",
+        "Provider did not report token usage required by the Lance token budget",
+      );
     }
   }
 
@@ -542,7 +606,9 @@ export class LanceRuntime {
     const result = await this.untilAbort(
       this.options.verifyObjective(candidate, this.signal),
     );
-    this.check();
+    // Preserve the verdict from an admitted request before closing token admission.
+    this.checkDeadline();
+    this.signal.throwIfAborted();
     this.verification = result;
     this.verifierId = result.verifierId;
     if (
@@ -563,13 +629,14 @@ export class LanceRuntime {
           : "Host verifier confirmed the objective",
       );
     }
+    this.checkTokenBudget();
     return result;
   }
 
   finish(error?: unknown): void {
+    this.checkTokenBudget();
     if (this.timer) clearTimeout(this.timer);
-    if (!this.outcome && Date.now() >= this.softDeadlineAt)
-      this.stop("deadline_exhausted", "Soft deadline reached");
+    this.checkDeadline();
     if (!this.outcome) {
       if (!error && !this.signal.aborted && this.options.interactive) {
         this.stop("awaiting_input", "Turn complete; awaiting user input");
@@ -639,7 +706,7 @@ export class LanceRuntime {
   metrics(model: string): LanceMetrics {
     const elapsedMs = (this.endedAt ?? Date.now()) - this.startedAt;
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       mode: "lance",
       executionKind: this.options.interactive
         ? "interactive_turn"
@@ -651,8 +718,14 @@ export class LanceRuntime {
         .digest("hex"),
       model,
       startedAt: new Date(this.startedAt).toISOString(),
-      deadlineAt: new Date(this.deadlineAt).toISOString(),
-      softDeadlineAt: new Date(this.softDeadlineAt).toISOString(),
+      budget: { ...this.budget },
+      steps: this.steps,
+      deadlineAt: Number.isFinite(this.deadlineAt)
+        ? new Date(this.deadlineAt).toISOString()
+        : null,
+      softDeadlineAt: Number.isFinite(this.softDeadlineAt)
+        ? new Date(this.softDeadlineAt).toISOString()
+        : null,
       outcome: this.outcome ?? "error",
       reason: this.reason,
       completion: this.completion,

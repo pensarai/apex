@@ -14,6 +14,7 @@ export type {
   ObjectiveVerification,
 } from "../agents/lance";
 export { LANCE_CONFIG, LANCE_DESCRIPTION } from "../agents/lance";
+export type { LanceBudget } from "../agents/lanceBudget";
 export type {
   FindingPolicy,
   OffensiveSecurityAgentInput,
@@ -208,6 +209,21 @@ export {
   resumeRecordedAgent,
   runRecordedAgent,
 } from "./recordedRun";
+export type {
+  SiemAlertEvidence,
+  SiemLogEvent,
+  SiemLogSearch,
+  SiemLogSearchQuery,
+  SiemLogSearchResult,
+  SiemTriageAgentInput,
+  SiemTriageResult,
+} from "./siemTriage";
+export {
+  runSiemTriageAgent,
+  SiemTriageResultSchema,
+  SiemTriageSeveritySchema,
+  SiemTriageVerdictSchema,
+} from "./siemTriage";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,

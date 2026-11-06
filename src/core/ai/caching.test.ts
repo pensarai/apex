@@ -117,6 +117,49 @@ describe("withCachedSystemPrompt", () => {
   });
 });
 
+describe("cached system recovery", () => {
+  it.each([
+    ANTHROPIC_BREAKPOINT,
+    BEDROCK_BREAKPOINT,
+  ])("reuses the system boundary and preserves provider siblings", (breakpoint) => {
+    const messages: ModelMessage[] = [
+      {
+        role: "system",
+        content: "same system",
+        providerOptions: { bedrock: { citations: { enabled: true } } },
+      },
+      { role: "user", content: "history" },
+    ];
+    const original = structuredClone(messages);
+    let result = messages;
+    for (let i = 0; i < 5; i++) {
+      result = withCachedSystemPrompt("same system", result, breakpoint);
+    }
+    expect(result).toHaveLength(2);
+    expect(result[0].providerOptions?.bedrock?.citations).toEqual({
+      enabled: true,
+    });
+    expect(result[0].providerOptions).toMatchObject(breakpoint);
+    expect(result[1]).toBe(messages[1]);
+    expect(messages).toEqual(original);
+  });
+
+  it("preserves a different leading system instruction", () => {
+    const messages: ModelMessage[] = [
+      { role: "system", content: "other instruction" },
+    ];
+    const result = withCachedSystemPrompt(
+      "system",
+      messages,
+      BEDROCK_BREAKPOINT,
+    );
+    expect(result.map((message) => message.content)).toEqual([
+      "system",
+      "other instruction",
+    ]);
+  });
+});
+
 describe("withCachedLastMessage", () => {
   it("marks only the last message", () => {
     const result = withCachedLastMessage(

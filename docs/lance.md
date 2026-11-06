@@ -53,7 +53,21 @@ Apex executes tools, handles completion requests and recovery, and enforces limi
 
 ## Execution policy
 
-`LANCE_CONFIG` pins `lance-v4`, `lance-prompt-v3`, the direct-tool allowlist, a 200-step ceiling, a default 15-minute budget, and a default shutdown reserve of up to 10 seconds (10% for short budgets). Changing the policy or prompt requires a version bump.
+`LANCE_CONFIG` pins `lance-v5`, `lance-prompt-v4`, and the direct-tool allowlist. Choose one execution budget: steps, tokens, or time. The default is **200 steps only**, with no implicit time limit. Selecting tokens or time removes the step ceiling. Changing the policy or prompt requires a version bump.
+
+| CLI option             | Budget                                                       |
+| ---------------------- | ------------------------------------------------------------ |
+| `--max-steps 5000`     | Up to 5,000 agent model steps                                |
+| `--max-tokens 1000000` | 1,000,000 cumulative provider-reported input + output tokens |
+| `--timeout-ms 3600000` | One hour, including the shutdown reserve                     |
+
+These options require `--lance` and are mutually exclusive. `--deadline-at <epoch-ms>` selects a time budget including startup; when supplied with `--timeout-ms`, the absolute deadline takes precedence as before. Time budgets reserve up to 10 seconds (10% for short budgets) for shutdown. An external harness can still terminate the process independently.
+
+The API accepts `lance: { budget: { kind: "steps" | "tokens" | "time", limit: number } }`; time limits are milliseconds. Legacy `timeoutMs`/`deadlineAt` select time and cannot be combined with `budget`. Limits must be positive safe integers; time limits are between 2 and 2,147,483,647 milliseconds.
+
+In `/advanced`, select **Lance** to reveal **Run budget** and **Limit**. Time is entered in seconds and rounded to the nearest millisecond. Save applies to new sessions; the selected budget is saved with each session and retained on resume. Each follow-up turn gets a fresh budget.
+
+Token budgets include cached input (already included in input totals), output/reasoning tokens, compaction, and the optional judge. Usage is available after a provider request: the request that reaches the limit can overshoot it, and already admitted work can finish. Subsequent model/tool admission is blocked with `token_limit`. A verdict returned by an already admitted verifier is recorded first; whole-objective acceptance remains terminal success even if that request crosses the token limit. Failed requests without reported usage remain marked incomplete; the limit measures reported consumption, not an exact billing ceiling. A completed request missing token totals fails explicitly in token-budget mode. External verifier work is outside Apex's token accounting.
 
 Headless execution measures one autonomous attempt. The TUI opts into `lance.interactive`, which measures and bounds each model turn separately, excluding time spent waiting for user input. Interactive turn metrics are explicitly labeled and cannot be used as autonomous workflow-tax measurements.
 
@@ -77,19 +91,19 @@ This is an Apex orchestration policy, not a new OS sandbox. Direct shell/browser
 
 ## Results and instrumentation
 
-Each completed attempt or interactive turn writes `lance-result.json` (schema version 1). Interactive turns also append to `lance-turns.jsonl`, preserving earlier turns' measurements. `executionKind` distinguishes `headless_attempt` from `interactive_turn`; ordinary interactive replies have outcome `awaiting_input`. The API adds optional `lance` metadata to `RunAgentResult`; older modes and result fields retain their previous behavior. The CLI emits `LANCE_RESULT:{...}` and the existing `METRICS:{...}` contract. These are agent-side telemetry, not independent proof.
+Each completed attempt or interactive turn writes `lance-result.json` (schema version 2). Interactive turns also append to `lance-turns.jsonl`, preserving earlier turns' measurements. `executionKind` distinguishes `headless_attempt` from `interactive_turn`; ordinary interactive replies have outcome `awaiting_input`. The API adds optional `lance` metadata to `RunAgentResult`; The selected `budget` and observed `steps` are recorded; `deadlineAt` and `softDeadlineAt` are null for step/token budgets. The CLI emits `LANCE_RESULT:{...}` and the existing `METRICS:{...}` contract. These are agent-side telemetry, not independent proof.
 
-| Field                                             | Meaning                                                                                                                                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `configVersion`, `promptVersion`, `promptSha256`  | Reproducible static policy and prompt identity                                                                                                                                             |
-| `firstCandidate`                                  | First submitted candidate evidence; elapsed milliseconds and admitted tool count, including submission                                                                                     |
-| `firstVerified`                                   | First positive whole-objective verifier response; same clock and counter                                                                                                                   |
-| `verificationToTerminationMs`                     | Verification to completed agent drain/cleanup; excludes later host export/upload                                                                                                           |
-| `usageBeforeSuccess`                              | Physical requests admitted before verification and their observed tokens/cost                                                                                                              |
-| `usage.usageComplete`                             | Whether every admitted request reported usage; interrupted/failed requests can be incomplete                                                                                               |
-| `modelSubmittedSuccess`, `harnessVerifiedSuccess` | Separate model claim and callback-confirmed objective                                                                                                                                      |
-| `policyViolations`                                | Denied unknown tool calls, child spawning, and attempted work after termination                                                                                                            |
-| `outcome`                                         | `completed`, `awaiting_input` (interactive only), `verified`, `judge_accepted`, `unverified`, `unsolved`, `deadline_exhausted`, `step_limit`, `context_exhausted`, `cancelled`, or `error` |
+| Field                                             | Meaning                                                                                                                                                                                                   |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configVersion`, `promptVersion`, `promptSha256`  | Reproducible static policy and prompt identity                                                                                                                                                            |
+| `firstCandidate`                                  | First submitted candidate evidence; elapsed milliseconds and admitted tool count, including submission                                                                                                    |
+| `firstVerified`                                   | First positive whole-objective verifier response; same clock and counter                                                                                                                                  |
+| `verificationToTerminationMs`                     | Verification to completed agent drain/cleanup; excludes later host export/upload                                                                                                                          |
+| `usageBeforeSuccess`                              | Physical requests admitted before verification and their observed tokens/cost                                                                                                                             |
+| `usage.usageComplete`                             | Whether every admitted request reported usage; interrupted/failed requests can be incomplete                                                                                                              |
+| `modelSubmittedSuccess`, `harnessVerifiedSuccess` | Separate model claim and callback-confirmed objective                                                                                                                                                     |
+| `policyViolations`                                | Denied unknown tool calls, child spawning, and attempted work after termination                                                                                                                           |
+| `outcome`                                         | `completed`, `awaiting_input` (interactive only), `verified`, `judge_accepted`, `unverified`, `unsolved`, `deadline_exhausted`, `step_limit`, `token_limit`, `context_exhausted`, `cancelled`, or `error` |
 
 `verificationSource` records `harness`, `apex_judge`, or null. `modelJudgedSuccess` identifies Apex judge acceptance and does not set `harnessVerifiedSuccess`. `usage` and `usageBeforeSuccess` include compaction and the optional judge's requests; `compactionUsage` and `judgeUsage` separately record their requests, tokens, and cost. Failed or interrupted compaction requests remain counted with incomplete usage. Plan and scratchpad tool calls count normally; synthetic compaction display events are not agent tool calls. Existing compaction telemetry retains transformation timing. Compare like verifier settings and configuration versions when measuring workflow tax.
 

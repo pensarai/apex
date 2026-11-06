@@ -19,11 +19,29 @@ function toolResult(id: string, toolName: string, output: unknown) {
   return { type: "tool-result", toolCallId: id, toolName, output };
 }
 
+function approvalRequest(id: string, toolName: string) {
+  return {
+    type: "tool-approval-request",
+    approvalId: "appr-1",
+    toolCall: { type: "tool-call", toolCallId: id, toolName, input: {} },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ToolLifecycleTracker
 // ---------------------------------------------------------------------------
 
 describe("ToolLifecycleTracker", () => {
+  it("a tool held for approval is not in flight; a plain unfinished call still is", () => {
+    const t = new ToolLifecycleTracker();
+    t.observePart(toolCall("tc-read", "read"));
+    t.observePart(toolCall("tc-del", "del"));
+    t.observePart(approvalRequest("tc-del", "del"));
+    const snap = t.snapshot();
+    expect(snap.inFlightTools.has("tc-del")).toBe(false);
+    expect(snap.inFlightTools.get("tc-read")).toBe("read");
+  });
+
   it("tracks a normal completion: in-flight → result, kept until step persisted", () => {
     const t = new ToolLifecycleTracker();
     t.observePart(inputStart("tc-1", "execute_command"));

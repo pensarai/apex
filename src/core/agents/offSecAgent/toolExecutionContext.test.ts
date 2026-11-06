@@ -228,3 +228,181 @@ it("propagates an iterator failure with the host identity intact", async () => {
     collect(tools.probe!.execute!({}, { toolCallId: "failed", messages: [] })),
   ).rejects.toThrow("stream failed");
 });
+
+it("finishes the scope only after a yielding generator finalizer drains", async () => {
+  const scope = new AsyncLocalStorage<string>();
+  const events: string[] = [];
+  const tools = wrapToolExecutionContext(
+    {
+      probe: {
+        inputSchema: z.object({}),
+        async *execute() {
+          try {
+            yield "partial";
+          } finally {
+            expect(scope.getStore()).toBe("returning");
+            events.push("closing");
+            yield "cleanup progress";
+            await Promise.resolve();
+            expect(scope.getStore()).toBe("returning");
+            events.push("drained");
+          }
+        },
+      },
+    },
+    {
+      run: (call, execute) => scope.run(call.toolCallId, execute),
+      async finish(call) {
+        expect(call.toolCallId).toBe("returning");
+        events.push("finished");
+      },
+    },
+  );
+  for await (const value of tools.probe!.execute!(
+    {},
+    { toolCallId: "returning", messages: [] },
+  ) as AsyncIterable<unknown>) {
+    expect(value).toBe("partial");
+    break;
+  }
+  expect(events).toEqual(["closing", "drained", "finished"]);
+});
+
+it.each([
+  "execute",
+  "iterator",
+  "next",
+] as const)("closes the host scope when %s throws", async (phase) => {
+  const finish = vi.fn(async () => {});
+  const failure = new Error(`failed ${phase}`);
+  const tools = wrapToolExecutionContext(
+    {
+      probe: {
+        inputSchema: z.object({}),
+        execute() {
+          if (phase === "execute") throw failure;
+          return {
+            [Symbol.asyncIterator]() {
+              if (phase === "iterator") throw failure;
+              return {
+                next: async () => {
+                  throw failure;
+                },
+              };
+            },
+          };
+        },
+      },
+    },
+    { run: (_call, execute) => execute(), finish },
+  );
+  await expect(
+    collect(tools.probe!.execute!({}, { toolCallId: "failed", messages: [] })),
+  ).rejects.toBe(failure);
+  expect(finish).toHaveBeenCalledOnce();
+  expect(finish).toHaveBeenCalledWith({
+    toolCallId: "failed",
+    toolName: "probe",
+  });
+});
+
+it.each([
+  "execute",
+  "return",
+] as const)("preserves %s and distinct finish errors", async (phase) => {
+  const original = new Error("original");
+  const cleanup = new Error("cleanup");
+  const tools = wrapToolExecutionContext(
+    {
+      probe: {
+        inputSchema: z.object({}),
+        execute() {
+          if (phase === "execute") throw original;
+          return {
+            [Symbol.asyncIterator]: () => ({
+              next: async () => ({ done: false, value: "partial" }),
+              return: async () => {
+                throw original;
+              },
+            }),
+          };
+        },
+      },
+    },
+    {
+      run: (_call, body) => body(),
+      finish: async () => {
+        throw cleanup;
+      },
+    },
+  );
+  const iterator = tools.probe!.execute!(
+    {},
+    { toolCallId: "call", messages: [] },
+  ) as AsyncGenerator;
+  if (phase === "return") await iterator.next();
+  const result =
+    phase === "execute" ? iterator.next() : iterator.return(undefined);
+  await expect(result).rejects.toMatchObject({ errors: [original, cleanup] });
+});
+
+it("preserves a repeated failure's identity and rejects work before execution", async () => {
+  const failure = new Error("aborted");
+  const execute = vi.fn();
+  const tools = wrapToolExecutionContext(
+    { probe: { execute } } as unknown as ToolSet,
+    {
+      run: async () => {
+        throw failure;
+      },
+      finish: async () => {
+        throw failure;
+      },
+    },
+  );
+  await expect(
+    collect(tools.probe!.execute!({}, { toolCallId: "call", messages: [] })),
+  ).rejects.toBe(failure);
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it("does not enter a generator aborted during acquisition, but still closes it", async () => {
+  const abort = new AbortController();
+  const failure = new Error("cancelled before first next");
+  const body = vi.fn();
+  const close = vi.fn(async () => ({ done: true, value: undefined }));
+  const finish = vi.fn(async () => {});
+  const tools = wrapToolExecutionContext(
+    {
+      probe: {
+        inputSchema: z.object({}),
+        execute() {
+          return {
+            [Symbol.asyncIterator]() {
+              abort.abort(failure);
+              return {
+                next: async () => {
+                  body();
+                  return { done: false, value: "bad" };
+                },
+                return: close,
+              };
+            },
+          };
+        },
+      },
+    },
+    { run: (_call, execute) => execute(), finish },
+  );
+  await expect(
+    collect(
+      tools.probe!.execute!(
+        {},
+        { toolCallId: "call", messages: [], abortSignal: abort.signal },
+      ),
+    ),
+  ).rejects.toBe(failure);
+  expect(body).not.toHaveBeenCalled();
+  expect(close).toHaveBeenCalledOnce();
+  expect(finish).toHaveBeenCalledOnce();
+});

@@ -119,7 +119,7 @@ describe("SandboxBrowserBackend", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("intercepts browser traffic with the immutable exact/wildcard host policy", async () => {
+  it("leaves page traffic to the tool policy instead of aborting it in the browser", async () => {
     const { sandbox, commands } = makeFakeSandbox({
       success: true,
       url: "https://target.example/dashboard",
@@ -139,19 +139,9 @@ describe("SandboxBrowserBackend", () => {
     );
 
     const script = generatedPlaywrightScript(commands);
-    expect(script).toContain(
-      'const __allowedHosts = ["target.example","*.assets.example"];',
-    );
-    expect(script).toContain("const __allowedPorts = [443,8443];");
-    expect(script).toContain("const __enforceScope = true;");
+    expect(script).not.toContain("route.abort");
+    expect(script).not.toContain("EnforceScope");
     expect(script).toContain("serviceWorkers: 'block'");
-    expect(script).toContain("await context.route('**/*'");
-    expect(script).toContain(
-      "lower === base || (wildcard && lower.endsWith('.' + base))",
-    );
-    expect(script).toContain(
-      "!__allowedPorts.includes(Number(parsed.port || (parsed.protocol === 'http:' ? 80 : 443)))",
-    );
   });
 
   it("routes scoped headers per request instead of configuring them globally", async () => {

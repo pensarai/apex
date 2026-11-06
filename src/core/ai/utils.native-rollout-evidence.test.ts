@@ -56,6 +56,7 @@ vi.mock("./ai", () => ({
   buildReasoningProviderOptions: vi.fn(() => undefined),
   mergeProviderOptions: vi.fn(() => undefined),
   recordContextRestart: vi.fn(async () => {}),
+  resumeMessagesWithPinned: vi.fn(() => undefined),
   streamResponse: mocks.streamResponse,
 }));
 

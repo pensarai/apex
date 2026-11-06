@@ -14,7 +14,9 @@ import {
   resolveBrowserHeaderPolicy,
 } from "./browserHeaderRouting";
 
-const CHROME_PATH = "/usr/local/bin/google-chrome";
+const CHROME_PATH =
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ??
+  "/usr/local/bin/google-chrome";
 const requireFromHere = createRequire(import.meta.url);
 const servers: Server[] = [];
 
@@ -46,7 +48,7 @@ afterEach(async () => {
 describe.runIf(existsSync(CHROME_PATH))(
   "browser scoped redirect boundary",
   () => {
-    it("aborts an allowed-host redirect before the browser reaches an unlisted host", async () => {
+    it("follows an allowed-host redirect to an unlisted host without sending it engagement headers", async () => {
       let destinationReached = false;
       let secretReceived = false;
       const destinationPort = await listen((request, response) => {
@@ -54,11 +56,25 @@ describe.runIf(existsSync(CHROME_PATH))(
         secretReceived = request.headers["x-engagement-secret"] === "secret";
         response.end("outside");
       });
-      const initialPort = await listen((_request, response) => {
-        response.writeHead(302, {
-          location: `http://localhost:${destinationPort}/outside`,
-        });
-        response.end();
+      const scopedHeaders: string[] = [];
+      const initialPort = await listen((request, response) => {
+        if (request.headers["x-engagement-secret"] === "secret") {
+          scopedHeaders.push(request.url ?? "");
+        }
+        if (request.url === "/start") {
+          response.writeHead(302, {
+            location: `http://localhost:${destinationPort}/outside`,
+          });
+          response.end();
+        } else if (request.url === "/app.js") {
+          response.writeHead(200, { "content-type": "application/javascript" });
+          response.end('document.body.dataset.loaded = "yes";');
+        } else {
+          response.writeHead(200, { "content-type": "text/html" });
+          response.end(
+            '<body><script type="module" src="/app.js"></script></body>',
+          );
+        }
       });
 
       const mcpEntry = requireFromHere.resolve("@playwright/mcp");
@@ -76,6 +92,9 @@ describe.runIf(existsSync(CHROME_PATH))(
             newContext(): Promise<{
               close(): Promise<void>;
               newPage(): Promise<{
+                evaluate(
+                  fn: () => string | undefined,
+                ): Promise<string | undefined>;
                 goto(
                   url: string,
                   options: { timeout: number; waitUntil: string },
@@ -83,7 +102,9 @@ describe.runIf(existsSync(CHROME_PATH))(
               }>;
               route(
                 pattern: string,
-                handler: (route: unknown) => Promise<void>,
+                handler: (route: {
+                  fallback(): Promise<void>;
+                }) => Promise<void>,
               ): Promise<void>;
             }>;
           }>;
@@ -98,6 +119,11 @@ describe.runIf(existsSync(CHROME_PATH))(
       try {
         const context = await browser.newContext();
         try {
+          let priorFallbackReached = false;
+          await context.route("**/*", async (route) => {
+            priorFallbackReached = true;
+            await route.fallback();
+          });
           const policy = resolveBrowserHeaderPolicy(
             {
               targets: [`http://127.0.0.1:${initialPort}`],
@@ -114,19 +140,34 @@ describe.runIf(existsSync(CHROME_PATH))(
           );
           const installRoute = runInNewContext(
             `(${browserHeaderRouteFunction(policy)})`,
-            { URL },
+            {},
           ) as (page: {
             context(): typeof context;
           }) => Promise<{ installed: boolean }>;
           await installRoute({ context: () => context });
+          let newerFallbackReached = false;
+          await context.route("**/*", async (route) => {
+            newerFallbackReached = true;
+            await route.fallback();
+          });
 
           const page = await context.newPage();
-          await expect(
-            page.goto(`http://127.0.0.1:${initialPort}/start`, {
-              timeout: 5_000,
-              waitUntil: "domcontentloaded",
-            }),
-          ).rejects.toThrow();
+          await page.goto(`http://127.0.0.1:${initialPort}/`, {
+            timeout: 5_000,
+            waitUntil: "networkidle",
+          });
+          expect(await page.evaluate(() => document.body.dataset.loaded)).toBe(
+            "yes",
+          );
+          expect(scopedHeaders).toEqual(
+            expect.arrayContaining(["/", "/app.js"]),
+          );
+          expect(newerFallbackReached).toBe(true);
+          expect(priorFallbackReached).toBe(false);
+          await page.goto(`http://127.0.0.1:${initialPort}/start`, {
+            timeout: 5_000,
+            waitUntil: "domcontentloaded",
+          });
         } finally {
           await context.close();
         }
@@ -134,7 +175,7 @@ describe.runIf(existsSync(CHROME_PATH))(
         await browser.close();
       }
 
-      expect(destinationReached).toBe(false);
+      expect(destinationReached).toBe(true);
       expect(secretReceived).toBe(false);
     });
   },

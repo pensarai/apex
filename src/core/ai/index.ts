@@ -1,7 +1,9 @@
 export type {
+  AgentHarness,
   AIModel,
   AIModelProvider,
   CacheMetrics,
+  ContextCompaction,
   GenerateObjectOpts,
   ModelInfo,
   NormalizedStepUsage,
@@ -30,6 +32,8 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export { compactedHistoryNotice } from "./compactionPrompts";
+export { IncompleteModelStreamError } from "./incompleteModelStream";
 export type {
   InferenceAttempt,
   InferenceRecorder,
@@ -53,9 +57,11 @@ export type {
   ModelRuntimeProfile,
 } from "./modelRuntime";
 export { resolveModelRuntimeProfile } from "./modelRuntime";
+export { ModelStreamDrainError } from "./modelStreamDrain";
 export {
   AVAILABLE_MODELS,
   getClaudeCapabilities,
+  getMaxOutputTokens,
   getModelInfo,
 } from "./models";
 export type {
