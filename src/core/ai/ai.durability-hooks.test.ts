@@ -154,11 +154,13 @@ describe("streamResponse durability hooks", () => {
       prepareStep: (step: {
         stepNumber: number;
         messages: ModelMessage[];
+        steps: [];
       }) => Promise<{ messages?: ModelMessage[] } | undefined>;
     };
     const prepared = await call.prepareStep({
       stepNumber: 0,
       messages: [{ role: "user", content: "scope" }],
+      steps: [],
     });
     expect(prepared?.messages).toEqual([
       { role: "user", content: "scope\n\nmail" },
