@@ -176,6 +176,7 @@ export default function OperatorDashboard({
   };
 }) {
   const { colors } = useTheme();
+  const [modelLoading, setModelLoading] = useState<string | null>(null);
   const route = useRoute();
   const config = useConfig();
   const {
@@ -749,6 +750,7 @@ export default function OperatorDashboard({
   const runEventProjections = useMemo(
     () =>
       createRunEventProjections({
+        onModelLoading: setModelLoading,
         display: displayEvents,
         subagents: subagentHelpers,
         updateWorkflowData,
@@ -819,6 +821,7 @@ export default function OperatorDashboard({
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
+      setModelLoading(null);
       setThinking(true);
       setIsExecuting(true);
       setError(null);
@@ -1163,6 +1166,7 @@ export default function OperatorDashboard({
         // (abort, error, success).
         await runTrace.cleanupRun();
         if (gen === generationRef.current) {
+          setModelLoading(null);
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
@@ -1618,6 +1622,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     approvalGateRef.current.denyAll();
 
     setStatus("idle");
+    setModelLoading(null);
     setThinking(false);
     setIsExecuting(false);
 
@@ -2088,6 +2093,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       >
         <MessageList
           messages={messages}
+          modelLoading={modelLoading}
           isRunning={
             (status === "running" || status === "waiting") && !pendingQuestions
           }

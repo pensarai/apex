@@ -33,6 +33,7 @@ import {
   unregisterActiveRootSpan,
   withSubagentSessionBaggage,
 } from "../../observability";
+import { prepareOllamaModel } from "../../ollama";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import type { RunContextRecorder } from "../../runtime/runContext";
@@ -304,6 +305,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Memoized {@link streamReady} promise; initialization runs at most once. */
   private streamInit: Promise<void> | null = null;
 
+  private readonly usesOllama: boolean;
+
   /** True when this agent's tool selection can use backend-probed execution facts. */
   private readonly probesRuntime: boolean;
 
@@ -480,6 +483,17 @@ export class OffensiveSecurityAgent<TResult = void> {
   private lanceModel?: string;
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    this.usesOllama = input.model.startsWith("ollama:");
+    if (this.usesOllama && input.authConfig?.ollama) {
+      // Loading updates this run's metadata, never the picker or another run.
+      input = {
+        ...input,
+        authConfig: {
+          ...input.authConfig,
+          ollama: structuredClone(input.authConfig.ollama),
+        },
+      };
+    }
     if (
       input.mode === "lance" &&
       !input.lance?.interactive &&
@@ -1191,6 +1205,19 @@ export class OffensiveSecurityAgent<TResult = void> {
       // The sync escape hatch may have created the stream while discovery was
       // pending — never a second model stream.
       if (this._streamResult !== null) return;
+      if (this.usesOllama) {
+        await prepareOllamaModel(
+          input.model,
+          input.authConfig?.ollama,
+          this.abortSignal,
+          (event) =>
+            this.eventBus.emit("model-loading", {
+              ...event,
+              sessionId: this.busSessionId,
+              subagentId: this.subagentId,
+            }),
+        );
+      }
       // Abort-before-start skips the probe but still creates the stream so the
       // SDK surfaces the abort normally; a probe failure degrades the prompt
       // to unknown facts rather than failing the stream.
@@ -1224,7 +1251,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /**
    * The underlying Vercel AI SDK stream result — synchronous escape hatch.
-   * Always a real SDK result. Cold access creates it immediately with facts
+   * Always a real SDK result. Ollama callers must await {@link streamReady}
+   * to load weights and resolve the context budget first. Other cold access uses facts
    * already settled for this runtime scope, else explicit unknown facts —
    * never host facts; callers needing freshly probed facts await
    * {@link streamReady}, `consume()`, or `fullStream` iteration instead.
@@ -1233,6 +1261,11 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   get streamResult(): StreamTextResult<ToolSet, never> {
     if (this._streamResult === null) {
+      if (this.usesOllama) {
+        throw new Error(
+          "Await streamReady() before accessing an Ollama streamResult",
+        );
+      }
       const facts = this.probesRuntime
         ? (peekSettledRuntimeFacts(this.toolCtx) ?? UNKNOWN_FACTS)
         : null;

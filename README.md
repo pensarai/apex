@@ -119,9 +119,12 @@ Headless commands accept `--model-provider ollama --model <ollama-model-name>`
 or `--model ollama:<ollama-model-name>`. Model names retain their full tags,
 including Hugging Face paths. Existing manual local endpoints remain separate.
 
-Apex uses the allocated context reported by Ollama for running models, with a
-conservative 4,096-token budget when that metadata is unavailable. Start a model
-with your desired Ollama context setting before using it for a larger session.
+Apex loads the selected model on the first request if needed, showing **Loading
+model weights** with a dedicated throbber. It then reads Ollama's allocated
+context before fitting the prompt or deciding whether to compact the conversation.
+Servers without context metadata use a conservative 4,096-token budget. Apex
+does not download models or override Ollama's idle-unload settings; model lifetime
+is managed by Ollama, independently of Apex sessions.
 Agent workflows require a model and Ollama template that support tool calls;
 discovery alone does not establish tool support.
 

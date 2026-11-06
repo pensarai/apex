@@ -19,6 +19,90 @@ export interface OllamaCatalog {
   }[];
 }
 
+export interface OllamaModelLoadEvent {
+  model: string;
+  status: "loading" | "ready" | "failed" | "cancelled";
+  elapsedMs: number;
+}
+
+/** Preload before prompt fitting so budgets use Ollama's allocated context. */
+export async function prepareOllamaModel(
+  id: string,
+  catalog: OllamaCatalog | undefined,
+  signal?: AbortSignal,
+  onStatus?: (event: OllamaModelLoadEvent) => void,
+): Promise<void> {
+  const { model, baseURL } = resolveOllamaModel(id, catalog);
+  const controller = new AbortController();
+  const requestSignal = AbortSignal.any([
+    controller.signal,
+    AbortSignal.timeout(300_000),
+    ...(signal ? [signal] : []),
+  ]);
+  let loading = false;
+  const startedAt = Date.now();
+  const report = (status: OllamaModelLoadEvent["status"]) =>
+    onStatus?.({ model: id, status, elapsedMs: Date.now() - startedAt });
+  const readRunning = async () => {
+    try {
+      const response = await fetch(`${baseURL}/api/ps`, {
+        signal: AbortSignal.any([requestSignal, AbortSignal.timeout(1_000)]),
+        redirect: "error",
+      });
+      if (!response.ok) return undefined;
+      return catalogSchema
+        .parse(await response.json())
+        .models.find((item) => item.name === model.id);
+    } catch {
+      requestSignal.throwIfAborted();
+      // Older Ollama servers do not expose allocated-context metadata.
+      return undefined;
+    }
+  };
+  try {
+    requestSignal.throwIfAborted();
+    let running = await readRunning();
+    if (!running) {
+      loading = true;
+      report("loading");
+      // An empty generation loads installed weights without generating or pulling.
+      const response = await fetch(`${baseURL}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: model.id, stream: false }),
+        signal: requestSignal,
+        redirect: "error",
+      });
+      const result = z
+        .object({ done: z.boolean().optional(), error: z.string().optional() })
+        .parse(await response.json());
+      if (!response.ok || result.error || result.done !== true) {
+        throw new Error(
+          result.error || `Ollama returned HTTP ${response.status}`,
+        );
+      }
+      running = await readRunning();
+    }
+    requestSignal.throwIfAborted();
+    model.contextLength = running?.context_length ?? 4_096;
+    model.maxOutputTokens = Math.min(
+      4_096,
+      Math.floor(model.contextLength / 4),
+    );
+    model.running = true;
+    if (loading) report("ready");
+  } catch (error) {
+    if (loading) report(signal?.aborted ? "cancelled" : "failed");
+    signal?.throwIfAborted();
+    throw new Error(
+      `Could not load Ollama model ${model.id}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  } finally {
+    controller.abort();
+  }
+}
+
 export async function discoverOllama(
   signal?: AbortSignal,
 ): Promise<OllamaCatalog | undefined> {
