@@ -378,6 +378,153 @@ describe("code-mode engagement lead", () => {
     ]);
   });
 
+  it("finishes when the lead resolves coverage for a pending dependent mission", async () => {
+    const { rootPath, workflow, plan } = setup();
+    let workerTurns = 0;
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const state = (await tools(input).read_engagement_state?.execute?.(
+          { offset: 0, limit: 20 },
+          {} as never,
+        )) as {
+          missions: Array<{ status: string }>;
+        };
+        expect(state.missions.map((mission) => mission.status)).toEqual([
+          "failed",
+          "pending",
+        ]);
+        for (const pair of [
+          { targetId: "a", objectiveId: "auth" },
+          { targetId: "b", objectiveId: "upload" },
+        ]) {
+          await tools(input).resolve_engagement_pair?.execute?.(
+            {
+              ...pair,
+              status: "blocked",
+              summary: "Blocked by the failed prerequisite",
+              evidence: "The prerequisite mission failed terminally",
+            },
+            {} as never,
+          );
+        }
+        return { summary: "resolved", coverageComplete: true };
+      }
+      workerTurns += 1;
+      throw new Error("unrecoverable auth failure");
+    };
+
+    const result = await runEngagementLead({
+      workflow,
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+      concurrency: 1,
+    });
+
+    expect(workerTurns).toBe(1);
+    expect(result.objectiveResults).toEqual([
+      {
+        objective: "Test auth",
+        completed: false,
+        result: "Blocked by the failed prerequisite",
+      },
+      {
+        objective: "Test upload",
+        completed: false,
+        result: "Blocked by the failed prerequisite",
+      },
+    ]);
+  });
+
+  it("forwards durable fields and lets hooks override agent settings", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
+    plan.missions = plan.missions.slice(0, 1);
+    const languageModelMiddleware = vi.fn();
+    const usageRecorder = vi.fn();
+    const hookUsageRecorder = vi.fn();
+    const streamIdFactory = vi.fn();
+    const topLevelStep = vi.fn();
+    const hookStep = vi.fn();
+    const topLevelCache = vi.fn();
+    const hookCache = vi.fn();
+    const hookReasoning = { effort: "high" };
+
+    fake.construct = (input) => {
+      expect(input.languageModelMiddleware).toBe(languageModelMiddleware);
+      expect(input.usageRecorder).toBe(hookUsageRecorder);
+      expect(input.streamIdFactory).toBe(streamIdFactory);
+      expect(input.onCacheMetrics).toBe(hookCache);
+      expect(input.enableThinking).toBe(true);
+      expect(input.thinkingEffort).toBe("high");
+      expect(input.openAIReasoningEffort).toBe("high");
+      expect(input.reasoning).toBe(hookReasoning);
+    };
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        await (input.onStepFinish as (event: unknown) => Promise<void>)({
+          usage: { inputTokens: 1, outputTokens: 1 },
+          response: { messages: [] },
+        });
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        expect(input.onStepFinish).toBe(hookStep);
+        return { summary: "done", coverageComplete: true };
+      }
+      expect(input.onStepFinish).toBe(hookStep);
+      return {
+        summary: "tested",
+        coverage: [
+          {
+            targetId: "a",
+            objectiveId: "auth",
+            status: "tested",
+            summary: "checked",
+            evidence: "Observed access denial",
+          },
+        ],
+        reportedFindings: [],
+      };
+    };
+
+    await runEngagementLead({
+      workflow: {
+        ...workflow,
+        languageModelMiddleware: languageModelMiddleware as never,
+        usageRecorder: usageRecorder as never,
+        streamIdFactory: streamIdFactory as never,
+        onStepFinish: topLevelStep as never,
+        onCacheMetrics: topLevelCache,
+        enableThinking: false,
+        thinkingEffort: "low",
+        openAIReasoningEffort: "low",
+        reasoning: { effort: "low" } as never,
+        hooks: {
+          usageRecorder: hookUsageRecorder,
+          onStepFinish: hookStep,
+          onCacheMetrics: hookCache,
+          enableThinking: true,
+          thinkingEffort: "high",
+          openAIReasoningEffort: "high",
+          reasoning: hookReasoning,
+        } as never,
+      },
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+      concurrency: 1,
+    });
+
+    expect(hookStep).toHaveBeenCalledOnce();
+    expect(topLevelStep).not.toHaveBeenCalled();
+  });
+
   it("clears a worker that fails during synchronous construction", async () => {
     const { rootPath, workflow, plan } = setup();
     plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };
