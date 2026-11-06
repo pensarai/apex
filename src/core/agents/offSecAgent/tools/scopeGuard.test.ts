@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import {
+  applyHeadersToShellCommand,
+  resolveEffectiveHeaders,
+} from "../../../http/targetHeaders";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   assertCommandInScope,
   assertFindingEndpointInScope,
+  assertRequestInScope,
   assertUrlInScope,
   extractHostname,
   extractHostsFromCommand,
@@ -639,5 +643,78 @@ describe("assertCommandInScope", () => {
     expect(() =>
       assertCommandInScope("grep -r 'password' /var/log", ctx),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test domains: reachable destinations, never targets
+// ---------------------------------------------------------------------------
+
+describe("session test domains", () => {
+  const CB = "3f2b8c1e.cb.example.net";
+
+  function withTestDomain(): ToolContext {
+    const ctx = makeCtx({ target: "https://app.example.com" });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://app.example.com"],
+      config: {
+        testDomains: [CB],
+        headers: { "X-API-Key": "secret" },
+      },
+    } as typeof ctx.session;
+    return ctx;
+  }
+
+  it("lets a command carry a test-domain URL in its payload", () => {
+    const ctx = withTestDomain();
+    expect(() =>
+      assertCommandInScope(
+        `curl -X POST https://app.example.com/import -d 'url=https://${CB}/ssrf-1'`,
+        ctx,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertCommandInScope(
+        "curl https://app.example.com/ -d 'url=https://evil.example.org/'",
+        ctx,
+      ),
+    ).toThrow(ScopeViolationError);
+  });
+
+  it("allows a request to a test domain but keeps it out of target-only checks", () => {
+    const ctx = withTestDomain();
+    expect(() =>
+      assertRequestInScope(`https://${CB}/self-check`, ctx),
+    ).not.toThrow();
+    expect(() =>
+      assertRequestInScope("https://evil.example.org/", ctx),
+    ).toThrow(ScopeViolationError);
+    expect(() => assertUrlInScope(`https://${CB}/`, ctx)).toThrow(
+      ScopeViolationError,
+    );
+    expect(() =>
+      assertFindingEndpointInScope(`https://${CB}/ssrf-1`, ctx),
+    ).toThrow(ScopeViolationError);
+  });
+
+  it("never sends session or credential headers to a test domain", () => {
+    const ctx = withTestDomain();
+    expect(
+      resolveEffectiveHeaders(resolverSessionFromCtx(ctx), `https://${CB}/x`),
+    ).toEqual({});
+    expect(
+      resolveEffectiveHeaders(
+        resolverSessionFromCtx(ctx),
+        "https://app.example.com/x",
+      ),
+    ).toEqual({ "X-API-Key": "secret" });
+    expect(
+      applyHeadersToShellCommand(
+        `curl https://${CB}/x`,
+        resolverSessionFromCtx(ctx),
+        [CB],
+      ).status,
+    ).not.toBe("injected");
   });
 });
