@@ -38,12 +38,12 @@ You are the last line of defense against false positives, hallucinated findings,
 - SQL injection: output should show inaccessible data, query errors, or behavioral differences indicating injection success.
 - XSS: output should show payload reflection/execution in a browser-executable context.
 - Command injection / RCE: output should show execution on the target system, not only local command execution.
-- SSRF: output should show responses from internal or otherwise protected services, or, for blind SSRF, a recorded callback (see below).
-- Out-of-band (blind SSRF, XXE, webhook, host-header or password-reset poisoning, blind injection): the proof is the "Recorded Callbacks" section, which the host's callback service fills in, not the agent. A recorded callback whose path matches a marked URL the PoC made the target request proves the target sent that request; judge impact from what it shows (source, user agent, body), not from the claim. Reject an out-of-band claim when that section is absent or lists no callbacks, when the PoC requests the test domain itself instead of making the target do so, or when the only "callback" is in the agent's evidence or PoC output.
+- SSRF: output should show responses from internal or otherwise protected services.
 - Path traversal: output should show file contents outside the intended path.
 - IDOR: output should show access to another user's/account's resource while authentication exists.
 - Authorization / access-control boundary bypass (RSC/prefetch/redirect-body leaks, missing per-route checks): the evidence must establish the access-model delta — which identity/role was used, and proof that the returned data is genuinely out of scope for that identity (cross-tenant, another user's, or admin-only data a member should not see). A 200 response, a leaked RSC payload, or a skipped redirect alone does NOT prove sensitive exposure. If the bypass is real but the returned data is non-sensitive or plausibly same-tenant/expected-visible, classify as a valid lower-impact finding and require the claim's impact/severity to match — do NOT accept it as high-confidence sensitive/cross-tenant exposure.
 - Authentication bypass: output should show protected access without valid credentials.
+- Out-of-band (blind SSRF, XXE, webhook, host-header or password-reset poisoning, blind injection): the target's own response won't show the impact. Accept a claim that cites a callback hit (hitId, method, path, source IP, user agent, time) read with read_callback_hits when its path carries the marker the PoC sends and the PoC makes the target, not the PoC itself, request that URL. You can't read callbacks yourself, so confidence must stay below 0.7 and limitations must state the callback was not independently re-observed. Reject an out-of-band claim with no cited hit, or one where the PoC requests the test domain directly.
 - Email/HTML injection: ideally verify delivery and rendering. If only server acceptance is shown, confidence must stay below 0.7 and limitations must state rendering was not independently verified.
 - Missing rate limiting / anti-automation: a modest burst (~20 requests) with no observed throttling, delays, or 429s is sufficient to demonstrate the gap. For endpoints with real-world side effects (sending email/SMS/push, creating tickets/notifications, contact/support/feedback forms, payments), as few as 2–3 attempts plus the observed response is sufficient — do NOT require volume-testing that would spam real recipients. Evidence must state exact request count, timing/distribution, and observed statuses.
 
@@ -86,33 +86,6 @@ Call the response tool exactly once. Include:
 - webResearchUsed: whether web research materially informed the judgment.
 - limitations: remaining gaps.`;
 
-const MAX_CALLBACKS = 10;
-const MAX_CALLBACK_BODY_CHARS = 512;
-
-function callbackSection(input: FindingJudgeInput): string {
-  const evidence = input.callbackEvidence;
-  if (!evidence) return "";
-  const urls = evidence.urls.map((url) => `- ${url}`).join("\n");
-  const callbacks =
-    evidence.callbacks.length === 0
-      ? "No request to these URLs was recorded."
-      : evidence.callbacks
-          .slice(-MAX_CALLBACKS)
-          .map(
-            (hit) =>
-              `- ${hit.receivedAt} ${hit.method} ${hit.path} from ${hit.sourceIp ?? "unknown"} (user agent: ${hit.userAgent ?? "none"})${hit.late ? " [late]" : ""} id=${hit.id}${hit.bodyPreview ? `\n  body: ${truncate(hit.bodyPreview, MAX_CALLBACK_BODY_CHARS)}` : ""}`,
-          )
-          .join("\n");
-  return `## Recorded Callbacks (from the host's callback service)
-
-Marked test-domain URLs in this finding:
-${urls || "- none: the PoC uses the test domain without a path marker, so no callback can be attributed to it"}
-
-${callbacks}
-
-`;
-}
-
 export function buildFindingJudgePrompt(input: FindingJudgeInput): string {
   const { pocScript, pocType, pocOutput, claim } = input;
 
@@ -140,7 +113,7 @@ ${truncate(claim.impact, MAX_DESCRIPTION_CHARS)}
 ${truncate(claim.evidence, MAX_EVIDENCE_CHARS)}
 \`\`\`
 
-${callbackSection(input)}## Previously Executed POC (${pocType})
+## Previously Executed POC (${pocType})
 
 \`\`\`${pocType === "javascript" ? "js" : pocType === "python" ? "python" : "bash"}
 ${truncate(pocScript, MAX_POC_SCRIPT_CHARS)}

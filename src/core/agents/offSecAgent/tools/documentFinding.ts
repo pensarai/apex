@@ -722,9 +722,6 @@ CRITICAL RULES — READ BEFORE CALLING:
             reproducedPoc: judgeResult.reproducedPoc,
             webResearchUsed: judgeResult.webResearchUsed,
             limitations: judgeResult.limitations,
-            ...(judgeResult.callbackEvidence && {
-              callbackEvidence: judgeResult.callbackEvidence,
-            }),
             ...(judgeResult.error && { error: judgeResult.error }),
           },
         };

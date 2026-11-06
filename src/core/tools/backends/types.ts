@@ -258,6 +258,42 @@ export interface BrowserBackend {
   getCookies(o?: { urls?: string[] }): Promise<BrowserCookiesResult>;
 }
 
+/** One request a session test domain received. */
+export interface CallbackHit {
+  id: string;
+  receivedAt: string;
+  method: string;
+  /** Path and query, as received. */
+  path: string;
+  headers: Record<string, string>;
+  sourceIp: string | null;
+  bodyPreview: string;
+  bodyTruncated: boolean;
+  /** Arrived after the test domain was closed. */
+  late: boolean;
+}
+
+export interface CallbackHits {
+  /** Every stored hit, oldest first. */
+  hits: CallbackHit[];
+  /** Every request received, including ones past the host's storage cap. */
+  totalHits: number;
+}
+
+/** The host could not answer. Never the same as "no callback arrived". */
+export interface CallbackHitsUnavailable {
+  state: "unavailable";
+  reason: string;
+}
+
+/**
+ * Reads what the session's `testDomains` received. The host that owns those
+ * domains supplies it; Apex never allocates, records or expires them.
+ */
+export interface CallbackBackend {
+  readHits(): Promise<CallbackHits | CallbackHitsUnavailable>;
+}
+
 /** The #1051 inbox seams, relocated. */
 export interface InboxBackend {
   email: EmailAdapterResolver;
@@ -270,6 +306,8 @@ export interface ToolBackends {
   http: HttpBackend;
   browser: BrowserBackend;
   inbox: InboxBackend;
+  /** Requests to the session's test domains. Only a host that owns them supplies it. */
+  callbacks?: CallbackBackend;
   /**
    * True when these backends route through a real sandbox whose filesystem is
    * the contained workspace root (not the host). Tools that write artifacts

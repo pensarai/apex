@@ -8,31 +8,6 @@ export const FINDING_TYPES = [
 
 export type FindingType = (typeof FINDING_TYPES)[number];
 
-/** A request the host's callback service recorded for one of a PoC's test-domain URLs. */
-export interface RecordedCallback {
-  id: string;
-  receivedAt: string;
-  method: string;
-  /** Path and query, as received. */
-  path: string;
-  sourceIp: string | null;
-  userAgent: string | null;
-  bodyPreview: string;
-  /** Arrived after the run's test domain was closed. */
-  late: boolean;
-}
-
-/**
- * What the host recorded for the test-domain URLs a finding uses. Supplied by
- * the host that owns the domains, never by the agent that wrote the finding.
- */
-export interface CallbackEvidence {
-  /** The marked test-domain URLs found in the PoC and the claim. */
-  urls: string[];
-  /** Requests whose path matches one of `urls`; empty when none arrived. */
-  callbacks: RecordedCallback[];
-}
-
 export interface FindingJudgeInput {
   /** The full POC script content */
   pocScript: string;
@@ -57,8 +32,6 @@ export interface FindingJudgeInput {
     endpoint: string;
     vulnerabilityClass?: string;
   };
-  /** Set by the host when the PoC sends marked test-domain URLs. */
-  callbackEvidence?: CallbackEvidence;
 }
 
 interface FindingJudgeVerificationDetails {
@@ -72,8 +45,6 @@ interface FindingJudgeVerificationDetails {
   webResearchUsed?: boolean;
   /** Known gaps in verification */
   limitations?: string[];
-  /** The host-recorded callbacks the judge saw, kept with the finding. */
-  callbackEvidence?: CallbackEvidence;
 }
 
 export interface FindingJudgeResult extends FindingJudgeVerificationDetails {
