@@ -714,6 +714,11 @@ export default function OperatorDashboard({
   // never leak into a different session's totals.
   const runSessionIdRef = useRef<string | null>(null);
 
+  // Context window allocated by this run's cold Ollama load. The run mutates
+  // its own catalog clone, so the discovery snapshot still shows the
+  // conservative cold budget.
+  const ollamaContextRef = useRef<number | null>(null);
+
   const displayEvents = useMemo(
     () =>
       createDisplayEventHandlers({
@@ -751,6 +756,9 @@ export default function OperatorDashboard({
     () =>
       createRunEventProjections({
         onModelLoading: setModelLoading,
+        onModelReady: (contextLength) => {
+          ollamaContextRef.current = contextLength;
+        },
         display: displayEvents,
         subagents: subagentHelpers,
         updateWorkflowData,
@@ -822,6 +830,7 @@ export default function OperatorDashboard({
 
       setStatus("running");
       setModelLoading(null);
+      ollamaContextRef.current = null;
       setThinking(true);
       setIsExecuting(true);
       setError(null);
@@ -910,12 +919,14 @@ export default function OperatorDashboard({
         if (stepUsage.inputTokens > 0) {
           usageStore.setRootContext(runSessionIdRef.current, {
             usedTokens: stepUsage.inputTokens,
-            contextLimit: getContextWindow(
-              runModelId,
-              config.data.customProviders,
-              config.data.hoonifyModels,
-              config.data.ollama,
-            ),
+            contextLimit:
+              ollamaContextRef.current ??
+              getContextWindow(
+                runModelId,
+                config.data.customProviders,
+                config.data.hoonifyModels,
+                config.data.ollama,
+              ),
             modelId: runModelId,
           });
         }

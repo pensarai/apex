@@ -156,6 +156,7 @@ describe("Ollama agent loading lifecycle", () => {
     await run;
     expect(f.events.map((e) => e.status)).toEqual(["loading", "ready"]);
     expect(f.events[1].elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(f.events[1].contextLength).toBe(32_768);
     expect(f.requests.map((r) => r.url)).toEqual([
       "/api/ps",
       "/api/generate",
@@ -223,6 +224,7 @@ describe("Ollama agent loading lifecycle", () => {
     f.finishLoad();
     await run;
     expect(f.events.map((e) => e.status)).toEqual(["loading", "ready"]);
+    expect(f.events[1].contextLength).toBe(4_096);
     expect(f.requests.at(-1)?.body?.max_tokens).toBe(1_024);
   });
 });

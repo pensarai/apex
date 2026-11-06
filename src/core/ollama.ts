@@ -23,6 +23,8 @@ export interface OllamaModelLoadEvent {
   model: string;
   status: "loading" | "ready" | "failed" | "cancelled";
   elapsedMs: number;
+  /** Ollama's allocated context window, reported on "ready". */
+  contextLength?: number;
 }
 
 /** Preload before prompt fitting so budgets use Ollama's allocated context. */
@@ -41,8 +43,16 @@ export async function prepareOllamaModel(
   ]);
   let loading = false;
   const startedAt = Date.now();
-  const report = (status: OllamaModelLoadEvent["status"]) =>
-    onStatus?.({ model: id, status, elapsedMs: Date.now() - startedAt });
+  const report = (
+    status: OllamaModelLoadEvent["status"],
+    contextLength?: number,
+  ) =>
+    onStatus?.({
+      model: id,
+      status,
+      elapsedMs: Date.now() - startedAt,
+      ...(contextLength === undefined ? {} : { contextLength }),
+    });
   const readRunning = async () => {
     try {
       const response = await fetch(`${baseURL}/api/ps`, {
@@ -90,7 +100,7 @@ export async function prepareOllamaModel(
       Math.floor(model.contextLength / 4),
     );
     model.running = true;
-    if (loading) report("ready");
+    if (loading) report("ready", model.contextLength);
   } catch (error) {
     if (loading) report(signal?.aborted ? "cancelled" : "failed");
     signal?.throwIfAborted();
