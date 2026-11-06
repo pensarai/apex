@@ -704,13 +704,11 @@ async function fetchSandboxWithRedirects(
   let redirected = false;
 
   for (let redirectCount = 0; ; redirectCount++) {
-    const slotAcquired = await ctx.session._rateLimiter?.acquireSlot(signal);
     const elapsed = Date.now() - startedAt;
     if (
       signal.aborted ||
       (o?.timeoutMs !== undefined && elapsed >= o.timeoutMs)
     ) {
-      if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
       throw new DOMException("Request aborted", "AbortError");
     }
     const timeout =

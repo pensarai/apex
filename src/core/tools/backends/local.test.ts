@@ -393,6 +393,137 @@ describe("LocalBackends.http queued rate limits", () => {
     vi.unstubAllGlobals();
   });
 
+  it("preserves an adapter AbortError when the request was not cancelled", async () => {
+    const controller = new AbortController();
+    const ctx = makeCtx({
+      target: "https://target.example",
+      abortSignal: controller.signal,
+      sandbox: {
+        type: "linux",
+        execute: vi.fn(async () => {
+          throw new DOMException("sandbox adapter disconnected", "AbortError");
+        }),
+      } as unknown as NonNullable<ToolContext["sandbox"]>,
+    });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 10 });
+
+    expect(
+      await LocalBackends(ctx).http.request({
+        url: "https://target.example/get",
+      }),
+    ).toMatchObject({
+      success: false,
+      error: "sandbox adapter disconnected",
+      capture: { complete: false, stopReason: "error" },
+    });
+  });
+
+  function stagedSandbox() {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const staging = Promise.withResolvers<void>();
+    const finishStaging = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const dispatches: { method: string; time: number }[] = [];
+    const execute = vi.fn(async (command: string) => {
+      if (command.startsWith("printf '%s'")) {
+        staging.resolve();
+        await finishStaging.promise;
+      } else if (!command.startsWith("rm -f ")) {
+        dispatches.push({
+          method: command.includes("-X POST") ? "POST" : "GET",
+          time: performance.now(),
+        });
+      }
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: nonce
+          ? Buffer.from(
+              `HTTP/1.1 200 OK\r\n\r\nok\n__APEX_${nonce}_CURL_EXIT_0\n`,
+            ).toString("base64")
+          : "",
+        stderr: "",
+      };
+    });
+    const ctx = makeCtx({
+      target: "https://target.example",
+      abortSignal: controller.signal,
+      sandbox: { type: "linux", execute } as unknown as NonNullable<
+        ToolContext["sandbox"]
+      >,
+    });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 10 });
+    return {
+      http: LocalBackends(ctx).http,
+      staging,
+      finishStaging,
+      controller,
+      dispatches,
+      execute,
+    };
+  }
+
+  it("spaces sandbox dispatches after delayed request-body staging", async () => {
+    const { http, staging, finishStaging, dispatches, execute } =
+      stagedSandbox();
+    const post = http.request(
+      {
+        url: "https://target.example/post",
+        method: "POST",
+        body: "payload",
+      },
+      { timeoutMs: 1100 },
+    );
+    await staging.promise;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(
+      await http.request({ url: "https://target.example/get" }),
+    ).toMatchObject({
+      success: true,
+    });
+    finishStaging.resolve();
+    await vi.advanceTimersByTimeAsync(99);
+    expect(dispatches).toEqual([{ method: "GET", time: 100 }]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await post).toMatchObject({ success: true });
+    expect(dispatches).toEqual([
+      { method: "GET", time: 100 },
+      { method: "POST", time: 200 },
+    ]);
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringMatching(/-X POST.* --max-time 1 /),
+      expect.any(Object),
+    );
+  });
+
+  it.each([
+    "aborted",
+    "timeout",
+  ] as const)("does not dispatch after %s during request-body staging", async (stop) => {
+    const { http, staging, finishStaging, controller, dispatches, execute } =
+      stagedSandbox();
+    const pending = http.request(
+      { url: "https://target.example/post", method: "POST", body: "payload" },
+      stop === "timeout" ? { timeoutMs: 50 } : undefined,
+    );
+    await staging.promise;
+    if (stop === "aborted") controller.abort();
+    else await vi.advanceTimersByTimeAsync(50);
+    finishStaging.resolve();
+    expect(await pending).toMatchObject({
+      success: false,
+      capture: { complete: false, stopReason: stop },
+    });
+    expect(dispatches).toEqual([]);
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringMatching(/^rm -f \/tmp\/apex_http_body_/),
+      { timeout: 10 },
+    );
+  });
+
   it.each([
     { sandbox: false, stop: "aborted" },
     { sandbox: true, stop: "aborted" },
