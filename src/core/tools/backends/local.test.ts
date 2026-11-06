@@ -7,6 +7,7 @@ import type { ReadFileResult } from "../../agents/offSecAgent/tools/readFile";
 import { readFile as readFileTool } from "../../agents/offSecAgent/tools/readFile";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { createLocalResearchFetchToken } from "../../http/researchFetchToken";
+import { RateLimiter } from "../../services/rateLimiter";
 import { LocalBackends, runLocalProgram } from "./local";
 import type { CommandEvent } from "./types";
 
@@ -257,6 +258,8 @@ describe("LocalBackends local research capabilities", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const ctx = makeCtx({ target: "https://target.example" });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 1 });
+    const acquireSlot = vi.spyOn(ctx.session._rateLimiter, "acquireSlot");
     ctx.session.config = {
       headers: { Authorization: "Bearer target-secret" },
       scopeConstraints: {
@@ -278,18 +281,25 @@ describe("LocalBackends local research capabilities", () => {
       redirect: "manual",
       signal: expect.any(AbortSignal),
     });
+    expect(acquireSlot).not.toHaveBeenCalled();
   });
 });
 
 describe("LocalBackends.http redirect policy", () => {
-  it("blocks an out-of-scope sandbox redirect before a second request", async () => {
+  it.each([
+    false,
+    true,
+  ])("charges only authorized sandbox redirects (in scope=%s)", async (inScope) => {
     const execute = vi.fn(async (command: string) => {
       const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      const response = command.includes("/start")
+        ? `HTTP/1.1 302 Found\r\nLocation: https://${inScope ? "target" : "outside"}.example/admin\r\n\r\n`
+        : "HTTP/1.1 200 OK\r\n\r\n";
       return {
         success: true,
         exitCode: 0,
         stdout: Buffer.from(
-          `HTTP/1.1 302 Found\r\nLocation: https://outside.example/admin\r\n\r\n\n__APEX_${nonce}_CURL_EXIT_0\n`,
+          `${response}\n__APEX_${nonce}_CURL_EXIT_0\n`,
         ).toString("base64"),
         stderr: "",
       };
@@ -301,6 +311,10 @@ describe("LocalBackends.http redirect policy", () => {
         execute,
       } as unknown as NonNullable<ToolContext["sandbox"]>,
     });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 1 });
+    const acquireSlot = vi
+      .spyOn(ctx.session._rateLimiter, "acquireSlot")
+      .mockResolvedValue(true);
 
     const result = await LocalBackends(ctx).http.request({
       url: "https://target.example/start",
@@ -308,11 +322,16 @@ describe("LocalBackends.http redirect policy", () => {
       followRedirects: true,
     });
 
-    expect(result).toMatchObject({
-      success: false,
-      error: expect.stringMatching(/scope violation/i),
-    });
-    expect(execute).toHaveBeenCalledOnce();
+    expect(result).toMatchObject(
+      inScope
+        ? { success: true, status: 200 }
+        : {
+            success: false,
+            error: expect.stringMatching(/scope violation/i),
+          },
+    );
+    expect(execute).toHaveBeenCalledTimes(inScope ? 2 : 1);
+    expect(acquireSlot).toHaveBeenCalledTimes(inScope ? 2 : 1);
   });
 
   it.each([
@@ -364,6 +383,63 @@ describe("LocalBackends.http redirect policy", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("LocalBackends.http queued rate limits", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    { sandbox: false, stop: "aborted" },
+    { sandbox: true, stop: "aborted" },
+    { sandbox: false, stop: "timeout" },
+    { sandbox: true, stop: "timeout" },
+  ] as const)("does not dispatch after $stop while throttled (sandbox=$sandbox)", async ({
+    sandbox,
+    stop,
+  }) => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const fetchSpy = vi.fn(async () => new Response("ok"));
+    const execute = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const controller = new AbortController();
+    const ctx = makeCtx({
+      target: "https://target.example",
+      abortSignal: controller.signal,
+      ...(sandbox
+        ? {
+            sandbox: { type: "linux", execute } as unknown as NonNullable<
+              ToolContext["sandbox"]
+            >,
+          }
+        : {}),
+    });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 1 });
+    await ctx.session._rateLimiter.acquireSlot();
+
+    const pending = LocalBackends(ctx).http.request(
+      { url: "https://target.example/queued" },
+      stop === "timeout" ? { timeoutMs: 50 } : undefined,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+
+    if (stop === "aborted") controller.abort();
+    else await vi.advanceTimersByTimeAsync(50);
+
+    expect(await pending).toMatchObject({
+      success: false,
+      capture: { complete: false, stopReason: stop },
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 });
 
