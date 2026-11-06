@@ -142,6 +142,8 @@ Links a pull request to the issue. `--url` is required.
 
 Returns `{ success, created, pullRequest, issue }`. `created` distinguishes a newly linked PR from one that was already attached, so re-running the command is safe.
 
+Putting the finding label (`VULN-000123`) in the pull request title or description links it the same way and replaces the pull request Pensar is tracking. `link-pr` does that for a URL you already have.
+
 ### List Linked Pull Requests
 
 ```bash
