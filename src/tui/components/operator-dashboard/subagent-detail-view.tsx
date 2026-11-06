@@ -44,6 +44,7 @@ export const SubagentDetailView = memo(function SubagentDetailView({
     <MessageList
       messages={session.messages}
       isRunning={session.status === "running"}
+      modelLoading={session.modelLoading}
       variant="subagent"
       focused={true}
     />

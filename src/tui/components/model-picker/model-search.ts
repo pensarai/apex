@@ -14,6 +14,7 @@ const PROVIDER_DISPLAY_NAMES: Record<AIModelProvider, string> = {
   hoonify: "Hoonify",
   custom: "Custom endpoints",
   local: "Local LLM",
+  ollama: "Ollama (local)",
 };
 
 export function getProviderDisplayName(provider: AIModelProvider): string {

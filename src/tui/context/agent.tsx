@@ -158,7 +158,10 @@ export function AgentProvider({ children }: AgentProviderProps) {
     // Dynamic default based on configured providers
     const defaultModel = getDefaultModelForConfig(cfg);
     if (defaultModel) {
-      setModelInternal(defaultModel);
+      // Discovery order changes as models load; it must not change the chosen model.
+      setModelInternal((current) =>
+        current.provider === "ollama" ? current : defaultModel,
+      );
     }
   }, [appConfig.data, isModelUserSelected]);
 

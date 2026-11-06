@@ -38,11 +38,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../core/agents/offSecAgent";
-import {
-  buildAuthConfig,
-  getContextWindow,
-  normalizeStepUsage,
-} from "../../../core/ai";
+import { buildAuthConfig, normalizeStepUsage } from "../../../core/ai";
 import {
   createOffensiveSecurityAgentClient,
   type RunAgentResult,
@@ -176,6 +172,7 @@ export default function OperatorDashboard({
   };
 }) {
   const { colors } = useTheme();
+  const [modelLoading, setModelLoading] = useState<string | null>(null);
   const route = useRoute();
   const config = useConfig();
   const {
@@ -749,6 +746,7 @@ export default function OperatorDashboard({
   const runEventProjections = useMemo(
     () =>
       createRunEventProjections({
+        onModelLoading: setModelLoading,
         display: displayEvents,
         subagents: subagentHelpers,
         updateWorkflowData,
@@ -819,6 +817,7 @@ export default function OperatorDashboard({
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
+      setModelLoading(null);
       setThinking(true);
       setIsExecuting(true);
       setError(null);
@@ -893,6 +892,7 @@ export default function OperatorDashboard({
       // from the model this run actually used.
       const runModelId = model.id;
       const recordRootStepUsage = (event: {
+        contextWindow?: number;
         usage?: {
           inputTokens?: number;
           outputTokens?: number;
@@ -904,14 +904,10 @@ export default function OperatorDashboard({
         providerMetadata?: unknown;
       }) => {
         const stepUsage = normalizeStepUsage(event);
-        if (stepUsage.inputTokens > 0) {
+        if (stepUsage.inputTokens > 0 && event.contextWindow !== undefined) {
           usageStore.setRootContext(runSessionIdRef.current, {
             usedTokens: stepUsage.inputTokens,
-            contextLimit: getContextWindow(
-              runModelId,
-              config.data.customProviders,
-              config.data.hoonifyModels,
-            ),
+            contextLimit: event.contextWindow,
             modelId: runModelId,
           });
         }
@@ -924,6 +920,7 @@ export default function OperatorDashboard({
       };
 
       const onStepFinish = (event: {
+        contextWindow?: number;
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
         recordRootStepUsage(event);
@@ -1162,6 +1159,7 @@ export default function OperatorDashboard({
         // (abort, error, success).
         await runTrace.cleanupRun();
         if (gen === generationRef.current) {
+          setModelLoading(null);
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
@@ -1617,6 +1615,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     approvalGateRef.current.denyAll();
 
     setStatus("idle");
+    setModelLoading(null);
     setThinking(false);
     setIsExecuting(false);
 
@@ -2087,6 +2086,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       >
         <MessageList
           messages={messages}
+          modelLoading={modelLoading}
           isRunning={
             (status === "running" || status === "waiting") && !pendingQuestions
           }

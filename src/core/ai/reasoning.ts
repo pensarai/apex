@@ -171,6 +171,7 @@ export function getReasoningCapabilities(
   const { provider } = getModelInfo(modelId);
   if (
     provider === "local" ||
+    provider === "ollama" ||
     provider === "hoonify" ||
     provider === "inference" ||
     provider === "inception"

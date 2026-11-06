@@ -341,6 +341,12 @@ function AppContent({
       route.navigate({ type: "base", path: "disclosure" });
     } else if (
       config.data.responsibleUseAccepted &&
+      config.data.ollama?.models.length &&
+      (route.data.path === "auth" || route.data.path === "providers")
+    ) {
+      route.navigate({ type: "base", path: "home" });
+    } else if (
+      config.data.responsibleUseAccepted &&
       !hasAnyProviderConfigured(config.data) &&
       route.data.path !== "auth" &&
       route.data.path !== "providers" &&
@@ -626,7 +632,7 @@ function CommandDisplay({
     await config.update({ responsibleUseAccepted: true });
     route.navigate({
       type: "base",
-      path: "auth",
+      path: config.data.ollama?.models.length ? "home" : "auth",
     });
   };
 

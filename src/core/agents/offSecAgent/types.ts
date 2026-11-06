@@ -3,7 +3,6 @@ import type {
   ModelMessage,
   StopCondition,
   StreamTextOnFinishCallback,
-  StreamTextOnStepFinishCallback,
   StreamTextResult,
   ToolChoice,
   ToolSet,
@@ -24,6 +23,7 @@ import type {
   InferenceRecorder,
   OpenAIReasoningEffort,
   ReasoningSetting,
+  StreamResponseOpts,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
@@ -297,7 +297,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
   toolChoice?: ToolChoice<ToolSet>;
 
   /** Callback fired after each agent step completes */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: StreamResponseOpts["onStepFinish"];
 
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
@@ -584,7 +584,7 @@ export interface SpecializedAgentInput extends AgentHooks {
   messages?: Array<ModelMessage>;
 
   /** Callback fired after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: StreamResponseOpts["onStepFinish"];
 
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
