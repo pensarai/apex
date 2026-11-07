@@ -60,6 +60,10 @@ export type {
 } from "../runtime/runToolStore";
 export { openSqliteRunStore } from "../runtime/sqliteRunStore";
 export type {
+  EngagementContextProvider,
+  EngagementTarget,
+} from "../workflows/engagementPlan";
+export type {
   PentestWorkflowInput,
   PentestWorkflowResult,
 } from "../workflows/pentest";
@@ -121,6 +125,8 @@ export type {
   ListDomainsResult,
 } from "./domains";
 export { createDomain, listDomains } from "./domains";
+export type { EngagementPentestInput } from "./engagementPentest";
+export { runEngagementPentest } from "./engagementPentest";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {

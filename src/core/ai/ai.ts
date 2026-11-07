@@ -40,6 +40,7 @@ import { RunPersistenceError } from "../runtime/persistenceError";
 import type { RunContextRecorder } from "../runtime/runContext";
 import { RunControlInterruption } from "../runtime/runControlStore";
 import { RunLimitError } from "../runtime/runModelStore";
+import { normalizeMessages } from "../session";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -1454,6 +1455,7 @@ export interface StreamResponseOpts {
   system?: string;
   model: AIModel;
   messages?: Array<ModelMessage>;
+  getPendingMessages?: () => Promise<ModelMessage[]>;
   stopWhen?:
     | StopCondition<NoInfer<ToolSet>>
     | StopCondition<NoInfer<ToolSet>>[];
@@ -2115,6 +2117,13 @@ function streamResponseWithinOperation(
           step.messages,
           step.steps.flatMap((previous) => previous.toolCalls),
         );
+        const pendingMessages = await opts.getPendingMessages?.();
+        if (pendingMessages?.length) {
+          stepMessages = normalizeMessages([
+            ...stepMessages,
+            ...pendingMessages,
+          ]);
+        }
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&

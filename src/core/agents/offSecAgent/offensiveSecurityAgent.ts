@@ -1115,6 +1115,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           continuation && input.messages
             ? [...input.messages, { role: "user", content: continuation }]
             : input.messages,
+        getPendingMessages: input.getPendingMessages,
         tools,
         activeTools,
         stopWhen,
@@ -1153,8 +1154,14 @@ export class OffensiveSecurityAgent<TResult = void> {
           const canonical =
             input.contextRecorder?.latest() ??
             legacyMessages(event.response.messages);
-          this.writer.setLatest(persistedMessages(canonical));
-          schedulePersist();
+          const snapshot = persistedMessages(canonical);
+          this.writer.setLatest(snapshot);
+          if (input.onMessagesPersisted) {
+            await this.writer.enqueueWrite(snapshot);
+            await input.onMessagesPersisted(snapshot);
+          } else {
+            schedulePersist();
+          }
           traceWriter.recordStep(
             event.response.messages as ModelMessage[],
             stepUsage,
