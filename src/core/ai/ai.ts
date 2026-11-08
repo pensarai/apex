@@ -1935,7 +1935,11 @@ function streamResponseWithinOperation(
   try {
     // Create the appropriate provider instance. The span tracker captures
     // the SDK's root generation span for error marking (see below).
-    const generationSpans = createGenerationSpanTracker();
+    const generationSpans = createGenerationSpanTracker({
+      "pensar.tools.count": Object.keys(effectiveTools ?? {}).length,
+      "pensar.tools.definition_size":
+        estimateToolsOverheadTokens(effectiveTools),
+    });
     const attemptAbort = new AbortController();
     const attemptSignal = abortSignal
       ? AbortSignal.any([abortSignal, attemptAbort.signal])
@@ -2089,10 +2093,6 @@ function streamResponseWithinOperation(
           operation: "apex.agent.stream",
           sessionId,
           compaction: opts._compaction?.last,
-          tools: {
-            count: Object.keys(effectiveTools ?? {}).length,
-            estimatedTokens: estimateToolsOverheadTokens(effectiveTools),
-          },
           reasoning: {
             requested: reasoning ?? "legacy-default",
             parameters: JSON.stringify(reasoningProviderOptions ?? {}),

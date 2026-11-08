@@ -255,17 +255,6 @@ describe("createAiTelemetrySettings", () => {
     });
   });
 
-  it("records the advertised tool count and definition size", () => {
-    const settings = createAiTelemetrySettings({
-      operation: "apex.agent.stream",
-      tools: { count: 3, estimatedTokens: 1250 },
-    });
-    expect(settings.metadata).toMatchObject({
-      toolCount: "3",
-      toolDefinitionTokens: "1250",
-    });
-  });
-
   it("operation identifiers are a fixed low-cardinality set", () => {
     const ids = [
       "apex.agent.stream",
@@ -938,9 +927,9 @@ describe("tool definition metadata", () => {
     );
 
     const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
-    expect(span.attributes["ai.telemetry.metadata.toolCount"]).toBe("1");
-    expect(span.attributes["ai.telemetry.metadata.toolDefinitionTokens"]).toBe(
-      String(estimateToolsOverheadTokens({ lookup })),
+    expect(span.attributes["pensar.tools.count"]).toBe(1);
+    expect(span.attributes["pensar.tools.definition_size"]).toBe(
+      estimateToolsOverheadTokens({ lookup }),
     );
   });
 
@@ -949,10 +938,8 @@ describe("tool definition metadata", () => {
     await drain(streamResponse({ prompt: "hi", model: MODEL, silent: true }));
 
     const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
-    expect(span.attributes["ai.telemetry.metadata.toolCount"]).toBe("0");
-    expect(span.attributes["ai.telemetry.metadata.toolDefinitionTokens"]).toBe(
-      "0",
-    );
+    expect(span.attributes["pensar.tools.count"]).toBe(0);
+    expect(span.attributes["pensar.tools.definition_size"]).toBe(0);
   });
 });
 
