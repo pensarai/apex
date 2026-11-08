@@ -3,7 +3,7 @@
 // stays opt-in; metadata propagates to span attributes.
 
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
-import { simulateReadableStream, stepCountIs } from "ai";
+import { simulateReadableStream, stepCountIs, tool } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -24,6 +24,7 @@ vi.mock("../ai/utils", async () => {
 const { streamResponse, generateObjectResponse } = await import("../ai");
 const { createSummarizationStream } = await import("../ai/utils");
 const { createAiTelemetrySettings } = await import("../observability");
+const { estimateToolsOverheadTokens } = await import("../ai/contextManagement");
 
 import type { OtelTestHarness } from "./testkit";
 
@@ -251,6 +252,17 @@ describe("createAiTelemetrySettings", () => {
     expect(settings.metadata).toEqual({
       sessionId: "ses_1",
       compactionTelemetryVersion: "1",
+    });
+  });
+
+  it("records the advertised tool count and definition size", () => {
+    const settings = createAiTelemetrySettings({
+      operation: "apex.agent.stream",
+      tools: { count: 3, estimatedTokens: 1250 },
+    });
+    expect(settings.metadata).toMatchObject({
+      toolCount: "3",
+      toolDefinitionTokens: "1250",
     });
   });
 
@@ -901,6 +913,48 @@ describe("auxiliary model lifecycle", () => {
 // ---------------------------------------------------------------------------
 // PR4: stable session metadata + structured operation ids
 // ---------------------------------------------------------------------------
+
+describe("tool definition metadata", () => {
+  it("streamResponse records only the tools it advertises", async () => {
+    mockState.model = oneStepTextModel();
+    const lookup = tool({
+      description: "Look up a record by id.",
+      inputSchema: z.object({ id: z.string() }),
+      execute: async () => "ok",
+    });
+    const unused = tool({
+      description: "A tool the caller did not activate.",
+      inputSchema: z.object({ query: z.string() }),
+      execute: async () => "ok",
+    });
+    await drain(
+      streamResponse({
+        prompt: "hi",
+        model: MODEL,
+        silent: true,
+        tools: { lookup, unused },
+        activeTools: ["lookup"],
+      }),
+    );
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.attributes["ai.telemetry.metadata.toolCount"]).toBe("1");
+    expect(span.attributes["ai.telemetry.metadata.toolDefinitionTokens"]).toBe(
+      String(estimateToolsOverheadTokens({ lookup })),
+    );
+  });
+
+  it("streamResponse with no tools records zero", async () => {
+    mockState.model = oneStepTextModel();
+    await drain(streamResponse({ prompt: "hi", model: MODEL, silent: true }));
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.attributes["ai.telemetry.metadata.toolCount"]).toBe("0");
+    expect(span.attributes["ai.telemetry.metadata.toolDefinitionTokens"]).toBe(
+      "0",
+    );
+  });
+});
 
 describe("identity metadata propagation", () => {
   it("streamResponse emits session metadata without redundant identity fields", async () => {

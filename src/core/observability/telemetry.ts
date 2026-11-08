@@ -36,6 +36,8 @@ export interface CreateAiTelemetryInput {
   sessionId?: string;
   compaction?: { traceId: string; spanId: string };
   reasoning?: { requested: string; parameters: string };
+  /** The tools this call advertises to the model, and their estimated definition size. */
+  tools?: { count: number; estimatedTokens: number };
 }
 
 /**
@@ -62,6 +64,10 @@ export function createAiTelemetrySettings(
   if (input.compaction) {
     metadata.compactionTraceId = input.compaction.traceId;
     metadata.compactionSpanId = input.compaction.spanId;
+  }
+  if (input.tools) {
+    metadata.toolCount = String(input.tools.count);
+    metadata.toolDefinitionTokens = String(input.tools.estimatedTokens);
   }
   return {
     isEnabled: true,

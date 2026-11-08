@@ -2089,6 +2089,10 @@ function streamResponseWithinOperation(
           operation: "apex.agent.stream",
           sessionId,
           compaction: opts._compaction?.last,
+          tools: {
+            count: Object.keys(effectiveTools ?? {}).length,
+            estimatedTokens: estimateToolsOverheadTokens(effectiveTools),
+          },
           reasoning: {
             requested: reasoning ?? "legacy-default",
             parameters: JSON.stringify(reasoningProviderOptions ?? {}),
