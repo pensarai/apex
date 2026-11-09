@@ -592,6 +592,8 @@ export function documentThreat(ctx: ToolContext) {
 
 Model each component in depth. Work through every STRIDE category against what the map shows — its trust assumptions, the gaps in the controls on it and on the layers around it, the flows that reach it and the ones it makes, and what it holds — and document each threat that plausibly applies. Most components on an attack path have several. Write each one for this system specifically: who acts, through which entry point and flow, using which trust assumption or control gap, and what they get. A generic threat ("SQL injection is possible") is not a threat model.
 
+A pentest agent takes each threat as an objective and tests it live, so make it testable: the exact place the attack starts, the steps, and how to confirm it. A threat a tester cannot act on is not finished.
+
 Document the same title on the same component again to update it.`,
     inputSchema: z.object({
       component: z
@@ -603,10 +605,21 @@ Document the same title on the same component again to update it.`,
           "Short, specific title, unique within the component, e.g. 'Read any account through legacy v1 IDs'.",
         ),
       category: z.enum(THREAT_CATEGORIES),
+      entryPoint: z
+        .string()
+        .describe(
+          "Where the attack starts, concretely enough to send a request to: a host plus method and route, and the parameter, header, cookie, or field involved — e.g. 'POST https://app.example.com/api/v1/orders, body.accountId'. For a non-HTTP surface: the queue, bucket, function URL, or API call.",
+        ),
       scenario: z
         .string()
         .describe(
           "Who does what, through which entry point and flow, exploiting which trust assumption or control gap, with what result — concrete to this system.",
+        ),
+      attackSteps: z
+        .array(z.string())
+        .min(2)
+        .describe(
+          "The attack in order, one action per step, as a tester would carry it out: what to request or do, with which values, and what each step yields for the next.",
         ),
       preconditions: z
         .array(z.string())
@@ -618,6 +631,11 @@ Document the same title on the same component again to update it.`,
         .describe(
           "What is lost and how widely: whose data, which privileges, how much money or availability.",
         ),
+      severity: z
+        .enum(["critical", "high", "medium", "low"])
+        .describe(
+          "How bad it is if it holds, from the impact: critical for cross-tenant data, account takeover, or code execution; high for one tenant's sensitive data or privileged actions; medium for limited data or abuse; low for minor disclosure.",
+        ),
       likelihood: z.enum(["low", "medium", "high"]),
       likelihoodRationale: z
         .string()
@@ -626,9 +644,13 @@ Document the same title on the same component again to update it.`,
         ),
       controls: z
         .array(z.string())
-        .optional()
         .describe(
-          "Names of documented controls that should stop it — the threat usually exploits their gaps.",
+          "Names of documented controls that should stop it — the threat usually exploits their gaps. Empty only when no documented control stands in the way; then say so in likelihoodRationale.",
+        ),
+      verification: z
+        .string()
+        .describe(
+          "How a pentest confirms it without causing harm: the request(s) to send and the response, data, or side effect that proves the threat holds — and what result shows it does not.",
         ),
       evidence: evidenceSchema,
       toolCallDescription,
@@ -712,12 +734,16 @@ const UPDATABLE: Record<
   control: ["kind", "appliesTo", "protects", "gaps"],
   threat: [
     "category",
+    "entryPoint",
     "scenario",
+    "attackSteps",
     "preconditions",
     "impact",
+    "severity",
     "likelihood",
     "likelihoodRationale",
     "controls",
+    "verification",
   ],
 };
 
@@ -755,12 +781,16 @@ Do not use it to restate a record in new words, and do not touch a record whose 
           protects: z.string().optional(),
           gaps: z.string().optional(),
           category: z.enum(THREAT_CATEGORIES).optional(),
+          entryPoint: z.string().optional(),
           scenario: z.string().optional(),
+          attackSteps: z.array(z.string()).optional(),
           preconditions: z.array(z.string()).optional(),
           impact: z.string().optional(),
+          severity: z.enum(["critical", "high", "medium", "low"]).optional(),
           likelihood: z.enum(["low", "medium", "high"]).optional(),
           likelihoodRationale: z.string().optional(),
           controls: z.array(z.string()).optional(),
+          verification: z.string().optional(),
         })
         .describe("Only the fields that changed, with their new values."),
       evidence: evidenceSchema,
@@ -1229,6 +1259,7 @@ export interface TopologyIssue {
     | "references-retired"
     | "possible-duplicate"
     | "no-threats"
+    | "threat-untestable"
     | "unconnected";
   subject: string;
   fix: string;
@@ -1347,6 +1378,21 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
         subject: String(c.name),
         fix: "Threat-model it with document_threat: work through each STRIDE category against its trust assumptions, its controls' gaps, and its flows.",
       });
+  const has = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+  for (const t of topology.threats) {
+    const missing = [
+      !has(t.entryPoint) && "entry point",
+      !(Array.isArray(t.attackSteps) && t.attackSteps.length) && "attack steps",
+      !has(t.severity) && "severity",
+      !has(t.verification) && "verification",
+    ].filter(Boolean);
+    if (missing.length)
+      issues.push({
+        check: "threat-untestable",
+        subject: `${t.component}: ${t.title}`,
+        fix: `A pentest cannot act on it yet. update_record it with its ${missing.join(", ")}.`,
+      });
+  }
   for (const kind of ["boundary", "component"] as const)
     for (const p of duplicatePairs(
       kind,

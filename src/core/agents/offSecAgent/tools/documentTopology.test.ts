@@ -12,6 +12,7 @@ import {
   documentFlow,
   documentThreat,
   reviewTopologyRecords,
+  updateRecord,
 } from "./documentTopology";
 import type { ToolContext } from "./types";
 
@@ -199,20 +200,65 @@ describe("document_control", () => {
   });
 });
 
-/** One threat, enough to satisfy review_topology's no-threats check. */
+/** A threat as recorded before threats had to be testable. */
+const untestableThreat = (component: string) => ({
+  component,
+  title: `Abuse ${component}`,
+  category: "elevation-of-privilege",
+  scenario: `An attacker reaches ${component} and abuses what it trusts.`,
+  preconditions: [],
+  impact: "Tenant data.",
+  likelihood: "medium",
+  likelihoodRationale: "Reachable from the internet.",
+  evidence: fromSource,
+});
+
+/** One testable threat, enough to satisfy review_topology's threat checks. */
 async function threaten(ctx: ToolContext, component: string) {
   await run(documentThreat(ctx), {
-    component,
-    title: `Abuse ${component}`,
-    category: "elevation-of-privilege",
-    scenario: `An attacker reaches ${component} and abuses what it trusts.`,
-    preconditions: [],
-    impact: "Tenant data.",
-    likelihood: "medium",
-    likelihoodRationale: "Reachable from the internet.",
-    evidence: fromSource,
+    ...untestableThreat(component),
+    entryPoint: "POST https://app.example.com/api/orders, body.accountId",
+    attackSteps: [
+      "Sign in as tenant A",
+      "Replay the order request with tenant B's accountId",
+    ],
+    severity: "critical",
+    controls: [],
+    verification:
+      "The response returns tenant B's orders; a 403 shows the check holds.",
   });
 }
+
+describe("review_topology threat testability", () => {
+  it("flags a threat a pentest cannot act on, until update_record completes it", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    await run(documentThreat(ctx), untestableThreat(web.name));
+
+    const issue = reviewTopologyRecords(ctx).find(
+      (i) => i.check === "threat-untestable",
+    );
+    expect(issue?.fix).toContain(
+      "entry point, attack steps, severity, verification",
+    );
+
+    await run(updateRecord(ctx), {
+      kind: "threat",
+      name: `Abuse ${web.name}`,
+      component: web.name,
+      changes: {
+        entryPoint: "GET https://app.example.com/api/orders?accountId=",
+        attackSteps: ["Sign in as tenant A", "Request tenant B's orders"],
+        severity: "high",
+        verification: "Tenant B's orders come back.",
+      },
+      evidence: fromSource,
+    });
+    expect(reviewTopologyRecords(ctx).map((i) => i.check)).not.toContain(
+      "threat-untestable",
+    );
+  });
+});
 
 describe("review_topology", () => {
   async function vpcSeed(ctx: ToolContext) {

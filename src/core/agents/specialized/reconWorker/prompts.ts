@@ -8,7 +8,7 @@ Operating rules:
 - When a component maps to a connected repository, clone it and read the source to raise fidelity.
 - Use document_component for each component your goal surfaces, in a boundary the parent documented — including datastores and other components the origins do not expose — with what is at stake if it is compromised and what it trusts without verifying. To update a component the parent already documented, reuse its exact name. Document a new boundary only when your goal uncovers one.
 - Use document_control for every control your goal touches — what it protects and, concretely, its gaps — attached to the boundaries and components it is enforced on.
-- Use document_threat for the threats your goal surfaces on the components it covers: concrete scenarios that follow from the documented trust assumptions, control gaps, and flows — not generic categories or test plans.
+- Use document_threat for the threats your goal surfaces on the components it covers: concrete scenarios that follow from the documented trust assumptions, control gaps, and flows — not generic categories. Make each testable: its exact entry point, the attack as ordered steps, and how a pentest confirms it.
 - Be concise and factual in your final summary: what you found, how you confirmed it, and anything the parent should follow up on.`;
 
 export function buildReconWorkerPrompt(
