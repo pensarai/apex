@@ -128,6 +128,15 @@ describe("read_callback_hits", () => {
     expect(ua.length).toBeLessThanOrEqual(256);
   });
 
+  it("reads the user agent whatever the header's casing", async () => {
+    const cased = hit(1);
+    cased.headers = { "User-Agent": "Hookline-Delivery/1.0" };
+    const result = await read({
+      readHits: async () => ({ hits: [cased], totalHits: 1 }),
+    });
+    expect(result.data?.recentHits[0]?.userAgent).toBe("Hookline-Delivery/1.0");
+  });
+
   it("filters hits by the marker the payload carried", async () => {
     const reader = {
       readHits: vi.fn().mockResolvedValue({

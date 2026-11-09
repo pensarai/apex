@@ -25,6 +25,12 @@ function failure(summary: string) {
   };
 }
 
+// Header names are case-insensitive, and readers needn't lowercase them.
+function headerValue(headers: Record<string, string>, name: string): string {
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name);
+  return key ? headers[key] : "";
+}
+
 function present(hit: CallbackHit) {
   return {
     hitId: hit.id,
@@ -32,7 +38,10 @@ function present(hit: CallbackHit) {
     method: hit.method,
     path: hit.path.slice(0, MAX_PATH_CHARS),
     ip: hit.sourceIp ?? "",
-    userAgent: (hit.headers["user-agent"] ?? "").slice(0, MAX_USER_AGENT_CHARS),
+    userAgent: headerValue(hit.headers, "user-agent").slice(
+      0,
+      MAX_USER_AGENT_CHARS,
+    ),
     body: hit.bodyPreview.slice(0, MAX_BODY_CHARS),
     ...(hit.bodyTruncated || hit.bodyPreview.length > MAX_BODY_CHARS
       ? { bodyTruncated: true }

@@ -192,7 +192,8 @@ export function targetFetch(
     return resolveEffectiveHeaders(
       session,
       hopUrl,
-      context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
+      (context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)) &&
+        !isTestDomainUrl(hopUrl, session)
         ? callerHeaders
         : undefined,
     );

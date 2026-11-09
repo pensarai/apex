@@ -290,7 +290,9 @@ describe("targetFetch", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("ok"));
     try {
-      await targetFetch(session, "https://probe.cb.example.net/marker-1");
+      await targetFetch(session, "https://probe.cb.example.net/marker-1", {
+        headers: { Authorization: "Bearer caller", Cookie: "sid=caller" },
+      });
 
       expect(spy).toHaveBeenCalledOnce();
       const headers = (spy.mock.calls[0]?.[1]?.headers ?? {}) as Record<
@@ -298,6 +300,37 @@ describe("targetFetch", () => {
         string
       >;
       expect(headers.Authorization).toBeUndefined();
+      expect(headers.Cookie).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("drops the caller's headers when a target redirects to a test domain", async () => {
+    const session = makeSession({
+      config: { testDomains: ["probe.cb.example.net"] },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 302,
+          headers: { location: "https://probe.cb.example.net/hop" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+    try {
+      await targetFetch(session, "https://example.com/start", {
+        redirect: "follow",
+        headers: { Authorization: "Bearer caller" },
+      });
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      const hop = (spy.mock.calls[1]?.[1]?.headers ?? {}) as Record<
+        string,
+        string
+      >;
+      expect(hop.Authorization).toBeUndefined();
     } finally {
       spy.mockRestore();
     }
