@@ -588,19 +588,24 @@ export type ApplyShellResult = {
 //   - `unknown-tool` headers exist but the tool/pipeline is unrecognized,
 //                    or a `2>&1`-redirected command spans multiple hosts;
 //                    the caller MUST fail closed
-// A test-domain URL standing as its own shell word (optionally quoted) is a
-// destination. Deliberately broad: a bare URL used as a data value also counts,
-// which only withholds headers and never sends them.
+// Whether a command may request a test domain. A test-domain URL standing as
+// its own shell word (optionally quoted) is a destination. Shell expansion
+// ($'…', "$VAR", $(…), backticks) can assemble a destination no pattern
+// sees, so a command that mentions a test domain and expands anything fails
+// closed too. Deliberately broad: a false match only withholds headers.
 function requestsTestDomain(
   command: string,
   session: ResolverSession,
 ): boolean {
-  return sessionTestDomains(session).some((domain) =>
-    new RegExp(
-      `(?:^|\\s)["']?https?://${domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[/:?#\\s"']|$)`,
+  return sessionTestDomains(session).some((domain) => {
+    const host = domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(host, "i").test(command)) return false;
+    if (/[$`]/.test(command)) return true;
+    return new RegExp(
+      `(?:^|\\s)["']?https?://${host}(?=[/:?#\\s"']|$)`,
       "i",
-    ).test(command),
-  );
+    ).test(command);
+  });
 }
 
 export function applyHeadersToShellCommand(

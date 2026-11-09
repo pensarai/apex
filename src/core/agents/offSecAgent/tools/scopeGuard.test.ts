@@ -733,6 +733,18 @@ describe("session test domains", () => {
       ["app.example.com", CB],
     );
     expect(quoted.status).toBe("test-domain-destination");
+
+    // Shell expansion can assemble a destination no pattern sees: fail closed.
+    for (const command of [
+      `curl https://app.example.com/api $'https://${CB}/x'`,
+      `U=https://${CB}/x; curl https://app.example.com/api "$U"`,
+      `curl https://app.example.com/api $(echo https://${CB}/x)`,
+    ]) {
+      expect(
+        applyHeadersToShellCommand(command, session, ["app.example.com", CB])
+          .status,
+      ).toBe("test-domain-destination");
+    }
   });
 
   it("keeps the target's headers when the test domain is only payload data", () => {
