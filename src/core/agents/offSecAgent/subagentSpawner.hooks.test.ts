@@ -124,6 +124,21 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.pentestInput?.callbacks).toBe(callbacks);
   });
 
+  it("gives the finding judge the parent's callbacks reader", async () => {
+    const callbacks = { readHits: vi.fn() };
+    await inProcessSubagentSpawner.spawn({
+      spec: {
+        type: "finding-judge",
+        judgeInput: {} as never,
+        target: "https://example.com",
+      },
+      runtime: { ...runtime, callbacks },
+      parentBus: new AgentEventBus(),
+      subagentId: "judge-callbacks",
+    });
+    expect(mocks.judgeCtx?.callbacks).toBe(callbacks);
+  });
+
   it("passes the hooks through as unset when the runtime omits them", async () => {
     await inProcessSubagentSpawner.spawn({
       spec: { type: "authentication", target: "https://example.com" },

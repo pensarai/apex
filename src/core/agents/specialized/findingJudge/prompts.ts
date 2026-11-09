@@ -87,14 +87,19 @@ Call the response tool exactly once. Include:
 - webResearchUsed: whether web research materially informed the judgment.
 - limitations: remaining gaps.`;
 
-// Only sessions with host-owned test domains can cite callback hits, so only
-// they get the out-of-band rule; every other judge keeps the prompt above.
+// Only runs with host-owned test domains and a callbacks reader can cite
+// callback hits, so only they get the out-of-band rule; every other judge
+// keeps the prompt above.
 const OUT_OF_BAND_RULE =
   "- Out-of-band (blind SSRF, XXE, webhook, host-header or password-reset poisoning, blind injection): the target's own response won't show the impact. Accept a claim that cites a callback hit (hitId, method, path, source IP, user agent, time) read with read_callback_hits when its path carries the marker the PoC sends and the PoC makes the target, not the PoC itself, request that URL. You can't read callbacks yourself, so confidence must stay below 0.7 and limitations must state the callback was not independently re-observed. Reject an out-of-band claim with no cited hit, or one where the PoC requests the test domain directly.\n";
 
-export function findingJudgeSystemPrompt(session: SessionInfo): string {
-  if (sessionTestDomains(session).length === 0)
+export function findingJudgeSystemPrompt(
+  session: SessionInfo,
+  callbackReader: boolean,
+): string {
+  if (!callbackReader || sessionTestDomains(session).length === 0) {
     return FINDING_JUDGE_SYSTEM_PROMPT;
+  }
   const anchor = "- Email/HTML injection:";
   if (!FINDING_JUDGE_SYSTEM_PROMPT.includes(anchor)) {
     throw new Error(

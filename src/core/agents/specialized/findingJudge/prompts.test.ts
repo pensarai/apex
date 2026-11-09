@@ -16,7 +16,10 @@ function session(testDomains?: string[]): SessionInfo {
 
 describe("finding judge out-of-band rule", () => {
   it("accepts blind claims only on a cited callback hit, at capped confidence, when the session has test domains", () => {
-    const prompt = findingJudgeSystemPrompt(session(["probe.cb.example.net"]));
+    const prompt = findingJudgeSystemPrompt(
+      session(["probe.cb.example.net"]),
+      true,
+    );
     expect(prompt).toContain(
       "cites a callback hit (hitId, method, path, source IP, user agent, time) read with read_callback_hits",
     );
@@ -32,9 +35,17 @@ describe("finding judge out-of-band rule", () => {
 
   it("leaves the judge prompt unchanged for sessions without test domains", () => {
     for (const s of [session(), session([])]) {
-      const prompt = findingJudgeSystemPrompt(s);
+      const prompt = findingJudgeSystemPrompt(s, true);
       expect(prompt).toBe(FINDING_JUDGE_SYSTEM_PROMPT);
       expect(prompt).not.toContain("read_callback_hits");
     }
+  });
+
+  it("keeps the normal evidence rules when no component can read callbacks", () => {
+    // Without a reader nothing could have observed a hit, so a cited one
+    // can't be trusted.
+    expect(
+      findingJudgeSystemPrompt(session(["probe.cb.example.net"]), false),
+    ).toBe(FINDING_JUDGE_SYSTEM_PROMPT);
   });
 });

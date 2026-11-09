@@ -35,7 +35,11 @@ export const findingJudgeDefinition = defineAgent<
 >({
   name: "finding-judge",
   role: "judge",
-  system: (opts) => findingJudgeSystemPrompt(opts.session),
+  system: (opts) =>
+    findingJudgeSystemPrompt(
+      opts.session,
+      Boolean(opts.backends?.callbacks ?? opts.callbacks),
+    ),
   activeTools: () => [...FINDING_JUDGE_ACTIVE_TOOLS],
   responseSchema: () => FindingJudgeOutputSchema,
   stopWhen: () => stepCountIs(60),

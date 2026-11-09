@@ -560,6 +560,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         subagentName: ctx.subagentName,
         sandbox: ctx.sandbox,
         backends: ctx.backends,
+        callbacks: ctx.callbacks,
         target: spec.target,
         languageModelMiddleware: ctx.languageModelMiddleware,
         toolProtocol: ctx.toolProtocol,
