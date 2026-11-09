@@ -238,6 +238,26 @@ describe("documentVulnerability judge handling", () => {
     expect(mockedJudgeFinding).not.toHaveBeenCalled();
   });
 
+  it("tells the agent how to write payload URLs when a PoC is out of scope", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      {
+        ...makeDocumentInput(),
+        pocName: "ssrf_variable_payload",
+        pocType: "python",
+        pocContent:
+          'import requests\npayload = {"url": "http://169.254.169.254/"}\nrequests.post("https://example.com/hooks", json=payload)',
+      },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { message?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Scope violation: "169.254.169.254"');
+    expect(result.message).toContain("write it inline in the request");
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+  });
+
   it("cleans up the POC and returns judgeRejected when a completed judge rejects", async () => {
     mockedJudgeFinding.mockResolvedValue({
       valid: false,
