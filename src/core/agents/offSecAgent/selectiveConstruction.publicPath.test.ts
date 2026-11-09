@@ -174,15 +174,16 @@ describe("OffensiveSecurityAgent public-path construction counts", () => {
     });
   });
 
-  it("fast-strike full path constructs exactly the gated catalog: 43", async () => {
+  it("fast-strike full path constructs exactly the gated catalog: 44", async () => {
     await withRoot(async (root) => {
       reset();
       observed.armed = true;
       makeAgent(root, [], { mode: "fast-strike" });
       observed.armed = false;
       const tools = stream().tools;
-      expect(observed.constructed).toBe(43);
-      expect(Object.keys(tools)).toHaveLength(43);
+      expect(observed.constructed).toBe(44);
+      expect(Object.keys(tools)).toHaveLength(44);
+      expect(tools).toHaveProperty("record_run_resource");
       expect(tools).toHaveProperty("checkpoint_state");
       // Callback helper tools are fast-strike-available (the whitebox job
       // tools they wrap are not).

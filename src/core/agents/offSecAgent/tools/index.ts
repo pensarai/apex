@@ -255,6 +255,7 @@ import { provideComparisonResults } from "./provideComparisonResults";
 import { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 import { readFile } from "./readFile";
 import { readSkill } from "./readSkill";
+import { recordRunResource } from "./recordRunResource";
 import { runAttackSurface } from "./runAttackSurface";
 import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
@@ -338,6 +339,7 @@ const TOOL_REGISTRY = [
   { name: "execute_command", factory: executeCommand },
   { name: "http_request", factory: httpRequest },
   { name: "document_vulnerability", factory: documentVulnerability },
+  { name: "record_run_resource", factory: recordRunResource },
 
   // Filesystem / search tools
   { name: "read_file", factory: readFile },
@@ -613,6 +615,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "execute_command",
   "http_request",
   "document_vulnerability",
+  "record_run_resource",
   // Filesystem / search
   "read_file",
   "list_files",
