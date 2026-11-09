@@ -464,6 +464,18 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         cmdHosts,
         backends.command.platform,
       );
+      if (inject.status === "test-domain-destination" && !allow_unprotected) {
+        const msg =
+          "Command rejected: it requests one of your test domains alongside the target, so the target's configured headers would be sent to the test domain too. " +
+          "Request the test domain in its own command (it gets no headers), or pass allow_unprotected: true to run this command without any configured headers.";
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
+      }
       if (inject.status === "unknown-tool" && !allow_unprotected) {
         const redirectGuidance =
           backends.command.platform === "windows"

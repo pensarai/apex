@@ -717,4 +717,36 @@ describe("session test domains", () => {
       ).status,
     ).not.toBe("injected");
   });
+  it("withholds shell headers from a command that also requests a test domain", () => {
+    const session = resolverSessionFromCtx(withTestDomain());
+    const both = applyHeadersToShellCommand(
+      `curl https://app.example.com/api https://${CB}/self-check`,
+      session,
+      ["app.example.com", CB],
+    );
+    expect(both.status).toBe("test-domain-destination");
+    expect(both.command).not.toContain("X-API-Key");
+
+    const quoted = applyHeadersToShellCommand(
+      `curl "https://app.example.com/api" "https://${CB}/self-check"`,
+      session,
+      ["app.example.com", CB],
+    );
+    expect(quoted.status).toBe("test-domain-destination");
+  });
+
+  it("keeps the target's headers when the test domain is only payload data", () => {
+    const session = resolverSessionFromCtx(withTestDomain());
+    for (const command of [
+      `curl -X POST https://app.example.com/import -d 'url=https://${CB}/ssrf-1'`,
+      `curl https://app.example.com/hooks -H 'Content-Type: application/json' -d '{"url":"https://${CB}/ssrf-2"}'`,
+    ]) {
+      const result = applyHeadersToShellCommand(command, session, [
+        "app.example.com",
+        CB,
+      ]);
+      expect(result.status).toBe("injected");
+      expect(result.command).toContain("X-API-Key: secret");
+    }
+  });
 });

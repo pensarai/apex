@@ -5,7 +5,7 @@
 // The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
-import { isTestDomainUrl } from "../session/testDomains";
+import { isTestDomainUrl, sessionTestDomains } from "../session/testDomains";
 import {
   fetchWithScopedRedirects,
   type RedirectFetchResult,
@@ -565,7 +565,11 @@ function detectHttpToolOnCommand(
   return null;
 }
 
-export type ApplyShellStatus = "injected" | "no-headers" | "unknown-tool";
+export type ApplyShellStatus =
+  | "injected"
+  | "no-headers"
+  | "unknown-tool"
+  | "test-domain-destination";
 
 export type ApplyShellResult = {
   readonly command: string;
@@ -584,6 +588,21 @@ export type ApplyShellResult = {
 //   - `unknown-tool` headers exist but the tool/pipeline is unrecognized,
 //                    or a `2>&1`-redirected command spans multiple hosts;
 //                    the caller MUST fail closed
+// A test-domain URL standing as its own shell word (optionally quoted) is a
+// destination. Deliberately broad: a bare URL used as a data value also counts,
+// which only withholds headers and never sends them.
+function requestsTestDomain(
+  command: string,
+  session: ResolverSession,
+): boolean {
+  return sessionTestDomains(session).some((domain) =>
+    new RegExp(
+      `(?:^|\\s)["']?https?://${domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[/:?#\\s"']|$)`,
+      "i",
+    ).test(command),
+  );
+}
+
 export function applyHeadersToShellCommand(
   command: string,
   session: ResolverSession,
@@ -609,6 +628,14 @@ export function applyHeadersToShellCommand(
   const headers = resolveEffectiveHeaders(session, url);
   if (Object.keys(headers).length === 0) {
     return { command, status: "no-headers", tool: null };
+  }
+
+  // Injected flags ride every URL the tool requests, so a command that also
+  // requests a test domain would hand it the target's headers. A test-domain
+  // URL inside a larger word (a JSON body, `url=` form data) is payload, not a
+  // destination, so authenticated SSRF tests keep their headers.
+  if (requestsTestDomain(command, session)) {
+    return { command, status: "test-domain-destination", tool: null };
   }
 
   const tool = detectHttpToolOnCommand(command, allowDescriptorRedirect);
