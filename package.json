@@ -95,6 +95,16 @@
       "import": "./build/lib/core/agents/offSecAgent/tools/smsInbox.js",
       "types": "./build/lib/core/agents/offSecAgent/tools/smsInbox.d.ts"
     },
+    "./agents/offSecAgent/tools/topologyMermaid": {
+      "default": "./build/lib/core/agents/offSecAgent/tools/topologyMermaid.js",
+      "import": "./build/lib/core/agents/offSecAgent/tools/topologyMermaid.js",
+      "types": "./build/lib/core/agents/offSecAgent/tools/topologyMermaid.d.ts"
+    },
+    "./agents/offSecAgent/tools/topologyRecords": {
+      "default": "./build/lib/core/agents/offSecAgent/tools/topologyRecords.js",
+      "import": "./build/lib/core/agents/offSecAgent/tools/topologyRecords.js",
+      "types": "./build/lib/core/agents/offSecAgent/tools/topologyRecords.d.ts"
+    },
     "./agents/offSecAgent/types": {
       "default": "./build/lib/core/agents/offSecAgent/types.js",
       "import": "./build/lib/core/agents/offSecAgent/types.js",
@@ -104,6 +114,16 @@
       "default": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
       "import": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
       "types": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.d.ts"
+    },
+    "./agents/specialized/attackSurface/generalizedAgent": {
+      "default": "./build/lib/core/agents/specialized/attackSurface/generalizedAgent.js",
+      "import": "./build/lib/core/agents/specialized/attackSurface/generalizedAgent.js",
+      "types": "./build/lib/core/agents/specialized/attackSurface/generalizedAgent.d.ts"
+    },
+    "./agents/specialized/attackSurface/reconUpdate": {
+      "default": "./build/lib/core/agents/specialized/attackSurface/reconUpdate.js",
+      "import": "./build/lib/core/agents/specialized/attackSurface/reconUpdate.js",
+      "types": "./build/lib/core/agents/specialized/attackSurface/reconUpdate.d.ts"
     },
     "./agents/specialized/attackSurface/schemas": {
       "default": "./build/lib/core/agents/specialized/attackSurface/schemas.js",
@@ -144,6 +164,11 @@
       "default": "./build/lib/core/agents/specialized/pentest/agent.js",
       "import": "./build/lib/core/agents/specialized/pentest/agent.js",
       "types": "./build/lib/core/agents/specialized/pentest/agent.d.ts"
+    },
+    "./agents/specialized/reconWorker/agent": {
+      "default": "./build/lib/core/agents/specialized/reconWorker/agent.js",
+      "import": "./build/lib/core/agents/specialized/reconWorker/agent.js",
+      "types": "./build/lib/core/agents/specialized/reconWorker/agent.d.ts"
     },
     "./agents/specialized/whiteboxAttackSurface": {
       "default": "./build/lib/core/agents/specialized/whiteboxAttackSurface/index.js",

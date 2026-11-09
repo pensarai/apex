@@ -652,18 +652,22 @@ describe("callback listener helper (remote-adapter contract, local machine)", ()
     });
 
     // Readiness self-test ran through the same command environment.
-    const ready = await pollListener(ctx, listener.jobId);
-    expect(ready.data.listenerReady).toBe(true);
-    expect(ready.data.selfTestHits).toBeGreaterThanOrEqual(1);
-    expect(ready.data.callbackHits).toBe(0);
+    await vi.waitFor(async () => {
+      const ready = await pollListener(ctx, listener.jobId);
+      expect(ready.data.listenerReady).toBe(true);
+      expect(ready.data.selfTestHits).toBeGreaterThanOrEqual(1);
+      expect(ready.data.callbackHits).toBe(0);
+    });
 
     const hit = await httpGet(
       `http://127.0.0.1:${listener.port}/${listener.nonce}/cb`,
     );
     expect(hit.status).toBe(200);
 
-    const evidence = await pollListener(ctx, listener.jobId);
-    expect(evidence.data.callbackHits).toBe(1);
+    await vi.waitFor(async () => {
+      const evidence = await pollListener(ctx, listener.jobId);
+      expect(evidence.data.callbackHits).toBe(1);
+    });
 
     const stopped = (await stopCallbackListener(ctx).execute?.(
       { jobId: listener.jobId, toolCallDescription: "Remote-adapter stop" },

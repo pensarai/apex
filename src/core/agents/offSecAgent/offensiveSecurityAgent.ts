@@ -659,7 +659,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const toolCtx = {
+    const toolCtx: ToolContext = {
       findingPolicy: input.findingPolicy,
       ...(input.attackSurfaceArtifactsPath
         ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
@@ -784,6 +784,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.approvalGate !== undefined,
     );
 
+    toolCtx.activeToolNames = activeTools;
     const builtinTools = createToolsForNames(toolCtx, activeTools);
 
     const extraTools =
