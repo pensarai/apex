@@ -72,6 +72,7 @@ import {
   PerCommandShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
+  REPORT_ERROR_TOOL_NAME,
   RESPONSE_TOOL_NAME,
   resolveBrowserHeaderPolicy,
   SEND_EMAIL_TOOL_NAME,
@@ -1375,6 +1376,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       let streamError: unknown;
       let hasStreamError = false;
       let responseError: unknown;
+      let reportErrorCompleted = false;
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
@@ -1399,6 +1401,13 @@ export class OffensiveSecurityAgent<TResult = void> {
             chunk.toolName === RESPONSE_TOOL_NAME
           )
             responseError = chunk.error;
+          if (
+            chunk.type === "tool-result" &&
+            chunk.toolName === REPORT_ERROR_TOOL_NAME &&
+            !chunk.preliminary
+          ) {
+            reportErrorCompleted = true;
+          }
           this.applyStreamPart(chunk, { ids, tracker, diagnostics });
           bus.emitStreamPart(chunk, ids);
         }
@@ -1439,7 +1448,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         throw agentAbortReason(this.abortSignal);
       }
 
-      if (this.requiresResponse && !this._responseToolFired) {
+      if (
+        this.requiresResponse &&
+        !this._responseToolFired &&
+        !reportErrorCompleted
+      ) {
         throw new Error(
           `Structured agent ${this.busSessionId} ended without a validated response`,
           { cause: responseError },
