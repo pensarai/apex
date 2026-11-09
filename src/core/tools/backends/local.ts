@@ -40,6 +40,7 @@ import {
 import { verifyLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
 import type { HeaderRecord } from "../../http/types";
+import { isTestDomainUrl } from "../../session/testDomains";
 import { collectCommand } from "./collectCommand";
 import {
   CAPS,
@@ -575,6 +576,19 @@ function redirectedHttpRequest(
   };
 }
 
+// A redirect onto a test domain would carry the request (a 307/308 keeps its
+// body) into callback storage. The agent never needs to follow one; a direct
+// request to a test domain still goes through http_request.
+function refuseRedirectOntoTestDomain(ctx: ToolContext, url: string): void {
+  if (isTestDomainUrl(url, ctx.session)) {
+    throw new ToolPolicyDeniedError(
+      "http",
+      "request",
+      `Scope violation: redirect onto test domain ${url} is not followed`,
+    );
+  }
+}
+
 function responseHeader(
   headers: Record<string, string>,
   name: string,
@@ -630,6 +644,7 @@ async function fetchTargetWithRedirects(
       response.status,
       new URL(location, request.url).toString(),
     );
+    refuseRedirectOntoTestDomain(ctx, next.url);
     await authorize(next);
     request = next;
     redirected = true;
@@ -685,6 +700,7 @@ async function fetchSandboxWithRedirects(
       response.status,
       new URL(location, request.url).toString(),
     );
+    refuseRedirectOntoTestDomain(ctx, next.url);
     await authorize(next);
     request = next;
     redirected = true;

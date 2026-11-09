@@ -131,6 +131,101 @@ describe("injected HTTP backends", () => {
     });
   });
 
+  it("refuses a sandbox redirect onto a test domain instead of carrying the request there", async () => {
+    const ctx = context();
+    ctx.session.config = {
+      testDomains: ["probe.cb.example.net"],
+    } as NonNullable<ToolContext["session"]["config"]>;
+    const commands: string[] = [];
+    const execute = vi.fn(async (command: string) => {
+      commands.push(command);
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      const wire =
+        "HTTP/1.1 307 Temporary Redirect\r\nLocation: https://probe.cb.example.net/catch\r\nContent-Length: 0\r\n\r\n";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: Buffer.from(`${wire}\n__APEX_${nonce}_CURL_EXIT_0\n`).toString(
+          "base64",
+        ),
+        stderr: "",
+      };
+    });
+    ctx.sandbox = {
+      type: "linux",
+      execute,
+    } as unknown as NonNullable<ToolContext["sandbox"]>;
+
+    const result = await LocalBackends(ctx).http.request(
+      {
+        url: "https://example.com/login",
+        method: "POST",
+        body: "password=hunter2",
+        followRedirects: true,
+      },
+      { timeoutMs: 5000 },
+    );
+
+    expect(commands.some((c) => c.includes("example.com/login"))).toBe(true);
+    expect(commands.some((c) => c.includes("probe.cb.example.net"))).toBe(
+      false,
+    );
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/redirect onto test domain/),
+    });
+  });
+
+  it("sends no caller headers to a test domain on any backend", async () => {
+    const ctx = context();
+    ctx.session.config = {
+      testDomains: ["probe.cb.example.net"],
+    } as NonNullable<ToolContext["session"]["config"]>;
+    const backends = LocalBackends(ctx);
+    const request = vi.spyOn(backends.http, "request").mockResolvedValue({
+      ...response,
+      status: 200,
+      url: "https://probe.cb.example.net/self-check",
+    });
+    ctx.backends = backends;
+    const headers = {
+      Authorization: "Bearer caller",
+      Cookie: "sid=caller",
+      "Content-Type": "application/json",
+    };
+
+    await httpRequest(ctx).execute!(
+      {
+        url: "https://probe.cb.example.net/self-check",
+        method: "POST",
+        headers: JSON.stringify(headers),
+        body: "{}",
+        followRedirects: false,
+        toolCallDescription: "test",
+      },
+      options,
+    );
+    expect(request.mock.calls[0]?.[0].headers).toEqual({
+      "Content-Type": "application/json",
+    });
+
+    await httpRequest(ctx).execute!(
+      {
+        url: "https://example.com/api",
+        method: "POST",
+        headers: JSON.stringify(headers),
+        body: "{}",
+        followRedirects: false,
+        toolCallDescription: "test",
+      },
+      options,
+    );
+    expect(request.mock.calls[1]?.[0].headers).toMatchObject({
+      Authorization: "Bearer caller",
+      Cookie: "sid=caller",
+    });
+  });
+
   it("retains sandbox request headers for an in-scope redirect destination", async () => {
     const ctx = context();
     ctx.session.config = {

@@ -16,3 +16,15 @@ export function isTestDomain(
   const host = hostname.toLowerCase().replace(/\.$/, "");
   return sessionTestDomains(session).includes(host);
 }
+
+/** {@link isTestDomain} for a URL; false for anything that doesn't parse. */
+export function isTestDomainUrl(
+  url: string,
+  session: TestDomainSession,
+): boolean {
+  try {
+    return isTestDomain(new URL(url).hostname, session);
+  } catch {
+    return false;
+  }
+}

@@ -15,6 +15,7 @@ import {
 } from "../../http/redirects";
 import { resolveEffectiveHeaders, shellQuote } from "../../http/targetHeaders";
 import { isUrlInSessionScope } from "../../http/targetScope";
+import { isTestDomainUrl } from "../../session/testDomains";
 
 const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
 
@@ -240,6 +241,14 @@ export async function requestSandboxHttp(
         ...withRedirectMetadata,
         success: false,
         error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    // Same rule as targetFetch: never carry a request onto a test domain.
+    if (isTestDomainUrl(nextUrl, session)) {
+      return {
+        ...withRedirectMetadata,
+        success: false,
+        error: `Scope violation: redirect onto test domain ${nextUrl} is not followed`,
       };
     }
     const nextRequest = redirectRequest(

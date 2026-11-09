@@ -5,7 +5,7 @@
 // The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
-import { isTestDomain } from "../session/testDomains";
+import { isTestDomainUrl } from "../session/testDomains";
 import {
   fetchWithScopedRedirects,
   type RedirectFetchResult,
@@ -156,14 +156,6 @@ function normalizeHeadersInit(
   return { ...(init as Record<string, string>) };
 }
 
-function isTestDomainUrl(url: string, session: ResolverSession): boolean {
-  try {
-    return isTestDomain(new URL(url).hostname, session);
-  } catch {
-    return false;
-  }
-}
-
 // Redirect hops are dispatched manually so each destination gets a fresh
 // scope decision instead of inheriting the initial target's credentials.
 export function targetFetch(
@@ -175,6 +167,13 @@ export function targetFetch(
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const { headers: _headers, ...requestInit } = init ?? {};
   return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) => {
+    // A redirect onto a test domain would carry the request (a 307/308 keeps
+    // its body) into callback storage; the agent never needs to follow one.
+    if (context.redirectCount > 0 && isTestDomainUrl(hopUrl, session)) {
+      throw new Error(
+        `Scope violation: redirect onto test domain ${hopUrl} is not followed`,
+      );
+    }
     // Test domains are the host's own callback infrastructure: a request may
     // reach them under strict scope, but headers below still follow the
     // target scope, so none are sent there.
