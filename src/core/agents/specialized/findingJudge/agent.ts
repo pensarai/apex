@@ -2,10 +2,7 @@ import { stepCountIs } from "ai";
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
-import {
-  buildFindingJudgePrompt,
-  FINDING_JUDGE_SYSTEM_PROMPT,
-} from "./prompts";
+import { buildFindingJudgePrompt, findingJudgeSystemPrompt } from "./prompts";
 import {
   type FindingJudgeAgentOutput,
   type FindingJudgeInput,
@@ -38,7 +35,7 @@ export const findingJudgeDefinition = defineAgent<
 >({
   name: "finding-judge",
   role: "judge",
-  system: () => FINDING_JUDGE_SYSTEM_PROMPT,
+  system: (opts) => findingJudgeSystemPrompt(opts.session),
   activeTools: () => [...FINDING_JUDGE_ACTIVE_TOOLS],
   responseSchema: () => FindingJudgeOutputSchema,
   stopWhen: () => stepCountIs(60),
