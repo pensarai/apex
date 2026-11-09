@@ -1,4 +1,4 @@
-import { parseArgs } from "node:util";
+import { parseRecordedRunsArgs } from "../core/cli/recordedRunsArgs";
 import { config } from "../core/config";
 import { isObfuscationEnabled } from "../core/obfuscation";
 import type { CommandDefinition } from "./command-router";
@@ -113,25 +113,7 @@ export const commands: CommandConfig[] = [
     ],
     handler: (args, ctx) => {
       try {
-        const { values, positionals } = parseArgs({
-          args,
-          allowPositionals: true,
-          strict: true,
-          options: { store: { type: "string" }, spec: { type: "string" } },
-        });
-        if (
-          positionals.length > 1 ||
-          (values.spec !== undefined && positionals.length)
-        ) {
-          throw new Error(
-            "Use /runs [runId] [--store <database>] or /runs --spec <file> [--store <database>]",
-          );
-        }
-        ctx.openRecordedRunsDialog?.({
-          ...(positionals[0] ? { runId: positionals[0] } : {}),
-          ...(values.store ? { databasePath: values.store } : {}),
-          ...(values.spec ? { specPath: values.spec } : {}),
-        });
+        ctx.openRecordedRunsDialog?.(parseRecordedRunsArgs(args));
       } catch (error) {
         ctx.toast?.(
           error instanceof Error ? error.message : "Invalid /runs command",

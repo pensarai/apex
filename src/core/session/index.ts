@@ -13,6 +13,7 @@ import type { Message } from "../messages/types";
 import { RateLimiter } from "../services/rateLimiter";
 import * as Storage from "../storage";
 import {
+  createToolsetState,
   type ToolsetState,
   ToolsetStateSchema,
   toggleTool as toolsetToggle,
@@ -1093,7 +1094,6 @@ async function toggleTool(
     }
     if (!session.config.toolsetState) {
       // Initialize with all tools enabled if no state exists
-      const { createToolsetState } = require("../toolset");
       session.config.toolsetState = createToolsetState("web-pentest");
     }
     session.config.toolsetState = toolsetToggle(
@@ -1116,6 +1116,7 @@ export const sessions = {
   updateOperatorSettings,
   updateSessionHeaders,
   updateModelReasoning,
+  toggleTool,
 };
 
 export async function updateModelReasoning(

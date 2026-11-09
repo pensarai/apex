@@ -17,6 +17,43 @@ export function buildThreatModelPrompt(opts: {
   return `<skill name="threat-model">\n${runtimeContext}\n\n${opts.skillContent}\n</skill>`;
 }
 
+export function buildInteractiveThreatModelPrompt(
+  opts: Parameters<typeof buildThreatModelPrompt>[0],
+): string {
+  const basePrompt = buildThreatModelPrompt(opts);
+  return `${basePrompt}
+
+# Interactive Threat Model — Operator Workflow
+
+You're running inside Apex with a human operator at the keyboard. Before generating the final threat model, follow this three-phase sequence:
+
+## 1. Initial recon (≈10–20 tool calls)
+Spend a small budget orienting yourself on the codebase before asking anything:
+- List the repo root and any \`infra/\`, \`Dockerfile\`, \`docker-compose*\` files
+- Read manifests (\`package.json\`, \`go.mod\`, \`Cargo.toml\`, \`requirements.txt\`, \`pom.xml\`, etc.)
+- Skim auth modules and the primary API/route entry points
+- Note the framework, deployment style, and any obvious external integrations
+
+The point is to know enough to ask **grounded** questions — option labels in your batch should reference things you actually saw in the code, not generic templates.
+
+## 2. Ask the operator for context
+Once you have a baseline understanding, call \`ask_user_questions\` ONCE with 2–4 grounded questions covering the gaps your recon couldn't resolve. Prioritize:
+- Deployment topology / runtime that the code didn't make obvious
+- Sensitive data classification (PII, PCI, secrets, customer data)
+- User / actor types and how they authenticate
+- Trust boundaries (where untrusted input enters)
+- Known security concerns or prior incidents the operator wants emphasized
+
+Each option label MUST cite something concrete you observed (e.g. "AWS ECS Fargate (inferred from \`infra/ecs.ts\`)" — not "AWS deployment"). Skip categories that the recon already answered conclusively.
+
+## 3. Continue with the threat model
+After the operator submits answers (or skips), incorporate their input into the analysis and generate the threat model per the skill instructions above. The answers ARE part of the threat-model context — surface them where relevant in the output (e.g. data-sensitivity classifications inform the impact rating; user types inform the actor model).
+
+If the operator skips the question batch, proceed with the recon-only context and do your best.
+
+This three-phase flow is specific to the interactive \`/threat-model\` command. The same skill in headless / autonomous contexts skips phases 1–2 entirely (no \`ask_user_questions\` tool available there) and relies on the operator's prior context.`;
+}
+
 export const threatModelSkill: BuiltInSkill = {
   slug: "threat-model",
   manifest: {

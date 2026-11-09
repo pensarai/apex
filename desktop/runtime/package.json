@@ -1,0 +1,16 @@
+{
+  "name": "apex-desktop-runtime",
+  "private": true,
+  "dependencies": {
+    "@playwright/mcp": "0.0.54",
+    "camoufox-js": "0.11.1",
+    "sharp": "0.34.5"
+  },
+  "optionalDependencies": {
+    "@opentui/core-darwin-arm64": "0.1.107",
+    "@opentui/core-darwin-x64": "0.1.107",
+    "@opentui/core-linux-arm64": "0.1.107",
+    "@opentui/core-linux-x64": "0.1.107",
+    "@opentui/core-win32-x64": "0.1.107"
+  }
+}

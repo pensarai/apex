@@ -43,6 +43,11 @@ describe("isPentestAgent", () => {
     expect(isPentestAgent("pentest-agent-42")).toBe(true);
   });
 
+  it("uses workflow metadata to recognize workers with SDK-generated session IDs", () => {
+    expect(isPentestAgent("ses_fixture", "pentesting")).toBe(true);
+    expect(isPentestAgent("ses_fixture")).toBe(false);
+  });
+
   it("rejects non-swarm agents and undefined", () => {
     expect(isPentestAgent("discovery")).toBe(false);
     expect(isPentestAgent("pentest-agent")).toBe(false);

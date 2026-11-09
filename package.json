@@ -325,6 +325,7 @@
     "check": "biome check --write",
     "check:ci": "biome check",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
+    "desktop": "bun run --cwd desktop start",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "format": "biome check --write && prettier --write \"**/*.{md,yml,yaml}\"",

@@ -114,7 +114,9 @@ export function parseHeaderLine(
 
 // Bulk parse newline-separated input. Returns ALL errors (with line
 // numbers) — never partial success.
-function parseHeaderList(input: string): Result<HeaderEntry[], ParseError[]> {
+export function parseHeaderList(
+  input: string,
+): Result<HeaderEntry[], ParseError[]> {
   const lines = input.split(/\r?\n/);
   const entries: HeaderEntry[] = [];
   const errors: ParseError[] = [];

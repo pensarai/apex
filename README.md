@@ -48,6 +48,8 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
 
 ## Usage
 
+For graphical operator sessions, pentests and configuration, see [Apex Desktop](desktop/README.md).
+
 Open the Apex TUI:
 
 ```bash

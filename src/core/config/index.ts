@@ -1,7 +1,8 @@
-import { get, init, update } from "./config";
+import { get, init, update, updateCustomProvider } from "./config";
 
 export const config = {
   get,
   init,
   update,
+  updateCustomProvider,
 };

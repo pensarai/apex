@@ -5,9 +5,14 @@ import { isToolMessage } from "../shared/type-guards";
 // Pentest workflow projections — pure, immutable WorkflowData transitions.
 // ---------------------------------------------------------------------------
 
-/** Only pentest swarm agents (pentest-agent-*) appear in WorkflowData. */
-export function isPentestAgent(id?: string): boolean {
-  return id !== undefined && /^pentest-agent-\d+$/.test(id);
+export function isPentestAgent(
+  id?: string,
+  workflowPhase?: "pentesting",
+): boolean {
+  return (
+    workflowPhase === "pentesting" ||
+    (id !== undefined && /^pentest-agent-\d+$/.test(id))
+  );
 }
 
 /** Default WorkflowData for a fresh run_pentest_workflow tool message. */
@@ -34,8 +39,10 @@ export function updateWorkflowDataMessage(
   if (idx === -1) return messages as DisplayMessage[];
   const msg = messages[idx];
   const wd = msg.workflowData ?? initialWorkflowData();
+  const next = updater(wd);
+  if (next === msg.workflowData) return messages as DisplayMessage[];
   const updated = [...messages];
-  updated[idx] = { ...msg, workflowData: updater(wd) };
+  updated[idx] = { ...msg, workflowData: next };
   return updated;
 }
 
