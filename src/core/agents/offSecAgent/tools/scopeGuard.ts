@@ -167,7 +167,7 @@ export function assertFindingEndpointInScope(
 }
 
 const SHELL_PAYLOAD_ARG =
-  /(?:^|\s)(?:-d|-F|-H|--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:\s+|=)('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
+  /(?:^|\s)(?:-d|-F|-H|--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:(?:\s|\\\r?\n)+|=)('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
 
 const STRING_OPEN = String.raw`(?:[rRbBfFuU]{1,2})?\\?["'\x60]`;
 const PARAM_VALUE_PREFIX = /[?&'"](?!-)[\w.%[\]-]*=$/;

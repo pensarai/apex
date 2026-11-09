@@ -602,6 +602,10 @@ describe("extractHostsFromCommand", () => {
         `curl https://app.acme.example/fetch --data-urlencode "url=http://localhost:8080/admin"`,
       ],
       [
+        "curl body after a line continuation",
+        "curl -X POST https://app.acme.example/hooks \\\n  -H 'Content-Type: application/json' \\\n  -d \\\n  '{\"url\":\"http://169.254.169.254/\"}'",
+      ],
+      [
         "unquoted curl form value",
         "curl https://app.acme.example/fetch -d url=http://10.0.0.5/",
       ],
