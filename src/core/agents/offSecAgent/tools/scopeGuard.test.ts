@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyHeadersToShellCommand,
   resolveEffectiveHeaders,
@@ -658,11 +658,9 @@ describe("session test domains", () => {
     ctx.session = {
       ...ctx.session,
       targets: ["https://app.example.com"],
-      config: {
-        testDomains: [CB],
-        headers: { "X-API-Key": "secret" },
-      },
+      config: { headers: { "X-API-Key": "secret" } },
     } as typeof ctx.session;
+    ctx.callbacks = { domains: [CB], readHits: vi.fn() };
     return ctx;
   }
 

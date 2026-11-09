@@ -18,9 +18,10 @@ import {
   getSessionAllowedHosts,
   getSessionAllowedPorts,
   getUrlPort,
+  isCallbackHost,
   isHostInScope,
 } from "../../../http/targetScope";
-import { isTestDomain } from "../../../session/testDomains";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import type { ToolContext } from "./types";
 
 export { getRegistrableDomain };
@@ -46,12 +47,17 @@ export class ScopeViolationError extends Error {
 // commands (where `ctx.target` isn't in `session.targets`) don't get
 // classified as out-of-scope and silently dropped from header resolution.
 export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
-  if (!ctx.target) return ctx.session;
   const existing = ctx.session.targets ?? [];
-  if (existing.includes(ctx.target)) return ctx.session;
+  const targets =
+    ctx.target && !existing.includes(ctx.target)
+      ? [...existing, ctx.target]
+      : existing;
+  const domains = callbackDomains(ctx);
+  if (targets === existing && domains.length === 0) return ctx.session;
   return {
     ...ctx.session,
-    targets: [...existing, ctx.target],
+    targets,
+    ...(domains.length > 0 ? { callbackDomains: domains } : {}),
   };
 }
 
@@ -142,7 +148,7 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
  */
 export function assertRequestInScope(url: string, ctx: ToolContext): void {
   const hostname = extractHostname(url);
-  if (hostname && isTestDomain(hostname, ctx.session)) return;
+  if (hostname && isCallbackHost(hostname, resolverSessionFromCtx(ctx))) return;
   assertUrlInScope(url, ctx);
 }
 
@@ -340,10 +346,11 @@ export function assertCommandInScope(command: string, ctx: ToolContext): void {
   if (allowedHosts.length === 0 && !strictScope(ctx)) return;
 
   const commandHosts = extractHostsFromCommand(command);
+  const scope = resolverSessionFromCtx(ctx);
 
   for (const hostname of commandHosts) {
     // Test domains appear in payloads (and self-checks) without being targets.
-    if (isTestDomain(hostname, ctx.session)) continue;
+    if (isCallbackHost(hostname, scope)) continue;
     if (!isHostAllowed(hostname, allowedHosts)) {
       throw new ScopeViolationError(hostname, allowedHosts);
     }

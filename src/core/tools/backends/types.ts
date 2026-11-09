@@ -287,10 +287,13 @@ export interface CallbackHitsUnavailable {
 }
 
 /**
- * Reads what the session's `testDomains` received. The host that owns those
- * domains supplies it; Apex never allocates, records or expires them.
+ * A host-owned callback receiver: the domains it records requests on, and a
+ * reader for what they received. The host allocates, records and expires
+ * them; Apex only sends payloads there and reads the hits.
  */
 export interface CallbackBackend {
+  /** Bare hostnames; validated against the target scope where read. */
+  readonly domains: ReadonlyArray<string>;
   readHits(): Promise<CallbackHits | CallbackHitsUnavailable>;
 }
 

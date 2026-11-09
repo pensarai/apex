@@ -19,7 +19,7 @@ export {
   createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
-// Out-of-band hits on host-owned test domains (session `testDomains`).
+// Out-of-band hits on host-owned test domains (the callbacks backend).
 export { readCallbackHits } from "./callbackHits";
 // Callback helper tools — narrow nonce-correlated listener surface over the
 // whitebox job infra (Fast Strike blind/out-of-band testing).
@@ -200,7 +200,7 @@ export { writePlan } from "./writePlan";
 // ---------------------------------------------------------------------------
 
 import type { ToolSet } from "ai";
-import { sessionTestDomains } from "../../../session/testDomains";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import { addMemory } from "./addMemory";
 import { applyPatch } from "./applyPatch";
 import {
@@ -212,7 +212,7 @@ import {
   type createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
-import { callbacksReader, readCallbackHits } from "./callbackHits";
+import { readCallbackHits } from "./callbackHits";
 import {
   pollCallbackListener,
   startCallbackListener,
@@ -398,15 +398,27 @@ const TOOL_REGISTRY = [
 
   // Callback helper tools (Fast Strike blind/out-of-band testing) — a
   // constrained generated listener over the job infra, not arbitrary jobs.
-  { name: "start_callback_listener", factory: startCallbackListener },
-  { name: "poll_callback_listener", factory: pollCallbackListener },
-  { name: "stop_callback_listener", factory: stopCallbackListener },
+  // A host-owned callback domain replaces the local listener: one callback
+  // mechanism per session, never both.
+  {
+    name: "start_callback_listener",
+    factory: startCallbackListener,
+    available: (ctx) => callbackDomains(ctx).length === 0,
+  },
+  {
+    name: "poll_callback_listener",
+    factory: pollCallbackListener,
+    available: (ctx) => callbackDomains(ctx).length === 0,
+  },
+  {
+    name: "stop_callback_listener",
+    factory: stopCallbackListener,
+    available: (ctx) => callbackDomains(ctx).length === 0,
+  },
   {
     name: "read_callback_hits",
     factory: readCallbackHits,
-    available: (ctx) =>
-      sessionTestDomains(ctx.session).length > 0 &&
-      Boolean(callbacksReader(ctx)),
+    available: (ctx) => callbackDomains(ctx).length > 0,
   },
 
   // Reporting / benchmark tools

@@ -133,9 +133,10 @@ describe("injected HTTP backends", () => {
 
   it("refuses a sandbox redirect onto a test domain instead of carrying the request there", async () => {
     const ctx = context();
-    ctx.session.config = {
-      testDomains: ["probe.cb.example.net"],
-    } as NonNullable<ToolContext["session"]["config"]>;
+    ctx.callbacks = {
+      domains: ["probe.cb.example.net"],
+      readHits: vi.fn(),
+    };
     const commands: string[] = [];
     const execute = vi.fn(async (command: string) => {
       commands.push(command);
@@ -178,9 +179,10 @@ describe("injected HTTP backends", () => {
 
   it("sends no caller headers to a test domain on any backend", async () => {
     const ctx = context();
-    ctx.session.config = {
-      testDomains: ["probe.cb.example.net"],
-    } as NonNullable<ToolContext["session"]["config"]>;
+    ctx.callbacks = {
+      domains: ["probe.cb.example.net"],
+      readHits: vi.fn(),
+    };
     const backends = LocalBackends(ctx);
     const request = vi.spyOn(backends.http, "request").mockResolvedValue({
       ...response,

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
+import { isCallbackDestination } from "../../../http/targetScope";
 import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
@@ -10,7 +11,6 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
-import { isTestDomainUrl } from "../../../session/testDomains";
 import { resolveBackends } from "../../../tools/backends/resolve";
 import type { HttpResponse } from "../../../tools/backends/types";
 import { agentLogsDir } from "./agentScratch";
@@ -399,8 +399,12 @@ COMMON TESTING PATTERNS:
 
       {
         // Test domains are callback storage: whatever reaches them is recorded,
-        // so no caller header goes there on any backend, only the body's type.
-        const dispatchHeaders = isTestDomainUrl(url, ctx.session)
+        // so no caller header goes there on any backend (a host-injected one
+        // may not resolve headers itself), only the body's type.
+        const dispatchHeaders = isCallbackDestination(
+          url,
+          resolverSessionFromCtx(ctx),
+        )
           ? Object.fromEntries(
               Object.entries(headers).filter(
                 ([name]) => name.toLowerCase() === "content-type",

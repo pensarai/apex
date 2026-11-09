@@ -11,6 +11,7 @@ import {
   renderJson,
   renderMarkdown,
 } from "../report";
+import { callbackDomains } from "../tools/backends/callbacks";
 import { createThreatModelPrompt } from "../utils/prompt";
 import type { PentestWorkflowInput, PentestWorkflowResult } from "./pentest";
 import {
@@ -58,8 +59,15 @@ type FastStrikeOutcome =
 
 export function buildFastStrikeSystemPrompt(
   findingPolicy: FindingPolicy = "native",
+  callbackDomains: readonly string[] = [],
 ): string {
   const external = findingPolicy === "external";
+  // One callback mechanism per session: a host-owned domain replaces the
+  // local listener, whose tools are then unavailable.
+  const outOfBand =
+    callbackDomains.length > 0
+      ? ` For blind/out-of-band testing (SSRF, blind RCE, XSS callbacks), send the payload to your test domain (${callbackDomains.join(", ")}) over HTTPS with a unique path marker, then read_callback_hits with that marker; cite the hitId as evidence. Never request the test domain yourself in a PoC.`
+      : " For blind/out-of-band testing (SSRF, blind RCE, XSS callbacks), start_callback_listener gives you a nonce-correlated listener that survives intervening commands: embed the returned callback URL (only an address you know the target can reach — never a guessed one) in the payload, then poll_callback_listener for hits. Listener readiness and the tool's own self-test never count as target evidence; stop_callback_listener when done.";
   const objectiveStep = external
     ? "5. FOLLOW THE OBJECTIVE — Determine whether the observed behavior establishes a security weakness. For a detection-only objective, stop once the requested evidence is sufficient; develop an exploit or pivot only when the objective requires it."
     : "5. EXPLOIT — When a vulnerability is confirmed, exploit it: capture the flag, extract the sensitive data, and pivot through it if the objective requires more. Preserve viable primitives and build on them. Prefer extending a working script into an end-to-end exploit over rebuilding the chain with repeated one-off tool calls or stopping at the next network or protocol boundary.";
@@ -76,7 +84,7 @@ Run this loop, tightly:
 
 1. OBSERVE — Read every response for signal before you act. Note the stack, headers, cookies, tokens, form fields, error messages, redirects, disabled controls, ID patterns. State what you just learned in one line before the next move.
 2. HYPOTHESIZE — From that signal and your deep knowledge of web/app vulnerability classes, name the single most likely vulnerability and why the evidence points to it. Rank leads by signal strength and go for the strongest first. A disabled form field, an ID in a URL or JWT, advertised demo creds, an exposed schema — these are tells; read them.
-3. ACT — Test that one hypothesis with the strongest available technique. Use direct tools for quick probes, but treat the shell as a working environment rather than merely a way to issue one-off commands. When the work becomes stateful, repetitive, concurrent, protocol-heavy, or multi-stage, externalize it into an editable script in the session scratchpad directory identified in the workspace instructions. Never create a scratchpad/ directory inside the target repository. Run the script, inspect the results, modify it, and rerun it as the attack develops. For blind/out-of-band testing (SSRF, blind RCE, XSS callbacks), start_callback_listener gives you a nonce-correlated listener that survives intervening commands: embed the returned callback URL (only an address you know the target can reach — never a guessed one) in the payload, then poll_callback_listener for hits. Listener readiness and the tool's own self-test never count as target evidence; stop_callback_listener when done.
+3. ACT — Test that one hypothesis with the strongest available technique. Use direct tools for quick probes, but treat the shell as a working environment rather than merely a way to issue one-off commands. When the work becomes stateful, repetitive, concurrent, protocol-heavy, or multi-stage, externalize it into an editable script in the session scratchpad directory identified in the workspace instructions. Never create a scratchpad/ directory inside the target repository. Run the script, inspect the results, modify it, and rerun it as the attack develops.${outOfBand}
 4. PRUNE — If the evidence disproves a lead, drop it and move to the next-strongest. Do NOT re-run a disproven approach or grind a dead end. Do NOT enumerate, brute-force, or run wordlists unless a specific signal demands it — choose techniques from evidence, not from a checklist.
 ${objectiveStep}
 ${finishStep}
@@ -195,7 +203,15 @@ export async function runFastStrike(
     usageRecorder: input.usageRecorder,
     streamIdFactory: input.streamIdFactory,
     ...input.hooks,
-    system: buildFastStrikeSystemPrompt(findingPolicy),
+    system: buildFastStrikeSystemPrompt(
+      findingPolicy,
+      callbackDomains({
+        backends: input.hooks?.backends,
+        callbacks: input.hooks?.callbacks,
+        session,
+        target,
+      }),
+    ),
     prompt: promptParts.join("\n\n"),
     model,
     session,

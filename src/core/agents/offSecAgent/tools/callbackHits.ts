@@ -1,10 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { sessionTestDomains } from "../../../session/testDomains";
-import type {
-  CallbackBackend,
-  CallbackHit,
-} from "../../../tools/backends/types";
+import {
+  callbackBackend,
+  callbackDomains,
+} from "../../../tools/backends/callbacks";
+import type { CallbackHit } from "../../../tools/backends/types";
 import type { ToolContext } from "./types";
 
 const MAX_RETURNED_HITS = 25;
@@ -50,24 +50,17 @@ function present(hit: CallbackHit) {
   };
 }
 
-/**
- * The host's callbacks reader: on injected backends, or passed on its own
- * (`ctx.callbacks`), whether or not the host also injects backends.
- */
-export function callbacksReader(ctx: ToolContext): CallbackBackend | undefined {
-  return ctx.backends?.callbacks ?? ctx.callbacks;
-}
-
-/** Built only when the session has test domains and the host supplies a callbacks reader (see the registry). */
+/** Built only when the host supplies a callbacks backend with domains (see the registry). */
 export function readCallbackHits(ctx: ToolContext) {
-  const callbacks = callbacksReader(ctx);
-  if (!callbacks) {
+  const callbacks = callbackBackend(ctx);
+  const domains = callbackDomains(ctx);
+  if (!callbacks || domains.length === 0) {
     throw new Error(
-      "read_callback_hits needs backends.callbacks; the registry should not have built it",
+      "read_callback_hits needs a callbacks backend with domains; the registry should not have built it",
     );
   }
   return tool({
-    description: `Read the requests your test domains (${sessionTestDomains(ctx.session).join(", ")}) have received.
+    description: `Read the requests your test domains (${domains.join(", ")}) have received.
 
 Pass the unique path or query marker you embedded in a payload to see only that test's callbacks. A hit proves something fetched the URL; check the source IP, user agent and timing against the payload you sent before treating it as the target. Returns the most recent ${MAX_RETURNED_HITS} matching hits with their hitIds.`,
     inputSchema: z.object({

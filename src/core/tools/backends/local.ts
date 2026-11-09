@@ -39,8 +39,8 @@ import {
 } from "../../http/redirects";
 import { verifyLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
+import { callbackRedirectRefusal } from "../../http/targetScope";
 import type { HeaderRecord } from "../../http/types";
-import { isTestDomainUrl } from "../../session/testDomains";
 import { collectCommand } from "./collectCommand";
 import {
   CAPS,
@@ -580,13 +580,8 @@ function redirectedHttpRequest(
 // body) into callback storage. The agent never needs to follow one; a direct
 // request to a test domain still goes through http_request.
 function refuseRedirectOntoTestDomain(ctx: ToolContext, url: string): void {
-  if (isTestDomainUrl(url, ctx.session)) {
-    throw new ToolPolicyDeniedError(
-      "http",
-      "request",
-      `Scope violation: redirect onto test domain ${url} is not followed`,
-    );
-  }
+  const refusal = callbackRedirectRefusal(url, resolverSessionFromCtx(ctx));
+  if (refusal) throw new ToolPolicyDeniedError("http", "request", refusal);
 }
 
 function responseHeader(

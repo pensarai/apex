@@ -1,25 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { SessionInfo } from "../../../session";
 import {
   FINDING_JUDGE_SYSTEM_PROMPT,
   findingJudgeSystemPrompt,
 } from "./prompts";
 
-function session(testDomains?: string[]): SessionInfo {
-  return {
-    id: "ses_judge",
-    rootPath: "/nonexistent",
-    targets: ["https://target.example"],
-    config: testDomains ? { testDomains } : {},
-  } as unknown as SessionInfo;
-}
-
 describe("finding judge out-of-band rule", () => {
-  it("accepts blind claims only on a cited callback hit, at capped confidence, when the session has test domains", () => {
-    const prompt = findingJudgeSystemPrompt(
-      session(["probe.cb.example.net"]),
-      true,
-    );
+  it("accepts blind claims only on a cited callback hit, at capped confidence, when the host supplies callback domains", () => {
+    const prompt = findingJudgeSystemPrompt(["probe.cb.example.net"]);
     expect(prompt).toContain(
       "cites a callback hit (hitId, method, path, source IP, user agent, time) read with read_callback_hits",
     );
@@ -33,19 +20,9 @@ describe("finding judge out-of-band rule", () => {
     );
   });
 
-  it("leaves the judge prompt unchanged for sessions without test domains", () => {
-    for (const s of [session(), session([])]) {
-      const prompt = findingJudgeSystemPrompt(s, true);
-      expect(prompt).toBe(FINDING_JUDGE_SYSTEM_PROMPT);
-      expect(prompt).not.toContain("read_callback_hits");
-    }
-  });
-
-  it("keeps the normal evidence rules when no component can read callbacks", () => {
-    // Without a reader nothing could have observed a hit, so a cited one
-    // can't be trusted.
-    expect(
-      findingJudgeSystemPrompt(session(["probe.cb.example.net"]), false),
-    ).toBe(FINDING_JUDGE_SYSTEM_PROMPT);
+  it("leaves the judge prompt unchanged without callback domains", () => {
+    const prompt = findingJudgeSystemPrompt([]);
+    expect(prompt).toBe(FINDING_JUDGE_SYSTEM_PROMPT);
+    expect(prompt).not.toContain("read_callback_hits");
   });
 });

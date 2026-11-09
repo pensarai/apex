@@ -277,9 +277,9 @@ describe("targetFetch", () => {
 
   it("reaches a test domain under strict scope without sending it any headers", async () => {
     const session = makeSession({
+      callbackDomains: ["probe.cb.example.net"],
       config: {
         headers: { Authorization: "Bearer secret" },
-        testDomains: ["probe.cb.example.net"],
         scopeConstraints: {
           strictScope: true,
           allowedHosts: ["example.com"],
@@ -308,7 +308,7 @@ describe("targetFetch", () => {
 
   it("refuses a redirect onto a test domain before sending anything there", async () => {
     const session = makeSession({
-      config: { testDomains: ["probe.cb.example.net"] },
+      callbackDomains: ["probe.cb.example.net"],
     });
     const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("", {
@@ -333,8 +333,8 @@ describe("targetFetch", () => {
 
   it("still blocks a non-test host under strict scope", async () => {
     const session = makeSession({
+      callbackDomains: ["probe.cb.example.net"],
       config: {
-        testDomains: ["probe.cb.example.net"],
         scopeConstraints: { strictScope: true, allowedHosts: ["example.com"] },
       },
     });

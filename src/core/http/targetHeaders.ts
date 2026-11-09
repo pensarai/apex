@@ -5,16 +5,18 @@
 // The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
-import { isTestDomainUrl, sessionTestDomains } from "../session/testDomains";
 import {
   fetchWithScopedRedirects,
   type RedirectFetchResult,
 } from "./redirects";
 import {
+  callbackRedirectRefusal,
   getSessionAllowedHosts,
   getSessionAllowedPorts,
+  isCallbackDestination,
   isHostInScope,
   isUrlInSessionScope,
+  isUrlReachable,
 } from "./targetScope";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
@@ -30,9 +32,9 @@ export interface ResolverSession {
       readonly strictScope?: boolean;
     };
     readonly authCredentials?: unknown;
-    /** Host-owned callback domains; reachable under strict scope, never sent headers. */
-    readonly testDomains?: ReadonlyArray<string>;
   };
+  /** Validated host-owned callback domains (see `targetScope.ts`). */
+  readonly callbackDomains?: ReadonlyArray<string>;
   readonly credentialManager?: {
     listCredentialsWithHeaders?: () => ReadonlyArray<{
       readonly tokens?: { readonly customHeaders?: HeaderRecord };
@@ -70,12 +72,14 @@ function collectCredentialHeaders(session: ResolverSession): EffectiveHeader[] {
 }
 
 // `requestOverrides` (e.g. the agent-supplied `headers` arg on `http_request`)
-// wins over every other layer. Out-of-scope URLs only see the overrides.
+// wins over every other layer. Out-of-scope URLs only see the overrides, and
+// callback domains see no headers at all: whatever reaches them is recorded.
 export function resolveEffectiveHeaders(
   session: ResolverSession,
   url: string,
   requestOverrides?: HeaderRecord,
 ): HeaderRecord {
+  if (isCallbackDestination(url, session)) return {};
   if (!isUrlInSessionScope(url, session)) {
     return requestOverrides ?? {};
   }
@@ -167,21 +171,10 @@ export function targetFetch(
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const { headers: _headers, ...requestInit } = init ?? {};
   return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) => {
-    // A redirect onto a test domain would carry the request (a 307/308 keeps
-    // its body) into callback storage; the agent never needs to follow one.
-    if (context.redirectCount > 0 && isTestDomainUrl(hopUrl, session)) {
-      throw new Error(
-        `Scope violation: redirect onto test domain ${hopUrl} is not followed`,
-      );
-    }
-    // Test domains are the host's own callback infrastructure: a request may
-    // reach them under strict scope, but headers below still follow the
-    // target scope, so none are sent there.
-    if (
-      strict &&
-      !isUrlInSessionScope(hopUrl, session) &&
-      !isTestDomainUrl(hopUrl, session)
-    ) {
+    const refusal =
+      context.redirectCount > 0 && callbackRedirectRefusal(hopUrl, session);
+    if (refusal) throw new Error(refusal);
+    if (strict && !isUrlReachable(hopUrl, session)) {
       throw new Error(
         context.redirectCount > 0
           ? `Scope violation: redirect destination ${hopUrl} is not in the immutable run policy`
@@ -191,8 +184,7 @@ export function targetFetch(
     return resolveEffectiveHeaders(
       session,
       hopUrl,
-      (context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)) &&
-        !isTestDomainUrl(hopUrl, session)
+      context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
         ? callerHeaders
         : undefined,
     );
@@ -597,7 +589,7 @@ function requestsTestDomain(
   command: string,
   session: ResolverSession,
 ): boolean {
-  return sessionTestDomains(session).some((domain) => {
+  return (session.callbackDomains ?? []).some((domain) => {
     const host = domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (!new RegExp(host, "i").test(command)) return false;
     if (/[$`]/.test(command)) return true;

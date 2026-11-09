@@ -1,4 +1,5 @@
 import { stepCountIs } from "ai";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
@@ -35,11 +36,7 @@ export const findingJudgeDefinition = defineAgent<
 >({
   name: "finding-judge",
   role: "judge",
-  system: (opts) =>
-    findingJudgeSystemPrompt(
-      opts.session,
-      Boolean(opts.backends?.callbacks ?? opts.callbacks),
-    ),
+  system: (opts) => findingJudgeSystemPrompt(callbackDomains(opts)),
   activeTools: () => [...FINDING_JUDGE_ACTIVE_TOOLS],
   responseSchema: () => FindingJudgeOutputSchema,
   stopWhen: () => stepCountIs(60),

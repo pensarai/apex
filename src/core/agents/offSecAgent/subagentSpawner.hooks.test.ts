@@ -108,7 +108,7 @@ describe("subagentSpawner durable-hook forwarding", () => {
   });
 
   it("gives a spawned pentest worker the parent's callbacks reader", async () => {
-    const callbacks = { readHits: vi.fn() };
+    const callbacks = { domains: ["cb.example.net"], readHits: vi.fn() };
     const spawned = await inProcessSubagentSpawner.spawn({
       spec: {
         type: "pentest",
@@ -125,7 +125,7 @@ describe("subagentSpawner durable-hook forwarding", () => {
   });
 
   it("gives the finding judge the parent's callbacks reader", async () => {
-    const callbacks = { readHits: vi.fn() };
+    const callbacks = { domains: ["cb.example.net"], readHits: vi.fn() };
     await inProcessSubagentSpawner.spawn({
       spec: {
         type: "finding-judge",
