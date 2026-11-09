@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
     wrappedModel,
     streamText: vi.fn(),
     generateText: vi.fn(),
-    wrapLanguageModel: vi.fn<(typeof import("ai"))["wrapLanguageModel"]>(
+    wrapLanguageModel: vi.fn<typeof import("ai")["wrapLanguageModel"]>(
       () => wrappedModel,
     ),
     getProviderModel: vi.fn(() => baseModel),
