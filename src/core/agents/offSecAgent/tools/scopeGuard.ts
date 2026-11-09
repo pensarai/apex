@@ -166,8 +166,10 @@ export function assertFindingEndpointInScope(
   assertUrlInScope(endpoint, ctx);
 }
 
+// Short flags take attached or separate values and mean data/form/header only
+// to curl (wget's -d/-F/-H take no value).
 const SHELL_PAYLOAD_ARG =
-  /(?:^|\s)(?:-d|-F|-H|--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:(?:\s|\\\r?\n)+|=)('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
+  /(?:^|\s)(?:(-[dFH])(?:\s|\\\r?\n)*|(?:--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:(?:\s|\\\r?\n)+|=))('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
 
 const STRING_OPEN = String.raw`(?:[rRbBfFuU]{1,2})?\\?["'\x60]`;
 const PARAM_VALUE_PREFIX = /[?&'"](?!-)[\w.%[\]-]*=$/;
@@ -178,35 +180,94 @@ const OBJECT_VALUE_PREFIX = new RegExp(
 // config, `requests.request(**{...})`, proxy maps).
 const REQUEST_TARGET_KEY =
   /^(?:url|uri|href|endpoint|base_?url|host|hostname|https?|all)$/i;
-const BODY_CONTEXT_PREFIX =
-  /(?:\b(?:json|data|body|params|form|files|payloads?)\s*(?:=|:|\s+in)\s*|\b(?:JSON\.stringify|json\.dumps|urlencode)\(\s*)$/i;
+const BODY_NAMES = "json|data|body|params|form|files";
+const BODY_KEY_PREFIX = new RegExp(
+  String.raw`\b["']?(?:${BODY_NAMES})["']?\s*:\s*$`,
+  "i",
+);
+const BODY_ENCODER_PREFIX = /\b(?:JSON\.stringify|json\.dumps|urlencode)\s*$/;
+const ASSIGNMENT_PREFIX = /(?:^|[^\w$.=!<>])([A-Za-z_$][\w$]*)\s*=\s*$/;
+const FOR_IN_PREFIX = /\bfor\s+([A-Za-z_]\w*)\s+in\s*$/;
+
+function lastHttpToolOnLine(command: string, index: number): string | null {
+  const lines = command
+    .slice(0, index)
+    .replace(/\\\r?\n/g, " ")
+    .split("\n");
+  const tools = [...lines[lines.length - 1].matchAll(/\b(curl|wget)\b/g)];
+  return tools.length > 0 ? tools[tools.length - 1][1] : null;
+}
 
 function shellPayloadRanges(command: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   for (const match of command.matchAll(SHELL_PAYLOAD_ARG)) {
+    if (match[1] && lastHttpToolOnLine(command, match.index) !== "curl") {
+      continue;
+    }
     const end = match.index + match[0].length;
-    ranges.push([end - match[1].length, end]);
+    ranges.push([end - match[2].length, end]);
   }
   return ranges;
+}
+
+function* unmatchedOpeners(
+  command: string,
+  index: number,
+): Generator<{ char: string; at: number }> {
+  let depth = 0;
+  for (let i = index - 1; i >= Math.max(0, index - 2000); i--) {
+    const ch = command[i];
+    if (ch === "}" || ch === "]" || ch === ")") depth++;
+    else if (ch === "{" || ch === "[" || ch === "(") {
+      if (depth > 0) depth--;
+      else yield { char: ch, at: i };
+    }
+  }
+}
+
+function identifierPattern(name: string): string {
+  return name.replace(/\$/g, "\\$");
+}
+
+// A variable is a body only when the script visibly sends it as one, and never
+// when it is spread into a request call's arguments or config.
+function isBodyVariable(command: string, name: string, hops = 0): boolean {
+  const n = identifierPattern(name);
+  if (new RegExp(String.raw`(?:\*\*|\.\.\.)${n}\b`).test(command)) {
+    return false;
+  }
+  const sentAsBody = new RegExp(
+    String.raw`\b(?:${BODY_NAMES})\s*[=:]\s*${n}\b|\b(?:JSON\.stringify|json\.dumps|urlencode)\(\s*${n}\b`,
+    "i",
+  );
+  if (sentAsBody.test(command)) return true;
+  if (hops > 0) return false;
+  const loops = new RegExp(
+    String.raw`\bfor\s+([A-Za-z_]\w*)\s+in\s+${n}\b`,
+    "g",
+  );
+  return [...command.matchAll(loops)].some((loop) =>
+    isBodyVariable(command, loop[1], hops + 1),
+  );
 }
 
 // Walks outward through the brackets enclosing `index` until one is opened in
 // a request-body position, or a call boundary that is not one.
 function isInRequestBody(command: string, index: number): boolean {
-  const closers: string[] = [];
-  const pairs: Record<string, string> = { "{": "}", "[": "]", "(": ")" };
-  for (let i = index - 1; i >= Math.max(0, index - 2000); i--) {
-    const ch = command[i];
-    if (ch === "}" || ch === "]" || ch === ")") {
-      closers.push(ch);
-    } else if (ch in pairs) {
-      if (closers.length > 0) {
-        closers.pop();
-        continue;
+  const openers = unmatchedOpeners(command, index);
+  for (const { char, at } of openers) {
+    const prefix = command.slice(Math.max(0, at - 200), at);
+    if (char === "(") return BODY_ENCODER_PREFIX.test(prefix);
+    if (BODY_KEY_PREFIX.test(prefix)) return true;
+    const forIn = FOR_IN_PREFIX.exec(prefix);
+    if (forIn) return isBodyVariable(command, forIn[1]);
+    const assigned = ASSIGNMENT_PREFIX.exec(prefix);
+    if (assigned) {
+      const outer = openers.next();
+      if (!outer.done && outer.value.char === "(") {
+        return new RegExp(`^(?:${BODY_NAMES})$`, "i").test(assigned[1]);
       }
-      const prefix = command.slice(Math.max(0, i - 200), i);
-      if (BODY_CONTEXT_PREFIX.test(prefix)) return true;
-      if (ch === "(") return false;
+      return isBodyVariable(command, assigned[1]);
     }
   }
   return false;

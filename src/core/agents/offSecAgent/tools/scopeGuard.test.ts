@@ -606,6 +606,14 @@ describe("extractHostsFromCommand", () => {
         "curl -X POST https://app.acme.example/hooks \\\n  -H 'Content-Type: application/json' \\\n  -d \\\n  '{\"url\":\"http://169.254.169.254/\"}'",
       ],
       [
+        "curl body attached to -d",
+        `curl -d'{"url":"http://169.254.169.254/"}' https://app.acme.example/hooks`,
+      ],
+      [
+        "curl header attached to -H",
+        `curl -H"Referer: http://localhost/" https://app.acme.example/`,
+      ],
+      [
         "unquoted curl form value",
         "curl https://app.acme.example/fetch -d url=http://10.0.0.5/",
       ],
@@ -671,6 +679,16 @@ describe("extractHostsFromCommand", () => {
       ],
       ["ternary target", "fetch(useProd ? prodUrl : 'https://evil.example/')"],
       ["axios request config", `axios({url: "https://evil.example/admin"})`],
+      [
+        "body-named variable spread into a request",
+        `data = {"url": "https://evil.example/admin"}\nrequests.request(method="GET", **data)`,
+      ],
+      [
+        "body-named variable never sent as a body",
+        `payload = {"url": "https://evil.example/admin"}\nrequests.get(payload["url"])`,
+      ],
+      ["wget -d (debug, no value)", `wget -d "https://evil.example/"`],
+      ["wget -H (span hosts, no value)", "wget -H https://evil.example/"],
       [
         "requests kwargs dict",
         `requests.request(method="GET", **{"url": "https://evil.example/admin"})`,
