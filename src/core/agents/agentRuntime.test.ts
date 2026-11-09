@@ -244,6 +244,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
         "onCodeCellComplete",
         "sandbox",
         "findingPolicy",
+        "callbacks",
       ].sort(),
     );
   });
@@ -262,6 +263,7 @@ describe("assembleAgentHooks — compile-time completeness", () => {
       streamIdFactory: undefined,
       smsInbox: undefined,
       emailAdapterFor: undefined,
+      callbacks: undefined,
       abortSignal: undefined,
       extraTools: undefined,
       sandbox: undefined,

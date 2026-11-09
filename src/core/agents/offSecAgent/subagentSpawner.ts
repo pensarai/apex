@@ -20,7 +20,7 @@ import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo } from "../../session";
-import type { ToolBackends } from "../../tools/backends/types";
+import type { CallbackBackend, ToolBackends } from "../../tools/backends/types";
 import { runWithBoundedConcurrency } from "../../utils/concurrency";
 import {
   type BrowserSessionProvider,
@@ -116,6 +116,8 @@ export interface SpawnRuntime {
   abortSignal?: AbortSignal;
   sandbox?: UnifiedSandbox;
   backends?: ToolBackends;
+  /** The run's callback domain reader, inherited so workers can read callbacks. */
+  callbacks?: CallbackBackend;
   credentialManager?: CredentialManager;
   display?: string;
   enableThinking?: boolean;
@@ -410,6 +412,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     hooks: {
       findingPolicy: ctx.findingPolicy,
       backends: ctx.backends,
+      callbacks: ctx.callbacks,
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
       toolProtocol: ctx.toolProtocol,

@@ -81,6 +81,27 @@ describe("read_callback_hits", () => {
     );
   });
 
+  it("reads through local backends when the host passes callbacks without injecting backends", async () => {
+    const local: ToolContext = {
+      subagentSpawner: inProcessSubagentSpawner,
+      callbacks: {
+        readHits: async () => ({ hits: [hit(1, "/ssrf-local")], totalHits: 1 }),
+      },
+      session: {
+        id: "ses_cb",
+        rootPath: "/nonexistent",
+        config: { testDomains: [CB] },
+      } as SessionInfo,
+      agentCwd: "/nonexistent",
+    };
+    expect(listToolRegistryNames(local)).toContain("read_callback_hits");
+    const result = (await readCallbackHits(local).execute?.(
+      { toolCallDescription: "read", marker: "ssrf-local" },
+      options,
+    )) as unknown as Result;
+    expect(result.data?.matchingHits).toBe(1);
+  });
+
   it("filters hits by the marker the payload carried", async () => {
     const reader = {
       readHits: vi.fn().mockResolvedValue({

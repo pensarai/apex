@@ -20,7 +20,10 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
-import type { ToolBackends } from "../../../tools/backends/types";
+import type {
+  CallbackBackend,
+  ToolBackends,
+} from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
@@ -265,6 +268,9 @@ export type ToolContext = {
    * `pensar-managed` inbox). Unset → the config-driven factory.
    */
   emailAdapterFor?: EmailAdapterResolver;
+
+  /** Host-supplied run callback domain reader; local backends expose it as `backends.callbacks`. */
+  callbacks?: CallbackBackend;
 
   toolExecutionContext?: AgentHooks["toolExecutionContext"];
 

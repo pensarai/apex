@@ -38,7 +38,7 @@ import type { RunContextRecorder } from "../../runtime/runContext";
 import type { ToolExecutionRecorder } from "../../runtime/runToolStore";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
-import type { ToolBackends } from "../../tools/backends/types";
+import type { CallbackBackend, ToolBackends } from "../../tools/backends/types";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type {
@@ -195,6 +195,9 @@ export interface AgentHooks {
 
   /** Supplies an adapter for a `pensar-managed` inbox. Unset → the config-driven factory. */
   emailAdapterFor?: EmailAdapterResolver;
+
+  /** Reads the run's callback domain; forwarded into the ToolContext like `emailAdapterFor`. */
+  callbacks?: CallbackBackend;
 
   /** AbortSignal to cancel the agent mid-run. */
   abortSignal?: AbortSignal;
@@ -356,6 +359,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * ToolContext. Unset → the config-driven factory, which rejects that provider.
    */
   emailAdapterFor?: EmailAdapterResolver;
+
+  /** Reads the run's callback domain; forwarded into the ToolContext like `emailAdapterFor`. */
+  callbacks?: CallbackBackend;
 
   /**
    * Shared findings registry for cross-agent dedup.

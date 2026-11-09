@@ -201,6 +201,7 @@ export { writePlan } from "./writePlan";
 
 import type { ToolSet } from "ai";
 import { sessionTestDomains } from "../../../session/testDomains";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import { addMemory } from "./addMemory";
 import { applyPatch } from "./applyPatch";
 import {
@@ -406,7 +407,7 @@ const TOOL_REGISTRY = [
     factory: readCallbackHits,
     available: (ctx) =>
       sessionTestDomains(ctx.session).length > 0 &&
-      Boolean(ctx.backends?.callbacks),
+      Boolean(resolveBackends(ctx).callbacks),
   },
 
   // Reporting / benchmark tools

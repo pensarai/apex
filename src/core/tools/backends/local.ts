@@ -363,6 +363,7 @@ export function LocalBackends(
     http,
     browser,
     inbox,
+    ...(ctx.callbacks ? { callbacks: ctx.callbacks } : {}),
     ...(ctx.sandbox ? { sandboxed: true } : {}),
   };
 }

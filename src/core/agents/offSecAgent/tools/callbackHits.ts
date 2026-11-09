@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { sessionTestDomains } from "../../../session/testDomains";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { CallbackHit } from "../../../tools/backends/types";
 import type { ToolContext } from "./types";
 
@@ -37,9 +38,9 @@ function present(hit: CallbackHit) {
   };
 }
 
-/** Built only when the session has test domains and the host supplies `backends.callbacks` (see the registry). */
+/** Built only when the session has test domains and the host supplies a callbacks backend (see the registry). */
 export function readCallbackHits(ctx: ToolContext) {
-  const callbacks = ctx.backends?.callbacks;
+  const callbacks = resolveBackends(ctx).callbacks;
   if (!callbacks) {
     throw new Error(
       "read_callback_hits needs backends.callbacks; the registry should not have built it",
