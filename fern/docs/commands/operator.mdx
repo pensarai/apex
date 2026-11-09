@@ -64,6 +64,14 @@ In addition to operating mode, you can toggle whether tool calls require your ap
 
 Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 
+## Session credentials
+
+Inside an operator session, type `/credentials` to open the credentials dialog. You can do this before sending the first message, or between turns. Enter an account or role, a login URL, a username and password, an API key, a bearer token, or login instructions. Use **Tab** to move between fields and **Enter** to save. Reopen the dialog to see saved entries or add another account.
+
+For API authentication, optionally enter an HTTP header name such as `X-API-Key` for an API key or `Authorization` for a bearer token. This sends the key or token on in-scope requests for the session. Leave it blank to use the credential by ID only.
+
+The next agent turn receives credential IDs and login instructions. Tools resolve secrets from those IDs. Keep secrets in the password, API key, or token fields. Apex saves the values in plaintext in the session’s local `session.json` and reloads them when you resume that session.
+
 ## Command Flags
 
 | Flag                  | Description                                       |
@@ -73,10 +81,6 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 | `--mode <mode>`       | Operator mode: plan, manual, or auto              |
 | `--autopilot`         | Disable approval gates (auto-approve all actions) |
 | `--model <model>`     | AI model to use                                   |
-| `--auth-url <url>`    | Login page URL                                    |
-| `--auth-user <user>`  | Auth username                                     |
-| `--auth-pass <pass>`  | Auth password                                     |
-| `--auth-instructions` | Custom auth instructions                          |
 | `--hosts <h1,h2,...>` | Allowed hosts (comma-separated)                   |
 | `--ports <p1,p2,...>` | Allowed ports (comma-separated)                   |
 | `--strict`            | Enable strict scope mode                          |

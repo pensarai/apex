@@ -187,7 +187,7 @@ All fields are optional.
 function get(id: string): Promise<SessionInfo>;
 ```
 
-Loads a session from disk. A loaded session's `config.authCredentials` is present, but its credential manager isn't rebuilt. To run authenticated agents again, create a new session with the credentials.
+Loads a session from disk. The credential manager is rebuilt from the saved `config.authCredentials`, so tools can resolve credential IDs on subsequent turns.
 
 ## sessions.remove
 

@@ -268,22 +268,6 @@ export const commands: CommandConfig[] = [
         valueHint: "<plan|manual|auto>",
         description: "Operator mode",
       },
-      { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
-      {
-        name: "--auth-user",
-        valueHint: "<user>",
-        description: "Auth username",
-      },
-      {
-        name: "--auth-pass",
-        valueHint: "<pass>",
-        description: "Auth password",
-      },
-      {
-        name: "--auth-instructions",
-        valueHint: "<text>",
-        description: "Auth instructions",
-      },
       {
         name: "--hosts",
         valueHint: "<h1,h2,...>",
@@ -317,6 +301,17 @@ export const commands: CommandConfig[] = [
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
+      if (
+        flags.authUrl ||
+        flags.authUser ||
+        flags.authPass ||
+        flags.authInstructions
+      ) {
+        ctx.toast?.(
+          "Open /credentials in the session to save target credentials.",
+          "warn",
+        );
+      }
       ctx.navigate({
         type: "operator",
         nonce: Date.now(),

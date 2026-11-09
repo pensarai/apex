@@ -1092,14 +1092,19 @@ export class OffensiveSecurityAgent<TResult = void> {
       });
       this.lanceRuntime?.start();
       const continuation = this.lanceRuntime?.continuationContext();
+      const system =
+        input.mode === "lance"
+          ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
+          : baseWithFacts + workspaceSection;
+      const lanceCredentials =
+        input.mode === "lance" && input.lance?.interactive
+          ? credentialManager?.formatForPrompt()
+          : undefined;
       return streamResponse({
         prompt: continuation
           ? `${input.prompt}\n\n${continuation}`
           : input.prompt,
-        system:
-          input.mode === "lance"
-            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
-            : baseWithFacts + workspaceSection,
+        system: lanceCredentials ? `${system}\n\n${lanceCredentials}` : system,
         harness: input.harness,
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
