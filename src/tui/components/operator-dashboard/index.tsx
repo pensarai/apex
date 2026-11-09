@@ -1069,6 +1069,17 @@ export default function OperatorDashboard({
             );
 
         if (session) {
+          if (session.nameOnFirstMessage && prompt) {
+            await sessions.startNaming(session, {
+              model: model.id,
+              authConfig: commonInput.authConfig,
+              userMessage: prompt,
+              onNameGenerated: (name) =>
+                setSession((prev) =>
+                  prev?.id === session.id ? { ...prev, name } : prev,
+                ),
+            });
+          }
           agentResult = await agentClient.run({
             ...commonInput,
             ...(lanceMode ? {} : { system: systemPrompt }),
@@ -1498,6 +1509,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       const updated = active
         ? await sessions.addCredential(active.id, credential)
         : await sessions.create({
+            ...(lanceMode ? { name: "Lance" } : { nameOnFirstMessage: true }),
             targets: initialConfig?.target ? [initialConfig.target] : [],
             config: {
               ...newSessionConfig,
@@ -1518,6 +1530,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       newSessionConfig,
       reasoning,
       model.id,
+      lanceMode,
       setSessionCwd,
       addSystemMessage,
     ],

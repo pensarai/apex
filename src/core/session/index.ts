@@ -528,6 +528,7 @@ export function migrateLegacySessionData(input: unknown): unknown {
 export const SessionInfoObject = z.object({
   id: Identifier.schema("session"),
   name: z.string().optional(),
+  nameOnFirstMessage: z.boolean().optional(),
   version: z.string(),
   targets: z.array(z.string()),
   config: SessionConfigObject.optional(),
@@ -555,6 +556,7 @@ export interface CreateInputProps {
   /** Explicit session name. When omitted, an AI-generated name is attempted
    *  (requires `model` + `authConfig`), falling back to a random name. */
   name?: string;
+  nameOnFirstMessage?: boolean;
   prefix?: string;
   config?: SessionConfig;
   /** Recorded runs bind configuration at admission instead of inheriting ambient settings. */
@@ -654,6 +656,9 @@ export async function create(input: CreateInputProps) {
     version: getCurrentVersion(),
     targets: input.targets,
     name,
+    ...(input.nameOnFirstMessage && !input.name
+      ? { nameOnFirstMessage: true }
+      : {}),
     time: {
       created: Date.now(),
       updated: Date.now(),
@@ -688,26 +693,43 @@ export async function create(input: CreateInputProps) {
     0o600,
   );
 
-  // Fire-and-forget AI name generation — updates persisted session in the background
-  if (!input.name && input.model) {
-    generateSessionName({
-      targets: input.targets,
-      userMessage: input.userMessage,
-      model: input.model,
-      authConfig: input.authConfig,
-      sessionId: result.id,
-    }).then((aiName) => {
-      if (aiName) {
-        result.name = aiName;
-        update(result.id, (s) => {
-          s.name = aiName;
-        }).catch(() => {});
-        input.onNameGenerated?.(aiName);
-      }
-    });
+  if (!input.name && input.model && !result.nameOnFirstMessage) {
+    await startNaming(result, { ...input, model: input.model });
   }
 
   return result;
+}
+
+async function startNaming(
+  session: SessionInfo,
+  input: Pick<
+    CreateInputProps,
+    "authConfig" | "userMessage" | "onNameGenerated"
+  > & { model: AIModel },
+) {
+  if (session.nameOnFirstMessage) {
+    let claimed = false;
+    await update(session.id, (saved) => {
+      claimed = saved.nameOnFirstMessage === true;
+      delete saved.nameOnFirstMessage;
+    });
+    delete session.nameOnFirstMessage;
+    if (!claimed) return;
+  }
+  void generateSessionName({
+    targets: session.targets,
+    userMessage: input.userMessage,
+    model: input.model,
+    authConfig: input.authConfig,
+    sessionId: session.id,
+  }).then((name) => {
+    if (!name) return;
+    session.name = name;
+    update(session.id, (saved) => {
+      saved.name = name;
+    }).catch(() => {});
+    input.onNameGenerated?.(name);
+  });
 }
 
 export const get = async (id: string) => {
@@ -1153,6 +1175,7 @@ export const sessions = {
   updateOperatorSettings,
   updateSessionHeaders,
   addCredential,
+  startNaming,
   updateModelReasoning,
 };
 

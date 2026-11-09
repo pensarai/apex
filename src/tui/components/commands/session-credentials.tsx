@@ -148,6 +148,7 @@ export function SessionCredentialsDialog({
       >
         <scrollbox
           ref={scroll}
+          focused={!adding}
           height={Math.min(
             adding ? fields.length : saved.length * 3,
             Math.max(2, height - 14),

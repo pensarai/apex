@@ -9,8 +9,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { generateSessionName } from "../../util/name";
 import { resolveEffectiveHeaders } from "../http/targetHeaders";
 import { sessions } from "./index";
+
+vi.mock("../../util/name", () => ({
+  generateRandomName: () => "initial-name",
+  generateSessionName: vi.fn(async () => "staging-login"),
+}));
 
 let root: string;
 beforeEach(async () => {
@@ -95,4 +101,37 @@ it("keeps a legacy single account resolvable while two additions are saved", asy
     resumed.credentialManager?.listReferences().map((ref) => ref.role),
   ).toEqual(expect.arrayContaining(["second", "third"]));
   expect(resumed.credentialManager?.size).toBe(3);
+});
+
+it("names a credential-only session once from its first directive, including after resume", async () => {
+  const session = await sessions.create({
+    nameOnFirstMessage: true,
+    targets: ["https://app.example.test"],
+    inheritEnvironmentConfig: false,
+    config: { authCredentials: { password: "keep-out-of-name-prompt" } },
+  });
+  expect(generateSessionName).not.toHaveBeenCalled();
+  const options = {
+    model: "claude-haiku-4-5",
+    userMessage: "Check the staging login",
+    onNameGenerated: vi.fn(),
+  };
+  const reopened = await sessions.get(session.id);
+  const secondReader = await sessions.get(session.id);
+  await Promise.all([
+    sessions.startNaming(reopened, options),
+    sessions.startNaming(secondReader, options),
+  ]);
+  expect(generateSessionName).toHaveBeenCalledTimes(1);
+  expect(generateSessionName).toHaveBeenCalledWith({
+    model: options.model,
+    targets: session.targets,
+    userMessage: options.userMessage,
+    sessionId: session.id,
+    authConfig: undefined,
+  });
+  expect(options.onNameGenerated).toHaveBeenCalledWith("staging-login");
+  const saved = await sessions.get(session.id);
+  expect(saved.nameOnFirstMessage).toBeUndefined();
+  expect(saved.name).toBe("staging-login");
 });
