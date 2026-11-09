@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { parseTargetUrl, withHttpScheme } from "../../../../util/url";
 import { getModelSettings } from "../../../ai";
+import { RECON_WORKER_TOOLS } from "../../specialized/attackSurface/reconToolset";
 import { type SpawnOptions, spawnBatch } from "../subagentSpawner";
 import { describeMapForWorker } from "./documentTopology";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
@@ -157,9 +158,13 @@ function reconSpawnOptions(
   const map = describeMapForWorker(ctx.session.rootPath);
   const target =
     item.target === undefined ? undefined : withHttpScheme(item.target);
+  const parentTools = ctx.activeToolNames;
   return {
     spec: {
       type: "recon-worker",
+      excludeTools:
+        parentTools &&
+        RECON_WORKER_TOOLS.filter((name) => !parentTools.includes(name)),
       goal: map ? `${item.goal}\n\n${map}` : item.goal,
       target,
       codebasePath: item.codebasePath,
@@ -168,6 +173,7 @@ function reconSpawnOptions(
     runtime: {
       session: ctx.session,
       ...getModelSettings(ctx),
+      toolProtocol: ctx.toolProtocol,
       abortSignal: ctx.abortSignal,
       sandbox: ctx.sandbox,
       backends: ctx.backends,

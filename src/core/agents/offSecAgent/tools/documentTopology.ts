@@ -946,6 +946,7 @@ Do not use it to restate a record in new words, and do not touch a record whose 
         input.kind === "threat"
           ? `${record.component}__${record.title}`
           : String(record.name);
+      const displayName = input.kind === "threat" ? record.title : record.name;
       const filepath = save(ctx, input.kind, key, {
         ...record,
         ...changes,
@@ -955,10 +956,10 @@ Do not use it to restate a record in new words, and do not touch a record whose 
       return {
         success: true,
         kind: input.kind,
-        name: record.name,
+        name: displayName,
         changed: fields,
         filepath,
-        message: `Updated ${input.kind} '${record.name}': ${fields.join(", ")}`,
+        message: `Updated ${input.kind} '${displayName}': ${fields.join(", ")}`,
       };
     },
   });
@@ -1370,7 +1371,7 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
       issues.push({
         check: "references-retired",
         subject: `${t.component}: ${t.title}`,
-        fix: `It targets the retired '${gone}': retire the threat, or move it with update_record if it applies elsewhere.`,
+        fix: `It targets the retired '${gone}': retire the threat. If the scenario applies elsewhere, document it on the surviving component.`,
       });
   }
   const threatened = new Set(topology.threats.map((t) => lower(t.component)));

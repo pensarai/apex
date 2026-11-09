@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { spawnReconAgent } from "./spawnReconAgent";
 import type { ToolContext } from "./types";
 
-function fixture() {
+function fixture(activeToolNames?: string[]) {
   const spawnBatch = vi.fn(async () => [
     { status: "fulfilled", value: undefined },
   ]);
   const tool = spawnReconAgent({
     model: "test-model",
+    activeToolNames,
+    toolProtocol: "direct",
     session: {
       id: "parent",
       rootPath: "/unused",
@@ -42,6 +44,24 @@ describe("recon worker targets", () => {
     await run(input);
     expect(spawnBatch).toHaveBeenCalledWith(
       [expect.objectContaining({ spec: expect.objectContaining({ target }) })],
+      expect.anything(),
+    );
+  });
+  it("passes the parent's tool restrictions and protocol to the worker", async () => {
+    const { run, spawnBatch } = fixture(["http_request", "spawn_recon_agent"]);
+    await run();
+    expect(spawnBatch).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          spec: expect.objectContaining({
+            excludeTools: expect.arrayContaining([
+              "clone_repository",
+              "execute_command",
+            ]),
+          }),
+          runtime: expect.objectContaining({ toolProtocol: "direct" }),
+        }),
+      ],
       expect.anything(),
     );
   });

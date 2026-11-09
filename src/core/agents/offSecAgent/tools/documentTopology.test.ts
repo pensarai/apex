@@ -242,7 +242,7 @@ describe("review_topology threat testability", () => {
       "entry point, attack steps, severity, verification",
     );
 
-    await run(updateRecord(ctx), {
+    const result = await run(updateRecord(ctx), {
       kind: "threat",
       name: `Abuse ${web.name}`,
       component: web.name,
@@ -254,6 +254,8 @@ describe("review_topology threat testability", () => {
       },
       evidence: fromSource,
     });
+    expect(result.name).toBe(`Abuse ${web.name}`);
+    expect(result.message).toContain(`Abuse ${web.name}`);
     expect(reviewTopologyRecords(ctx).map((i) => i.check)).not.toContain(
       "threat-untestable",
     );

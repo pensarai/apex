@@ -88,6 +88,8 @@ export type ToolContext = {
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
   toolProtocol?: AgentToolProtocolPreference;
+  /** Effective tool roster inherited by scoped recon workers. */
+  activeToolNames?: readonly string[];
 
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;

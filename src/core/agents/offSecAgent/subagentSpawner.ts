@@ -495,6 +495,7 @@ const runReconWorkerChild: SubagentRunner<"recon-worker"> = async (
     onStepFinish: ctx.onStepFinish,
     onCacheMetrics: ctx.onCacheMetrics,
     languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
     usageRecorder: ctx.usageRecorder,
     toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
