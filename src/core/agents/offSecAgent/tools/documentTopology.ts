@@ -45,7 +45,11 @@ const evidenceSchema = z
         .describe(
           "observed = a live probe returned it; source = read in a connected repository (IaC, config, code); cloud = a cloud-provider API returned it; inferred = deduced, not confirmed",
         ),
-      detail: z.string().describe("What the evidence shows, in one sentence."),
+      detail: z
+        .string()
+        .describe(
+          "State the result from this reference alone. For a live probe, record the host, protocol, ports actually tested and returned state. open|filtered is inconclusive. Put facts from config or inventory in separate source or cloud entries.",
+        ),
       ref: z
         .string()
         .optional()
@@ -589,6 +593,8 @@ export const THREAT_CATEGORIES = [
 export function documentThreat(ctx: ToolContext) {
   return tool({
     description: `Document one threat to a component: a concrete way this system could be attacked through it. A component's threat model is the set of its threats, together with what is at stake, what it trusts, how it is reached, and its controls.
+
+Name the attacker's starting privilege, the control it should encounter, and the outcome beyond that privilege. A confirmation must distinguish the attack from normal authorized behavior. For example, an approved bump to a pinned dependency proves that the dependency runs; a supply-chain threat needs a path for an attacker to bypass that pin, review, or release authority. Keep expected access and deployment behavior in the component's trust assumptions when that is all the evidence shows.
 
 Model each component in depth. Work through every STRIDE category against what the map shows — its trust assumptions, the gaps in the controls on it and on the layers around it, the flows that reach it and the ones it makes, and what it holds — and document each threat that plausibly applies. Most components on an attack path have several. Write each one for this system specifically: who acts, through which entry point and flow, using which trust assumption or control gap, and what they get. A generic threat ("SQL injection is possible") is not a threat model.
 
