@@ -166,19 +166,62 @@ export function assertFindingEndpointInScope(
   assertUrlInScope(endpoint, ctx);
 }
 
+const SHELL_PAYLOAD_ARG =
+  /(?:^|\s)(?:-d|-F|-H|--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:\s+|=)('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
+
+const STRING_OPEN = String.raw`(?:[rRbBfFuU]{1,2})?\\?["'\x60]`;
+const PAYLOAD_URL_PREFIXES = [
+  /[?&'"](?!-)[\w.%[\]-]*=$/,
+  new RegExp(String.raw`\\?["'][\w.-]+\\?["'][ \t]*:[ \t]*${STRING_OPEN}$`),
+  new RegExp(
+    String.raw`[{,]\s*(?!lambda\b)[A-Za-z_$][\w$]*[ \t]*:[ \t]*${STRING_OPEN}$`,
+  ),
+];
+const PROXY_KEY_PREFIX = new RegExp(
+  String.raw`\b(?:https?|all)\\?["']?[ \t]*:[ \t]*${STRING_OPEN}$`,
+  "i",
+);
+
+function shellPayloadRanges(command: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  for (const match of command.matchAll(SHELL_PAYLOAD_ARG)) {
+    const end = match.index + match[0].length;
+    ranges.push([end - match[1].length, end]);
+  }
+  return ranges;
+}
+
+// A URL sent to the target as data (an SSRF or redirect payload) is not a host
+// the command contacts. Anything not clearly in a payload position stays a
+// request target, so ambiguous text still fails closed.
+function isPayloadUrl(
+  command: string,
+  index: number,
+  shellPayloads: Array<[number, number]>,
+): boolean {
+  if (shellPayloads.some(([start, end]) => index >= start && index < end)) {
+    return true;
+  }
+  const prefix = command.slice(Math.max(0, index - 200), index);
+  if (PROXY_KEY_PREFIX.test(prefix)) return false;
+  return PAYLOAD_URL_PREFIXES.some((pattern) => pattern.test(prefix));
+}
+
 /**
  * Extract URLs and hostnames from a shell command string.
  *
  * Looks for:
- *  - Explicit URLs: http(s)://host...
+ *  - Explicit URLs: http(s)://host..., except those in a payload position
  *  - Hostnames after common networking tools (curl, wget, nmap, etc.)
  */
 export function extractHostsFromCommand(command: string): string[] {
   const hosts = new Set<string>();
 
-  // 1. Extract all http(s) URLs
+  // 1. Extract the http(s) URLs the command requests
   const urlPattern = /https?:\/\/[^\s"'`;|&)<>]+/gi;
+  const shellPayloads = shellPayloadRanges(command);
   for (const match of command.matchAll(urlPattern)) {
+    if (isPayloadUrl(command, match.index, shellPayloads)) continue;
     const hostname = extractHostname(match[0]);
     if (hostname) hosts.add(hostname);
   }
@@ -295,12 +338,8 @@ export function extractHostsFromCommand(command: string): string[] {
       }
       if (token.startsWith("/")) continue;
 
-      // Could be a URL
-      if (token.match(/^https?:\/\//i)) {
-        const h = extractHostname(token);
-        if (h) hosts.add(h);
-        continue;
-      }
+      // URLs are handled by step 1, which knows which are payloads
+      if (token.match(/^https?:\/\//i)) continue;
 
       // Could be a hostname or IP (with optional :port)
       const hostPortMatch = token.match(

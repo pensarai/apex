@@ -586,6 +586,82 @@ describe("extractHostsFromCommand", () => {
     const hosts = extractHostsFromCommand("nmap --script=vuln target.com");
     expect(hosts).toContain("target.com");
   });
+
+  describe("payload URLs (SSRF, open redirect, webhooks)", () => {
+    it.each([
+      [
+        "curl JSON body",
+        `curl -X POST https://app.acme.example/hooks -H 'Content-Type: application/json' -d '{"url":"http://169.254.169.254/latest/meta-data/"}'`,
+      ],
+      [
+        "curl escaped JSON body with an unexpanded variable",
+        `curl https://app.acme.example/hooks --data-raw "{\\"url\\":\\"https://$callback_domain/marker\\"}"`,
+      ],
+      [
+        "curl form value",
+        `curl https://app.acme.example/fetch --data-urlencode "url=http://localhost:8080/admin"`,
+      ],
+      [
+        "unquoted curl form value",
+        "curl https://app.acme.example/fetch -d url=http://10.0.0.5/",
+      ],
+      [
+        "curl header value",
+        `curl https://app.acme.example/ -H "Referer: http://[::1]/"`,
+      ],
+      [
+        "wget post data",
+        "wget --post-data 'target=http://127.0.0.1:6379/' https://app.acme.example/fetch",
+      ],
+      [
+        "python json body",
+        `import requests\nTARGET = "https://app.acme.example/hooks"\nrequests.post(TARGET, json={"url": "http://169.254.169.254/latest/meta-data/"})`,
+      ],
+      [
+        "python f-string dict value",
+        `requests.post("https://app.acme.example/hooks", json={'callback': f'http://{internal_host}/x'})`,
+      ],
+      [
+        "python query parameter",
+        `BASE = "https://app.acme.example"\nrequests.get(f"{BASE}/fetch?url=http://10.0.0.5/")`,
+      ],
+      [
+        "javascript object value with template literal",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: literal JS template in PoC source under test
+        "fetch('https://app.acme.example/hooks', {method: 'POST', body: JSON.stringify({url: `http://${internal_host}/`})})",
+      ],
+    ])("ignores a URL sent as data: %s", (_label, poc) => {
+      expect(extractHostsFromCommand(poc)).toEqual(["app.acme.example"]);
+    });
+
+    it.each([
+      [
+        "shell variable assignment",
+        "TARGET=https://evil.example\ncurl $TARGET/x",
+      ],
+      ["curl --url=", "curl --url=https://evil.example/x"],
+      ["quoted curl --url=", `curl "--url=https://evil.example/x"`],
+      [
+        "curl proxy",
+        "curl --proxy http://evil.example:8080 https://app.acme.example/",
+      ],
+      [
+        "python proxies dict",
+        `requests.get("https://app.acme.example/", proxies={"https": "http://evil.example:8080"})`,
+      ],
+      [
+        "python request alongside a payload",
+        `requests.post("https://evil.example/hooks", json={"url": "http://169.254.169.254/"})`,
+      ],
+      [
+        "python variable that is requested",
+        `url = "http://evil.example/admin"\nrequests.get(url)`,
+      ],
+      ["ternary target", "fetch(useProd ? prodUrl : 'https://evil.example/')"],
+    ])("still treats a requested URL as a target: %s", (_label, poc) => {
+      expect(extractHostsFromCommand(poc)).toContain("evil.example");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -632,6 +708,28 @@ describe("assertCommandInScope", () => {
     expect(() =>
       assertCommandInScope("echo hello && ls -la", ctx),
     ).not.toThrow();
+  });
+
+  it("allows an SSRF PoC that sends internal URLs to the in-scope target", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    const poc = [
+      "import requests",
+      'TARGET = "https://example.com/api/webhooks"',
+      "for payload in [",
+      '    {"url": "http://169.254.169.254/latest/meta-data/"},',
+      '    {"url": "http://localhost:8080/admin"},',
+      '    {"url": "http://[::1]/"},',
+      "]:",
+      "    requests.post(TARGET, json=payload)",
+    ].join("\n");
+    expect(() => assertCommandInScope(poc, ctx)).not.toThrow();
+  });
+
+  it("rejects an SSRF PoC that requests the internal address itself", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    const poc =
+      'import requests\nrequests.get("http://169.254.169.254/latest/meta-data/")';
+    expect(() => assertCommandInScope(poc, ctx)).toThrow(ScopeViolationError);
   });
 
   it("allows local file operations", () => {
