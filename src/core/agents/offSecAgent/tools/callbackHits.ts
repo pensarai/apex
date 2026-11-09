@@ -1,13 +1,16 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { sessionTestDomains } from "../../../session/testDomains";
-import { resolveBackends } from "../../../tools/backends/resolve";
-import type { CallbackHit } from "../../../tools/backends/types";
+import type {
+  CallbackBackend,
+  CallbackHit,
+} from "../../../tools/backends/types";
 import type { ToolContext } from "./types";
 
 const MAX_RETURNED_HITS = 25;
 const MAX_PATH_CHARS = 512;
 const MAX_BODY_CHARS = 256;
+const MAX_USER_AGENT_CHARS = 256;
 const MAX_MARKER_CHARS = 200;
 
 const NOT_EVIDENCE_OF_ABSENCE =
@@ -29,7 +32,7 @@ function present(hit: CallbackHit) {
     method: hit.method,
     path: hit.path.slice(0, MAX_PATH_CHARS),
     ip: hit.sourceIp ?? "",
-    userAgent: hit.headers["user-agent"] ?? "",
+    userAgent: (hit.headers["user-agent"] ?? "").slice(0, MAX_USER_AGENT_CHARS),
     body: hit.bodyPreview.slice(0, MAX_BODY_CHARS),
     ...(hit.bodyTruncated || hit.bodyPreview.length > MAX_BODY_CHARS
       ? { bodyTruncated: true }
@@ -38,9 +41,17 @@ function present(hit: CallbackHit) {
   };
 }
 
-/** Built only when the session has test domains and the host supplies a callbacks backend (see the registry). */
+/**
+ * The host's callbacks reader: on injected backends, or passed on its own
+ * (`ctx.callbacks`), whether or not the host also injects backends.
+ */
+export function callbacksReader(ctx: ToolContext): CallbackBackend | undefined {
+  return ctx.backends?.callbacks ?? ctx.callbacks;
+}
+
+/** Built only when the session has test domains and the host supplies a callbacks reader (see the registry). */
 export function readCallbackHits(ctx: ToolContext) {
-  const callbacks = resolveBackends(ctx).callbacks;
+  const callbacks = callbacksReader(ctx);
   if (!callbacks) {
     throw new Error(
       "read_callback_hits needs backends.callbacks; the registry should not have built it",

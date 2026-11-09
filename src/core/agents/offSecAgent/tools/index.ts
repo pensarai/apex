@@ -201,7 +201,6 @@ export { writePlan } from "./writePlan";
 
 import type { ToolSet } from "ai";
 import { sessionTestDomains } from "../../../session/testDomains";
-import { resolveBackends } from "../../../tools/backends/resolve";
 import { addMemory } from "./addMemory";
 import { applyPatch } from "./applyPatch";
 import {
@@ -213,7 +212,7 @@ import {
   type createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
-import { readCallbackHits } from "./callbackHits";
+import { callbacksReader, readCallbackHits } from "./callbackHits";
 import {
   pollCallbackListener,
   startCallbackListener,
@@ -407,7 +406,7 @@ const TOOL_REGISTRY = [
     factory: readCallbackHits,
     available: (ctx) =>
       sessionTestDomains(ctx.session).length > 0 &&
-      Boolean(resolveBackends(ctx).callbacks),
+      Boolean(callbacksReader(ctx)),
   },
 
   // Reporting / benchmark tools

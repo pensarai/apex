@@ -5,6 +5,7 @@
 // The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
 // `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
+import { isTestDomain } from "../session/testDomains";
 import {
   fetchWithScopedRedirects,
   type RedirectFetchResult,
@@ -29,6 +30,8 @@ export interface ResolverSession {
       readonly strictScope?: boolean;
     };
     readonly authCredentials?: unknown;
+    /** Host-owned callback domains; reachable under strict scope, never sent headers. */
+    readonly testDomains?: ReadonlyArray<string>;
   };
   readonly credentialManager?: {
     listCredentialsWithHeaders?: () => ReadonlyArray<{
@@ -153,6 +156,14 @@ function normalizeHeadersInit(
   return { ...(init as Record<string, string>) };
 }
 
+function isTestDomainUrl(url: string, session: ResolverSession): boolean {
+  try {
+    return isTestDomain(new URL(url).hostname, session);
+  } catch {
+    return false;
+  }
+}
+
 // Redirect hops are dispatched manually so each destination gets a fresh
 // scope decision instead of inheriting the initial target's credentials.
 export function targetFetch(
@@ -164,7 +175,14 @@ export function targetFetch(
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const { headers: _headers, ...requestInit } = init ?? {};
   return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) => {
-    if (strict && !isUrlInSessionScope(hopUrl, session)) {
+    // Test domains are the host's own callback infrastructure: a request may
+    // reach them under strict scope, but headers below still follow the
+    // target scope, so none are sent there.
+    if (
+      strict &&
+      !isUrlInSessionScope(hopUrl, session) &&
+      !isTestDomainUrl(hopUrl, session)
+    ) {
       throw new Error(
         context.redirectCount > 0
           ? `Scope violation: redirect destination ${hopUrl} is not in the immutable run policy`

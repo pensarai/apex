@@ -102,6 +102,32 @@ describe("read_callback_hits", () => {
     expect(result.data?.matchingHits).toBe(1);
   });
 
+  it("reads a standalone callbacks reader even when the host injects backends", async () => {
+    const both: ToolContext = {
+      ...ctx([CB]),
+      backends: {} as ToolBackends,
+      callbacks: {
+        readHits: async () => ({ hits: [hit(1, "/ssrf-both")], totalHits: 1 }),
+      },
+    };
+    expect(listToolRegistryNames(both)).toContain("read_callback_hits");
+    const result = (await readCallbackHits(both).execute?.(
+      { toolCallDescription: "read", marker: "ssrf-both" },
+      options,
+    )) as unknown as Result;
+    expect(result.data?.matchingHits).toBe(1);
+  });
+
+  it("bounds an attacker-controlled user agent", async () => {
+    const big = hit(1);
+    big.headers = { "user-agent": "A".repeat(10_000) };
+    const result = await read({
+      readHits: async () => ({ hits: [big], totalHits: 1 }),
+    });
+    const ua = result.data?.recentHits[0]?.userAgent as string;
+    expect(ua.length).toBeLessThanOrEqual(256);
+  });
+
   it("filters hits by the marker the payload carried", async () => {
     const reader = {
       readHits: vi.fn().mockResolvedValue({
