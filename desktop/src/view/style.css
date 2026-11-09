@@ -1,0 +1,331 @@
+@import "tailwindcss";
+@import "@pensarai/design-system/globals.css";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font: 14px / 1.55 var(--font-sans);
+}
+.shell {
+  display: grid;
+  grid-template-columns: 192px minmax(0, 1fr);
+  height: 100%;
+}
+.shell > aside {
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 12px 12px;
+  min-width: 0;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 650;
+  margin: 0 12px 32px;
+}
+.shell nav {
+  display: grid;
+  gap: 4px;
+}
+.shell nav button,
+.folder {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--color-fg-2);
+  cursor: pointer;
+}
+.shell nav button[aria-current],
+.shell nav button:hover,
+.folder:hover {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+}
+.shell footer {
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  padding: 15px 8px 4px;
+  display: grid;
+}
+small,
+.version,
+.column-title,
+dt,
+.record span,
+.record time,
+.turn > span {
+  font: 12px / 1.5 var(--font-mono);
+  color: var(--color-fg-3);
+}
+.folder {
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+  font: 12px var(--font-code);
+}
+.version {
+  margin-top: 16px;
+}
+.shell > main {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 28px;
+  border-bottom: 1px solid var(--color-border);
+}
+h1 {
+  font-size: 24px;
+  font-weight: 650;
+}
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 24px 0 8px;
+}
+p {
+  color: var(--color-fg-2);
+}
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+.toolbar input {
+  max-width: 400px;
+}
+.split {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(0, 3fr);
+}
+.library,
+.inspector {
+  overflow: auto;
+  min-width: 0;
+}
+.library {
+  border-right: 1px solid var(--color-border);
+}
+.column-title {
+  display: flex;
+  min-height: 40px;
+  padding: 8px 20px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-canvas);
+}
+.record {
+  text-align: left;
+  width: 100%;
+  display: grid;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  gap: 2px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.record strong {
+  font-weight: 550;
+}
+.record:hover,
+.record[aria-pressed="true"] {
+  background: var(--color-surface);
+}
+.record[aria-pressed="true"] {
+  box-shadow: inset 2px 0 var(--color-fg-2);
+}
+.detail,
+.empty {
+  padding: 24px;
+}
+.empty {
+  color: var(--color-fg-3);
+}
+dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 18px 0;
+}
+dd {
+  font: 13px / 1.5 var(--font-code);
+  overflow-wrap: anywhere;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 13px / 1.6 var(--font-code);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.turn {
+  border-top: 1px solid var(--color-border);
+  padding: 8px 0;
+}
+[role="alert"] {
+  padding: 12px;
+  border-left: 2px solid var(--color-fg);
+  background: var(--color-surface);
+  overflow-wrap: anywhere;
+}
+.run-form fieldset,
+.run-form label {
+  display: grid;
+  gap: 6px;
+}
+.run-form fieldset {
+  margin-top: 18px;
+  gap: 16px;
+}
+.import input {
+  font-family: var(--font-mono);
+}
+.terminal {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+  background: var(--color-canvas-zero);
+}
+.terminal .xterm {
+  height: 100%;
+}
+.disclosure {
+  max-width: 620px;
+  margin: auto;
+  padding: 32px;
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+@media (max-width: 820px) {
+  .shell {
+    grid-template-columns: 144px minmax(0, 1fr);
+  }
+  .split {
+    grid-template-columns: minmax(180px, 1fr) minmax(0, 1.4fr);
+  }
+  header,
+  .detail,
+  .empty {
+    padding: 16px;
+  }
+}
+@media (max-width: 620px) {
+  .shell {
+    display: flex;
+    flex-direction: column;
+  }
+  .shell > aside {
+    padding: 6px;
+    border-bottom: 1px solid var(--color-border);
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .brand {
+    margin: 0 8px;
+  }
+  .brand span,
+  .shell footer small,
+  .shell footer .version {
+    display: none;
+  }
+  .shell nav {
+    display: flex;
+    flex: 1;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .shell footer {
+    flex-direction: row;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: none;
+    padding: 4px;
+  }
+  .shell footer .folder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .shell > main {
+    flex: 1;
+  }
+  .split {
+    display: block;
+    overflow: auto;
+  }
+  .library {
+    max-height: 35vh;
+  }
+}
+.skill-dialog {
+  width: min(900px, 95vw);
+  max-width: min(900px, 95vw);
+  height: min(640px, 88vh);
+  display: flex;
+  flex-direction: column;
+}
+.skill-dialog .split {
+  border-top: 1px solid var(--color-border);
+}
+.tool-list {
+  max-height: min(55vh, 460px);
+  overflow-y: auto;
+}
+.tool-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-code);
+}
+.pages {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--color-canvas);
+  padding: 8px 16px;
+  border-top: 1px solid var(--color-border);
+  font: 12px var(--font-mono);
+}
+.finding {
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px 0;
+}
+.finding summary {
+  cursor: pointer;
+}

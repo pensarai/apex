@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "jsxImportSource": "react",
+    "incremental": false
+  },
+  "include": [
+    "src/view",
+    "src/shared.ts",
+    "src/operator/*.tsx",
+    "src/settings/*.tsx",
+    "src/pentest/*.tsx",
+    "check-types.ts"
+  ],
+  "exclude": ["dist", "build", "node_modules"]
+}

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { write as lockWrite } from "../../util/lock";
 import { type LanceBudget, lanceBudgetSchema } from "../agents/lanceBudget";
 import type { FindingPolicy } from "../agents/offSecAgent";
 import type { ReasoningSetting } from "../ai";
@@ -222,26 +223,68 @@ export async function get(): Promise<Config> {
   return loaded;
 }
 
-export async function update(config: Partial<Config>) {
-  if (config.customProviders !== undefined) {
-    config = {
-      ...config,
-      customProviders: parseCustomProviders(config.customProviders),
-    };
-  }
+async function persistConfig(
+  getPatch: (stored: Partial<Config>) => Partial<Config>,
+) {
   const folder = path.join(os.homedir(), ".pensar");
   const file = path.join(folder, "config.json");
-  const exists = await fs
-    .access(file)
-    .then(() => true)
-    .catch(() => false);
-  const currentConfig = exists
-    ? JSON.parse(await fs.readFile(file, "utf8"))
-    : DEFAULT_CONFIG;
-  const newConfig = { ...currentConfig, ...config };
+  using _ = await lockWrite(file);
+  await fs.mkdir(folder, { recursive: true });
+  let stored: Partial<Config>;
+  try {
+    stored = JSON.parse(await fs.readFile(file, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    stored = DEFAULT_CONFIG;
+  }
+  const patch = getPatch(stored);
+  if (patch.customProviders !== undefined)
+    patch.customProviders = parseCustomProviders(patch.customProviders);
+  const newConfig = { ...stored, ...patch };
   delete newConfig.ollama;
   delete newConfig.hoonifyModels;
   delete newConfig.hoonifyCatalogError;
   delete newConfig.basetenCatalogError;
   await fs.writeFile(file, JSON.stringify(newConfig));
+}
+
+export function update(config: Partial<Config>) {
+  return persistConfig(() => ({ ...config }));
+}
+
+export function updateCustomProvider(id: string, definition: unknown | null) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(id) || Object.hasOwn(Object.prototype, id))
+    throw new Error("Invalid custom provider ID.");
+  if (Object.hasOwn(loadCustomProviders(), id))
+    throw new Error("This provider is managed by APEX_CUSTOM_PROVIDERS.");
+  return persistConfig((stored) => {
+    const customProviders = { ...stored.customProviders };
+    if (definition === null) {
+      delete customProviders[id];
+    } else {
+      if (
+        !definition ||
+        typeof definition !== "object" ||
+        Array.isArray(definition)
+      )
+        throw new Error("Expected a provider definition.");
+      const previous = customProviders[id];
+      const sameEndpoint =
+        previous &&
+        "baseUrl" in definition &&
+        typeof definition.baseUrl === "string" &&
+        URL.canParse(definition.baseUrl) &&
+        new URL(definition.baseUrl).origin === new URL(previous.baseUrl).origin;
+      const existing = sameEndpoint ? previous : undefined;
+      const merged = {
+        ...(existing?.headers && { headers: existing.headers }),
+        ...(existing?.requestBody && { requestBody: existing.requestBody }),
+        ...definition,
+      };
+      if (merged.headers === null) delete merged.headers;
+      if (merged.requestBody === null) delete merged.requestBody;
+      customProviders[id] = parseCustomProviders({ [id]: merged })[id]!;
+    }
+    return { customProviders };
+  });
 }

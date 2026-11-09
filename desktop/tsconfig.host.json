@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "incremental": false
+  },
+  "include": [
+    "src/bun",
+    "src/settings/host.ts",
+    "src/pentest/host.ts",
+    "src/operator/host.ts",
+    "electrobun.config.ts",
+    "vite.config.ts"
+  ]
+}

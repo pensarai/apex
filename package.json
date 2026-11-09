@@ -373,6 +373,7 @@
     "check:dependency-pins": "bun scripts/check-dependency-pins.ts",
     "check:osv-gate": "bun scripts/osv-gate.ts",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
+    "desktop": "bun run --cwd desktop start",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "format": "biome check --write && prettier --write \"**/*.{md,yml,yaml}\"",

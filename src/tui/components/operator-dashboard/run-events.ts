@@ -471,11 +471,11 @@ export function createRunEventProjections(deps: RunEventProjectionDeps): {
         // doesn't leave the questions form stuck over a failed conversation.
         deps.questions.onCleared();
       },
-      onSubagentSpawn: ({ subagentId, name }) => {
+      onSubagentSpawn: ({ subagentId, name, workflowPhase }) => {
         // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
         if (subagentId.startsWith("app:")) return;
         subagents.spawnSession(subagentId, name);
-        if (!isPentestAgent(subagentId)) return;
+        if (!isPentestAgent(subagentId, workflowPhase)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
         updateWorkflowData((wd) =>
           applyWorkflowSubagentSpawn(wd, subagentId, name),
@@ -486,7 +486,6 @@ export function createRunEventProjections(deps: RunEventProjectionDeps): {
         // were never registered as sessions, so don't try to complete them.
         if (subagentId.startsWith("app:")) return;
         subagents.completeSession(subagentId, status);
-        if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
         updateWorkflowData((wd) =>
           applyWorkflowSubagentComplete(wd, subagentId, status),

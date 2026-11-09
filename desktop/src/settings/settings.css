@@ -1,0 +1,79 @@
+.apex-settings {
+  width: min(700px, calc(100vw - 24px));
+  max-width: 700px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+}
+.apex-settings [data-slot="tabs-list"] {
+  max-width: 100%;
+  overflow-x: auto;
+  justify-content: flex-start;
+}
+.settings-stack {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+.settings-stack label {
+  display: grid;
+  gap: 5px;
+}
+.settings-stack label.settings-check,
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.settings-row {
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+.settings-stack select {
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  width: 100%;
+  font: inherit;
+}
+.settings-stack select option {
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+.settings-stack > button {
+  justify-self: start;
+}
+.settings-value {
+  overflow-wrap: anywhere;
+  font: 13px var(--font-code);
+  color: var(--color-fg-2);
+}
+.settings-stack summary {
+  cursor: pointer;
+  padding-block: 10px;
+  border-top: 1px solid var(--color-border);
+}
+.apex-obfuscated input:not([type="checkbox"]):not([type="radio"]),
+.apex-obfuscated textarea {
+  -webkit-text-security: disc;
+}
+.settings-stack textarea {
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  padding: 8px;
+  font: 13px / 1.5 var(--font-code);
+}
+.apex-obfuscated main :is(img, video, canvas) {
+  visibility: hidden;
+}
+html.apex-transparent,
+.apex-transparent body {
+  background: transparent;
+}
+.apex-transparent .shell {
+  background: color-mix(in srgb, var(--color-canvas) 85%, transparent);
+}

@@ -241,7 +241,10 @@ const webFlagSchema: FlagSchema = {
 /**
  * Parse web command arguments into WebCommandFlags
  */
-export function parseWebFlags(args: string[]): WebCommandFlags {
+export function parseWebFlags(
+  args: string[],
+  { resolveGuidance = true }: { resolveGuidance?: boolean } = {},
+): WebCommandFlags {
   const raw = parseFlags(args, webFlagSchema);
   const flags: WebCommandFlags = {};
 
@@ -336,11 +339,16 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   if (raw.sandbox) flags.sandbox = true;
 
   // Prompt option — resolve @file references
-  if (raw.prompt) flags.prompt = resolveFlagValue(String(raw.prompt));
+  if (raw.prompt)
+    flags.prompt = resolveGuidance
+      ? resolveFlagValue(String(raw.prompt))
+      : String(raw.prompt);
 
   // Threat model option — resolve @file references and wrap with preamble
   if (raw.threatModel)
-    flags.threatModel = resolveThreatModelPrompt(String(raw.threatModel));
+    flags.threatModel = resolveGuidance
+      ? resolveThreatModelPrompt(String(raw.threatModel))
+      : String(raw.threatModel);
 
   // Task-driven mode
   if (raw.taskDriven) flags.taskDriven = true;

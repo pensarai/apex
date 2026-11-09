@@ -110,6 +110,7 @@ export type AgentEventMap = {
   };
   "subagent-spawn": {
     subagentId: string;
+    workflowPhase?: "pentesting";
     /** The spawned child's own session id (`ses_…`). */
     sessionId?: string;
     name?: string;

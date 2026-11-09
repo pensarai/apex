@@ -1,5 +1,9 @@
 import { memo, useState } from "react";
 import type { Message } from "../../core/messages/types";
+import type {
+  SubagentLogEntry,
+  WorkflowData,
+} from "../../core/workflows/pentest-progress";
 import { useDimensions } from "../context/dimensions";
 import { useObfuscation } from "../context/obfuscation";
 import { useTheme } from "../theme";
@@ -9,6 +13,12 @@ import {
   getStableMessageKey,
   markdownToStyledText,
 } from "./shared";
+
+export type {
+  SubagentLogEntry,
+  WorkflowData,
+  WorkflowPhase,
+} from "../../core/workflows/pentest-progress";
 
 export type Subagent = {
   id: string;
@@ -29,51 +39,6 @@ export type Subagent = {
  * - `error`     — execution finished with an error
  */
 export type ToolStatus = "streaming" | "pending" | "completed" | "error";
-
-/**
- * Per-subagent log entry for tools that spawn child agents.
- */
-export type SubagentLogEntry = {
-  name?: string;
-  status: "pending" | "completed" | "failed";
-  logs: string[];
-};
-
-/**
- * Workflow phase identifier.
- */
-export type WorkflowPhase =
-  | "discovery"
-  | "pentesting"
-  | "reporting"
-  | "complete";
-
-/**
- * All state for the pentest workflow rendered by PentestWorkflowDisplay.
- * Lives on the `run_pentest_workflow` tool message.
- */
-export type WorkflowData = {
-  currentPhase: WorkflowPhase;
-  discovery: {
-    label: string;
-    status: "pending" | "complete";
-    logs: string[];
-    targets?: { target: string; objectives: string[] }[];
-    cached?: boolean;
-  };
-  pentesting: {
-    label: string;
-    status: "idle" | "pending" | "complete";
-    subagents: Record<string, SubagentLogEntry>;
-  };
-  reporting: {
-    label: string;
-    status: "idle" | "pending" | "complete";
-    findingsCount?: number;
-    findingsBySeverity?: Record<string, number>;
-    reportPath?: string;
-  };
-};
 
 /**
  * Display message type - flexible type for UI display.
