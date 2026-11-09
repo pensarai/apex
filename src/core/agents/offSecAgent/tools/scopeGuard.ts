@@ -189,19 +189,37 @@ const BODY_ENCODER_PREFIX = /\b(?:JSON\.stringify|json\.dumps|urlencode)\s*$/;
 const ASSIGNMENT_PREFIX = /(?:^|[^\w$.=!<>])([A-Za-z_$][\w$]*)\s*=\s*$/;
 const BODY_NAME = new RegExp(`^(?:${BODY_NAMES})$`, "i");
 
-function lastHttpToolOnLine(command: string, index: number): string | null {
-  const lines = command
-    .slice(0, index)
-    .replace(/\\\r?\n/g, " ")
-    .split("\n");
-  const tools = [...lines[lines.length - 1].matchAll(/\b(curl|wget)\b/g)];
-  return tools.length > 0 ? tools[tools.length - 1][1] : null;
+const COMMAND_PREFIX =
+  /^(?:(?:sudo|env|nohup|exec|command)\s+|timeout\s+\S+\s+|[A-Za-z_]\w*=\S*\s+)*/;
+
+// The executable of the shell command that contains `index`: the first word
+// after the last unquoted command boundary, past sudo/env/timeout/VAR= prefixes.
+function executableAt(command: string, index: number): string | null {
+  const text = command.slice(0, index).replace(/\\\r?\n/g, " ");
+  let quote: string | null = null;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (ch === "\\" && quote === '"') i++;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (ch === "\\") {
+      i++;
+    } else if ("\n;|&`".includes(ch) || (ch === "(" && text[i - 1] === "$")) {
+      start = i + 1;
+    }
+  }
+  const segment = text.slice(start).trimStart().replace(COMMAND_PREFIX, "");
+  const word = /^[^\s'"]+/.exec(segment);
+  return word ? word[0].slice(word[0].lastIndexOf("/") + 1) : null;
 }
 
 function shellPayloadRanges(command: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   for (const match of command.matchAll(SHELL_PAYLOAD_ARG)) {
-    if (match[1] && lastHttpToolOnLine(command, match.index) !== "curl") {
+    if (match[1] && executableAt(command, match.index) !== "curl") {
       continue;
     }
     const end = match.index + match[0].length;

@@ -614,6 +614,10 @@ describe("extractHostsFromCommand", () => {
         `curl -H"Referer: http://localhost/" https://app.acme.example/`,
       ],
       [
+        "curl behind prefixes, with a quoted semicolon before -d",
+        `sudo timeout 30 /usr/bin/curl -H 'Cookie: a=1; b=2' -d'{"url":"http://localhost/"}' https://app.acme.example/hooks`,
+      ],
+      [
         "unquoted curl form value",
         "curl https://app.acme.example/fetch -d url=http://10.0.0.5/",
       ],
@@ -693,6 +697,14 @@ describe("extractHostsFromCommand", () => {
       ],
       ["wget -d (debug, no value)", `wget -d "https://evil.example/"`],
       ["wget -H (span hosts, no value)", "wget -H https://evil.example/"],
+      [
+        "wget with curl as an earlier argument",
+        "wget -O curl -d https://evil.example/",
+      ],
+      [
+        "wget after a curl pipeline",
+        "echo curl | wget -d https://evil.example/",
+      ],
       [
         "requests kwargs dict",
         `requests.request(method="GET", **{"url": "https://evil.example/admin"})`,
