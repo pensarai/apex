@@ -49,6 +49,21 @@ function makeSession(
 }
 
 describe("SubagentStore counts", () => {
+  it.each([
+    "completed",
+    "failed",
+    "cancelled",
+  ] as const)("clears loading when a child is %s and rejects late loading events", (status) => {
+    const store = createSubagentStore();
+    const helpers = createSubagentSessionHelpers(store.setState);
+    helpers.spawnSession("child");
+    helpers.setModelLoading("child", "ollama:twil");
+    expect(store.getSnapshot().get("child")?.modelLoading).toBe("ollama:twil");
+    if (status === "cancelled") store.setState(markSubagentsInterrupted);
+    else helpers.completeSession("child", status);
+    helpers.setModelLoading("child", "ollama:twil");
+    expect(store.getSnapshot().get("child")?.modelLoading).toBeNull();
+  });
   it("keeps stable snapshots and skips notifications for identity no-ops", () => {
     const store = createSubagentStore();
     const helpers = createSubagentSessionHelpers(store.setState);

@@ -80,6 +80,7 @@ export interface MessageListProps {
   streamingMessageIndex?: number;
   /** Is agent currently running */
   isRunning?: boolean;
+  modelLoading?: string | null;
   /** Display variant */
   variant?: "chat" | "operator" | "subagent";
   /** Username for chat variant */
@@ -108,6 +109,7 @@ export const MessageList = memo(function MessageList({
   messages,
   streamingMessageIndex = -1,
   isRunning = false,
+  modelLoading,
   variant = "operator",
   username = "user",
   emptyMessage,
@@ -152,7 +154,7 @@ export const MessageList = memo(function MessageList({
       focused={focused}
     >
       {/* Empty state - Operator mode */}
-      {!hasMessages && variant === "operator" && (
+      {!hasMessages && !modelLoading && variant === "operator" && (
         <box
           flexDirection="column"
           marginTop={1}
@@ -183,7 +185,7 @@ export const MessageList = memo(function MessageList({
       )}
 
       {/* Empty state - Subagent mode (minimal, no tips) */}
-      {!hasMessages && variant === "subagent" && (
+      {!hasMessages && !modelLoading && variant === "subagent" && (
         <box marginTop={2}>
           <text fg={colors.textMuted}>
             {emptyMessage || "No messages from this agent yet."}
@@ -192,7 +194,7 @@ export const MessageList = memo(function MessageList({
       )}
 
       {/* Empty state - Chat mode */}
-      {!hasMessages && variant === "chat" && (
+      {!hasMessages && !modelLoading && variant === "chat" && (
         <box flexDirection="column" gap={1} marginTop={2}>
           <text fg={colors.primary}>Ready</text>
           <text fg={colors.textMuted}>
@@ -235,7 +237,7 @@ export const MessageList = memo(function MessageList({
       {/* Loading indicator - show when running but not when there's a pending approval */}
       {isRunning &&
         !hasPendingApproval &&
-        hasMessages &&
+        (hasMessages || modelLoading) &&
         (() => {
           const pendingToolInfo = getPendingToolInfo(messages);
           const pendingToolName = pendingToolInfo?.toolName ?? null;
@@ -244,12 +246,16 @@ export const MessageList = memo(function MessageList({
             : null;
           return (
             <LoadingIndicator
-              state={getLoadingState(
-                messages,
-                hasPendingTool || pendingToolName !== null,
-                isLastAssistant,
-                pendingToolName,
-              )}
+              state={
+                modelLoading
+                  ? "loading-model"
+                  : getLoadingState(
+                      messages,
+                      hasPendingTool || pendingToolName !== null,
+                      isLastAssistant,
+                      pendingToolName,
+                    )
+              }
               action={liveLabel ?? lastApprovedAction}
               toolName={pendingToolName}
             />

@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { TextStreamPart, ToolSet } from "ai";
+import type { OllamaModelLoadEvent } from "./ollama";
 
 /**
  * Typed event map for the agent event bus.
@@ -11,6 +12,10 @@ import type { TextStreamPart, ToolSet } from "ai";
  * events (`command-output`, `error`) round out the map.
  */
 export type AgentEventMap = {
+  "model-loading": OllamaModelLoadEvent & {
+    subagentId?: string;
+    sessionId?: string;
+  };
   "text-delta": {
     text: string;
     subagentId?: string;
@@ -184,6 +189,7 @@ type ChildForwardPolicy = "forward" | "parent-only";
 const CHILD_BUS_FORWARD_POLICY: {
   readonly [K in keyof AgentEventMap]: ChildForwardPolicy;
 } = {
+  "model-loading": "forward",
   "text-delta": "forward",
   "reasoning-delta": "forward",
   "reasoning-start": "forward",

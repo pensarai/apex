@@ -35,6 +35,7 @@ import {
   type GenerationSpanTracker,
   withModelCallDiagnostics,
 } from "../observability";
+import { type OllamaCatalog, resolveOllamaModel } from "../ollama";
 import { RunPersistenceError } from "../runtime/persistenceError";
 import type { RunContextRecorder } from "../runtime/runContext";
 import { RunControlInterruption } from "../runtime/runControlStore";
@@ -345,6 +346,7 @@ export type AIModelProvider =
   | "pensar"
   | "inception"
   | "hoonify"
+  | "ollama"
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
@@ -352,7 +354,10 @@ export function getContextWindow(
   modelId: string,
   customProviders?: CustomProviders,
   hoonifyModels?: HoonifyModel[],
+  ollama?: OllamaCatalog,
 ): number {
+  if (modelId.startsWith("ollama:"))
+    return resolveOllamaModel(modelId, ollama).model.contextLength;
   if (modelId.startsWith("hoonify:"))
     return resolveHoonifyModel(modelId, hoonifyModels).contextLength;
   if (parseCustomModelId(modelId))
@@ -976,11 +981,13 @@ function wrapStreamWithErrorHandler(
                           opts.model,
                           opts.authConfig?.customProviders,
                           opts.authConfig?.hoonifyModels,
+                          opts.authConfig?.ollama,
                         ),
                         maxOutputTokens: getMaxOutputTokens(
                           opts.model,
                           opts.authConfig?.customProviders,
                           opts.authConfig?.hoonifyModels,
+                          opts.authConfig?.ollama,
                         ),
                         system: applySequentialToolCallPolicy(
                           opts.system,
@@ -1452,7 +1459,12 @@ export interface StreamResponseOpts {
     | StopCondition<NoInfer<ToolSet>>[];
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: (
+    step: Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0] & {
+      /** Context limit used for this call; synthetic usage events may omit it. */
+      contextWindow?: number;
+    },
+  ) => ReturnType<StreamTextOnStepFinishCallback<ToolSet>>;
   /** Provider middleware applied only to this stream's model calls. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   /** Explicit undefined clears an inherited recorder for an unrecorded child. */
@@ -1703,7 +1715,8 @@ function streamResponseWithinOperation(
         cacheCreationInputTokens: stepUsage.cacheWriteTokens,
       });
     }
-    await userOnStepFinish?.(step);
+    // Preserve the SDK step's prototype getters (text, toolCalls, etc.).
+    await userOnStepFinish?.(Object.assign(step, { contextWindow }));
     await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
   const providerModel =
@@ -1744,11 +1757,13 @@ function streamResponseWithinOperation(
     model,
     authConfig?.customProviders,
     authConfig?.hoonifyModels,
+    authConfig?.ollama,
   );
   const maxOutputTokens = getMaxOutputTokens(
     model,
     authConfig?.customProviders,
     authConfig?.hoonifyModels,
+    authConfig?.ollama,
   );
   if (
     messages &&
@@ -2090,6 +2105,7 @@ function streamResponseWithinOperation(
         model,
         authConfig?.customProviders,
         authConfig?.hoonifyModels,
+        authConfig?.ollama,
       ),
       // Awaiting inside prepareStep keeps streamResponse synchronous; the
       // SDK awaits it before provider dispatch, so every turn and every
@@ -2745,11 +2761,13 @@ export function resumeMessagesWithPinned(
       opts.model,
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
+      opts.authConfig?.ollama,
     ) -
     getMaxOutputTokens(
       opts.model,
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
+      opts.authConfig?.ollama,
     );
   const fits = (history: ModelMessage[]) =>
     estimateMessageTokens(history) + overhead <= budget;

@@ -42,6 +42,7 @@ const providerOrder: AIModelProvider[] = [
   "inception",
   "hoonify",
   "custom",
+  "ollama",
   "local",
 ];
 

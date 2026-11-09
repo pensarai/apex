@@ -91,6 +91,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!process.env.LOCAL_MODEL_URL ||
     !!config.pensarAPIKey ||
     !!config.accessToken ||
+    !!config.ollama?.models.length ||
     Object.keys(config.customProviders ?? {}).length > 0
   );
 }
@@ -136,6 +137,15 @@ export function getAvailableModels(config: Config): ModelInfo[] {
     }
   }
 
+  for (const model of config.ollama?.models ?? []) {
+    models.push({
+      id: `ollama:${model.id}`,
+      name: model.id,
+      provider: "ollama",
+      contextLength: model.contextLength,
+    });
+  }
+
   return models;
 }
 
@@ -143,9 +153,10 @@ export function getSavedModelForConfig(config: Config): ModelInfo | null {
   const id = config.selectedModelId;
   if (!id) return null;
   const available = getAvailableModels(config).find((model) => model.id === id);
-  // A catalog outage must not silently switch a saved Hoonify selection.
+  // Catalog outages must not silently switch an explicit provider selection.
   return (
     available ??
+    (id.startsWith("ollama:") ? getModelInfo(id) : null) ??
     (id.startsWith("hoonify:") &&
     isProviderConfigured("hoonify", config) &&
     config.hoonifyCatalogError
