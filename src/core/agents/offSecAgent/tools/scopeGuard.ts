@@ -170,17 +170,16 @@ const SHELL_PAYLOAD_ARG =
   /(?:^|\s)(?:-d|-F|-H|--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:\s+|=)('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
 
 const STRING_OPEN = String.raw`(?:[rRbBfFuU]{1,2})?\\?["'\x60]`;
-const PAYLOAD_URL_PREFIXES = [
-  /[?&'"](?!-)[\w.%[\]-]*=$/,
-  new RegExp(String.raw`\\?["'][\w.-]+\\?["'][ \t]*:[ \t]*${STRING_OPEN}$`),
-  new RegExp(
-    String.raw`[{,]\s*(?!lambda\b)[A-Za-z_$][\w$]*[ \t]*:[ \t]*${STRING_OPEN}$`,
-  ),
-];
-const PROXY_KEY_PREFIX = new RegExp(
-  String.raw`\b(?:https?|all)\\?["']?[ \t]*:[ \t]*${STRING_OPEN}$`,
-  "i",
+const PARAM_VALUE_PREFIX = /[?&'"](?!-)[\w.%[\]-]*=$/;
+const OBJECT_VALUE_PREFIX = new RegExp(
+  String.raw`(?:\\?["']([\w.-]+)\\?["']|[{,]\s*(?!lambda\b)([A-Za-z_$][\w$]*))[ \t]*:[ \t]*${STRING_OPEN}$`,
 );
+// Keys a client library reads as where to send the request (axios/fetch
+// config, `requests.request(**{...})`, proxy maps).
+const REQUEST_TARGET_KEY =
+  /^(?:url|uri|href|endpoint|base_?url|host|hostname|https?|all)$/i;
+const BODY_CONTEXT_PREFIX =
+  /(?:\b(?:json|data|body|params|form|files|payloads?)\s*(?:=|:|\s+in)\s*|\b(?:JSON\.stringify|json\.dumps|urlencode)\(\s*)$/i;
 
 function shellPayloadRanges(command: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
@@ -189,6 +188,28 @@ function shellPayloadRanges(command: string): Array<[number, number]> {
     ranges.push([end - match[1].length, end]);
   }
   return ranges;
+}
+
+// Walks outward through the brackets enclosing `index` until one is opened in
+// a request-body position, or a call boundary that is not one.
+function isInRequestBody(command: string, index: number): boolean {
+  const closers: string[] = [];
+  const pairs: Record<string, string> = { "{": "}", "[": "]", "(": ")" };
+  for (let i = index - 1; i >= Math.max(0, index - 2000); i--) {
+    const ch = command[i];
+    if (ch === "}" || ch === "]" || ch === ")") {
+      closers.push(ch);
+    } else if (ch in pairs) {
+      if (closers.length > 0) {
+        closers.pop();
+        continue;
+      }
+      const prefix = command.slice(Math.max(0, i - 200), i);
+      if (BODY_CONTEXT_PREFIX.test(prefix)) return true;
+      if (ch === "(") return false;
+    }
+  }
+  return false;
 }
 
 // A URL sent to the target as data (an SSRF or redirect payload) is not a host
@@ -203,8 +224,11 @@ function isPayloadUrl(
     return true;
   }
   const prefix = command.slice(Math.max(0, index - 200), index);
-  if (PROXY_KEY_PREFIX.test(prefix)) return false;
-  return PAYLOAD_URL_PREFIXES.some((pattern) => pattern.test(prefix));
+  if (PARAM_VALUE_PREFIX.test(prefix)) return true;
+  const objectValue = OBJECT_VALUE_PREFIX.exec(prefix);
+  if (!objectValue) return false;
+  const key = objectValue[1] ?? objectValue[2];
+  return !REQUEST_TARGET_KEY.test(key) || isInRequestBody(command, index);
 }
 
 /**
