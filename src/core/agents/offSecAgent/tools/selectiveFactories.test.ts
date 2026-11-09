@@ -137,9 +137,9 @@ describe("createAllTools (full construction)", () => {
   it("constructs one tool per retained key — no discarded duplicates", () => {
     reset();
     const tools = createAllTools(makeCtx());
-    expect(Object.keys(tools)).toHaveLength(88);
+    expect(Object.keys(tools)).toHaveLength(89);
     // One construction per retained key — no discarded duplicates.
-    expect(counts.toolCtor).toBe(88);
+    expect(counts.toolCtor).toBe(89);
     expect(counts.browserGroupRouter).toBe(1);
     expect(counts.sharedBrowserFactories).toBe(1);
     expect(counts.emailGroup).toBe(0);
@@ -157,8 +157,8 @@ describe("createAllTools (full construction)", () => {
         tasksDir: "/tmp/apex-selective-factories-tasks",
       }),
     );
-    expect(Object.keys(tools)).toHaveLength(93);
-    expect(counts.toolCtor).toBe(93);
+    expect(Object.keys(tools)).toHaveLength(94);
+    expect(counts.toolCtor).toBe(94);
   });
 });
 
