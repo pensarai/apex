@@ -480,6 +480,7 @@ vi.mock("./tools", () => ({
   createToolsForNames: () => ({}),
   createResponseTool: () => ({}),
   RESPONSE_TOOL_NAME: "response",
+  REPORT_ERROR_TOOL_NAME: "report_error",
   listToolRegistryNames: () => [],
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
   WORKSPACE_TOOL_NAMES: [],
