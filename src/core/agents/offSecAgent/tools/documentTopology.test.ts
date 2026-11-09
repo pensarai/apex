@@ -14,6 +14,7 @@ import {
   reviewTopologyRecords,
   updateRecord,
 } from "./documentTopology";
+import { loadTopology } from "./topologyRecords";
 import type { ToolContext } from "./types";
 
 function makeCtx(): ToolContext {
@@ -125,6 +126,20 @@ describe("document_component", () => {
         f.startsWith("component_aurora_postgresql_"),
       ),
     ).toHaveLength(1);
+  });
+
+  it("retains a confirmed repository when another worker enriches the same component", async () => {
+    const ctx = makeCtx();
+    await seed(ctx);
+    await run(documentComponent(ctx), { ...web, repository: "console" });
+    await run(documentComponent(ctx), { ...web, tech: "Next.js" });
+    expect(loadTopology(ctx.session.rootPath).components).toMatchObject([
+      { repository: "console", tech: "Next.js" },
+    ]);
+    await run(documentComponent(ctx), { ...web, repository: "new-console" });
+    expect(loadTopology(ctx.session.rootPath).components[0].repository).toBe(
+      "new-console",
+    );
   });
 
   it("refuses an undocumented boundary", async () => {

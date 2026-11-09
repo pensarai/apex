@@ -103,14 +103,9 @@ Returns an array of results with each worker's text output.`,
       }
 
       const total = tasks.length;
-      const textOutputs = tasks.map(() => "");
       const settled = await spawnBatch(
         ctx.subagentSpawner,
-        tasks.map((item, index) =>
-          reconSpawnOptions(ctx, item, toolCallId, (text) => {
-            textOutputs[index] += text;
-          }),
-        ),
+        tasks.map((item) => reconSpawnOptions(ctx, item, toolCallId)),
         { concurrency: DEFAULT_CONCURRENCY },
       );
 
@@ -127,11 +122,14 @@ Returns an array of results with each worker's text output.`,
                 : String(result.reason),
           };
         }
+        const output = result.value?.response ?? "";
         return {
           name: item.name,
           goal: item.goal,
-          output: textOutputs[index]!,
-          error: undefined,
+          output,
+          error: output.trim()
+            ? undefined
+            : "Worker returned no final summary.",
         };
       });
 
@@ -153,8 +151,7 @@ function reconSpawnOptions(
   ctx: ToolContext,
   item: { name: string; goal: string; target?: string; codebasePath?: string },
   parentToolCallId: string,
-  onText: (text: string) => void,
-): SpawnOptions<void> {
+): SpawnOptions<{ response?: string }> {
   const map = describeMapForWorker(ctx.session.rootPath);
   const target =
     item.target === undefined ? undefined : withHttpScheme(item.target);
@@ -192,10 +189,5 @@ function reconSpawnOptions(
     parentSessionId: ctx.subagentId ?? ctx.session.id,
     parentToolCallId,
     stampChildSessionId: true,
-    beforeConsume: (childBus) => {
-      childBus.on("text-delta", (d) => {
-        onText(d.text);
-      });
-    },
   };
 }

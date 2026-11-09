@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { spawnReconAgent } from "./spawnReconAgent";
 import type { ToolContext } from "./types";
 
-function fixture(activeToolNames?: string[]) {
+function fixture(
+  activeToolNames?: string[],
+  response = "Inspected the OAuth callback.",
+) {
   const spawnBatch = vi.fn(async () => [
-    { status: "fulfilled", value: undefined },
+    { status: "fulfilled", value: { response } },
   ]);
   const tool = spawnReconAgent({
     model: "test-model",
@@ -43,7 +46,11 @@ describe("recon worker targets", () => {
     const { run, spawnBatch } = fixture();
     await run(input);
     expect(spawnBatch).toHaveBeenCalledWith(
-      [expect.objectContaining({ spec: expect.objectContaining({ target }) })],
+      [
+        expect.objectContaining({
+          spec: expect.objectContaining({ target }),
+        }),
+      ],
       expect.anything(),
     );
   });
@@ -64,6 +71,21 @@ describe("recon worker targets", () => {
       ],
       expect.anything(),
     );
+  });
+  it("returns the final worker summary across a workflow boundary without a shared bus", async () => {
+    const { run } = fixture();
+    expect(await run()).toMatchObject({
+      success: true,
+      results: [{ output: "Inspected the OAuth callback." }],
+    });
+  });
+  it("reports workers that finish without a summary", async () => {
+    const { run } = fixture(undefined, "");
+    expect(await run()).toMatchObject({
+      success: false,
+      failedTasks: 1,
+      results: [{ error: "Worker returned no final summary." }],
+    });
   });
   it("rejects out-of-scope hosts before starting any workers", async () => {
     const { run, spawnBatch } = fixture();

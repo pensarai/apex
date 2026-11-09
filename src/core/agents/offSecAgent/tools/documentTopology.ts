@@ -144,10 +144,12 @@ function identify(
   name: string,
   renameFrom: string | undefined,
   candidate?: Record<string, unknown>,
-): { id: string } | { error: Record<string, unknown> } {
+):
+  | { id: string; previous?: TopologyRecord }
+  | { error: Record<string, unknown> } {
   const known = documented(ctx, kind);
   const current = known.get(name.toLowerCase());
-  if (!renameFrom && current) return { id: current.id };
+  if (!renameFrom && current) return { id: current.id, previous: current };
   if (!renameFrom) {
     // A new boundary or component that looks like one already documented —
     // often a parallel worker naming the same thing its own way.
@@ -189,7 +191,7 @@ function identify(
         message: `Another ${kind} is already named "${name}". Retire or rename it first.`,
       },
     };
-  return { id: original.id };
+  return { id: original.id, previous: original };
 }
 
 const renameFromSchema = z
@@ -418,6 +420,7 @@ Call again with the same name to update a component — never create a second re
       const { toolCallDescription: _, renameFrom: __, ...record } = input;
       const filepath = save(ctx, "component", input.name, {
         ...record,
+        repository: input.repository ?? identity.previous?.repository,
         id: identity.id,
         boundaryId: boundary.id,
         ...(input.usedBy?.length

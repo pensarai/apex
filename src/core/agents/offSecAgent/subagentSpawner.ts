@@ -500,7 +500,10 @@ const runReconWorkerChild: SubagentRunner<"recon-worker"> = async (
     toolExecutionContext: ctx.toolExecutionContext,
     streamIdFactory: ctx.streamIdFactory,
   });
-  return { run: () => agent.consume(), drained: () => agent.drained };
+  return {
+    run: async () => ({ response: await agent.consume() }),
+    drained: () => agent.drained,
+  };
 };
 
 const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
