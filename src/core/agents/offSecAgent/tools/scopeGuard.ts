@@ -187,7 +187,7 @@ const BODY_KEY_PREFIX = new RegExp(
 );
 const BODY_ENCODER_PREFIX = /\b(?:JSON\.stringify|json\.dumps|urlencode)\s*$/;
 const ASSIGNMENT_PREFIX = /(?:^|[^\w$.=!<>])([A-Za-z_$][\w$]*)\s*=\s*$/;
-const FOR_IN_PREFIX = /\bfor\s+([A-Za-z_]\w*)\s+in\s*$/;
+const BODY_NAME = new RegExp(`^(?:${BODY_NAMES})$`, "i");
 
 function lastHttpToolOnLine(command: string, index: number): string | null {
   const lines = command
@@ -225,49 +225,21 @@ function* unmatchedOpeners(
   }
 }
 
-function identifierPattern(name: string): string {
-  return name.replace(/\$/g, "\\$");
-}
-
-// A variable is a body only when the script visibly sends it as one, and never
-// when it is spread into a request call's arguments or config.
-function isBodyVariable(command: string, name: string, hops = 0): boolean {
-  const n = identifierPattern(name);
-  if (new RegExp(String.raw`(?:\*\*|\.\.\.)${n}\b`).test(command)) {
-    return false;
-  }
-  const sentAsBody = new RegExp(
-    String.raw`\b(?:${BODY_NAMES})\s*[=:]\s*${n}\b|\b(?:JSON\.stringify|json\.dumps|urlencode)\(\s*${n}\b`,
-    "i",
-  );
-  if (sentAsBody.test(command)) return true;
-  if (hops > 0) return false;
-  const loops = new RegExp(
-    String.raw`\bfor\s+([A-Za-z_]\w*)\s+in\s+${n}\b`,
-    "g",
-  );
-  return [...command.matchAll(loops)].some((loop) =>
-    isBodyVariable(command, loop[1], hops + 1),
-  );
-}
-
-// Walks outward through the brackets enclosing `index` until one is opened in
-// a request-body position, or a call boundary that is not one.
+// Walks outward through the brackets enclosing `index`. Only a body written
+// inline in the request counts: a value held in a variable could be used
+// anywhere, so it stays a request target.
 function isInRequestBody(command: string, index: number): boolean {
   const openers = unmatchedOpeners(command, index);
   for (const { char, at } of openers) {
     const prefix = command.slice(Math.max(0, at - 200), at);
     if (char === "(") return BODY_ENCODER_PREFIX.test(prefix);
     if (BODY_KEY_PREFIX.test(prefix)) return true;
-    const forIn = FOR_IN_PREFIX.exec(prefix);
-    if (forIn) return isBodyVariable(command, forIn[1]);
     const assigned = ASSIGNMENT_PREFIX.exec(prefix);
     if (assigned) {
       const outer = openers.next();
-      if (!outer.done && outer.value.char === "(") {
-        return new RegExp(`^(?:${BODY_NAMES})$`, "i").test(assigned[1]);
-      }
-      return isBodyVariable(command, assigned[1]);
+      return (
+        !outer.done && outer.value.char === "(" && BODY_NAME.test(assigned[1])
+      );
     }
   }
   return false;

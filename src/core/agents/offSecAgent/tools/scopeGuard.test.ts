@@ -646,10 +646,6 @@ describe("extractHostsFromCommand", () => {
         "axios body inside a request config",
         `axios({url: "https://app.acme.example/hooks", method: "post", data: {url: "http://169.254.169.254/"}})`,
       ],
-      [
-        "payload list assigned to a payloads variable",
-        `payloads = [{"url": "http://localhost/"}, {"url": "http://[::1]/"}]\nfor p in payloads:\n    requests.post("https://app.acme.example/hooks", json=p)`,
-      ],
     ])("ignores a URL sent as data: %s", (_label, poc) => {
       expect(extractHostsFromCommand(poc)).toEqual(["app.acme.example"]);
     });
@@ -686,6 +682,14 @@ describe("extractHostsFromCommand", () => {
       [
         "body-named variable never sent as a body",
         `payload = {"url": "https://evil.example/admin"}\nrequests.get(payload["url"])`,
+      ],
+      [
+        "variable both requested and later sent as a body",
+        `payload = {"url": "https://evil.example/admin"}\nrequests.get(payload["url"])\nrequests.post("https://app.acme.example/hooks", json=payload)`,
+      ],
+      [
+        "payload list held in a variable",
+        `payloads = [{"url": "https://evil.example/"}]\nfor p in payloads:\n    requests.post("https://app.acme.example/hooks", json=p)`,
       ],
       ["wget -d (debug, no value)", `wget -d "https://evil.example/"`],
       ["wget -H (span hosts, no value)", "wget -H https://evil.example/"],
@@ -754,14 +758,21 @@ describe("assertCommandInScope", () => {
     const poc = [
       "import requests",
       'TARGET = "https://example.com/api/webhooks"',
-      "for payload in [",
-      '    {"url": "http://169.254.169.254/latest/meta-data/"},',
-      '    {"url": "http://localhost:8080/admin"},',
-      '    {"url": "http://[::1]/"},',
-      "]:",
-      "    requests.post(TARGET, json=payload)",
+      'requests.post(TARGET, json={"url": "http://169.254.169.254/latest/meta-data/"})',
+      'requests.post(TARGET, json={"url": "http://localhost:8080/admin"})',
+      'requests.get(TARGET + "?next=http://[::1]/")',
     ].join("\n");
     expect(() => assertCommandInScope(poc, ctx)).not.toThrow();
+  });
+
+  it("checks payload URLs held in variables as request targets", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    const poc = [
+      "import requests",
+      'payload = {"url": "http://169.254.169.254/latest/meta-data/"}',
+      'requests.post("https://example.com/api/webhooks", json=payload)',
+    ].join("\n");
+    expect(() => assertCommandInScope(poc, ctx)).toThrow(ScopeViolationError);
   });
 
   it("rejects an SSRF PoC that requests the internal address itself", () => {
