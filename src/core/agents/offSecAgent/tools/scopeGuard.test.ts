@@ -732,6 +732,23 @@ describe("session test domains", () => {
     );
     expect(quoted.status).toBe("test-domain-destination");
 
+    // Spellings that reach the same host: parsed, not pattern-matched.
+    for (const destination of [
+      `https://${CB}./x`,
+      `https://u:p@${CB}/x`,
+      `HTTPS://${CB.toUpperCase()}/x`,
+      `https://${CB.replaceAll(".", "%2E")}/x`,
+      `'https://${CB}:443/x'`,
+    ]) {
+      const result = applyHeadersToShellCommand(
+        `curl https://app.example.com/api ${destination}`,
+        session,
+        ["app.example.com", CB],
+      );
+      expect(result.status, destination).toBe("test-domain-destination");
+      expect(result.command).not.toContain("X-API-Key");
+    }
+
     // Shell expansion can assemble a destination no pattern sees: fail closed.
     for (const command of [
       `curl https://app.example.com/api $'https://${CB}/x'`,
