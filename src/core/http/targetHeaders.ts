@@ -582,7 +582,8 @@ export type ApplyShellResult = {
 //                    or a `2>&1`-redirected command spans multiple hosts;
 //                    the caller MUST fail closed
 // Whether a command may request a test domain. A URL standing as its own
-// shell word (optionally quoted) is a destination; it's parsed, so trailing
+// shell word (optionally quoted, after `--url=`, or scheme-less) is a
+// destination; it's parsed, so trailing
 // dots, userinfo, case and percent-encoding resolve to the host curl would
 // contact. Shell expansion ($'…', "$VAR", $(…), backticks) can assemble a
 // destination no parser sees, so a command that mentions a test domain and
@@ -594,14 +595,19 @@ function requestsTestDomain(
   const domains = session.callbackDomains ?? [];
   if (domains.length === 0) return false;
   for (const word of command.split(/\s+/)) {
-    const candidate = word.replace(/^["']+|["']+$/g, "");
-    if (!/^https?:\/\//i.test(candidate)) continue;
+    // curl requests `--url=<url>` and scheme-less words (as http://) too.
+    const candidate = word
+      .replace(/^["']+|["']+$/g, "")
+      .replace(/^--url=["']?/i, "");
+    const hasScheme = /^https?:\/\//i.test(candidate);
     let hostname: string;
     try {
-      hostname = new URL(candidate).hostname;
+      hostname = new URL(hasScheme ? candidate : `http://${candidate}`)
+        .hostname;
     } catch {
       // A URL-shaped destination we can't parse can't be cleared.
-      return true;
+      if (hasScheme) return true;
+      continue;
     }
     if (isCallbackHost(hostname, session)) return true;
   }

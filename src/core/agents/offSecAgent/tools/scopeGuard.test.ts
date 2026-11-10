@@ -739,6 +739,10 @@ describe("session test domains", () => {
       `HTTPS://${CB.toUpperCase()}/x`,
       `https://${CB.replaceAll(".", "%2E")}/x`,
       `'https://${CB}:443/x'`,
+      `--url https://${CB}/x`,
+      `--url=https://${CB}/x`,
+      `--url ${CB}/x`,
+      `${CB}/x`,
     ]) {
       const result = applyHeadersToShellCommand(
         `curl https://app.example.com/api ${destination}`,
