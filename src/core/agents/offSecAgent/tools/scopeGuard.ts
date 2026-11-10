@@ -166,10 +166,10 @@ export function assertFindingEndpointInScope(
   assertUrlInScope(endpoint, ctx);
 }
 
-// Short flags take attached or separate values and mean data/form/header only
-// to curl (wget's -d/-F/-H take no value).
+// Payload flags count only on a curl or wget command line; the short flags only
+// on curl (wget's -d/-F/-H take no value).
 const SHELL_PAYLOAD_ARG =
-  /(?:^|\s)(?:(-[dFH])(?:\s|\\\r?\n)*|(?:--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:(?:\s|\\\r?\n)+|=))('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
+  /(?:^|\s)(?:(-[dFH])(?:[ \t]|\\\r?\n)*|(?:--data(?:-raw|-binary|-urlencode|-ascii)?|--json|--form(?:-string)?|--header|--post-data|--body-data)(?:(?:[ \t]|\\\r?\n)+|=))('[^']*'|"(?:\\.|[^"\\])*"|\S+)/g;
 
 const STRING_OPEN = String.raw`(?:[rRbBfFuU]{1,2})?\\?["'\x60]`;
 const PARAM_VALUE_PREFIX = /[?&'"](?!-)[\w.%[\]-]*=$/;
@@ -219,9 +219,11 @@ function executableAt(command: string, index: number): string | null {
 function shellPayloadRanges(command: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   for (const match of command.matchAll(SHELL_PAYLOAD_ARG)) {
-    if (match[1] && executableAt(command, match.index) !== "curl") {
-      continue;
-    }
+    const executable = executableAt(command, match.index);
+    const applies = match[1]
+      ? executable === "curl"
+      : executable === "curl" || executable === "wget";
+    if (!applies) continue;
     const end = match.index + match[0].length;
     ranges.push([end - match[2].length, end]);
   }

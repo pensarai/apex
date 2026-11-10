@@ -706,6 +706,10 @@ describe("extractHostsFromCommand", () => {
         "echo curl | wget -d https://evil.example/",
       ],
       [
+        "long payload flag in a source comment",
+        `import urllib.request\n# --data\nurllib.request.urlopen("https://evil.example/")`,
+      ],
+      [
         "requests kwargs dict",
         `requests.request(method="GET", **{"url": "https://evil.example/admin"})`,
       ],
