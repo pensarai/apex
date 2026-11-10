@@ -71,7 +71,8 @@ export function getAllowedPorts(ctx: ToolContext): number[] {
  *
  * Matching rules:
  *  - Exact match: `example.com` matches `example.com`
- *  - Subdomain match: `api.example.com` matches allowed `example.com`
+ *  - Subdomain match only through a wildcard: `api.example.com` matches
+ *    `*.example.com`, not `example.com`
  *  - IP addresses: matched exactly (no subdomain logic)
  *  - Case-insensitive on both sides
  */
