@@ -83,6 +83,17 @@ function shellValue(value: string, envNames: ReadonlySet<string>): string {
   return `"${quoted}${escapeText(value.slice(last))}"`;
 }
 
+// The value the POC will send, for checks that must see what goes on the wire.
+function expandEnv(
+  value: string,
+  env: Readonly<Record<string, string>>,
+): string {
+  return value.replace(ENV_REFERENCE, (reference, braced, bare) => {
+    const name = braced ?? bare;
+    return Object.hasOwn(env, name) ? env[name] : reference;
+  });
+}
+
 function requireText(value: string, field: string): void {
   if (value.includes("\0")) {
     throw new HttpPocError(`${field} contains a NUL byte.`);
@@ -126,7 +137,8 @@ function requestLines(
   const url = canonicalUrl(request.url, index);
 
   const curl = [
-    "curl -q -sS --proto '=http,https' --max-time 30",
+    // -g: [] and {} in the URL are literal, not curl globs.
+    "curl -q -g -sS --proto '=http,https' --max-time 30",
     `-D "$header_file" -o "$body_file" -w '%{http_code}'`,
     `-X ${shellQuote(method)}`,
   ];
@@ -216,21 +228,31 @@ export function buildHttpPocScript(
     );
   }
 
+  const env = ctx.environmentVariables ?? {};
   for (const [i, request] of requests.entries()) {
     const url = canonicalUrl(request.url, i + 1);
     assertUrlInScope(url, ctx);
+    // Classified on the expanded values the request will actually carry.
     assertHttpActionAllowed(
       {
         method: request.method,
         url,
-        body: request.body,
-        headers: request.headers,
+        body:
+          request.body === undefined ? undefined : expandEnv(request.body, env),
+        headers:
+          request.headers &&
+          Object.fromEntries(
+            Object.entries(request.headers).map(([name, value]) => [
+              name,
+              expandEnv(value, env),
+            ]),
+          ),
       },
       ctx,
     );
   }
 
-  const envNames = new Set(Object.keys(ctx.environmentVariables ?? {}));
+  const envNames = new Set(Object.keys(env));
   return [
     "#!/bin/bash",
     "set -u",

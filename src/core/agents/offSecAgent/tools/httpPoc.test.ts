@@ -87,6 +87,25 @@ describe("buildHttpPocScript checks", () => {
     ).toThrow(ScopeViolationError);
   });
 
+  it("applies the destructive-action block to expanded environment values", () => {
+    const withPayload = makeCtx("https://app.acme.example", {
+      PAYLOAD: "1; DROP TABLE users; --",
+    });
+    expect(() =>
+      buildHttpPocScript(
+        [
+          {
+            method: "POST",
+            url: "https://app.acme.example/search",
+            body: "q=$PAYLOAD",
+            expectStatus: 200,
+          },
+        ],
+        withPayload,
+      ),
+    ).toThrow(DestructiveActionError);
+  });
+
   it("applies the destructive-action block", () => {
     expect(() =>
       buildHttpPocScript(
@@ -164,8 +183,12 @@ describe.skipIf(process.platform === "win32")(
   () => {
     let server: Server;
     let origin: string;
-    const received: Array<{ method?: string; headers: object; body: string }> =
-      [];
+    const received: Array<{
+      method?: string;
+      url?: string;
+      headers: object;
+      body: string;
+    }> = [];
 
     beforeAll(async () => {
       server = createServer((req, res) => {
@@ -174,7 +197,12 @@ describe.skipIf(process.platform === "win32")(
           body += chunk;
         });
         req.on("end", () => {
-          received.push({ method: req.method, headers: req.headers, body });
+          received.push({
+            method: req.method,
+            url: req.url,
+            headers: req.headers,
+            body,
+          });
           if (req.url?.startsWith("/redirect")) {
             // Same server, so a followed redirect would show up in `received`.
             res.writeHead(302, { Location: "/landed" });
@@ -299,6 +327,19 @@ describe.skipIf(process.platform === "win32")(
       );
       expect(result.script).not.toContain("tok-123");
       expect(result.script).not.toContain("pw-456");
+    });
+
+    it("requests a URL with [] and {} literally, once", async () => {
+      const result = await run([
+        {
+          method: "GET",
+          url: `${origin}/items?x[0]=a&url={a,b}`,
+          expectStatus: 200,
+        },
+      ]);
+      expect(result.status).toBe(0);
+      expect(received).toHaveLength(1);
+      expect(received[0].url).toBe("/items?x[0]=a&url={a,b}");
     });
 
     it("sends a body that starts with @ instead of reading a file", async () => {
