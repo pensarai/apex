@@ -18,16 +18,14 @@ export const httpPocRequestSchema = z.object({
     .describe(
       "Request URL on an in-scope target. This is the only field checked as a request target",
     ),
-  headers: z
-    .record(z.string(), z.string())
-    .optional()
-    .describe("Request headers. Values are sent as written"),
-  body: z
-    .string()
-    .optional()
-    .describe(
-      "Request body, sent byte for byte. URLs in the body are payload data, not request targets",
-    ),
+  headers: z.record(z.string(), z.string()).optional().describe(
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: documents shell variable syntax
+    "Request headers. $NAME or ${NAME} in a value is replaced with that environment variable when the POC runs; other text is sent as written",
+  ),
+  body: z.string().optional().describe(
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: documents shell variable syntax
+    "Request body. URLs in the body are payload data, not request targets. $NAME or ${NAME} is replaced with that environment variable when the POC runs; other text is sent byte for byte",
+  ),
   expectStatus: z
     .number()
     .int()
@@ -38,6 +36,13 @@ export const httpPocRequestSchema = z.object({
     .min(1)
     .optional()
     .describe("One line of text the response body must contain"),
+  expectHeaderContains: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "One line of text the response headers must contain, ignoring case, e.g. a redirect's Location: http://169.254.169.254/",
+    ),
 });
 
 export type HttpPocRequest = z.infer<typeof httpPocRequestSchema>;
@@ -52,17 +57,44 @@ export class HttpPocError extends Error {
 
 const MAX_REQUESTS = 10;
 const RESPONSE_PRINT_BYTES = 20_000;
+const HEADER_PRINT_BYTES = 8_000;
 const METHOD = /^[A-Za-z]+$/;
 // RFC 9110 token characters.
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const ENV_REFERENCE = /\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/g;
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+// Double-quoted, so the run's credential variables expand when the POC runs
+// and the stored script never holds their values. Any other `$`, such as a
+// NoSQL operator, stays literal.
+function shellValue(value: string, envNames: ReadonlySet<string>): string {
+  const escapeText = (text: string) => text.replace(/[\\"$`]/g, "\\$&");
+  let quoted = "";
+  let last = 0;
+  for (const match of value.matchAll(ENV_REFERENCE)) {
+    const name = match[1] ?? match[2];
+    if (!envNames.has(name)) continue;
+    quoted += `${escapeText(value.slice(last, match.index))}\${${name}}`;
+    last = match.index + match[0].length;
+  }
+  return `"${quoted}${escapeText(value.slice(last))}"`;
+}
+
 function requireText(value: string, field: string): void {
   if (value.includes("\0")) {
     throw new HttpPocError(`${field} contains a NUL byte.`);
+  }
+}
+
+function requireOneLine(value: string, field: string, index: number): void {
+  // grep reads each line as its own pattern and passes if any one matches.
+  if (/[\r\n\0]/.test(value)) {
+    throw new HttpPocError(
+      `Request ${index}: ${field} must be one line of text, with no line breaks or NUL bytes.`,
+    );
   }
 }
 
@@ -80,7 +112,11 @@ function canonicalUrl(raw: string, index: number): string {
   return url.href;
 }
 
-function requestLines(request: HttpPocRequest, index: number): string[] {
+function requestLines(
+  request: HttpPocRequest,
+  index: number,
+  envNames: ReadonlySet<string>,
+): string[] {
   if (!METHOD.test(request.method)) {
     throw new HttpPocError(
       `Request ${index}: "${request.method}" is not an HTTP method.`,
@@ -91,7 +127,7 @@ function requestLines(request: HttpPocRequest, index: number): string[] {
 
   const curl = [
     "curl -q -sS --proto '=http,https' --max-time 30",
-    `-o "$body_file" -w '%{http_code}'`,
+    `-D "$header_file" -o "$body_file" -w '%{http_code}'`,
     `-X ${shellQuote(method)}`,
   ];
   for (const [name, value] of Object.entries(request.headers ?? {})) {
@@ -105,7 +141,7 @@ function requestLines(request: HttpPocRequest, index: number): string[] {
         `Request ${index}: header ${name} contains a line break or NUL byte.`,
       );
     }
-    curl.push(`-H ${shellQuote(`${name}: ${value}`)}`);
+    curl.push(`-H ${shellValue(`${name}: ${value}`, envNames)}`);
   }
 
   let command: string;
@@ -115,7 +151,7 @@ function requestLines(request: HttpPocRequest, index: number): string[] {
     requireText(request.body, `Request ${index} body`);
     // From stdin, so a body that starts with @ is sent, not read as a file.
     curl.push("--data-binary @-");
-    command = `printf '%s' ${shellQuote(request.body)} | ${curl.join(" ")}`;
+    command = `printf '%s' ${shellValue(request.body, envNames)} | ${curl.join(" ")}`;
   }
   command += ` --url ${shellQuote(url)}`;
 
@@ -123,6 +159,7 @@ function requestLines(request: HttpPocRequest, index: number): string[] {
     `echo ${shellQuote(`== ${index}. ${method} ${url}`)}`,
     `status=$(${command}) || fail=1`,
     'echo "status: $status"',
+    `head -c ${HEADER_PRINT_BYTES} "$header_file"`,
     `head -c ${RESPONSE_PRINT_BYTES} "$body_file"; echo`,
   ];
   if (request.expectStatus !== undefined) {
@@ -132,14 +169,15 @@ function requestLines(request: HttpPocRequest, index: number): string[] {
     );
   }
   if (request.expectBodyContains !== undefined) {
-    // grep reads each line as its own pattern and passes if any one matches.
-    if (/[\r\n\0]/.test(request.expectBodyContains)) {
-      throw new HttpPocError(
-        `Request ${index}: expectBodyContains must be one line of text, with no line breaks or NUL bytes.`,
-      );
-    }
+    requireOneLine(request.expectBodyContains, "expectBodyContains", index);
     lines.push(
       `grep -qF -- ${shellQuote(request.expectBodyContains)} "$body_file" || { echo ${shellQuote("FAIL: response does not contain the expected text")}; fail=1; }`,
+    );
+  }
+  if (request.expectHeaderContains !== undefined) {
+    requireOneLine(request.expectHeaderContains, "expectHeaderContains", index);
+    lines.push(
+      `grep -qiF -- ${shellQuote(request.expectHeaderContains)} "$header_file" || { echo ${shellQuote("FAIL: response headers do not contain the expected text")}; fail=1; }`,
     );
   }
   return lines;
@@ -167,11 +205,14 @@ export function buildHttpPocScript(
   }
   if (
     !requests.some(
-      (r) => r.expectStatus !== undefined || r.expectBodyContains !== undefined,
+      (r) =>
+        r.expectStatus !== undefined ||
+        r.expectBodyContains !== undefined ||
+        r.expectHeaderContains !== undefined,
     )
   ) {
     throw new HttpPocError(
-      "Set expectStatus or expectBodyContains on at least one request, so the PoC can tell success from failure.",
+      "Set expectStatus, expectBodyContains or expectHeaderContains on at least one request, so the PoC can tell success from failure.",
     );
   }
 
@@ -189,14 +230,19 @@ export function buildHttpPocScript(
     );
   }
 
+  const envNames = new Set(Object.keys(ctx.environmentVariables ?? {}));
   return [
     "#!/bin/bash",
     "set -u",
     "fail=0",
     "body_file=$(mktemp)",
-    `trap 'rm -f "$body_file"' EXIT`,
+    "header_file=$(mktemp)",
+    `trap 'rm -f "$body_file" "$header_file"' EXIT`,
     "",
-    ...requests.flatMap((request, i) => [...requestLines(request, i + 1), ""]),
+    ...requests.flatMap((request, i) => [
+      ...requestLines(request, i + 1, envNames),
+      "",
+    ]),
     'exit "$fail"',
     "",
   ].join("\n");

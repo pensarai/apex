@@ -11,10 +11,14 @@ import {
 import { ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
-function makeCtx(target: string): ToolContext {
+function makeCtx(
+  target: string,
+  environmentVariables?: Record<string, string>,
+): ToolContext {
   return {
     target,
     session: { targets: [target], config: {} },
+    environmentVariables,
   } as unknown as ToolContext;
 }
 
@@ -194,13 +198,23 @@ describe.skipIf(process.platform === "win32")(
     // Async, so the in-process server can answer while the script runs.
     function run(
       requests: HttpPocRequest[],
-    ): Promise<{ status: number | null; stdout: string }> {
+      env: Record<string, string> = {},
+    ): Promise<{ status: number | null; stdout: string; script: string }> {
       received.length = 0;
-      const script = buildHttpPocScript(requests, makeCtx(origin));
+      const script = buildHttpPocScript(requests, makeCtx(origin, env));
       return new Promise((resolve) => {
-        execFile("bash", ["-c", script], (error, stdout) => {
-          resolve({ status: error ? (error.code as number) : 0, stdout });
-        });
+        execFile(
+          "bash",
+          ["-c", script],
+          { env: { ...process.env, ...env } },
+          (error, stdout) => {
+            resolve({
+              status: error ? (error.code as number) : 0,
+              stdout,
+              script,
+            });
+          },
+        );
       });
     }
 
@@ -239,6 +253,52 @@ describe.skipIf(process.platform === "win32")(
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("status: 302");
       expect(received).toHaveLength(1);
+    });
+
+    it("prints response headers and checks a redirect's Location", async () => {
+      const redirect = {
+        method: "GET",
+        url: `${origin}/redirect?next=http://evil.example/`,
+      };
+      const result = await run([
+        { ...redirect, expectHeaderContains: "location: /landed" },
+      ]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Location: /landed");
+
+      const wrong = await run([
+        { ...redirect, expectHeaderContains: "Location: http://evil.example/" },
+      ]);
+      expect(wrong.status).toBe(1);
+      expect(wrong.stdout).toContain(
+        "FAIL: response headers do not contain the expected text",
+      );
+    });
+
+    it("expands the run's environment variables when the PoC runs, not in the stored script", async () => {
+      const result = await run(
+        [
+          {
+            method: "POST",
+            url: `${origin}/login`,
+            headers: { Authorization: "Bearer $APP_TOKEN" },
+            // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable syntax under test
+            body: '{"password": "${APP_PASSWORD}", "user": {"$ne": null}, "cost": "$5"}',
+            expectStatus: 200,
+          },
+        ],
+        { APP_TOKEN: "tok-123", APP_PASSWORD: "pw-456" },
+      );
+
+      expect(result.status).toBe(0);
+      expect(received[0].headers).toMatchObject({
+        authorization: "Bearer tok-123",
+      });
+      expect(received[0].body).toBe(
+        '{"password": "pw-456", "user": {"$ne": null}, "cost": "$5"}',
+      );
+      expect(result.script).not.toContain("tok-123");
+      expect(result.script).not.toContain("pw-456");
     });
 
     it("sends a body that starts with @ instead of reading a file", async () => {
