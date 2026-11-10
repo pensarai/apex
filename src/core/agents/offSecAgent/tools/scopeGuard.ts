@@ -184,149 +184,19 @@ export function assertFindingEndpointInScope(
   assertUrlInScope(endpoint, ctx);
 }
 
-const URL_PATTERN = /https?:\/\/[^\s"'`;|&)<>]+/gi;
-
-// A URL that is a later parameter value of another URL, as in
-// `https://app/fetch?a=1&url=http://169.254.169.254/`. The outer URL is still
-// checked; nothing between it and the nested URL can end the word.
-const NESTED_QUERY_VALUE =
-  /https?:\/\/[\w.~%+,/:@[\]-]+\?[\w.~%+=&,/:-]*&[\w.~%+-]*=$/;
-
-const CURL_PAYLOAD_FLAGS = new Set([
-  "-d",
-  "--data",
-  "--data-raw",
-  "--data-binary",
-  "--data-urlencode",
-  "--json",
-  "-H",
-  "--header",
-  "-F",
-  "--form",
-]);
-
-// What a payload URL may follow inside a curl body or header value: a JSON
-// string, a form value or a header value. With one in front, the value never
-// parses as a URL, so it is not requested even if curl reads it as one.
-const PAYLOAD_URL_PREFIX = /(?:"|=|:[ \t]*)$/;
-
-interface Word {
-  start: number;
-  end: number;
-}
-
-// The words of every line that uses nothing but plain words and quoting. Lines
-// with operators, substitutions, variables, redirects or braces are left out.
-function plainLines(command: string): Word[][] {
-  const lines: Word[][] = [];
-  let words: Word[] = [];
-  let word: Word | null = null;
-  let plain = true;
-  let quote: string | null = null;
-
-  const endWord = () => {
-    if (word) words.push(word);
-    word = null;
-  };
-  const endLine = () => {
-    endWord();
-    if (plain && words.length > 0) lines.push(words);
-    words = [];
-    plain = true;
-  };
-
-  for (let i = 0; i < command.length; i++) {
-    const c = command[i];
-    if (quote) {
-      if (c === quote) quote = null;
-      else if (quote === '"' && /[$`\\]/.test(c)) plain = false;
-    } else if (c === "\\" && command[i + 1] === "\n") {
-      endWord();
-      i++;
-      continue;
-    } else if (c === "\n") {
-      endLine();
-      continue;
-    } else if (c === " " || c === "\t" || c === "\r") {
-      endWord();
-      continue;
-    } else if (c === "'" || c === '"') {
-      quote = c;
-    } else if (/[;|&<>(){}$`\\#]/.test(c)) {
-      plain = false;
-    }
-    if (word) word.end = i + 1;
-    else word = { start: i, end: i + 1 };
-  }
-  if (quote) plain = false;
-  endLine();
-  return lines;
-}
-
-// The inside of each fully quoted value given to a curl body or header flag.
-function curlPayloadRanges(command: string): Array<[number, number]> {
-  const text = (w: Word) => command.slice(w.start, w.end);
-  const ranges: Array<[number, number]> = [];
-  for (const words of plainLines(command)) {
-    if (text(words[0]) !== "curl") continue;
-    for (let i = 1; i < words.length - 1; i++) {
-      if (!CURL_PAYLOAD_FLAGS.has(text(words[i]))) continue;
-      const value = text(words[i + 1]);
-      const q = value[0];
-      if (
-        (q === "'" || q === '"') &&
-        value.length >= 2 &&
-        value.endsWith(q) &&
-        !value.slice(1, -1).includes(q)
-      ) {
-        ranges.push([words[i + 1].start + 1, words[i + 1].end - 1]);
-      }
-    }
-  }
-  return ranges;
-}
-
-// Blank out URLs the command sends as data rather than requests: SSRF,
-// open-redirect and webhook payloads. Everything else is still a target.
-function maskPayloadUrls(command: string): string {
-  const payloads = curlPayloadRanges(command);
-  let masked = command;
-  for (const match of command.matchAll(URL_PATTERN)) {
-    const at = match.index;
-    const inPayload = payloads.some(
-      ([start, end]) =>
-        at > start &&
-        at < end &&
-        PAYLOAD_URL_PREFIX.test(command.slice(start, at)),
-    );
-    const nested = NESTED_QUERY_VALUE.test(
-      command.slice(Math.max(0, at - 2048), at),
-    );
-    if (inPayload || nested) {
-      masked =
-        masked.slice(0, at) +
-        "_".repeat(match[0].length) +
-        masked.slice(at + match[0].length);
-    }
-  }
-  return masked;
-}
-
 /**
  * Extract URLs and hostnames from a shell command string.
  *
  * Looks for:
  *  - Explicit URLs: http(s)://host...
  *  - Hostnames after common networking tools (curl, wget, nmap, etc.)
- *
- * Payload URLs (see `maskPayloadUrls`) are not targets.
  */
-export function extractHostsFromCommand(rawCommand: string): string[] {
+export function extractHostsFromCommand(command: string): string[] {
   const hosts = new Set<string>();
-  const command = maskPayloadUrls(rawCommand);
 
   // 1. Extract all http(s) URLs
-  for (const match of command.matchAll(URL_PATTERN)) {
+  const urlPattern = /https?:\/\/[^\s"'`;|&)<>]+/gi;
+  for (const match of command.matchAll(urlPattern)) {
     const hostname = extractHostname(match[0]);
     if (hostname) hosts.add(hostname);
   }
