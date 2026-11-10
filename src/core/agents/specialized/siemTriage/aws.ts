@@ -11,6 +11,8 @@ export const AwsInvestigationQuery = z.strictObject({
     "ResourceName",
   ]),
   value: z.string().min(1).max(256),
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
 });
 
 export interface SiemAwsInvestigation {
