@@ -217,8 +217,14 @@ describe("injected HTTP backends", () => {
         headers: { location: "/home" },
       })
       .mockResolvedValueOnce({ ...response, status: 200 });
-    const followed = await follow();
+    const followed = (await follow()) as Awaited<ReturnType<typeof follow>> & {
+      redirectChain?: string[];
+    };
     expect(followed.status).toBe(200);
+    expect(followed.redirectChain).toEqual([
+      "https://example.com/login",
+      "https://example.com/home",
+    ]);
     expect(
       request.mock.calls.map(([hop]) => [hop.url, hop.followRedirects]),
     ).toEqual([

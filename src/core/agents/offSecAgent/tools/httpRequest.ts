@@ -421,15 +421,23 @@ COMMON TESTING PATTERNS:
           ctx.backends !== undefined &&
           callbackDomains(ctx).length > 0
         ) {
+          const chain: string[] = [];
           try {
             response = await followGuardedRedirects(
               ctx,
               request,
               { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
               async (hop) => authorizeRedirectHop(ctx, hop),
-              (hop, timeoutMs) =>
-                http.request(hop, { timeoutMs, abortSignal: ctx.abortSignal }),
+              (hop, timeoutMs) => {
+                chain.push(hop.url);
+                return http.request(hop, {
+                  timeoutMs,
+                  abortSignal: ctx.abortSignal,
+                });
+              },
             );
+            if (chain.length > 1)
+              response = { ...response, redirectChain: chain };
           } catch (e) {
             if (
               e instanceof ScopeViolationError ||
