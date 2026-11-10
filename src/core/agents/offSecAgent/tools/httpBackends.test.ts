@@ -228,15 +228,10 @@ describe("injected HTTP backends", () => {
     });
   });
 
-  it("asks an injected backend for one hop at a time when the run has callback domains", async () => {
+  it("follows an injected backend's redirects one guarded hop at a time when the run has callback domains", async () => {
     const ctx = context();
     const backends = LocalBackends(ctx);
-    const request = vi.spyOn(backends.http, "request").mockResolvedValue({
-      ...response,
-      status: 307,
-      headers: { location: "https://probe.cb.example.net/catch" },
-    });
-    ctx.backends = backends;
+    const request = vi.spyOn(backends.http, "request");
     const follow = () =>
       httpRequest(ctx).execute!(
         {
@@ -247,8 +242,15 @@ describe("injected HTTP backends", () => {
           toolCallDescription: "test",
         },
         options,
-      );
+      ) as unknown as Promise<{
+        status: number;
+        success: boolean;
+        error?: string;
+      }>;
 
+    // Without callback domains the injected backend follows redirects itself.
+    request.mockResolvedValueOnce({ ...response, status: 200 });
+    ctx.backends = backends;
     await follow();
     expect(request.mock.calls[0]?.[0].followRedirects).toBe(true);
 
@@ -256,9 +258,36 @@ describe("injected HTTP backends", () => {
       ...backends,
       callbacks: { domains: ["probe.cb.example.net"], readHits: vi.fn() },
     };
-    const result = (await follow()) as { status: number };
-    expect(request.mock.calls[1]?.[0].followRedirects).toBe(false);
-    expect(result.status).toBe(307);
+
+    // An in-scope redirect is followed, one hop per backend call.
+    request.mockClear();
+    request
+      .mockResolvedValueOnce({
+        ...response,
+        status: 302,
+        headers: { location: "/home" },
+      })
+      .mockResolvedValueOnce({ ...response, status: 200 });
+    const followed = await follow();
+    expect(followed.status).toBe(200);
+    expect(
+      request.mock.calls.map(([hop]) => [hop.url, hop.followRedirects]),
+    ).toEqual([
+      ["https://example.com/login", false],
+      ["https://example.com/home", false],
+    ]);
+
+    // A redirect onto a callback domain is refused before anything is sent there.
+    request.mockClear();
+    request.mockResolvedValueOnce({
+      ...response,
+      status: 307,
+      headers: { location: "https://probe.cb.example.net/catch" },
+    });
+    const refused = await follow();
+    expect(refused.success).toBe(false);
+    expect(refused.error).toMatch(/redirect onto test domain/);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("retains sandbox request headers for an in-scope redirect destination", async () => {

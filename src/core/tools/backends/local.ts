@@ -554,7 +554,7 @@ async function* runCommand(
 // http.request
 // ---------------------------------------------------------------------------
 
-type AuthorizeHttp = (req: HttpRequest) => Promise<void>;
+export type AuthorizeHttp = (req: HttpRequest) => Promise<void>;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -647,11 +647,20 @@ async function fetchTargetWithRedirects(
   }
 }
 
-async function fetchSandboxWithRedirects(
+/**
+ * Follows redirects one hop at a time through `sendHop`, refusing a hop onto
+ * a callback domain and authorizing every other hop. For transports that
+ * would otherwise run their own unguarded redirect loop.
+ */
+export async function followGuardedRedirects(
   ctx: ToolContext,
   initialRequest: HttpRequest,
   o: HttpOpts | undefined,
   authorize: AuthorizeHttp,
+  sendHop: (
+    request: HttpRequest,
+    timeoutMs: number | undefined,
+  ) => Promise<HttpResponse>,
 ): Promise<HttpResponse> {
   const startedAt = Date.now();
   let request = initialRequest;
@@ -666,20 +675,13 @@ async function fetchSandboxWithRedirects(
     }
     const timeout =
       o?.timeoutMs === undefined ? undefined : o.timeoutMs - elapsed;
-    const response = await requestSandboxHttp(
-      { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
-      {
-        url: request.url,
-        method: request.method ?? "GET",
-        headers: request.headers,
-        body: request.body,
-        followRedirects: false,
-        timeout,
-      },
+    const response = await sendHop(
+      { ...request, followRedirects: false },
+      timeout,
     );
     if (
       !request.followRedirects ||
-      !response.capture.complete ||
+      response.capture?.complete === false ||
       !REDIRECT_STATUSES.has(response.status)
     ) {
       return { ...response, url: request.url, redirected };
@@ -700,6 +702,32 @@ async function fetchSandboxWithRedirects(
     request = next;
     redirected = true;
   }
+}
+
+function fetchSandboxWithRedirects(
+  ctx: ToolContext,
+  initialRequest: HttpRequest,
+  o: HttpOpts | undefined,
+  authorize: AuthorizeHttp,
+): Promise<HttpResponse> {
+  return followGuardedRedirects(
+    ctx,
+    initialRequest,
+    o,
+    authorize,
+    (request, timeout) =>
+      requestSandboxHttp(
+        { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
+        {
+          url: request.url,
+          method: request.method ?? "GET",
+          headers: request.headers,
+          body: request.body,
+          followRedirects: false,
+          timeout,
+        },
+      ),
+  );
 }
 
 async function fetchStandard(
