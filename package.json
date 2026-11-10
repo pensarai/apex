@@ -110,6 +110,11 @@
       "import": "./build/lib/core/agents/offSecAgent/types.js",
       "types": "./build/lib/core/agents/offSecAgent/types.d.ts"
     },
+    "./agents/siemTriage/aws": {
+      "default": "./build/lib/core/agents/specialized/siemTriage/aws.js",
+      "import": "./build/lib/core/agents/specialized/siemTriage/aws.js",
+      "types": "./build/lib/core/agents/specialized/siemTriage/aws.d.ts"
+    },
     "./agents/specialized/attackSurface/blackboxAgent": {
       "default": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
       "import": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
@@ -199,11 +204,6 @@
       "default": "./build/lib/core/ai/utils.js",
       "import": "./build/lib/core/ai/utils.js",
       "types": "./build/lib/core/ai/utils.d.ts"
-    },
-    "./agents/siemTriage/aws": {
-      "default": "./build/lib/core/agents/specialized/siemTriage/aws.js",
-      "import": "./build/lib/core/agents/specialized/siemTriage/aws.js",
-      "types": "./build/lib/core/agents/specialized/siemTriage/aws.d.ts"
     },
     "./core/api": {
       "default": "./build/lib/core/api/index.js",

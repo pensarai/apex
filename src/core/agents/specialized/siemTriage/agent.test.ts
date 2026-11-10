@@ -60,10 +60,17 @@ describe("SiemTriageAgent contracts", () => {
     };
     await tool.execute?.(query, { toolCallId: "aws", messages: [] });
     expect(inspect).toHaveBeenCalledWith(query);
+    await tool.execute?.(
+      { ...query, region: "eu-west-1" },
+      { toolCallId: "outside", messages: [] },
+    );
+    expect(inspect).toHaveBeenCalledTimes(1);
     expect(
       SiemTriageResultSchema.safeParse({
         ...validResult,
-        evidence: [{ source: "aws", observation: "event e1" }],
+        evidence: [
+          { source: "workspace-context", observation: "AWS event e1" },
+        ],
       }).success,
     ).toBe(true);
   });
