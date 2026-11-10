@@ -438,6 +438,16 @@ COMMON TESTING PATTERNS:
             ) {
               return notSent(e.message);
             }
+            // A target's malformed Location is a failed request, as on the
+            // local transport, not a tool crash.
+            if (
+              e instanceof TypeError &&
+              (e as { code?: string }).code === "ERR_INVALID_URL"
+            ) {
+              return notSent(
+                `Redirect location could not be resolved: ${e.message}`,
+              );
+            }
             throw e;
           }
         } else {

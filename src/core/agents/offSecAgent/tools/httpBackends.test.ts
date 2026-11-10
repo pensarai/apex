@@ -237,6 +237,17 @@ describe("injected HTTP backends", () => {
     expect(refused.success).toBe(false);
     expect(refused.error).toMatch(/redirect onto test domain/);
     expect(request).toHaveBeenCalledTimes(1);
+
+    // A malformed Location fails the request instead of throwing.
+    request.mockClear();
+    request.mockResolvedValueOnce({
+      ...response,
+      status: 302,
+      headers: { location: "http://[bad" },
+    });
+    const malformed = await follow();
+    expect(malformed.success).toBe(false);
+    expect(malformed.error).toMatch(/Redirect location could not be resolved/);
   });
 
   it("retains sandbox request headers for an in-scope redirect destination", async () => {
