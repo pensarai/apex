@@ -139,7 +139,8 @@ function requestLines(
   const curl = [
     // -g: [] and {} in the URL are literal, not curl globs.
     "curl -q -g -sS --proto '=http,https' --max-time 30",
-    `-D "$header_file" -o "$body_file" -w '%{http_code}'`,
+    // Only the target's headers, never a proxy's CONNECT response.
+    `--suppress-connect-headers -D "$header_file" -o "$body_file" -w '%{http_code}'`,
     // -X HEAD changes only the method; curl would still wait for a body.
     // HEAD downloads nothing, and the cap would test its Content-Length.
     method === "HEAD"

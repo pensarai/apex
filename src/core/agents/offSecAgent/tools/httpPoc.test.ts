@@ -87,6 +87,15 @@ describe("buildHttpPocScript checks", () => {
     ).toThrow(ScopeViolationError);
   });
 
+  it("keeps a proxy's CONNECT headers out of the captured response headers", () => {
+    // A proxied HTTPS test needs a TLS target; the flag is what guarantees it.
+    const script = buildHttpPocScript(
+      [{ method: "GET", url: "https://app.acme.example/", expectStatus: 200 }],
+      ctx,
+    );
+    expect(script).toContain('--suppress-connect-headers -D "$header_file"');
+  });
+
   it("applies the destructive-action block to expanded environment values", () => {
     const withPayload = makeCtx("https://app.acme.example", {
       PAYLOAD: "1; DROP TABLE users; --",
