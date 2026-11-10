@@ -504,6 +504,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               abortSignal: ctx.abortSignal,
               sandbox: ctx.sandbox,
               backends: ctx.backends,
+              callbacks: ctx.callbacks,
               languageModelMiddleware: ctx.languageModelMiddleware,
               toolProtocol: ctx.toolProtocol,
               usageRecorder: ctx.usageRecorder,
