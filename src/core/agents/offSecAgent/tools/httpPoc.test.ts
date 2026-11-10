@@ -172,6 +172,16 @@ describe("buildHttpPocScript checks", () => {
       ],
     ],
     [
+      "a body expectation on HEAD",
+      [
+        {
+          method: "HEAD",
+          url: "https://app.acme.example/",
+          expectBodyContains: "Content-Type",
+        },
+      ],
+    ],
+    [
       // grep would pass if any one line matched.
       "a multi-line expected text",
       [

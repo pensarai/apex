@@ -186,6 +186,12 @@ function requestLines(
     );
   }
   if (request.expectBodyContains !== undefined) {
+    // curl -I writes the headers where the body would go.
+    if (method === "HEAD") {
+      throw new HttpPocError(
+        `Request ${index}: a HEAD response has no body; use expectHeaderContains or expectStatus.`,
+      );
+    }
     requireOneLine(request.expectBodyContains, "expectBodyContains", index);
     lines.push(
       `grep -qF -- ${shellQuote(request.expectBodyContains)} "$body_file" || { echo ${shellQuote("FAIL: response does not contain the expected text")}; fail=1; }`,
