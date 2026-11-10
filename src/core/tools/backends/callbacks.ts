@@ -23,25 +23,20 @@ export function callbackBackend(
   return host.backends ? host.backends.callbacks : host.callbacks;
 }
 
-const validated = new WeakMap<CallbackBackend, string[]>();
-
 /**
- * The run's callback domains, validated once per backend. Empty means the
- * feature is off; non-empty means there is a receiver and a reader.
+ * The run's callback domains, validated against this caller's own scope:
+ * workers sharing one backend can have different targets, so the overlap
+ * check runs per call. Empty means the feature is off; non-empty means there
+ * is a receiver and a reader.
  */
 export function callbackDomains(host: CallbackHost): string[] {
   const backend = callbackBackend(host);
   if (!backend) return [];
-  let domains = validated.get(backend);
-  if (!domains) {
-    domains = normalizeCallbackDomains(backend.domains, {
-      ...host.session,
-      targets: [
-        ...(host.session.targets ?? []),
-        ...(host.target ? [host.target] : []),
-      ],
-    });
-    validated.set(backend, domains);
-  }
-  return domains;
+  return normalizeCallbackDomains(backend.domains, {
+    ...host.session,
+    targets: [
+      ...(host.session.targets ?? []),
+      ...(host.target ? [host.target] : []),
+    ],
+  });
 }

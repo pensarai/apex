@@ -109,6 +109,17 @@ describe("read_callback_hits", () => {
     ).toThrow();
   });
 
+  it("checks a shared backend's domains against every caller's own target", () => {
+    const shared = backend(noHits.readHits, ["api.target.example"]);
+    expect(listToolRegistryNames(ctx(shared))).toContain("read_callback_hits");
+    expect(() =>
+      listToolRegistryNames({
+        ...ctx(shared),
+        target: "https://api.target.example",
+      }),
+    ).toThrow();
+  });
+
   it("reads through local backends when the host passes callbacks without injecting backends", async () => {
     const local: ToolContext = {
       subagentSpawner: inProcessSubagentSpawner,
