@@ -183,6 +183,9 @@ const POC_EXTENSIONS: Record<PocType, string> = {
 
 const EVIDENCE_FILE_THRESHOLD = 20_000;
 
+const POC_PAYLOAD_URL_GUIDANCE =
+  ' If that URL is a payload the PoC sends to the target (SSRF, open redirect, webhook) rather than a host it requests, send it from a plain curl command, in a quoted -d or -H value such as -d \'{"url": "http://169.254.169.254/"}\', or as a query parameter value. Payload URLs in any other form are checked as request targets.';
+
 function isRealSandbox(ctx: ToolContext): boolean {
   return ctx.backends?.sandboxed === true;
 }
@@ -348,7 +351,11 @@ CRITICAL RULES — READ BEFORE CALLING:
           return {
             success: false,
             error: error.message,
-            message: `Finding PoC rejected: ${error.message}`,
+            message: `Finding PoC rejected: ${error.message}${
+              error instanceof ScopeViolationError
+                ? POC_PAYLOAD_URL_GUIDANCE
+                : ""
+            }`,
           };
         }
         throw error;
