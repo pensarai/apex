@@ -679,11 +679,19 @@ async function fetchTargetWithRedirects(
   }
 }
 
-async function fetchSandboxWithRedirects(
-  ctx: ToolContext,
+/**
+ * Follows redirects one hop at a time through `sendHop`, authorizing every
+ * hop before it is sent. For transports that would otherwise run their own
+ * unguarded redirect loop.
+ */
+async function followGuardedRedirects(
   initialRequest: HttpRequest,
   o: HttpOpts | undefined,
   authorize: AuthorizeHttp,
+  sendHop: (
+    request: HttpRequest,
+    timeoutMs: number | undefined,
+  ) => Promise<HttpResponse>,
 ): Promise<HttpResponse> {
   const startedAt = Date.now();
   let request = initialRequest;
@@ -698,20 +706,13 @@ async function fetchSandboxWithRedirects(
     }
     const timeout =
       o?.timeoutMs === undefined ? undefined : o.timeoutMs - elapsed;
-    const response = await requestSandboxHttp(
-      { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
-      {
-        url: request.url,
-        method: request.method ?? "GET",
-        headers: request.headers,
-        body: request.body,
-        followRedirects: false,
-        timeout,
-      },
+    const response = await sendHop(
+      { ...request, followRedirects: false },
+      timeout,
     );
     if (
       !request.followRedirects ||
-      !response.capture.complete ||
+      response.capture?.complete === false ||
       !REDIRECT_STATUSES.has(response.status)
     ) {
       return { ...response, url: request.url, redirected };
@@ -731,6 +732,31 @@ async function fetchSandboxWithRedirects(
     request = next;
     redirected = true;
   }
+}
+
+function fetchSandboxWithRedirects(
+  ctx: ToolContext,
+  initialRequest: HttpRequest,
+  o: HttpOpts | undefined,
+  authorize: AuthorizeHttp,
+): Promise<HttpResponse> {
+  return followGuardedRedirects(
+    initialRequest,
+    o,
+    authorize,
+    (request, timeout) =>
+      requestSandboxHttp(
+        { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
+        {
+          url: request.url,
+          method: request.method ?? "GET",
+          headers: request.headers,
+          body: request.body,
+          followRedirects: false,
+          timeout,
+        },
+      ),
+  );
 }
 
 async function fetchStandard(
