@@ -174,13 +174,9 @@ const SHELL_PAYLOAD_ARG =
 const STRING_OPEN = String.raw`(?:[rRbBfFuU]{1,2})?\\?["'\x60]`;
 const PARAM_VALUE_PREFIX = /[?&'"](?!-)[\w.%[\]-]*=$/;
 const OBJECT_VALUE_PREFIX = new RegExp(
-  String.raw`(?:\\?["']([\w.-]+)\\?["']|[{,]\s*(?!lambda\b)([A-Za-z_$][\w$]*))[ \t]*:[ \t]*${STRING_OPEN}$`,
+  String.raw`(?:\\?["'][\w.-]+\\?["']|[{,]\s*(?!lambda\b)[A-Za-z_$][\w$]*)[ \t]*:[ \t]*${STRING_OPEN}$`,
 );
-// Keys a client library reads as where to send the request (axios/fetch
-// config, `requests.request(**{...})`, proxy maps).
-const REQUEST_TARGET_KEY =
-  /^(?:url|uri|href|endpoint|base_?url|host|hostname|https?|all)$/i;
-const BODY_NAMES = "json|data|body|params|form|files";
+const BODY_NAMES = "json|data|body|params|form|files|headers";
 const BODY_KEY_PREFIX = new RegExp(
   String.raw`\b["']?(?:${BODY_NAMES})["']?\s*:\s*$`,
   "i",
@@ -190,7 +186,7 @@ const ASSIGNMENT_PREFIX = /(?:^|[^\w$.=!<>])([A-Za-z_$][\w$]*)\s*=\s*$/;
 const BODY_NAME = new RegExp(`^(?:${BODY_NAMES})$`, "i");
 
 const COMMAND_PREFIX =
-  /^(?:(?:sudo|env|nohup|exec|command)\s+|timeout\s+\S+\s+|[A-Za-z_]\w*=\S*\s+)*/;
+  /^(?:(?:sudo|env|nohup|exec|command)(?:\s+-\S+)*\s+|timeout\s+\S+\s+|[A-Za-z_]\w*=\S*\s+)*/;
 
 // The executable of the shell command that contains `index`: the first word
 // after the last unquoted command boundary, past sudo/env/timeout/VAR= prefixes.
@@ -223,7 +219,8 @@ function shellPayloadRanges(command: string): Array<[number, number]> {
     const applies = match[1]
       ? executable === "curl"
       : executable === "curl" || executable === "wget";
-    if (!applies) continue;
+    // A substitution in the value runs as its own command before curl does.
+    if (!applies || /\$\(|`/.test(match[2])) continue;
     const end = match.index + match[0].length;
     ranges.push([end - match[2].length, end]);
   }
@@ -278,10 +275,7 @@ function isPayloadUrl(
   }
   const prefix = command.slice(Math.max(0, index - 200), index);
   if (PARAM_VALUE_PREFIX.test(prefix)) return true;
-  const objectValue = OBJECT_VALUE_PREFIX.exec(prefix);
-  if (!objectValue) return false;
-  const key = objectValue[1] ?? objectValue[2];
-  return !REQUEST_TARGET_KEY.test(key) || isInRequestBody(command, index);
+  return OBJECT_VALUE_PREFIX.test(prefix) && isInRequestBody(command, index);
 }
 
 /**

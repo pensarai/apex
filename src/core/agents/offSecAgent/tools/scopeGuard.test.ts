@@ -618,6 +618,14 @@ describe("extractHostsFromCommand", () => {
         `sudo timeout 30 /usr/bin/curl -H 'Cookie: a=1; b=2' -d'{"url":"http://localhost/"}' https://app.acme.example/hooks`,
       ],
       [
+        "curl behind a wrapper option",
+        `env -i curl -d '{"url":"http://169.254.169.254/"}' https://app.acme.example/hooks`,
+      ],
+      [
+        "python headers dict",
+        `requests.get("https://app.acme.example/", headers={"Referer": "http://localhost/"})`,
+      ],
+      [
         "unquoted curl form value",
         "curl https://app.acme.example/fetch -d url=http://10.0.0.5/",
       ],
@@ -704,6 +712,18 @@ describe("extractHostsFromCommand", () => {
       [
         "wget after a curl pipeline",
         "echo curl | wget -d https://evil.example/",
+      ],
+      [
+        "command substitution inside a curl body",
+        `curl -d "$(curl https://evil.example/)" https://app.acme.example/`,
+      ],
+      [
+        "inline object read as the request URL",
+        `requests.get({"destination": "https://evil.example/admin"}["destination"])`,
+      ],
+      [
+        "variable holding a non-target key",
+        `cb = {"callback": "https://evil.example/"}\nrequests.get(cb["callback"])`,
       ],
       [
         "long payload flag in a source comment",
