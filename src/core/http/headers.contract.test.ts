@@ -275,6 +275,31 @@ describe("targetFetch", () => {
     spy.mockRestore();
   });
 
+  it("refuses a redirect onto a test domain before sending anything there", async () => {
+    const session = makeSession({
+      callbackDomains: ["probe.cb.example.net"],
+    });
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("", {
+        status: 307,
+        headers: { location: "https://probe.cb.example.net/hop" },
+      }),
+    );
+    try {
+      await expect(
+        targetFetch(session, "https://example.com/login", {
+          method: "POST",
+          body: "password=hunter2",
+          redirect: "follow",
+          headers: { Authorization: "Bearer caller" },
+        }),
+      ).rejects.toThrow(/redirect onto test domain/);
+      expect(spy).toHaveBeenCalledOnce();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("blocks a default strict-scope redirect before connecting to its destination", async () => {
     const session = makeSession({
       config: {

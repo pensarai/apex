@@ -20,6 +20,7 @@ import {
   getUrlPort,
   isHostInScope,
 } from "../../../http/targetScope";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import type { ToolContext } from "./types";
 
 export { getRegistrableDomain };
@@ -45,12 +46,17 @@ export class ScopeViolationError extends Error {
 // commands (where `ctx.target` isn't in `session.targets`) don't get
 // classified as out-of-scope and silently dropped from header resolution.
 export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
-  if (!ctx.target) return ctx.session;
   const existing = ctx.session.targets ?? [];
-  if (existing.includes(ctx.target)) return ctx.session;
+  const targets =
+    ctx.target && !existing.includes(ctx.target)
+      ? [...existing, ctx.target]
+      : existing;
+  const domains = callbackDomains(ctx);
+  if (targets === existing && domains.length === 0) return ctx.session;
   return {
     ...ctx.session,
-    targets: [...existing, ctx.target],
+    targets,
+    ...(domains.length > 0 ? { callbackDomains: domains } : {}),
   };
 }
 

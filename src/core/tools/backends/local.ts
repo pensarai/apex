@@ -39,6 +39,7 @@ import {
 } from "../../http/redirects";
 import { verifyLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { resolveEffectiveHeaders, targetFetch } from "../../http/targetHeaders";
+import { callbackRedirectRefusal } from "../../http/targetScope";
 import type { HeaderRecord } from "../../http/types";
 import { collectCommand } from "./collectCommand";
 import {
@@ -596,7 +597,7 @@ async function* runCommand(
 // http.request
 // ---------------------------------------------------------------------------
 
-type AuthorizeHttp = (req: HttpRequest) => Promise<void>;
+export type AuthorizeHttp = (req: HttpRequest) => Promise<void>;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -616,6 +617,14 @@ function redirectedHttpRequest(
       bodyDropped: redirected.bodyDropped,
     }),
   };
+}
+
+// A redirect onto a test domain would carry the request (a 307/308 keeps its
+// body) into callback storage. The agent never needs to follow one; a direct
+// request to a test domain still goes through http_request.
+function refuseRedirectOntoTestDomain(ctx: ToolContext, url: string): void {
+  const refusal = callbackRedirectRefusal(url, resolverSessionFromCtx(ctx));
+  if (refusal) throw new ToolPolicyDeniedError("http", "request", refusal);
 }
 
 function responseHeader(
@@ -673,6 +682,7 @@ async function fetchTargetWithRedirects(
       response.status,
       new URL(location, request.url).toString(),
     );
+    refuseRedirectOntoTestDomain(ctx, next.url);
     await authorize(next);
     request = next;
     redirected = true;
@@ -681,11 +691,12 @@ async function fetchTargetWithRedirects(
 }
 
 /**
- * Follows redirects one hop at a time through `sendHop`, authorizing every
- * hop before it is sent. For transports that would otherwise run their own
- * unguarded redirect loop.
+ * Follows redirects one hop at a time through `sendHop`, refusing a hop onto
+ * a callback domain and authorizing every other hop. For transports that
+ * would otherwise run their own unguarded redirect loop.
  */
-async function followGuardedRedirects(
+export async function followGuardedRedirects(
+  ctx: ToolContext,
   initialRequest: HttpRequest,
   o: HttpOpts | undefined,
   authorize: AuthorizeHttp,
@@ -729,6 +740,7 @@ async function followGuardedRedirects(
       response.status,
       new URL(location, request.url).toString(),
     );
+    refuseRedirectOntoTestDomain(ctx, next.url);
     await authorize(next);
     request = next;
     redirected = true;
@@ -742,6 +754,7 @@ function fetchSandboxWithRedirects(
   authorize: AuthorizeHttp,
 ): Promise<HttpResponse> {
   return followGuardedRedirects(
+    ctx,
     initialRequest,
     o,
     authorize,

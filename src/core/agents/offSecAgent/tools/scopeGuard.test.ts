@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import { describe, expect, it, vi } from "vitest";
+import {
+  applyHeadersToShellCommand,
+  resolveEffectiveHeaders,
+} from "../../../http/targetHeaders";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
@@ -639,5 +642,119 @@ describe("assertCommandInScope", () => {
     expect(() =>
       assertCommandInScope("grep -r 'password' /var/log", ctx),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test domains: never sent the target's headers
+// ---------------------------------------------------------------------------
+
+describe("session test domains", () => {
+  const CB = "3f2b8c1e.cb.example.net";
+
+  function withTestDomain(): ToolContext {
+    const ctx = makeCtx({ target: "https://app.example.com" });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://app.example.com"],
+      config: { headers: { "X-API-Key": "secret" } },
+    } as typeof ctx.session;
+    ctx.callbacks = { domains: [CB], readHits: vi.fn() };
+    return ctx;
+  }
+
+  it("never sends session or credential headers to a test domain", () => {
+    const ctx = withTestDomain();
+    expect(
+      resolveEffectiveHeaders(resolverSessionFromCtx(ctx), `https://${CB}/x`),
+    ).toEqual({});
+    expect(
+      resolveEffectiveHeaders(
+        resolverSessionFromCtx(ctx),
+        "https://app.example.com/x",
+      ),
+    ).toEqual({ "X-API-Key": "secret" });
+    expect(
+      applyHeadersToShellCommand(
+        `curl https://${CB}/x`,
+        resolverSessionFromCtx(ctx),
+        [CB],
+      ).status,
+    ).not.toBe("injected");
+  });
+  it("withholds shell headers from a command that also requests a test domain", () => {
+    const session = resolverSessionFromCtx(withTestDomain());
+    const both = applyHeadersToShellCommand(
+      `curl https://app.example.com/api https://${CB}/self-check`,
+      session,
+      ["app.example.com", CB],
+    );
+    expect(both.status).toBe("test-domain-destination");
+    expect(both.command).not.toContain("X-API-Key");
+
+    const quoted = applyHeadersToShellCommand(
+      `curl "https://app.example.com/api" "https://${CB}/self-check"`,
+      session,
+      ["app.example.com", CB],
+    );
+    expect(quoted.status).toBe("test-domain-destination");
+
+    // Spellings that reach the same host: parsed, not pattern-matched.
+    for (const destination of [
+      `https://${CB}./x`,
+      `https://u:p@${CB}/x`,
+      `HTTPS://${CB.toUpperCase()}/x`,
+      `https://${CB.replaceAll(".", "%2E")}/x`,
+      `'https://${CB}:443/x'`,
+      `--url https://${CB}/x`,
+      `--url=https://${CB}/x`,
+      `--url ${CB}/x`,
+      `${CB}/x`,
+      `--proxy=https://${CB}`,
+      `--proxy https://${CB}`,
+      `-x ${CB}:8080`,
+      `-xhttps://${CB}`,
+      `--next https://${CB}/x`,
+    ]) {
+      const result = applyHeadersToShellCommand(
+        `curl https://app.example.com/api ${destination}`,
+        session,
+        ["app.example.com", CB],
+      );
+      expect(result.status, destination).toBe("test-domain-destination");
+      expect(result.command).not.toContain("X-API-Key");
+    }
+
+    // Shell expansion can assemble a destination no pattern sees: fail closed.
+    for (const command of [
+      `curl https://app.example.com/api $'https://${CB}/x'`,
+      `U=https://${CB}/x; curl https://app.example.com/api "$U"`,
+      `curl https://app.example.com/api $(echo https://${CB}/x)`,
+    ]) {
+      expect(
+        applyHeadersToShellCommand(command, session, ["app.example.com", CB])
+          .status,
+      ).toBe("test-domain-destination");
+    }
+  });
+
+  it("keeps the target's headers when the test domain is only payload data", () => {
+    const session = resolverSessionFromCtx(withTestDomain());
+    for (const command of [
+      `curl -X POST https://app.example.com/import -d 'url=https://${CB}/ssrf-1'`,
+      `curl https://app.example.com/hooks -H 'Content-Type: application/json' -d '{"url":"https://${CB}/ssrf-2"}'`,
+      `curl https://app.example.com/hooks -d '{"url": "https://${CB}/ssrf-3"}'`,
+      `curl https://app.example.com/hooks --data-urlencode url=https://${CB}/ssrf-4`,
+      `curl https://app.example.com/hooks --json='{"url":"https://${CB}/ssrf-5"}'`,
+      `curl https://app.example.com/reset -H 'X-Forwarded-Host: ${CB}'`,
+      `curl https://app.example.com/ -e https://${CB}/ref`,
+    ]) {
+      const result = applyHeadersToShellCommand(command, session, [
+        "app.example.com",
+        CB,
+      ]);
+      expect(result.status).toBe("injected");
+      expect(result.command).toContain("X-API-Key: secret");
+    }
   });
 });

@@ -10,10 +10,16 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
+import { callbackDomains } from "../../../tools/backends/callbacks";
+import { followGuardedRedirects } from "../../../tools/backends/local";
+import { ToolPolicyDeniedError } from "../../../tools/backends/policy";
 import { resolveBackends } from "../../../tools/backends/resolve";
-import type { HttpResponse } from "../../../tools/backends/types";
+import type { HttpRequest, HttpResponse } from "../../../tools/backends/types";
 import { agentLogsDir } from "./agentScratch";
-import { assertHttpActionAllowed } from "./destructiveGuard";
+import {
+  assertHttpActionAllowed,
+  DestructiveActionError,
+} from "./destructiveGuard";
 import {
   assertUrlInScope,
   resolverSessionFromCtx,
@@ -397,14 +403,71 @@ COMMON TESTING PATTERNS:
       }
 
       {
-        const response = await resolveBackends(ctx).http.request(
-          { url, method, headers, body: resolvedBody, followRedirects },
-          { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
-        );
+        const http = resolveBackends(ctx).http;
+        const request = {
+          url,
+          method,
+          headers,
+          body: resolvedBody,
+          followRedirects,
+        };
+        // A host-injected backend follows redirects in its own loop, with no
+        // callback-domain guard, so a 307/308 could carry this request's body
+        // into callback storage. With callback domains, Apex follows each hop
+        // itself, refusing callback domains and authorizing the rest.
+        let response: HttpResponse;
+        if (
+          followRedirects &&
+          ctx.backends !== undefined &&
+          callbackDomains(ctx).length > 0
+        ) {
+          try {
+            response = await followGuardedRedirects(
+              ctx,
+              request,
+              { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
+              async (hop) => authorizeRedirectHop(ctx, hop),
+              (hop, timeoutMs) =>
+                http.request(hop, { timeoutMs, abortSignal: ctx.abortSignal }),
+            );
+          } catch (e) {
+            if (
+              e instanceof ScopeViolationError ||
+              e instanceof DestructiveActionError ||
+              e instanceof ToolPolicyDeniedError
+            ) {
+              return notSent(e.message);
+            }
+            throw e;
+          }
+        } else {
+          response = await http.request(request, {
+            timeoutMs: effectiveTimeoutMs,
+            abortSignal: ctx.abortSignal,
+          });
+        }
         return formatHttpResponse(response, ctx, library);
       }
     },
   });
+}
+
+/** The checks http_request applies to its first hop, for each redirect hop. */
+function authorizeRedirectHop(ctx: ToolContext, hop: HttpRequest): void {
+  assertUrlInScope(hop.url, ctx);
+  assertHttpActionAllowed(
+    {
+      method: hop.method ?? "GET",
+      url: hop.url,
+      body: hop.body,
+      headers: resolveEffectiveHeaders(
+        resolverSessionFromCtx(ctx),
+        hop.url,
+        hop.headers,
+      ),
+    },
+    ctx,
+  );
 }
 
 function formatHttpResponse<T extends HttpResponse>(

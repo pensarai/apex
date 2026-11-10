@@ -14,7 +14,10 @@ import {
   sanitizeRedirectHeaders,
 } from "../../http/redirects";
 import { resolveEffectiveHeaders, shellQuote } from "../../http/targetHeaders";
-import { isUrlInSessionScope } from "../../http/targetScope";
+import {
+  callbackRedirectRefusal,
+  isUrlInSessionScope,
+} from "../../http/targetScope";
 
 const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
 
@@ -241,6 +244,10 @@ export async function requestSandboxHttp(
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
+    }
+    const refusal = callbackRedirectRefusal(nextUrl, session);
+    if (refusal) {
+      return { ...withRedirectMetadata, success: false, error: refusal };
     }
     const nextRequest = redirectRequest(
       response.status,
