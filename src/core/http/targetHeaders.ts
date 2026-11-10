@@ -604,8 +604,8 @@ function shellWords(command: string): string[] {
   return words;
 }
 
-// Options whose operand curl or wget sends to the target as data or a header
-// value, never as a destination.
+// Options whose operand is data, a header value or an output format, never a
+// destination.
 const PAYLOAD_OPTIONS = new Set([
   "-d",
   "--data",
@@ -625,8 +625,10 @@ const PAYLOAD_OPTIONS = new Set([
   "--user-agent",
   "--post-data",
   "--body-data",
+  "-w",
+  "--write-out",
 ]);
-const PAYLOAD_SHORT_ATTACHED = /^-[dFHeA]./;
+const PAYLOAD_SHORT_ATTACHED = /^-[dFHeAw]./;
 
 function isPayloadOperand(word: string, previous: string | undefined): boolean {
   if (previous !== undefined && PAYLOAD_OPTIONS.has(previous)) return true;
@@ -662,7 +664,8 @@ function mentionsCallbackHost(word: string, session: ResolverSession): boolean {
 }
 
 function readsDestinationsFromFile(words: string[]): boolean {
-  const wget = words[0] === "wget";
+  // Any position: wget may run behind sudo, env, timeout and the like.
+  const wget = words.some((word) => /(^|\/)wget$/.test(word));
   return words.some(
     (word) =>
       /^(-K|--config)(=|$)|^-K./.test(word) ||
@@ -676,9 +679,10 @@ function readsDestinationsFromFile(words: string[]): boolean {
 // -x, attached short options, config files), a command that names a test
 // domain anywhere except as the operand of a known payload option, or as a
 // key=value / Header:value item, gets no injected headers. Shell expansion
-// ($'…', "$VAR", $(…), backticks) and destinations read from a file (curl
-// -K/--config, wget -i/--input-file) can reach a test domain the command
-// never spells out, so with test domains present those fail closed too. A
+// ($'…', "$VAR", $(…), backticks), curl URL globs ({…}, […]) and destinations
+// read from a file (curl -K/--config, wget -i/--input-file) can reach a test
+// domain the command never spells out, so with test domains present those
+// fail closed too. A
 // false match only withholds headers; http_request decides headers per URL.
 function requestsTestDomain(
   command: string,
@@ -691,8 +695,8 @@ function requestsTestDomain(
   if (readsDestinationsFromFile(words)) return true;
   return words.some(
     (word, i) =>
-      mentionsCallbackHost(word, session) &&
-      !isPayloadOperand(word, words[i - 1]),
+      !isPayloadOperand(word, words[i - 1]) &&
+      (/[[{]/.test(word) || mentionsCallbackHost(word, session)),
   );
 }
 

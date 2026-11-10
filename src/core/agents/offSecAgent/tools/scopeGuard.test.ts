@@ -736,6 +736,9 @@ describe("session test domains", () => {
       "curl https://app.example.com/api -K /tmp/urls.cfg",
       "curl https://app.example.com/api --config=/tmp/urls.cfg",
       "wget https://app.example.com/api -i /tmp/urls.txt",
+      "sudo wget -i /tmp/urls.txt https://app.example.com/api",
+      "curl https://app.example.com/api 'https://3f2b8c1e.cb.example.ne[s-t]/x'",
+      "curl https://app.example.com/api 'https://{www,3f2b8c1e}.cb.example.net/x'",
     ]) {
       expect(
         applyHeadersToShellCommand(command, session, ["app.example.com", CB])
@@ -754,6 +757,7 @@ describe("session test domains", () => {
       `curl https://app.example.com/hooks --json='{"url":"https://${CB}/ssrf-5"}'`,
       `curl https://app.example.com/reset -H 'X-Forwarded-Host: ${CB}'`,
       `curl https://app.example.com/ -e https://${CB}/ref`,
+      `curl -w '%{http_code}' https://app.example.com/hooks -d url=https://${CB}/ssrf-6`,
     ]) {
       const result = applyHeadersToShellCommand(command, session, [
         "app.example.com",
