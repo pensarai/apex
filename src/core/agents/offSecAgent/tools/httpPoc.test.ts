@@ -160,6 +160,12 @@ describe.skipIf(process.platform === "win32")(
         });
         req.on("end", () => {
           received.push({ method: req.method, headers: req.headers, body });
+          if (req.url?.startsWith("/redirect")) {
+            // Same server, so a followed redirect would show up in `received`.
+            res.writeHead(302, { Location: "/landed" });
+            res.end();
+            return;
+          }
           res.writeHead(req.url === "/missing" ? 404 : 200);
           res.end(`echo: ${body}`);
         });
@@ -209,6 +215,19 @@ describe.skipIf(process.platform === "win32")(
         "x-note": "a'b",
       });
       expect(result.stdout).toContain("status: 200");
+    });
+
+    it("does not follow a redirect, so an open-redirect payload is never requested", async () => {
+      const result = await run([
+        {
+          method: "GET",
+          url: `${origin}/redirect?next=http://evil.example/`,
+          expectStatus: 302,
+        },
+      ]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("status: 302");
+      expect(received).toHaveLength(1);
     });
 
     it("sends a body that starts with @ instead of reading a file", async () => {
