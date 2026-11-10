@@ -139,6 +139,17 @@ describe("buildHttpPocScript checks", () => {
         },
       ],
     ],
+    [
+      // grep would pass if any one line matched.
+      "a multi-line expected text",
+      [
+        {
+          method: "GET",
+          url: "https://app.acme.example/",
+          expectBodyContains: "admin\nsecret",
+        },
+      ],
+    ],
   ])("rejects %s", (_, requests) => {
     expect(() => buildHttpPocScript(requests, ctx)).toThrow(HttpPocError);
   });

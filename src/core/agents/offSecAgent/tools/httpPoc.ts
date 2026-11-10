@@ -37,7 +37,7 @@ export const httpPocRequestSchema = z.object({
     .string()
     .min(1)
     .optional()
-    .describe("Text the response body must contain"),
+    .describe("One line of text the response body must contain"),
 });
 
 export type HttpPocRequest = z.infer<typeof httpPocRequestSchema>;
@@ -132,7 +132,12 @@ function requestLines(request: HttpPocRequest, index: number): string[] {
     );
   }
   if (request.expectBodyContains !== undefined) {
-    requireText(request.expectBodyContains, `Request ${index} expected text`);
+    // grep reads each line as its own pattern and passes if any one matches.
+    if (/[\r\n\0]/.test(request.expectBodyContains)) {
+      throw new HttpPocError(
+        `Request ${index}: expectBodyContains must be one line of text, with no line breaks or NUL bytes.`,
+      );
+    }
     lines.push(
       `grep -qF -- ${shellQuote(request.expectBodyContains)} "$body_file" || { echo ${shellQuote("FAIL: response does not contain the expected text")}; fail=1; }`,
     );
