@@ -59,9 +59,8 @@ const MAX_REQUESTS = 10;
 const RESPONSE_PRINT_BYTES = 20_000;
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const HEADER_PRINT_BYTES = 8_000;
-const METHOD = /^[A-Za-z]+$/;
-// RFC 9110 token characters.
-const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+// RFC 9110 token characters, for methods and header names.
+const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const ENV_REFERENCE = /\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))/g;
 
 function shellQuote(value: string): string {
@@ -129,7 +128,7 @@ function requestLines(
   index: number,
   envNames: ReadonlySet<string>,
 ): string[] {
-  if (!METHOD.test(request.method)) {
+  if (!TOKEN.test(request.method)) {
     throw new HttpPocError(
       `Request ${index}: "${request.method}" is not an HTTP method.`,
     );
@@ -140,13 +139,15 @@ function requestLines(
   const curl = [
     // -g: [] and {} in the URL are literal, not curl globs.
     "curl -q -g -sS --proto '=http,https' --max-time 30",
-    `--max-filesize ${MAX_RESPONSE_BYTES}`,
     `-D "$header_file" -o "$body_file" -w '%{http_code}'`,
     // -X HEAD changes only the method; curl would still wait for a body.
-    method === "HEAD" ? "-I" : `-X ${shellQuote(method)}`,
+    // HEAD downloads nothing, and the cap would test its Content-Length.
+    method === "HEAD"
+      ? "-I"
+      : `-X ${shellQuote(method)} --max-filesize ${MAX_RESPONSE_BYTES}`,
   ];
   for (const [name, value] of Object.entries(request.headers ?? {})) {
-    if (!HEADER_NAME.test(name)) {
+    if (!TOKEN.test(name)) {
       throw new HttpPocError(
         `Request ${index}: "${name}" is not a valid header name.`,
       );

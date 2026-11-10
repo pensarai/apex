@@ -211,7 +211,8 @@ describe.skipIf(process.platform === "win32")(
           }
           if (req.method === "HEAD") {
             // A HEAD response advertises the body it would have sent.
-            res.writeHead(200, { "Content-Length": "5" });
+            const length = req.url === "/big" ? 11 * 1024 * 1024 : 5;
+            res.writeHead(200, { "Content-Length": String(length) });
             res.end();
             return;
           }
@@ -359,6 +360,22 @@ describe.skipIf(process.platform === "win32")(
       ]);
       expect(result.status).toBe(0);
       expect(received[0].method).toBe("HEAD");
+    });
+
+    it("does not apply the download cap to HEAD", async () => {
+      const result = await run([
+        { method: "HEAD", url: `${origin}/big`, expectStatus: 200 },
+      ]);
+      expect(result.status).toBe(0);
+    });
+
+    // Node's parser rejects VERSION-CONTROL, so this uses another hyphenated method.
+    it("sends an extension method with non-letter token characters", async () => {
+      const result = await run([
+        { method: "M-SEARCH", url: `${origin}/`, expectStatus: 200 },
+      ]);
+      expect(result.status).toBe(0);
+      expect(received[0].method).toBe("M-SEARCH");
     });
 
     it("fails a response larger than the download cap", async () => {
