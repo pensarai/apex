@@ -158,7 +158,12 @@ function requestLines(
         `Request ${index}: header ${name} contains a line break or NUL byte.`,
       );
     }
-    curl.push(`-H ${shellValue(`${name}: ${value}`, envNames)}`);
+    // curl drops "Name: " but sends "Name;" as a header with an empty value.
+    curl.push(
+      value === ""
+        ? `-H ${shellQuote(`${name};`)}`
+        : `-H ${shellValue(`${name}: ${value}`, envNames)}`,
+    );
   }
 
   let command: string;

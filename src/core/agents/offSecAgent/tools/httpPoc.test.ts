@@ -423,6 +423,19 @@ describe.skipIf(process.platform === "win32")(
       expect(result.status).toBe(1);
     });
 
+    it("sends a header with an empty value instead of dropping it", async () => {
+      const result = await run([
+        {
+          method: "GET",
+          url: `${origin}/`,
+          headers: { Authorization: "" },
+          expectStatus: 200,
+        },
+      ]);
+      expect(result.status).toBe(0);
+      expect(received[0].headers).toHaveProperty("authorization", "");
+    });
+
     it("sends a body that starts with @ instead of reading a file", async () => {
       const result = await run([
         {
