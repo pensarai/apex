@@ -134,6 +134,68 @@ describe("defaultPolicy", () => {
     expect(decision).toEqual({ allow: true });
   });
 
+  describe("identity provider hosts", () => {
+    function idpCtx(): ToolContext {
+      const ctx = scopedCtx();
+      ctx.session.config = {
+        scopeConstraints: { identityProviderHosts: ["accounts.google.com"] },
+      };
+      return ctx;
+    }
+
+    function navigate(url: string, ctx = idpCtx()) {
+      return defaultPolicy.beforeCall({
+        backend: "browser",
+        op: "navigate",
+        args: { url },
+        ctx,
+      });
+    }
+
+    it("allows browser navigation to a listed sign-in host", async () => {
+      expect(
+        await navigate("https://accounts.google.com/o/oauth2/v2/auth?x=1"),
+      ).toEqual({ allow: true });
+    });
+
+    it.each([
+      "https://accounts.google.com.attacker.example/",
+      "https://evil-accounts.google.com/",
+      "https://sub.accounts.google.com/",
+      "https://google.com/",
+      "http://accounts.google.com/",
+      "https://accounts.google.com:8443/",
+    ])("denies %s", async (url) => {
+      const decision = await navigate(url);
+      expect(decision.allow).toBe(false);
+      if (!decision.allow) expect(decision.reason).toMatch(/Scope violation/);
+    });
+
+    it("keeps the target reachable alongside the sign-in host", async () => {
+      expect(await navigate("https://example.com/login")).toEqual({
+        allow: true,
+      });
+    });
+
+    it("does not let http requests or commands reach the sign-in host", async () => {
+      const ctx = idpCtx();
+      const request = await defaultPolicy.beforeCall({
+        backend: "http",
+        op: "request",
+        args: { method: "GET", url: "https://accounts.google.com/" },
+        ctx,
+      });
+      const command = await defaultPolicy.beforeCall({
+        backend: "command",
+        op: "run",
+        args: { command: "curl https://accounts.google.com/" },
+        ctx,
+      });
+      expect(request.allow).toBe(false);
+      expect(command.allow).toBe(false);
+    });
+  });
+
   it("allows fs ops by default", async () => {
     const decision = await defaultPolicy.beforeCall({
       backend: "fs",

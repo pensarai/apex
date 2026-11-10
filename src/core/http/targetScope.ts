@@ -7,6 +7,7 @@ export interface TargetScope {
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
       readonly allowedPorts?: ReadonlyArray<number>;
+      readonly identityProviderHosts?: ReadonlyArray<string>;
     };
   };
 }
@@ -85,4 +86,26 @@ export function isUrlInSessionScope(url: string, scope: TargetScope): boolean {
     (allowedPorts.length === 0 ||
       (port !== null && allowedPorts.includes(port)))
   );
+}
+
+/**
+ * Whether `url` is an HTTPS page on one of the host-supplied identity provider
+ * hosts. Exact hostnames only: these hosts are reachable by browser navigation
+ * for sign-in, but are never targets and never receive session headers.
+ */
+export function isIdentityProviderNavigation(
+  url: string,
+  scope: TargetScope,
+): boolean {
+  const hosts = scope.config?.scopeConstraints?.identityProviderHosts ?? [];
+  if (hosts.length === 0) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || parsed.port !== "") return false;
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  return hosts.some((host) => host.trim().toLowerCase() === hostname);
 }
