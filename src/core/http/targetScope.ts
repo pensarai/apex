@@ -3,6 +3,11 @@ import { parseTargetUrl } from "../../util/url";
 
 export interface TargetScope {
   readonly targets?: ReadonlyArray<string>;
+  /**
+   * Host-owned callback domains, already validated by
+   * {@link normalizeCallbackDomains}. Reachable, never a target.
+   */
+  readonly callbackDomains?: ReadonlyArray<string>;
   readonly config?: {
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
@@ -85,4 +90,70 @@ export function isUrlInSessionScope(url: string, scope: TargetScope): boolean {
     (allowedPorts.length === 0 ||
       (port !== null && allowedPorts.includes(port)))
   );
+}
+
+// ---------------------------------------------------------------------------
+// Callback domains: the one place their scope rules live
+// ---------------------------------------------------------------------------
+
+// A bare DNS name with an alphabetic TLD: no scheme, port, path, IP or wildcard.
+const CALLBACK_HOSTNAME =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * Validates and normalizes the callback domains a host supplies, once, where
+ * they enter. A listed domain is exempt from target scope checks, so anything
+ * that is not a bare hostname, or that is also a target or allowed host, is a
+ * host configuration error and throws.
+ */
+export function normalizeCallbackDomains(
+  domains: ReadonlyArray<string>,
+  scope: TargetScope,
+): string[] {
+  const scopeHosts = [
+    ...(scope.config?.scopeConstraints?.allowedHosts ?? []),
+    ...(scope.targets ?? []).flatMap((target) => {
+      const parsed = parseTargetUrl(target);
+      return parsed ? [parsed.hostname] : [];
+    }),
+  ];
+  const normalized = new Set<string>();
+  for (const raw of domains) {
+    const host = raw.trim().toLowerCase().replace(/\.$/, "");
+    if (!CALLBACK_HOSTNAME.test(host)) {
+      throw new Error(
+        `Invalid callback domain "${raw}": expected a bare hostname, with no scheme, port, path, IP address or wildcard`,
+      );
+    }
+    if (isHostInScope(host, scopeHosts)) {
+      throw new Error(
+        `Callback domain "${host}" is also a target or allowed host; callback domains must be separate from the target scope`,
+      );
+    }
+    normalized.add(host);
+  }
+  return [...normalized];
+}
+
+export function isCallbackHost(hostname: string, scope: TargetScope): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return (scope.callbackDomains ?? []).includes(host);
+}
+
+/** Whether a request to `url` lands on one of the scope's callback domains. */
+export function isCallbackDestination(
+  url: string,
+  scope: TargetScope,
+): boolean {
+  if (!scope.callbackDomains?.length) return false;
+  try {
+    return isCallbackHost(new URL(url).hostname, scope);
+  } catch {
+    return false;
+  }
+}
+
+/** A target in scope, or a callback domain: the hosts a request may reach. */
+export function isUrlReachable(url: string, scope: TargetScope): boolean {
+  return isUrlInSessionScope(url, scope) || isCallbackDestination(url, scope);
 }
