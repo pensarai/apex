@@ -5,6 +5,7 @@ vi.mock("../../offSecAgent/offensiveSecurityAgent", () => ({
 }));
 
 import {
+  buildAwsInvestigationTool,
   buildSearchSiemLogsTool,
   buildSiemTriageActiveTools,
   buildSiemTriagePrompt,
@@ -35,6 +36,45 @@ const validResult = {
 };
 
 describe("SiemTriageAgent contracts", () => {
+  it("can investigate AWS independently of SIEM logs and cite the observation", async () => {
+    expect(buildSiemTriageActiveTools(false, true)).toEqual([
+      "web_search",
+      "response",
+      "inspect_incident_aws",
+    ]);
+    expect(buildSiemTriageActiveTools(true)).not.toContain(
+      "inspect_incident_aws",
+    );
+    const inspect = vi.fn().mockResolvedValue({ events: [] });
+    const accountId = "123456789012";
+    const tool = buildAwsInvestigationTool({
+      accounts: [{ accountId, regions: ["us-east-1"] }],
+      inspect,
+    });
+    expect(tool.description).toContain(accountId);
+    const query = {
+      accountId,
+      region: "us-east-1",
+      lookup: "EventName" as const,
+      value: "CreateUser",
+    };
+    await tool.execute?.(query, { toolCallId: "aws", messages: [] });
+    expect(inspect).toHaveBeenCalledWith(query);
+    await tool.execute?.(
+      { ...query, region: "eu-west-1" },
+      { toolCallId: "outside", messages: [] },
+    );
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(
+      SiemTriageResultSchema.safeParse({
+        ...validResult,
+        evidence: [
+          { source: "workspace-context", observation: "AWS event e1" },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
   it("never gives the triage agent shell, HTTP, browser, or write tools", () => {
     for (const tools of [
       buildSiemTriageActiveTools(true),
