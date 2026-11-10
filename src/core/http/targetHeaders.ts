@@ -661,13 +661,24 @@ function mentionsCallbackHost(word: string, session: ResolverSession): boolean {
   return false;
 }
 
+function readsDestinationsFromFile(words: string[]): boolean {
+  const wget = words[0] === "wget";
+  return words.some(
+    (word) =>
+      /^(-K|--config)(=|$)|^-K./.test(word) ||
+      /^--input-file(=|$)/.test(word) ||
+      (wget && /^-i/.test(word)),
+  );
+}
+
 // Whether a command may send something to a test domain. Rather than model
 // every way curl or wget can be pointed at a host (operands, --url, --proxy,
 // -x, attached short options, config files), a command that names a test
 // domain anywhere except as the operand of a known payload option, or as a
 // key=value / Header:value item, gets no injected headers. Shell expansion
-// ($'…', "$VAR", $(…), backticks) can assemble a mention no parser sees, so a
-// command that names a test domain and expands anything fails closed too. A
+// ($'…', "$VAR", $(…), backticks) and destinations read from a file (curl
+// -K/--config, wget -i/--input-file) can reach a test domain the command
+// never spells out, so with test domains present those fail closed too. A
 // false match only withholds headers; http_request decides headers per URL.
 function requestsTestDomain(
   command: string,
@@ -675,11 +686,9 @@ function requestsTestDomain(
 ): boolean {
   const domains = session.callbackDomains ?? [];
   if (domains.length === 0) return false;
-  const lower = command.toLowerCase();
-  if (/[$`]/.test(command) && domains.some((d) => lower.includes(d))) {
-    return true;
-  }
+  if (/[$`]/.test(command)) return true;
   const words = shellWords(command);
+  if (readsDestinationsFromFile(words)) return true;
   return words.some(
     (word, i) =>
       mentionsCallbackHost(word, session) &&

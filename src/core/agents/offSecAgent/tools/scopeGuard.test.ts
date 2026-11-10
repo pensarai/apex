@@ -730,6 +730,12 @@ describe("session test domains", () => {
       `curl https://app.example.com/api $'https://${CB}/x'`,
       `U=https://${CB}/x; curl https://app.example.com/api "$U"`,
       `curl https://app.example.com/api $(echo https://${CB}/x)`,
+      // No literal callback domain: assembled from parts, or read from a file.
+      `H=3f2b8c1e; curl https://app.example.com/api https://$H.cb.example.net/x`,
+      "curl https://app.example.com/api `cat /tmp/next-url`",
+      "curl https://app.example.com/api -K /tmp/urls.cfg",
+      "curl https://app.example.com/api --config=/tmp/urls.cfg",
+      "wget https://app.example.com/api -i /tmp/urls.txt",
     ]) {
       expect(
         applyHeadersToShellCommand(command, session, ["app.example.com", CB])
