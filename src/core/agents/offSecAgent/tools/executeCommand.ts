@@ -466,8 +466,8 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       );
       if (inject.status === "test-domain-destination" && !allow_unprotected) {
         const msg =
-          "Command rejected: it requests one of your test domains alongside the target, so the target's configured headers would be sent to the test domain too. " +
-          "Request the test domain in its own command (it gets no headers), or pass allow_unprotected: true to run this command without any configured headers.";
+          "Command rejected: it names one of your test domains outside a payload (a -d/--data*, -F, --json, -H, -e or -A value, or a key=value item), so the target's configured headers could reach the test domain. " +
+          "Put the test domain only in the payload, use http_request (it decides headers per URL), or pass allow_unprotected: true to run this command without any configured headers.";
         return {
           success: false,
           error: msg,

@@ -743,6 +743,11 @@ describe("session test domains", () => {
       `--url=https://${CB}/x`,
       `--url ${CB}/x`,
       `${CB}/x`,
+      `--proxy=https://${CB}`,
+      `--proxy https://${CB}`,
+      `-x ${CB}:8080`,
+      `-xhttps://${CB}`,
+      `--next https://${CB}/x`,
     ]) {
       const result = applyHeadersToShellCommand(
         `curl https://app.example.com/api ${destination}`,
@@ -771,6 +776,11 @@ describe("session test domains", () => {
     for (const command of [
       `curl -X POST https://app.example.com/import -d 'url=https://${CB}/ssrf-1'`,
       `curl https://app.example.com/hooks -H 'Content-Type: application/json' -d '{"url":"https://${CB}/ssrf-2"}'`,
+      `curl https://app.example.com/hooks -d '{"url": "https://${CB}/ssrf-3"}'`,
+      `curl https://app.example.com/hooks --data-urlencode url=https://${CB}/ssrf-4`,
+      `curl https://app.example.com/hooks --json='{"url":"https://${CB}/ssrf-5"}'`,
+      `curl https://app.example.com/reset -H 'X-Forwarded-Host: ${CB}'`,
+      `curl https://app.example.com/ -e https://${CB}/ref`,
     ]) {
       const result = applyHeadersToShellCommand(command, session, [
         "app.example.com",
