@@ -588,6 +588,14 @@ describe("extractHostsFromCommand", () => {
   });
 
   describe("payload URLs (SSRF, open redirect, webhooks)", () => {
+    it("checks payload URLs behind a wrapper with options (fails closed)", () => {
+      expect(
+        extractHostsFromCommand(
+          `env -i curl -d '{"url":"http://169.254.169.254/"}' https://app.acme.example/hooks`,
+        ),
+      ).toContain("169.254.169.254");
+    });
+
     it.each([
       [
         "curl JSON body",
@@ -616,10 +624,6 @@ describe("extractHostsFromCommand", () => {
       [
         "curl behind prefixes, with a quoted semicolon before -d",
         `sudo timeout 30 /usr/bin/curl -H 'Cookie: a=1; b=2' -d'{"url":"http://localhost/"}' https://app.acme.example/hooks`,
-      ],
-      [
-        "curl behind a wrapper option",
-        `env -i curl -d '{"url":"http://169.254.169.254/"}' https://app.acme.example/hooks`,
       ],
       [
         "python headers dict",
@@ -712,6 +716,10 @@ describe("extractHostsFromCommand", () => {
       [
         "wget after a curl pipeline",
         "echo curl | wget -d https://evil.example/",
+      ],
+      [
+        "wrapper option whose argument looks like curl",
+        "env -u curl wget -d https://evil.example/",
       ],
       [
         "command substitution inside a curl body",

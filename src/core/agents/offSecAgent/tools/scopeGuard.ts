@@ -186,10 +186,11 @@ const ASSIGNMENT_PREFIX = /(?:^|[^\w$.=!<>])([A-Za-z_$][\w$]*)\s*=\s*$/;
 const BODY_NAME = new RegExp(`^(?:${BODY_NAMES})$`, "i");
 
 const COMMAND_PREFIX =
-  /^(?:(?:sudo|env|nohup|exec|command)(?:\s+-\S+)*\s+|timeout\s+\S+\s+|[A-Za-z_]\w*=\S*\s+)*/;
+  /^(?:(?:sudo|env|nohup|exec|command)\s+|timeout\s+\S+\s+|[A-Za-z_]\w*=\S*\s+)*/;
 
 // The executable of the shell command that contains `index`: the first word
 // after the last unquoted command boundary, past sudo/env/timeout/VAR= prefixes.
+// A wrapper given options resolves to that option, so no payload flag applies.
 function executableAt(command: string, index: number): string | null {
   const text = command.slice(0, index).replace(/\\\r?\n/g, " ");
   let quote: string | null = null;
