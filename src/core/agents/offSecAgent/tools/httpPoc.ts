@@ -57,6 +57,7 @@ export class HttpPocError extends Error {
 
 const MAX_REQUESTS = 10;
 const RESPONSE_PRINT_BYTES = 20_000;
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const HEADER_PRINT_BYTES = 8_000;
 const METHOD = /^[A-Za-z]+$/;
 // RFC 9110 token characters.
@@ -139,8 +140,10 @@ function requestLines(
   const curl = [
     // -g: [] and {} in the URL are literal, not curl globs.
     "curl -q -g -sS --proto '=http,https' --max-time 30",
+    `--max-filesize ${MAX_RESPONSE_BYTES}`,
     `-D "$header_file" -o "$body_file" -w '%{http_code}'`,
-    `-X ${shellQuote(method)}`,
+    // -X HEAD changes only the method; curl would still wait for a body.
+    method === "HEAD" ? "-I" : `-X ${shellQuote(method)}`,
   ];
   for (const [name, value] of Object.entries(request.headers ?? {})) {
     if (!HEADER_NAME.test(name)) {

@@ -209,6 +209,17 @@ describe.skipIf(process.platform === "win32")(
             res.end();
             return;
           }
+          if (req.method === "HEAD") {
+            // A HEAD response advertises the body it would have sent.
+            res.writeHead(200, { "Content-Length": "5" });
+            res.end();
+            return;
+          }
+          if (req.url === "/big") {
+            res.writeHead(200, { "Content-Length": String(11 * 1024 * 1024) });
+            res.end(Buffer.alloc(11 * 1024 * 1024));
+            return;
+          }
           res.writeHead(req.url === "/missing" ? 404 : 200);
           res.end(`echo: ${body}`);
         });
@@ -340,6 +351,21 @@ describe.skipIf(process.platform === "win32")(
       expect(result.status).toBe(0);
       expect(received).toHaveLength(1);
       expect(received[0].url).toBe("/items?x[0]=a&url={a,b}");
+    });
+
+    it("sends HEAD without waiting for the advertised body", async () => {
+      const result = await run([
+        { method: "HEAD", url: `${origin}/`, expectStatus: 200 },
+      ]);
+      expect(result.status).toBe(0);
+      expect(received[0].method).toBe("HEAD");
+    });
+
+    it("fails a response larger than the download cap", async () => {
+      const result = await run([
+        { method: "GET", url: `${origin}/big`, expectStatus: 200 },
+      ]);
+      expect(result.status).toBe(1);
     });
 
     it("sends a body that starts with @ instead of reading a file", async () => {
