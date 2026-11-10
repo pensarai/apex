@@ -243,6 +243,22 @@ export function buildHttpPocScript(
   for (const [i, request] of requests.entries()) {
     const url = canonicalUrl(request.url, i + 1);
     assertUrlInScope(url, ctx);
+    const headers =
+      request.headers &&
+      Object.fromEntries(
+        Object.entries(request.headers).map(([name, value]) => [
+          name,
+          expandEnv(value, env),
+        ]),
+      );
+    // A line break in an expanded value would send headers nobody declared.
+    for (const [name, value] of Object.entries(headers ?? {})) {
+      if (/[\r\n\0]/.test(value)) {
+        throw new HttpPocError(
+          `Request ${i + 1}: header ${name} contains a line break or NUL byte once its environment variables are expanded.`,
+        );
+      }
+    }
     // Classified on the expanded values the request will actually carry.
     assertHttpActionAllowed(
       {
@@ -250,14 +266,7 @@ export function buildHttpPocScript(
         url,
         body:
           request.body === undefined ? undefined : expandEnv(request.body, env),
-        headers:
-          request.headers &&
-          Object.fromEntries(
-            Object.entries(request.headers).map(([name, value]) => [
-              name,
-              expandEnv(value, env),
-            ]),
-          ),
+        headers,
       },
       ctx,
     );

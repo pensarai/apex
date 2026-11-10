@@ -96,6 +96,25 @@ describe("buildHttpPocScript checks", () => {
     expect(script).toContain('--suppress-connect-headers -D "$header_file"');
   });
 
+  it("rejects a header whose environment value contains a line break", () => {
+    const withToken = makeCtx("https://app.acme.example", {
+      APP_TOKEN: "safe\r\nX-Injected: yes",
+    });
+    expect(() =>
+      buildHttpPocScript(
+        [
+          {
+            method: "GET",
+            url: "https://app.acme.example/",
+            headers: { Authorization: "Bearer $APP_TOKEN" },
+            expectStatus: 200,
+          },
+        ],
+        withToken,
+      ),
+    ).toThrow(HttpPocError);
+  });
+
   it("applies the destructive-action block to expanded environment values", () => {
     const withPayload = makeCtx("https://app.acme.example", {
       PAYLOAD: "1; DROP TABLE users; --",
