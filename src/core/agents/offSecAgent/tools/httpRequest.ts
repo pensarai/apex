@@ -11,6 +11,7 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import { resolveBackends } from "../../../tools/backends/resolve";
 import type { HttpResponse } from "../../../tools/backends/types";
 import { agentLogsDir } from "./agentScratch";
@@ -411,13 +412,21 @@ COMMON TESTING PATTERNS:
               ),
             )
           : headers;
+        // A host-injected backend follows redirects in its own loop, with no
+        // callback-domain guard, so a 307/308 could carry this request's body
+        // into callback storage. With callback domains, return the redirect
+        // and let the agent follow it through this tool's checks.
+        const singleHop =
+          followRedirects &&
+          ctx.backends !== undefined &&
+          callbackDomains(ctx).length > 0;
         const response = await resolveBackends(ctx).http.request(
           {
             url,
             method,
             headers: dispatchHeaders,
             body: resolvedBody,
-            followRedirects,
+            followRedirects: followRedirects && !singleHop,
           },
           { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
         );

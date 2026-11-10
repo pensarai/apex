@@ -228,6 +228,39 @@ describe("injected HTTP backends", () => {
     });
   });
 
+  it("asks an injected backend for one hop at a time when the run has callback domains", async () => {
+    const ctx = context();
+    const backends = LocalBackends(ctx);
+    const request = vi.spyOn(backends.http, "request").mockResolvedValue({
+      ...response,
+      status: 307,
+      headers: { location: "https://probe.cb.example.net/catch" },
+    });
+    ctx.backends = backends;
+    const follow = () =>
+      httpRequest(ctx).execute!(
+        {
+          url: "https://example.com/login",
+          method: "POST",
+          body: "password=hunter2",
+          followRedirects: true,
+          toolCallDescription: "test",
+        },
+        options,
+      );
+
+    await follow();
+    expect(request.mock.calls[0]?.[0].followRedirects).toBe(true);
+
+    ctx.backends = {
+      ...backends,
+      callbacks: { domains: ["probe.cb.example.net"], readHits: vi.fn() },
+    };
+    const result = (await follow()) as { status: number };
+    expect(request.mock.calls[1]?.[0].followRedirects).toBe(false);
+    expect(result.status).toBe(307);
+  });
+
   it("retains sandbox request headers for an in-scope redirect destination", async () => {
     const ctx = context();
     ctx.session.config = {
