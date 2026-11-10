@@ -77,6 +77,8 @@ Update options:
                             required with --disposition duplicate
   --false-positive          Flag as false positive
   --fp-reason <reason>      Reason for false positive flag
+  --pull-request <url>      Replace the tracked pull request with an http(s) URL
+  --clear-pull-request      Stop tracking a pull request
 
 Link-pr options:
   --url <url>               URL of the pull request to link (required)
@@ -195,6 +197,14 @@ async function main(): Promise<void> {
         ? true
         : undefined;
       const userFlaggedFalsePositiveReason = getFlag("--fp-reason", args);
+      const pullRequest = getFlag("--pull-request", args);
+      const clearPullRequest = args.includes("--clear-pull-request");
+      if (pullRequest !== undefined && clearPullRequest) {
+        console.error(
+          "Error: --pull-request and --clear-pull-request cannot be used together",
+        );
+        return markCommandFailed();
+      }
 
       const result = await updateIssue(issueId, {
         status,
@@ -204,6 +214,11 @@ async function main(): Promise<void> {
         duplicateOf,
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
+        ...(clearPullRequest
+          ? { pullRequest: null }
+          : pullRequest !== undefined
+            ? { pullRequest }
+            : {}),
       });
       console.log(JSON.stringify(result, null, 2));
     } else if (sub === "retest") {

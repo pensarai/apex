@@ -90,6 +90,7 @@ describe("issue label and url", () => {
       closedComments: null,
       closedDisposition: null,
       duplicateOf: null,
+      pullRequest: null,
       workspaceId: "33333333-3333-3333-3333-333333333333",
       createdAt: "2026-08-27T00:00:00.000Z",
     };

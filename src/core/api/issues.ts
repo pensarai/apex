@@ -123,6 +123,8 @@ export interface IssueDetail {
   closedComments: string | null;
   closedDisposition: ClosedDisposition | null;
   duplicateOf: string | null;
+  /** Tracked pull request URL, or null. Any http(s) URL; not a specific provider. */
+  pullRequest: string | null;
 }
 
 export interface IssueEvidence {
@@ -228,6 +230,7 @@ export interface UpdateIssueResult {
     closedComments?: string | null;
     closedDisposition?: ClosedDisposition | null;
     duplicateOf?: string | null;
+    pullRequest: string | null;
   };
 }
 
@@ -419,6 +422,8 @@ export async function updateIssue(
     closedDisposition?: ClosedDisposition;
     /** UUID or label of the original; sent only with the `duplicate` disposition. */
     duplicateOf?: string;
+    /** http(s) URL replaces the tracked pull request. Null clears it. */
+    pullRequest?: string | null;
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);

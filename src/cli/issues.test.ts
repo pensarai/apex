@@ -200,6 +200,44 @@ describe("pensar issues CLI", () => {
     });
   });
 
+  it("sends a replacement pull request URL", async () => {
+    const request = await captureRequest([
+      "update",
+      "VULN-000001",
+      "--pull-request",
+      "https://gitlab.com/acme/app/-/merge_requests/9",
+    ]);
+
+    expect(request.body).toEqual({
+      pullRequest: "https://gitlab.com/acme/app/-/merge_requests/9",
+    });
+  });
+
+  it("sends null to clear the tracked pull request", async () => {
+    const request = await captureRequest([
+      "update",
+      "VULN-000001",
+      "--clear-pull-request",
+    ]);
+
+    expect(request.body).toEqual({ pullRequest: null });
+  });
+
+  it("rejects setting and clearing the pull request together", () => {
+    const { status, stderr } = runIssues([
+      "update",
+      "VULN-000001",
+      "--pull-request",
+      "https://gitlab.com/acme/app/-/merge_requests/9",
+      "--clear-pull-request",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "--pull-request and --clear-pull-request cannot be used together",
+    );
+  });
+
   it("prints help for `-h` on a subcommand", () => {
     const { status, stdout } = runIssues(["update", "-h"]);
 
