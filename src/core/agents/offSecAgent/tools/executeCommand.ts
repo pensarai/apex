@@ -464,18 +464,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         cmdHosts,
         backends.command.platform,
       );
-      if (inject.status === "test-domain-destination" && !allow_unprotected) {
-        const msg =
-          "Command rejected: it names one of your test domains outside a payload (a -d/--data*, -F, --json, -H, -e or -A value, or a key=value item), or uses shell expansion, a curl URL glob ({…} or […]) or a URL file (curl -K, wget -i) while you have test domains, so the target's configured headers could reach a test domain. " +
-          "Put the test domain only in the payload, use http_request (it decides headers per URL), or pass allow_unprotected: true to run this command without any configured headers.";
-        return {
-          success: false,
-          error: msg,
-          stdout: "",
-          stderr: msg,
-          command,
-        };
-      }
       if (inject.status === "unknown-tool" && !allow_unprotected) {
         const redirectGuidance =
           backends.command.platform === "windows"

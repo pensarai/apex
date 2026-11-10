@@ -14,7 +14,6 @@ import {
   getSessionAllowedHosts,
   getSessionAllowedPorts,
   isCallbackDestination,
-  isCallbackHost,
   isHostInScope,
   isUrlInSessionScope,
 } from "./targetScope";
@@ -557,148 +556,13 @@ function detectHttpToolOnCommand(
   return null;
 }
 
-export type ApplyShellStatus =
-  | "injected"
-  | "no-headers"
-  | "unknown-tool"
-  | "test-domain-destination";
+export type ApplyShellStatus = "injected" | "no-headers" | "unknown-tool";
 
 export type ApplyShellResult = {
   readonly command: string;
   readonly status: ApplyShellStatus;
   readonly tool: string | null;
 };
-
-// Splits a command into shell words, honouring quotes and backslashes, and
-// breaking at ; | &. Expansion is not evaluated (see requestsTestDomain).
-function shellWords(command: string): string[] {
-  const words: string[] = [];
-  let word = "";
-  let inWord = false;
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < command.length; i++) {
-    const c = command[i] as string;
-    if (quote === "'") {
-      if (c === "'") quote = null;
-      else word += c;
-    } else if (quote === '"') {
-      if (c === '"') quote = null;
-      else if (c === "\\" && i + 1 < command.length) word += command[++i];
-      else word += c;
-    } else if (c === "'" || c === '"') {
-      quote = c;
-      inWord = true;
-    } else if (c === "\\" && i + 1 < command.length) {
-      word += command[++i];
-      inWord = true;
-    } else if (/[\s;|&]/.test(c)) {
-      if (inWord) words.push(word);
-      word = "";
-      inWord = false;
-    } else {
-      word += c;
-      inWord = true;
-    }
-  }
-  if (inWord) words.push(word);
-  return words;
-}
-
-// Options whose operand is data, a header value or an output format, never a
-// destination.
-const PAYLOAD_OPTIONS = new Set([
-  "-d",
-  "--data",
-  "--data-raw",
-  "--data-binary",
-  "--data-ascii",
-  "--data-urlencode",
-  "-F",
-  "--form",
-  "--form-string",
-  "--json",
-  "-H",
-  "--header",
-  "-e",
-  "--referer",
-  "-A",
-  "--user-agent",
-  "--post-data",
-  "--body-data",
-  "-w",
-  "--write-out",
-]);
-const PAYLOAD_SHORT_ATTACHED = /^-[dFHeAw]./;
-
-function isPayloadOperand(word: string, previous: string | undefined): boolean {
-  if (previous !== undefined && PAYLOAD_OPTIONS.has(previous)) return true;
-  const option = word.match(/^(--[a-z-]+)=/i)?.[1];
-  if (option) return PAYLOAD_OPTIONS.has(option.toLowerCase());
-  if (word.startsWith("-")) return PAYLOAD_SHORT_ATTACHED.test(word);
-  // `key=value` and httpie `Header:value` items are data, not URLs; a
-  // scheme-less `host:port` is not.
-  if (/^[\w-]+(==|:=|=)/.test(word)) return true;
-  return /^[\w-]+:(?!\/\/)/.test(word) && !/^[\w-]+:\d/.test(word);
-}
-
-function mentionsCallbackHost(word: string, session: ResolverSession): boolean {
-  const lower = word.toLowerCase();
-  if ((session.callbackDomains ?? []).some((d) => lower.includes(d))) {
-    return true;
-  }
-  const operand = word.replace(/^--[a-z-]+=/i, "");
-  for (const candidate of [
-    ...(word.match(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi) ?? []),
-    operand.startsWith("-") || /^[a-z][a-z0-9+.-]*:\/\//i.test(operand)
-      ? null
-      : `http://${operand}`,
-  ]) {
-    if (!candidate) continue;
-    try {
-      if (isCallbackHost(new URL(candidate).hostname, session)) return true;
-    } catch {
-      // Not a URL; the text check above covers literal mentions.
-    }
-  }
-  return false;
-}
-
-function readsDestinationsFromFile(words: string[]): boolean {
-  // Any position: wget may run behind sudo, env, timeout and the like.
-  const wget = words.some((word) => /(^|\/)wget$/.test(word));
-  return words.some(
-    (word) =>
-      /^(-K|--config)(=|$)|^-K./.test(word) ||
-      /^--input-file(=|$)/.test(word) ||
-      (wget && /^-i/.test(word)),
-  );
-}
-
-// Whether a command may send something to a test domain. Rather than model
-// every way curl or wget can be pointed at a host (operands, --url, --proxy,
-// -x, attached short options, config files), a command that names a test
-// domain anywhere except as the operand of a known payload option, or as a
-// key=value / Header:value item, gets no injected headers. Shell expansion
-// ($'…', "$VAR", $(…), backticks), curl URL globs ({…}, […]) and destinations
-// read from a file (curl -K/--config, wget -i/--input-file) can reach a test
-// domain the command never spells out, so with test domains present those
-// fail closed too. A
-// false match only withholds headers; http_request decides headers per URL.
-function requestsTestDomain(
-  command: string,
-  session: ResolverSession,
-): boolean {
-  const domains = session.callbackDomains ?? [];
-  if (domains.length === 0) return false;
-  if (/[$`]/.test(command)) return true;
-  const words = shellWords(command);
-  if (readsDestinationsFromFile(words)) return true;
-  return words.some(
-    (word, i) =>
-      !isPayloadOperand(word, words[i - 1]) &&
-      (/[[{]/.test(word) || mentionsCallbackHost(word, session)),
-  );
-}
 
 // Inject session/credential headers into a shell command line.
 // `commandHosts` comes from scopeGuard so the two callers share one scope view.
@@ -711,9 +575,6 @@ function requestsTestDomain(
 //   - `unknown-tool` headers exist but the tool/pipeline is unrecognized,
 //                    or a `2>&1`-redirected command spans multiple hosts;
 //                    the caller MUST fail closed
-//   - `test-domain-destination` the command names a callback domain outside a
-//                    payload (see requestsTestDomain); the caller MUST NOT
-//                    run it with headers
 export function applyHeadersToShellCommand(
   command: string,
   session: ResolverSession,
@@ -739,13 +600,6 @@ export function applyHeadersToShellCommand(
   const headers = resolveEffectiveHeaders(session, url);
   if (Object.keys(headers).length === 0) {
     return { command, status: "no-headers", tool: null };
-  }
-
-  // Injected flags ride every URL the tool requests, so a command that could
-  // reach a test domain would hand it the target's headers. Payload operands
-  // still keep them, so authenticated SSRF tests work.
-  if (requestsTestDomain(command, session)) {
-    return { command, status: "test-domain-destination", tool: null };
   }
 
   const tool = detectHttpToolOnCommand(command, allowDescriptorRedirect);
