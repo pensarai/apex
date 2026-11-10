@@ -679,11 +679,7 @@ async function fetchTargetWithRedirects(
   }
 }
 
-/**
- * Follows redirects one hop at a time through `sendHop`, authorizing every
- * hop before it is sent. For transports that would otherwise run their own
- * unguarded redirect loop.
- */
+// Authorizes redirect hops only; the caller has already authorized the first request.
 async function followGuardedRedirects(
   initialRequest: HttpRequest,
   o: HttpOpts | undefined,
