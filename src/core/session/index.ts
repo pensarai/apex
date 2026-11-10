@@ -71,6 +71,8 @@ const ScopeConstraintsObject = z.object({
   allowedHosts: z.string().array().optional(),
   allowedPorts: z.number().array().optional(),
   strictScope: z.boolean().optional(),
+  // Sign-in pages the browser may navigate to. Never targets, never sent headers.
+  identityProviderHosts: z.string().array().optional(),
 });
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;

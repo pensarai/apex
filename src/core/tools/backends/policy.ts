@@ -18,6 +18,7 @@ import {
   ScopeViolationError,
 } from "../../agents/offSecAgent/tools/scopeGuard";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
+import { isIdentityProviderNavigation } from "../../http/targetScope";
 
 export type BackendName = "fs" | "command" | "http" | "browser" | "inbox";
 
@@ -118,6 +119,7 @@ export const defaultPolicy: ToolPolicy = {
 
     if (call.backend === "browser" && call.op === "navigate") {
       const { url } = call.args as BrowserNavigatePolicyArgs;
+      if (isIdentityProviderNavigation(url, ctx.session)) return ALLOW;
       try {
         assertUrlInScope(url, ctx);
       } catch (e) {
