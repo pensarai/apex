@@ -1,5 +1,6 @@
 import { APICallError, type LanguageModelV3 } from "@ai-sdk/provider";
 import {
+  type Attributes,
   type Span,
   SpanStatusCode,
   type Tracer,
@@ -99,9 +100,16 @@ function describeFailure(error: unknown): string {
   }
 }
 
-export function createGenerationSpanTracker(): GenerationSpanTracker {
+/** `attributes` land on the root generation span; `pensar.*` keys survive trace export. */
+export function createGenerationSpanTracker(
+  attributes: Attributes = {},
+): GenerationSpanTracker {
   const inner = trace.getTracer("ai");
   let rootSpan: Span | null = null;
+  const captureRoot = (span: Span) => {
+    rootSpan = span;
+    span.setAttributes(attributes);
+  };
   // The SDK creates its spans via startActiveSpan (recordSpan); capture the
   // root generation span by wrapping the caller's callback.
   const tracer = {
@@ -111,7 +119,7 @@ export function createGenerationSpanTracker(): GenerationSpanTracker {
       context?: Parameters<Tracer["startSpan"]>[2],
     ) => {
       const span = inner.startSpan(name, options, context);
-      if (name === "ai.streamText") rootSpan = span;
+      if (name === "ai.streamText") captureRoot(span);
       return span;
     },
     // The API resolves overloads by arguments.length — forward with the
@@ -122,7 +130,7 @@ export function createGenerationSpanTracker(): GenerationSpanTracker {
         ...r: unknown[]
       ) => unknown;
       const capture = (span: Span, ...restArgs: unknown[]) => {
-        if (name === "ai.streamText") rootSpan = span;
+        if (name === "ai.streamText") captureRoot(span);
         return callback(span, ...restArgs);
       };
       const forwardArgs = [...rest.slice(0, -1), capture];
