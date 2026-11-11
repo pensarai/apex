@@ -158,7 +158,9 @@ export function getSavedModelForConfig(config: Config): ModelInfo | null {
   // Catalog outages must not silently switch an explicit provider selection.
   return (
     available ??
-    (id.startsWith("pensar:") && isProviderConfigured("pensar", config)
+    (id.startsWith("pensar:") &&
+    id.includes("/") &&
+    isProviderConfigured("pensar", config)
       ? getModelInfo(id)
       : null) ??
     (id.startsWith("ollama:") ? getModelInfo(id) : null) ??

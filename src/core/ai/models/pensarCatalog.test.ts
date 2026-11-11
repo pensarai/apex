@@ -59,6 +59,13 @@ describe("Pensar gateway model discovery", () => {
       getSavedModelForConfig({
         responsibleUseAccepted: true,
         pensarAPIKey: "key",
+        selectedModelId: "pensar:unknown-native-model",
+      }),
+    ).toBeNull();
+    expect(
+      getSavedModelForConfig({
+        responsibleUseAccepted: true,
+        pensarAPIKey: "key",
         selectedModelId: "pensar:vendor/saved",
         pensarCatalogError: "Unavailable",
       }),
