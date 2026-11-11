@@ -2,7 +2,7 @@ import type { LanguageModelMiddleware, ToolSet } from "ai";
 import type { InferenceRecorder, UsageRecorder } from "../ai";
 import type { RunContextRecorder } from "../runtime/runContext";
 import type { ToolExecutionRecorder } from "../runtime/runToolStore";
-import type { ToolBackends } from "../tools/backends/types";
+import type { CallbackBackend, ToolBackends } from "../tools/backends/types";
 import type { AgentDefinition } from "./defineAgent";
 import {
   type AgentHooks,
@@ -42,6 +42,7 @@ export interface RequiredAgentHooks {
   streamIdFactory: StreamIdFactory | undefined;
   smsInbox: SmsInbox | undefined;
   emailAdapterFor: EmailAdapterResolver | undefined;
+  callbacks: CallbackBackend | undefined;
   abortSignal: AbortSignal | undefined;
   extraTools: ToolSet | undefined;
   sandbox: UnifiedSandbox | undefined;
@@ -73,6 +74,7 @@ export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
     streamIdFactory: opts.streamIdFactory,
     smsInbox: opts.smsInbox,
     emailAdapterFor: opts.emailAdapterFor,
+    callbacks: opts.callbacks,
     abortSignal: opts.abortSignal,
     extraTools: opts.extraTools,
     sandbox: opts.sandbox,

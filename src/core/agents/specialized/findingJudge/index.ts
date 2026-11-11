@@ -33,6 +33,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "eventBus"
   | "sandbox"
   | "backends"
+  | "callbacks"
   | "target"
   | "enableThinking"
   | "thinkingEffort"
@@ -82,6 +83,7 @@ export async function judgeFinding(
       subagentName: ctx.subagentName,
       sandbox: ctx.sandbox,
       backends: ctx.backends,
+      callbacks: ctx.callbacks,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
