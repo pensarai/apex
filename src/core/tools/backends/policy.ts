@@ -14,6 +14,7 @@ import {
 } from "../../agents/offSecAgent/tools/destructiveGuard";
 import {
   assertCommandInScope,
+  assertRequestInScope,
   assertUrlInScope,
   ScopeViolationError,
 } from "../../agents/offSecAgent/tools/scopeGuard";
@@ -101,7 +102,7 @@ export const defaultPolicy: ToolPolicy = {
         call.args as HttpPolicyArgs;
       try {
         if (!(extract === "readability" && fetchToken)) {
-          assertUrlInScope(url, ctx);
+          assertRequestInScope(url, ctx);
         }
         assertHttpActionAllowed({ method, url, body, headers }, ctx);
       } catch (e) {

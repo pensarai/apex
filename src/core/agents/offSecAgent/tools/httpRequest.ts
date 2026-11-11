@@ -15,7 +15,7 @@ import type { HttpResponse } from "../../../tools/backends/types";
 import { agentLogsDir } from "./agentScratch";
 import { assertHttpActionAllowed } from "./destructiveGuard";
 import {
-  assertUrlInScope,
+  assertRequestInScope,
   resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
@@ -331,7 +331,7 @@ COMMON TESTING PATTERNS:
       const effectiveTimeoutMs = resolvedTimeout.ms ?? DEFAULT_HTTP_TIMEOUT_MS;
 
       try {
-        assertUrlInScope(url, ctx);
+        assertRequestInScope(url, ctx);
       } catch (e) {
         if (e instanceof ScopeViolationError) {
           return notSent(e.message);

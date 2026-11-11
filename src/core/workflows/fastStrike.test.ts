@@ -43,4 +43,14 @@ describe("Fast Strike system prompt", () => {
     expect(prompt).not.toContain("document_vulnerability");
     expect(prompt).not.toContain("validation judge");
   });
+
+  it("points out-of-band testing at the host's callback domains instead of the local listener", () => {
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("start_callback_listener");
+    const prompt = buildFastStrikeSystemPrompt("native", [
+      "3f2b8c1e.cb.example.net",
+    ]);
+    expect(prompt).toContain("3f2b8c1e.cb.example.net");
+    expect(prompt).toContain("read_callback_hits");
+    expect(prompt).not.toContain("callback_listener");
+  });
 });

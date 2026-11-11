@@ -219,6 +219,17 @@ describe("LocalBackends.command streaming", () => {
   });
 });
 
+describe("LocalBackends.callbacks", () => {
+  it("exposes the host's callbacks backend, and nothing without one", () => {
+    const callbacks = {
+      domains: ["probe.cb.example.net"],
+      readHits: vi.fn(),
+    };
+    expect(LocalBackends(makeCtx({ callbacks })).callbacks).toBe(callbacks);
+    expect(LocalBackends(makeCtx({})).callbacks).toBeUndefined();
+  });
+});
+
 describe("LocalBackends.http destructive guard", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

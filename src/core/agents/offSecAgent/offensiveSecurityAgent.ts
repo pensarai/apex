@@ -718,6 +718,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       callbackListeners: this.callbackListeners,
       smsInbox: input.smsInbox,
       emailAdapterFor: input.emailAdapterFor,
+      callbacks: input.callbacks,
       languageModelMiddleware: input.languageModelMiddleware,
       usageRecorder: input.usageRecorder,
       toolExecutionContext: input.toolExecutionContext,
