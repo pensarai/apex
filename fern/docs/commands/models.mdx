@@ -17,6 +17,8 @@ The `/models` command opens the model selection interface where you can view ava
 
 The models interface displays all available models from your configured providers, organized by provider name. You can navigate through the list and select your preferred model.
 
+When connected to Pensar Console, the **Pensar** section also loads the gateway's current OpenRouter model catalog. Select a model there to bill its usage to your Pensar workspace credits; no OpenRouter key is needed. Available inputs, tool calling, and reasoning options depend on the selected model. If discovery is unavailable, Apex shows an error and preserves your saved selection.
+
 When no model is explicitly selected, Apex automatically picks a default based on your configured provider, prioritized as: Pensar → Anthropic → OpenAI → Google → OpenRouter → Bedrock.
 
 <Callout intent="info">

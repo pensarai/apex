@@ -31,6 +31,7 @@ import { OPENAI_MODELS } from "./openai";
 // OpenRouter — curated manually (SDK doesn't enumerate models).
 import { OPENROUTER_MAX_OUTPUT_TOKENS, OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
+import { getPensarCatalogModel } from "./pensarCatalog";
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
   ...ANTHROPIC_MODELS,
@@ -46,6 +47,14 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {
+  if (model.startsWith("pensar:") && model.includes("/"))
+    return (
+      getPensarCatalogModel(model) ?? {
+        id: model,
+        name: model.slice(7),
+        provider: "pensar",
+      }
+    );
   if (model.startsWith("ollama:"))
     return {
       id: model,
@@ -100,6 +109,12 @@ export function getMaxOutputTokens(
   hoonifyModels?: HoonifyModel[],
   ollama?: OllamaCatalog,
 ): number {
+  const gatewayModel = getPensarCatalogModel(modelId);
+  if (gatewayModel)
+    return (
+      gatewayModel.maxOutputTokens ??
+      Math.min(16_384, Math.floor((gatewayModel.contextLength ?? 200_000) / 2))
+    );
   if (modelId.startsWith("ollama:"))
     return resolveOllamaModel(modelId, ollama).model.maxOutputTokens;
   if (modelId.startsWith("hoonify:"))

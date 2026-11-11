@@ -7,6 +7,7 @@ import {
 import type { OpenAIReasoningEffort, ThinkingEffort } from "./ai";
 import { getClaudeCapabilities, getModelInfo } from "./models";
 import openRouterReasoning from "./models/openrouter-reasoning.json";
+import { getPensarCatalogModel } from "./models/pensarCatalog";
 import {
   CONCENTRATE_GLM_5_3_MODEL_ID,
   CONCENTRATE_QWEN_REASONING_EFFORTS,
@@ -177,18 +178,23 @@ export function getReasoningCapabilities(
     provider === "inception"
   )
     return UNKNOWN;
-  if (provider === "openrouter") {
-    const metadata = (
-      openRouterReasoning.models as Record<
-        string,
-        {
-          mandatory?: boolean;
-          default_enabled?: boolean;
-          supported_efforts?: string[] | null;
-          default_effort?: string;
-        } | null
-      >
-    )[modelId];
+  if (
+    provider === "openrouter" ||
+    (provider === "pensar" && modelId.includes("/"))
+  ) {
+    const metadata =
+      getPensarCatalogModel(modelId)?.reasoning ??
+      (
+        openRouterReasoning.models as Record<
+          string,
+          {
+            mandatory?: boolean;
+            default_enabled?: boolean;
+            supported_efforts?: string[] | null;
+            default_effort?: string;
+          } | null
+        >
+      )[modelId.replace(/^pensar:/, "")];
     if (!metadata) return UNKNOWN;
     const allowed: readonly ReasoningEffort[] = [
       "none",
