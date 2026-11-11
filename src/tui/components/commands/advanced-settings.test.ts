@@ -3,6 +3,12 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 for (const scenario of [
+  { name: "selects Default v2", mode: "default-v2" },
+  { name: "restores Default v2", mode: "resume-default-v2" },
+  {
+    name: "keeps Default v2 controls visible at 60x18",
+    mode: "default-v2-compact",
+  },
   {
     name: "saves fractional seconds as integer milliseconds",
     mode: "lance-time",

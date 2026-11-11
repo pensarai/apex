@@ -14,7 +14,7 @@ vi.mock("../config", () => ({
   },
 }));
 
-const { create } = await import("./index");
+const { create, SessionInfoObject } = await import("./index");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -22,6 +22,38 @@ afterEach(() => {
 });
 
 describe("explicit session configuration", () => {
+  it("preserves v2 and its finding policy in the session snapshot used for resume", async () => {
+    const session = await create({
+      name: "adaptive operator",
+      targets: [],
+      config: {
+        mode: "operator",
+        operatorSettings: {
+          initialMode: "auto",
+          requireApproval: false,
+          enableSuggestions: true,
+          defaultV2Mode: true,
+          findingPolicy: "external",
+        },
+      },
+    });
+    const restored = SessionInfoObject.parse(
+      JSON.parse(JSON.stringify(session)),
+    );
+    expect(restored.config?.operatorSettings).toMatchObject({
+      defaultV2Mode: true,
+      findingPolicy: "external",
+    });
+    expect(storage.write).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        config: expect.objectContaining({
+          operatorSettings: restored.config?.operatorSettings,
+        }),
+      }),
+    );
+  });
+
   it("does not persist ambient SMTP or headers for an admitted configuration", async () => {
     vi.stubEnv("RESEND_API_KEY", "ambient-smtp-secret");
     const session = await create({
