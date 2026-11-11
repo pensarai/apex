@@ -304,6 +304,8 @@ export default function OperatorDashboard({
 
   // Agent/status state
   const [status, setStatus] = useState<DashboardStatus>("idle");
+  const abortDrainRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingV2InputRef = useRef<ModelMessage[]>([]);
   const agentClientRef = useRef<ReturnType<
     typeof createOffensiveSecurityAgentClient
   > | null>(null);
@@ -837,10 +839,11 @@ export default function OperatorDashboard({
       displayEvents.finish();
       // Abort any previous run before starting a new one
       if (agentClientRef.current) {
-        agentClientRef.current.abort();
+        await agentClientRef.current.abort();
         agentClientRef.current = null;
       }
 
+      await abortDrainRef.current;
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
@@ -868,7 +871,7 @@ export default function OperatorDashboard({
         );
         conversationRef.current = nextMessages;
 
-        if (sessionRef.current) {
+        if (!defaultV2Mode && sessionRef.current) {
           try {
             const mp = join(sessionRef.current.rootPath, "messages.json");
             writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
@@ -976,7 +979,17 @@ export default function OperatorDashboard({
       const commonInput = {
         prompt: prompt ?? "",
         model: model.id,
-        messages: nextMessages,
+        ...(agentMode === "default-v2"
+          ? {
+              newMessages:
+                prompt === null
+                  ? pendingV2InputRef.current
+                  : [
+                      ...pendingV2InputRef.current,
+                      { role: "user" as const, content: prompt },
+                    ],
+            }
+          : { messages: nextMessages }),
         stopWhen: [
           stepCountIs(10000),
           hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
@@ -1014,6 +1027,7 @@ export default function OperatorDashboard({
         },
       };
 
+      pendingV2InputRef.current = [];
       const wandbSession = session ?? sessionRef.current;
       if (wandbSession) {
         await runTrace.tryAttach(wandbSession);
@@ -1117,7 +1131,13 @@ export default function OperatorDashboard({
         // messages.json is the single source of truth — after summarization
         // the agent discards stale history, so reading back avoids
         // re-accumulating old messages that would overflow the context.
-        if (gen === generationRef.current) {
+        if (
+          gen === generationRef.current &&
+          defaultV2Mode &&
+          agentResult.messages
+        ) {
+          conversationRef.current = agentResult.messages;
+        } else if (gen === generationRef.current) {
           try {
             const rootPath = agentResult.session.rootPath;
             const mp = join(rootPath, "messages.json");
@@ -1159,7 +1179,7 @@ export default function OperatorDashboard({
           // status to "waiting" over a rolled-back conversation.
           pendingToolCallIdRef.current = null;
           setPendingQuestions(null);
-          if (sessionRef.current) {
+          if (!defaultV2Mode && sessionRef.current) {
             try {
               const mp = join(sessionRef.current.rootPath, "messages.json");
               writeFileSync(mp, JSON.stringify(prevMessages, null, 2));
@@ -1629,7 +1649,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     generationRef.current++;
     displayEvents.finish();
     const recoveryMessages = displayMessagesRef.current;
-    agentClientRef.current.abort();
+    abortDrainRef.current = agentClientRef.current.abort();
     agentClientRef.current = null;
     commandCancelledRef.current = false;
 
@@ -1659,7 +1679,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     // when it was just created via onSessionReady but React hasn't
     // re-rendered yet (e.g. aborting on the very first message).
     const activeSession = sessionRef.current;
-    if (activeSession) {
+    if (activeSession && !defaultV2Mode) {
       conversationRef.current = recoverAbortedTranscript({
         preserveHistory: activeSession.config?.operatorSettings?.defaultV2Mode,
         rootPath: activeSession.rootPath,
@@ -1690,12 +1710,26 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     subagentStore.setState,
     displayEvents,
     setMessages,
+    defaultV2Mode,
   ]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
+
+      if (defaultV2Mode) {
+        pendingV2InputRef.current = [
+          {
+            role: "user",
+            content: `Answers to ${toolCallId}: ${JSON.stringify(result)}`,
+          },
+        ];
+        pendingToolCallIdRef.current = null;
+        setPendingQuestions(null);
+        runAgentRef.current(null);
+        return;
+      }
 
       // Bedrock Converse / Anthropic requires the { type: 'json', value }
       // wrapper around the answers payload.
@@ -1724,7 +1758,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
       runAgentRef.current(null);
     },
-    [],
+    [defaultV2Mode],
   );
 
   const handleQuestionsSubmit = useCallback(
@@ -1893,7 +1927,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (pendingQuestions && key.ctrl && key.name === "c") {
       key.preventDefault?.();
       const toolCallId = pendingToolCallIdRef.current;
-      if (toolCallId) {
+      if (toolCallId && defaultV2Mode) {
+        pendingV2InputRef.current = [
+          {
+            role: "user",
+            content: `Questions ${toolCallId} cancelled by the user.`,
+          },
+        ];
+      } else if (toolCallId) {
         conversationRef.current = rewriteToolResultOutput(
           conversationRef.current,
           toolCallId,

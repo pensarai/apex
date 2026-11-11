@@ -215,6 +215,8 @@ export interface AgentHooks {
 }
 
 export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
+  /** V2 input delta; an empty array resumes without inventing a user turn. */
+  newMessages?: ModelMessage[];
   attackSurfaceArtifactsPath?: string;
   /** Overrides the system prompt supplied by the selected mode. */
   system?: string;

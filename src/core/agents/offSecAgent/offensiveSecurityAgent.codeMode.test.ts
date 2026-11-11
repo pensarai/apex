@@ -107,8 +107,9 @@ async function executeDirect(tools: ToolSet, name: string) {
 }
 
 describe("agent code mode", () => {
-  it("discourages v2 delegation consistently in direct tools and code-mode discovery", async () => {
+  it("excludes legacy workflows from direct tools and code-mode discovery in v2", async () => {
     const names = [
+      "document_endpoint",
       "spawn_coding_agent",
       "spawn_pentest_agent",
       "spawn_recon_agent",
@@ -117,32 +118,37 @@ describe("agent code mode", () => {
       "run_attack_surface",
       "run_pentest_workflow",
     ];
+    const executeLegacy = vi.fn();
     const { request: standard } = makeAgent({ activeTools: names });
     const { request: v2 } = makeAgent({
       mode: "default-v2",
       activeTools: names,
+      extraTools: {
+        document_endpoint: tool({
+          inputSchema: z.object({}),
+          execute: executeLegacy,
+        }),
+      },
     });
-    const preference = "Work directly in the primary agent by default.";
-    expect(v2.system).toContain(preference);
-    expect(standard.system).not.toContain(preference);
+    expect(v2.system).toContain(
+      "Work directly in the primary agent by default.",
+    );
     for (const name of names) {
-      expect(v2.activeTools).toContain(name);
-      expect(v2.tools[name].execute).toBeTypeOf("function");
-      expect(v2.tools[name].description).toContain(
-        standard.tools[name].description,
-      );
-      expect(v2.tools[name].description).toEqual(
-        expect.stringMatching(
-          /^Work directly in the primary agent by default\./,
-        ),
-      );
-      expect(standard.tools[name].description).not.toContain(preference);
+      expect(standard.tools[name].execute).toBeTypeOf("function");
+      expect(v2.activeTools).not.toContain(name);
+      expect(v2.tools).not.toHaveProperty(name);
     }
+    expect(v2.activeTools).toContain("document_endpoint_v2");
     const discovered = await execute(v2.tools, "exec", {
-      code: 'text((await tools.describe("spawn_coding_agent")).description)',
+      code: 'text((await tools.describe("document_endpoint_v2")).description)',
     });
     expect(discovered.status).toBe("completed");
-    expect(discovered.output).toBe(v2.tools.spawn_coding_agent.description);
+    expect(discovered.output).toContain("records only the supplied facts");
+    const blocked = await execute(v2.tools, "exec", {
+      code: "await tools.document_endpoint({})",
+    });
+    expect(blocked.status).toBe("failed");
+    expect(executeLegacy).not.toHaveBeenCalled();
   });
 
   it("keeps v2 capabilities available across conversational pivots without bypassing approval", async () => {
@@ -151,7 +157,7 @@ describe("agent code mode", () => {
     const write = vi.fn(async () => ({ success: true }));
     const mutation = tool({ inputSchema: z.object({}), execute: write });
     const skillsRegistry = new SkillsRegistry();
-    const tools = ["update_workspace_app", "read_skill", "spawn_coding_agent"];
+    const tools = ["update_workspace_app", "read_skill", "http_request"];
     for (const prompt of [
       "Repair the workspace inventory",
       "apply now",

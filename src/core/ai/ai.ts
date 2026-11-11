@@ -82,6 +82,10 @@ import {
   runWithNativeRolloutOperation,
   withNativeRolloutEvidenceModel,
 } from "./native-rollout-evidence";
+import {
+  nativeCompactionWindow,
+  supportsNativeCompaction,
+} from "./nativeCompaction";
 import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
 import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import {
@@ -919,6 +923,12 @@ function wrapStreamWithErrorHandler(
                 error instanceof CompactionRejectedError ||
                 checkIfContextLengthError(error);
               if (
+                isCtxError &&
+                opts.nativeCompaction &&
+                supportsNativeCompaction(opts.model)
+              )
+                throw error;
+              if (
                 opts.primaryModelOnly &&
                 (!opts.runContextCompaction || !isCtxError)
               )
@@ -1150,6 +1160,11 @@ function wrapStreamWithErrorHandler(
 
                 try {
                   if (error instanceof CompactionRejectedError) throw error;
+                  if (
+                    opts.nativeCompaction &&
+                    supportsNativeCompaction(opts.model)
+                  )
+                    throw error;
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
                     {
@@ -1502,6 +1517,8 @@ export interface StreamResponseOpts {
   harness?: AgentHarness;
   /** Compact explicitly instead of rewriting old results or restarting without history. */
   preserveHistory?: boolean;
+  /** Provider-native compaction for supported direct OpenAI Responses models. */
+  nativeCompaction?: boolean;
   /** Disables model repair and general recovery; compaction requires explicit admission. */
   primaryModelOnly?: boolean;
   runContextCompaction?: <T>(work: () => Promise<T>) => Promise<T>;
@@ -1649,6 +1666,10 @@ function streamResponseWithinOperation(
   nativeRecovery?: NativeStreamRecovery,
 ): StreamTextResult<ToolSet, Context, never> {
   const compactionState = opts._compaction ?? {};
+  const nativeCompaction =
+    opts.nativeCompaction && supportsNativeCompaction(opts.model);
+  if (nativeCompaction && opts.messages)
+    opts = { ...opts, messages: nativeCompactionWindow(opts.messages) };
   // One effective tool selection per stream, before any fitting: proactive
   // fit, provider schemas, execution, repair, and every continuation path
   // below spread this same opts object, so they must all see the filtered
@@ -1835,6 +1856,7 @@ function streamResponseWithinOperation(
   );
   const maxOutputTokens = streamOutputTokenLimit(opts);
   if (
+    !nativeCompaction &&
     messages &&
     (!opts.primaryModelOnly || opts.runContextCompaction) &&
     !opts._proactiveSummaryFailures &&
@@ -1869,7 +1891,7 @@ function streamResponseWithinOperation(
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
   let proactiveFitFailed = false;
-  if (messages && messages.length > 0) {
+  if (!nativeCompaction && messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
       preserveHistory: opts.preserveHistory,
       contextWindow,
@@ -1971,6 +1993,7 @@ function streamResponseWithinOperation(
   const providerOptions = mergeProviderOptions(
     reasoningProviderOptions,
     openRouterProviderOptions,
+    nativeCompaction ? { openai: { store: false } } : undefined,
   );
 
   const repairCapabilities = getReasoningCapabilities(
@@ -2186,7 +2209,9 @@ function streamResponseWithinOperation(
           ]),
           step.steps.flatMap((previous) => previous.toolCalls),
         );
-        if (step.stepNumber > 0) {
+        if (nativeCompaction)
+          stepMessages = nativeCompactionWindow(stepMessages);
+        if (!nativeCompaction && step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
             (opts._proactiveSummaryFailures ?? 0) <
@@ -2253,6 +2278,32 @@ function streamResponseWithinOperation(
           messages: stepMessages,
           responseMessageOffset: responseMessageLength,
         });
+        if (nativeCompaction) {
+          const threshold = Math.max(
+            1,
+            Math.floor(
+              (contextWindow -
+                maxOutputTokens -
+                estimatedOverheadTokens -
+                inputSafetyMarginTokens) *
+                0.75,
+            ),
+          );
+          return {
+            messages: stepMessages,
+            providerOptions: mergeProviderOptions(providerOptions, {
+              openai: /^gpt-6(?:[.-]|$)/.test(model)
+                ? {
+                    compactionTrigger: preparedInputEstimateTokens >= threshold,
+                  }
+                : {
+                    contextManagement: [
+                      { type: "compaction", compactThreshold: threshold },
+                    ],
+                  },
+            }),
+          };
+        }
         // Mark the last message so the growing conversation caches incrementally
         if (cacheBreakpoint) {
           return {
@@ -2570,6 +2621,7 @@ function streamResponseWithinOperation(
       error instanceof Error ? error.message : String(error);
 
     if (isContextLengthError) {
+      if (nativeCompaction) throw error;
       if (!silent) {
         log.warn(
           `Context length error, summarizing ${messagesContainer.current.length} messages`,
