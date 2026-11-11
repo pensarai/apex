@@ -973,6 +973,17 @@ export function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
   return fixToolOutputs(result);
 }
 
+export function prepareConversationMessages(
+  messages: ModelMessage[],
+  options: { preserveHistory?: boolean; resume?: boolean } = {},
+): ModelMessage[] {
+  // Rewriting consumed user turns can invalidate provider reasoning and discard attachments.
+  if (options.preserveHistory) return fixToolOutputs(messages);
+  return normalizeMessages(
+    options.resume ? getResumeMessages(messages) : messages,
+  );
+}
+
 /**
  * Walk through messages and upgrade any tool-result parts whose `output` is a
  * raw string to the structured `{ type: "text", value: string }` format

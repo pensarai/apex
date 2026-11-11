@@ -995,6 +995,7 @@ function wrapStreamWithErrorHandler(
                           opts.model,
                         ),
                         tools: opts.tools,
+                        preserveHistory: opts.preserveHistory,
                         sessionPath: opts.sessionPath,
                         telemetry: {
                           trigger: "context_overflow",
@@ -1109,15 +1110,10 @@ function wrapStreamWithErrorHandler(
                     yield chunk;
                   }
                 } catch (summarizeError) {
-                  // Fall through to minimal restart for context or rejected-summary
-                  // errors. For everything else — auth failures, network
-                  // errors, abort signals, the typed terminal
-                  // `ContextLengthExhaustedError`, or non-`Error` throws —
-                  // propagate immediately. Without this, an aborted call
-                  // would spawn a new provider request, and a transient
-                  // auth failure would burn an extra cycle that fails
-                  // identically.
+                  // Preserved history cannot fall back to a reset that discards evidence.
+                  // Only legacy context failures may take that recovery path.
                   if (
+                    opts.preserveHistory ||
                     opts.primaryModelOnly ||
                     summarizeError instanceof ContextLengthExhaustedError ||
                     (summarizeError instanceof Error &&
@@ -1444,6 +1440,8 @@ export interface StreamResponseOpts {
    * cap spans compaction and retry restarts. Unset keeps the default shapes.
    */
   harness?: AgentHarness;
+  /** Compact explicitly instead of rewriting old results or restarting without history. */
+  preserveHistory?: boolean;
   /** Disables model repair and general recovery; compaction requires explicit admission. */
   primaryModelOnly?: boolean;
   runContextCompaction?: <T>(work: () => Promise<T>) => Promise<T>;
@@ -1802,6 +1800,7 @@ function streamResponseWithinOperation(
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
+      preserveHistory: opts.preserveHistory,
       contextWindow,
       maxOutputTokens,
       system: systemWithToolPolicy,
@@ -2139,6 +2138,7 @@ function streamResponseWithinOperation(
             });
           }
           const fitted = fitMessagesToContext(stepMessages, {
+            preserveHistory: opts.preserveHistory,
             contextWindow,
             maxOutputTokens,
             system: effectiveSystem,

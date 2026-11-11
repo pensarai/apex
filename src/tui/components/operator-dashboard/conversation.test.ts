@@ -289,6 +289,34 @@ describe("recoverAbortedTranscript", () => {
     writeFileSync(messagesPath(), JSON.stringify(value, null, 2), "utf-8");
   }
 
+  it("preserves v2 history when an interrupted turn is reloaded", () => {
+    const conversation: ModelMessage[] = Array.from({ length: 80 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `evidence ${i}`,
+    }));
+    conversation.push(
+      { role: "user", content: "Keep the original scope." },
+      {
+        role: "user",
+        content: [{ type: "text", text: "Investigate the parser." }],
+      },
+    );
+    writeDisk(conversation);
+    const recovered = recoverAbortedTranscript({
+      rootPath,
+      conversation: [],
+      partialText: "",
+      displayMessages: [],
+      preserveHistory: true,
+    });
+    expect(recovered.slice(0, conversation.length)).toEqual(conversation);
+    expect(recovered.at(-1)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "[Response interrupted by user.]" }],
+    });
+    expect(readDisk()).toEqual(recovered);
+  });
+
   const userMessage: ModelMessage = {
     role: "user",
     content: [{ type: "text", text: "scan the target" }],

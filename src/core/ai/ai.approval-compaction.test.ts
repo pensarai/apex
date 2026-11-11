@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   LanguageModelV3CallOptions,
   LanguageModelV3StreamPart,
@@ -242,6 +245,181 @@ function setup({ readOutput = "ok" }: { readOutput?: string } = {}) {
 }
 
 const user: ModelMessage = { role: "user", content: "go" };
+
+describe("preserved model history", () => {
+  const extra = { harness: "general", preserveHistory: true };
+
+  it("replays the same reasoning and tool-result prefix through ordinary tool rounds", async () => {
+    const t = setup();
+    await t.drive(
+      t.model({ main: [readStep("one"), readStep("two"), "ok"] }),
+      [
+        user,
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              text: "A retained hint.",
+              providerOptions: {
+                openai: {
+                  itemId: "rs_hint",
+                  reasoningEncryptedContent: "opaque-hint",
+                },
+              },
+            },
+          ],
+        },
+        { role: "user", content: "Follow the hint." },
+      ],
+      { extra },
+    );
+    expect(t.mainRequests).toHaveLength(3);
+    for (let i = 1; i < t.mainRequests.length; i++) {
+      const previous = t.mainRequests[i - 1].prompt;
+      expect(t.mainRequests[i].prompt.slice(0, previous.length)).toEqual(
+        previous,
+      );
+    }
+    expect(JSON.stringify(t.mainRequests[2].prompt)).toContain("opaque-hint");
+    expect(t.summaryRequests).toHaveLength(0);
+  });
+
+  it("compacts an oversized resumed conversation before dispatching the research turn", async () => {
+    const sessionPath = mkdtempSync(join(tmpdir(), "apex-resume-"));
+    try {
+      const t = setup();
+      const evidence = "retained response ".repeat(5_000);
+      const latest: ModelMessage = {
+        role: "user",
+        content: "Prove the boundary issue; keep the original scope.",
+      };
+      await t.drive(
+        t.model({ main: ["ok"] }),
+        [
+          user,
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "old",
+                toolName: "read",
+                input: { a: "x" },
+              },
+            ],
+          },
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "old",
+                toolName: "read",
+                output: { type: "text", value: evidence },
+              },
+            ],
+          },
+          latest,
+        ],
+        { contextLength: SMALL, extra: { ...extra, sessionPath } },
+      );
+      expect(t.summaryRequests).toHaveLength(1);
+      expect(JSON.stringify(t.summaryRequests[0].prompt)).toContain(evidence);
+      expect(t.prepared[0]).toEqual([
+        { role: "user", content: compactedHistoryNotice("sum") },
+        latest,
+      ]);
+      expect(t.mainRequests).toHaveLength(1);
+    } finally {
+      rmSync(sessionPath, { recursive: true, force: true });
+    }
+  });
+
+  it("compacts explicitly after a tool result instead of shortening consumed results", async () => {
+    const sessionPath = mkdtempSync(join(tmpdir(), "apex-history-"));
+    try {
+      const t = setup({ readOutput: "new evidence ".repeat(5_000) });
+      const oldOutput = "prior evidence ".repeat(700);
+      const correction: ModelMessage = {
+        role: "user",
+        content: "Focus on request boundaries. Preserve the exact capture.",
+      };
+      const history: ModelMessage[] = [
+        user,
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              text: "Inspect the capture.",
+              providerOptions: {
+                openai: { itemId: "rs_1", reasoningEncryptedContent: "opaque" },
+              },
+            },
+            {
+              type: "tool-call",
+              toolCallId: "prior",
+              toolName: "read",
+              input: { a: "capture" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "prior",
+              toolName: "read",
+              output: { type: "text", value: oldOutput },
+            },
+          ],
+        },
+        correction,
+      ];
+      const original = structuredClone(history);
+      await t.drive(t.model({ main: [readStep("next"), "ok"] }), history, {
+        contextLength: SMALL,
+        extra: { ...extra, sessionPath },
+      });
+      expect(t.summaryRequests).toHaveLength(1);
+      expect(JSON.stringify(t.mainRequests[0].prompt)).toContain(oldOutput);
+      expect(JSON.stringify(t.mainRequests[0].prompt)).toContain("opaque");
+      expect(JSON.stringify(t.summaryRequests[0].prompt)).toContain(oldOutput);
+      expect(JSON.stringify(t.summaryRequests[0].prompt)).toContain(
+        "new evidence ".repeat(5_000),
+      );
+      expect(t.prepared.at(-1)).toEqual([
+        { role: "user", content: compactedHistoryNotice("sum") },
+        correction,
+      ]);
+      expect(history).toEqual(original);
+      expect(t.executed).toEqual(["read"]);
+    } finally {
+      rmSync(sessionPath, { recursive: true, force: true });
+    }
+  });
+
+  it("does not restart from only the prompt when compaction cannot succeed", async () => {
+    const t = setup();
+    const onSummarized = vi.fn();
+    await expect(
+      t.drive(
+        t.model({ main: ["context-error", "ok"], summary: "context-error" }),
+        [
+          user,
+          { role: "assistant", content: "A working primitive must survive." },
+          { role: "user", content: "Continue to prove impact." },
+        ],
+        { extra: { ...extra, onSummarized } },
+      ),
+    ).rejects.toThrow();
+    expect(t.mainRequests).toHaveLength(1);
+    expect(onSummarized).not.toHaveBeenCalled();
+  });
+});
+
 const padded: ModelMessage[] = [
   user,
   { role: "assistant", content: PADDING },

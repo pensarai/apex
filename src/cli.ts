@@ -682,7 +682,7 @@ Model:    ${model}
 
 async function runOperator() {
   const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
-  const { sessions, normalizeMessages, getResumeMessages } = await import(
+  const { sessions, prepareConversationMessages } = await import(
     "./core/session"
   );
   const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
@@ -825,7 +825,10 @@ ${sep}\n`);
           if (existsSync(messagesPath)) {
             const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
             const allMessages: ModelMessage[] = Array.isArray(raw) ? raw : [];
-            messages = normalizeMessages(getResumeMessages(allMessages));
+            messages = prepareConversationMessages(allMessages, {
+              preserveHistory: defaultV2Mode,
+              resume: true,
+            });
           }
 
           if (defaultV2Mode && !process.stdin.isTTY) break;
@@ -834,10 +837,10 @@ ${sep}\n`);
           currentPrompt = followUp;
           // Append the follow-up as a user message so the conversation
           // ends with a user turn (required by Anthropic models).
-          messages = normalizeMessages([
-            ...(messages ?? []),
-            { role: "user" as const, content: followUp },
-          ]);
+          messages = prepareConversationMessages(
+            [...(messages ?? []), { role: "user", content: followUp }],
+            { preserveHistory: defaultV2Mode },
+          );
         }
       } finally {
         rl.close();
