@@ -36,7 +36,11 @@ describe("git_status / git_diff", () => {
       const tool = gitStatus(ctx);
       const result = (await tool.execute?.(
         { toolCallDescription: "status" },
-        { toolCallId: "t1", messages: [] },
+        {
+          context: {},
+          toolCallId: "t1",
+          messages: [],
+        },
       )) as GitStatusResult;
       expect(result.success).toBe(true);
       expect(result.status).toMatch(/a\.ts/);
@@ -52,7 +56,11 @@ describe("git_status / git_diff", () => {
       const tool = gitDiff(ctx);
       const result = (await tool.execute?.(
         { toolCallDescription: "diff" },
-        { toolCallId: "t1", messages: [] },
+        {
+          context: {},
+          toolCallId: "t1",
+          messages: [],
+        },
       )) as GitDiffResult;
       expect(result.success).toBe(true);
       expect(result.diff).toContain("-export const a = 1;");
@@ -91,7 +99,11 @@ describe("git_status truncated capture evidence", () => {
   const call = async (ctx: ToolContext) =>
     (await gitStatus(ctx).execute?.(
       { toolCallDescription: "status" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as GitStatusResult;
 
   it("reports incomplete evidence for a truncated nonempty prefix", async () => {
@@ -177,7 +189,11 @@ describe("git_status truncated capture evidence", () => {
     } as unknown as ToolContext;
     const result = (await gitDiff(ctx).execute?.(
       { toolCallDescription: "diff" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as GitDiffResult;
     expect(result.success).toBe(true);
     expect(result.error).toBe("");
@@ -202,7 +218,11 @@ describe("git backend boundary", () => {
     } as unknown as ToolContext;
     const result = (await gitStatus(ctx).execute?.(
       { toolCallDescription: "status" },
-      { toolCallId: "git", messages: [] },
+      {
+        context: {},
+        toolCallId: "git",
+        messages: [],
+      },
     )) as GitStatusResult;
     expect(result.status).toBe("M remote.ts");
     expect(result.cwd).toBe("/remote/repo");
@@ -227,7 +247,11 @@ describe("git backend boundary", () => {
     await expect(
       gitDiff(ctx).execute?.(
         { path: "src", staged: true, toolCallDescription: "diff" },
-        { toolCallId: "git", messages: [] },
+        {
+          context: {},
+          toolCallId: "git",
+          messages: [],
+        },
       ),
     ).rejects.toBe(failure);
     expect(git).toHaveBeenCalledOnce();

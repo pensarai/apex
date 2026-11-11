@@ -56,7 +56,11 @@ const executeList = listTool(ctx).execute;
 const executeGet = getTool(ctx).execute;
 if (!executeAdd || !executeList || !executeGet)
   throw new Error("Memory tools must be executable");
-const options = { toolCallId: "call-123", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "call-123",
+  messages: [],
+};
 const input = {
   title: "note",
   content: "details",

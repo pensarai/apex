@@ -42,6 +42,7 @@ describe("Lance's optional Apex judge", () => {
     const tools = runtime.tools({});
     await Promise.resolve(
       tools.submit_objective.execute!(candidate, {
+        context: {},
         toolCallId: "proof",
         messages: [],
       }),

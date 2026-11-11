@@ -156,7 +156,11 @@ async function measure(
       Array.from({ length: requests }, () =>
         tool.execute?.(
           { query: "auth", limit: 3, toolCallDescription: "bench" },
-          { toolCallId: "tc_bench", messages: [] },
+          {
+            context: {},
+            toolCallId: "tc_bench",
+            messages: [],
+          },
         ),
       ),
     )) as ToolResult[];

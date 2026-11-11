@@ -8,7 +8,7 @@ import {
   type ToolSet,
   tool,
 } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { CodeCellResult } from "../../code-mode";
@@ -75,7 +75,11 @@ async function execute(
   tools: ToolSet,
   name: string,
   input: unknown,
-  options: ToolExecutionOptions = { toolCallId: "exec_test", messages: [] },
+  options: ToolExecutionOptions<Record<string, unknown>> = {
+    context: {},
+    toolCallId: "exec_test",
+    messages: [],
+  },
 ) {
   const implementation = tools[name].execute;
   if (!implementation) throw new Error(`Missing execute for ${name}`);
@@ -86,7 +90,14 @@ async function execute(
 async function executeDirect(tools: ToolSet, name: string) {
   const implementation = tools[name].execute;
   if (!implementation) throw new Error(`Missing execute for ${name}`);
-  const result = implementation({}, { toolCallId: "direct", messages: [] });
+  const result = implementation(
+    {},
+    {
+      context: {},
+      toolCallId: "direct",
+      messages: [],
+    },
+  );
   if (result && typeof result === "object" && Symbol.asyncIterator in result) {
     let output: unknown;
     for await (const value of result) output = value;
@@ -120,7 +131,11 @@ describe("agent code mode", () => {
       expect(v2.tools[name].description).toContain(
         standard.tools[name].description,
       );
-      expect(v2.tools[name].description?.startsWith(preference)).toBe(true);
+      expect(v2.tools[name].description).toEqual(
+        expect.stringMatching(
+          /^Work directly in the primary agent by default\./,
+        ),
+      );
       expect(standard.tools[name].description).not.toContain(preference);
     }
     const discovered = await execute(v2.tools, "exec", {
@@ -233,7 +248,7 @@ describe("agent code mode", () => {
       { toolName: "checkpoint_state", input: { value: "checkpoint" } },
       { toolName: "response", input: { result: { done: true } } },
     ];
-    const model = new MockLanguageModelV3({
+    const model = new MockLanguageModelV4({
       doStream: async () => ({
         stream: simulateReadableStream({
           chunks: [
@@ -400,6 +415,7 @@ describe("agent code mode", () => {
           yield_time_ms: 0,
         },
         {
+          context: {},
           toolCallId: "awaiting_approval",
           messages: [],
           abortSignal: controller.signal,
@@ -445,6 +461,7 @@ describe("agent code mode", () => {
       request.tools.echo.execute?.(
         { value: 21 },
         {
+          context: {},
           toolCallId: "direct_echo",
           messages: [],
         },
@@ -497,6 +514,7 @@ describe("agent code mode", () => {
       request.tools.echo.execute?.(
         { value: 7 },
         {
+          context: {},
           toolCallId: "direct_echo",
           messages: [],
         },

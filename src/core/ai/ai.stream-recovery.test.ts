@@ -1,6 +1,6 @@
 import type {
-  LanguageModelV3StreamPart,
-  LanguageModelV3StreamResult,
+  LanguageModelV4StreamPart,
+  LanguageModelV4StreamResult,
 } from "@ai-sdk/provider";
 import {
   APICallError,
@@ -8,14 +8,14 @@ import {
   simulateReadableStream,
   stepCountIs,
 } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createRunInferenceRecorder } from "../runtime/runInference";
 import type { RunModelStore } from "../runtime/runModelStore";
 import type { ModelRetryDecision } from "./inference-attempt";
 
-const state: { model?: MockLanguageModelV3 } = {};
+const state: { model?: MockLanguageModelV4 } = {};
 vi.mock("./utils", async () => ({
   ...(await vi.importActual<typeof import("./utils")>("./utils")),
   getProviderModel: () => state.model,
@@ -60,11 +60,11 @@ function recordingRetries() {
   };
 }
 
-function streamOf(chunks: LanguageModelV3StreamPart[]) {
+function streamOf(chunks: LanguageModelV4StreamPart[]) {
   return { stream: simulateReadableStream({ chunks }) };
 }
 
-function textStream(text: string): LanguageModelV3StreamResult {
+function textStream(text: string): LanguageModelV4StreamResult {
   return streamOf([
     { type: "text-start", id: "t0" },
     { type: "text-delta", id: "t0", delta: text },
@@ -73,14 +73,14 @@ function textStream(text: string): LanguageModelV3StreamResult {
   ]);
 }
 
-function rateLimited(): LanguageModelV3StreamResult {
+function rateLimited(): LanguageModelV4StreamResult {
   return streamOf([
     { type: "stream-start", warnings: [] },
     { type: "error", error: new Error("rate limit exceeded") },
   ]);
 }
 
-function probeCall(): LanguageModelV3StreamResult {
+function probeCall(): LanguageModelV4StreamResult {
   return streamOf([
     { type: "stream-start", warnings: [] },
     {
@@ -143,7 +143,7 @@ describe("rate-limit detection of SDK errors", () => {
         throw makeError();
       })
       .mockImplementationOnce(async () => textStream("Recovered"));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await drain(
       streamResponse({
@@ -163,7 +163,7 @@ describe("rate-limit detection of SDK errors", () => {
     const doStream = vi.fn(async () => {
       throw retryErrorOf(400);
     });
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await expect(
       drain(
@@ -190,7 +190,7 @@ describe("stream recovery is one logical stream", () => {
       .mockImplementationOnce(async () => rateLimited())
       .mockImplementationOnce(async () => rateLimited())
       .mockImplementationOnce(async () => textStream("Recovered"));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await drain(
       streamResponse({
@@ -212,7 +212,7 @@ describe("stream recovery is one logical stream", () => {
   it("gives up after MAX_RATE_LIMIT_RETRIES consecutive rate limits", async () => {
     const { recorder, retries } = recordingRetries();
     const doStream = vi.fn(async () => rateLimited());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await expect(
       drain(
@@ -239,7 +239,7 @@ describe("stream recovery is one logical stream", () => {
       .mockImplementationOnce(async () => probeCall())
       .mockImplementationOnce(async () => rateLimited())
       .mockImplementationOnce(async () => textStream("Done"));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await drain(
       streamResponse({
@@ -267,7 +267,7 @@ describe("stream recovery is one logical stream", () => {
       .fn()
       .mockImplementationOnce(async () => rateLimited())
       .mockImplementationOnce(async () => textStream("Recovered"));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     const result = streamResponse({
       prompt: "p",
@@ -296,7 +296,7 @@ describe("stream recovery is one logical stream", () => {
   });
 
   it("keeps the original attempt's fields when nothing was recovered", async () => {
-    state.model = new MockLanguageModelV3({
+    state.model = new MockLanguageModelV4({
       modelId: MODEL,
       doStream: async () => textStream("First"),
     });
@@ -309,7 +309,7 @@ describe("stream recovery is one logical stream", () => {
   });
 
   it("does not wait on a fullStream that was read but never iterated", async () => {
-    state.model = new MockLanguageModelV3({
+    state.model = new MockLanguageModelV4({
       modelId: MODEL,
       doStream: async () => textStream("Unread"),
     });
@@ -339,7 +339,7 @@ describe("idle recovery exhaustion with owned provider streams", () => {
     const { recorder, retries } = recordingRetries();
     const lifecycle: string[] = [];
     const signals: AbortSignal[] = [];
-    const controllers: ReadableStreamDefaultController<LanguageModelV3StreamPart>[] =
+    const controllers: ReadableStreamDefaultController<LanguageModelV4StreamPart>[] =
       [];
     const cancelled = new Set<number>();
     const barriers = Array.from({ length: 4 }, () => ({
@@ -348,7 +348,7 @@ describe("idle recovery exhaustion with owned provider streams", () => {
     }));
     let settled = false;
     let attempts = 0;
-    state.model = new MockLanguageModelV3({
+    state.model = new MockLanguageModelV4({
       modelId: MODEL,
       doStream: async ({ abortSignal }) => {
         const attempt = ++attempts;
@@ -357,7 +357,7 @@ describe("idle recovery exhaustion with owned provider streams", () => {
         if (!abortSignal) throw new Error("missing attempt abort signal");
         signals.push(abortSignal);
         return {
-          stream: new ReadableStream<LanguageModelV3StreamPart>({
+          stream: new ReadableStream<LanguageModelV4StreamPart>({
             start(controller) {
               controllers.push(controller);
               controller.enqueue({ type: "stream-start", warnings: [] });
@@ -449,7 +449,7 @@ describe("idle recovery exhaustion with owned provider streams", () => {
     const doStream = vi
       .fn()
       .mockImplementationOnce(async () => ({
-        stream: new ReadableStream<LanguageModelV3StreamPart>({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
           },
@@ -463,7 +463,7 @@ describe("idle recovery exhaustion with owned provider streams", () => {
         expect(drained).toBe(true);
         return textStream("Recovered after idle");
       });
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     try {
       const result = streamResponse({
         prompt: "synthetic idle probe",
@@ -510,7 +510,7 @@ describe("incomplete model stream recovery", () => {
       .fn()
       .mockResolvedValueOnce(incomplete())
       .mockImplementation(async () => textStream("Complete"));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const result = streamResponse({
       prompt: "synthetic input",
       model: MODEL,
@@ -532,7 +532,7 @@ describe("incomplete model stream recovery", () => {
   it("stops after three incomplete-stream continuations", async () => {
     const { recorder, retries } = recordingRetries();
     const doStream = vi.fn(async () => incomplete());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const result = streamResponse({
       prompt: "synthetic input",
       model: MODEL,
@@ -546,25 +546,29 @@ describe("incomplete model stream recovery", () => {
     expect(retries.map(({ count }) => count)).toEqual([1, 2, 3]);
   });
 
-  it("does not repeat a tool already dispatched in an incomplete standalone turn", async () => {
+  it("does not execute or retry a tool from an incomplete standalone turn", async () => {
     const effect = vi.fn(async () => "done");
-    const doStream = vi.fn(async () =>
-      streamOf([
-        {
-          type: "tool-call",
-          toolCallId: "effect",
-          toolName: "effect",
-          input: "{}",
+    const doStream = vi.fn(async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        async start(controller) {
+          controller.enqueue({
+            type: "tool-call",
+            toolCallId: "effect",
+            toolName: "effect",
+            input: "{}",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          controller.enqueue({
+            type: "error",
+            error: Object.assign(new Error("Incomplete model stream"), {
+              name: "IncompleteModelStreamError",
+            }),
+          });
+          controller.close();
         },
-        {
-          type: "error",
-          error: Object.assign(new Error("Incomplete model stream"), {
-            name: "IncompleteModelStreamError",
-          }),
-        },
-      ]),
-    );
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+      }),
+    }));
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const result = streamResponse({
       prompt: "synthetic input",
       model: MODEL,
@@ -575,7 +579,7 @@ describe("incomplete model stream recovery", () => {
       name: "IncompleteModelStreamError",
     });
     expect(doStream).toHaveBeenCalledTimes(1);
-    expect(effect).toHaveBeenCalledTimes(1);
+    expect(effect).not.toHaveBeenCalled();
   });
 });
 
@@ -601,7 +605,7 @@ it.each([
       },
     ]);
   });
-  state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+  state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
   const result = streamResponse({
     prompt: "synthetic input",
     model: MODEL,
@@ -643,14 +647,14 @@ describe("source cancellation ownership", () => {
       throw failure;
     });
     const doStream = vi.fn(async () => ({
-      stream: new ReadableStream<LanguageModelV3StreamPart>({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
         start(controller) {
           controller.enqueue({ type: "stream-start", warnings: [] });
         },
         cancel,
       }),
     }));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     try {
       await expect(
         drain(
@@ -701,7 +705,7 @@ describe("source cancellation ownership", () => {
       .mockImplementationOnce(async () =>
         textStream("Acquired after recovery"),
       );
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     try {
       const result = streamResponse({
         prompt: "synthetic acquisition",
@@ -724,7 +728,7 @@ describe("source cancellation ownership", () => {
     const doStream = vi
       .fn()
       .mockImplementationOnce(async () => ({
-        stream: new ReadableStream<LanguageModelV3StreamPart>({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
           start(controller) {
             controller.error(failure);
           },
@@ -734,7 +738,7 @@ describe("source cancellation ownership", () => {
       .mockImplementationOnce(async () =>
         textStream("Recovered recorded stream"),
       );
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const result = streamResponse({
       prompt: "synthetic recorded stream",
       model: MODEL,
@@ -774,7 +778,7 @@ it.each([
       async ({ abortSignal }: { abortSignal: AbortSignal }) => {
         signal = abortSignal;
         return {
-          stream: new ReadableStream<LanguageModelV3StreamPart>({
+          stream: new ReadableStream<LanguageModelV4StreamPart>({
             start(controller) {
               controller.enqueue({ type: "stream-start", warnings: [] });
               abortSignal.addEventListener(
@@ -803,7 +807,7 @@ it.each([
     .mockImplementationOnce(async () =>
       textStream("Recovered after producer cleanup"),
     );
-  state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+  state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
   let settled = false;
   const run = drain(
     streamResponse({

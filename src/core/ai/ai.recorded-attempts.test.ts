@@ -1,12 +1,12 @@
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import {
   APICallError,
-  type LanguageModelV3GenerateResult,
-  type LanguageModelV3StreamPart,
-  type LanguageModelV3StreamResult,
+  type LanguageModelV4GenerateResult,
+  type LanguageModelV4StreamPart,
+  type LanguageModelV4StreamResult,
 } from "@ai-sdk/provider";
 import { type ModelMessage, RetryError, simulateReadableStream } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AgentHooks } from "../agents/offSecAgent/types";
@@ -20,7 +20,7 @@ import type {
 } from "./inference-attempt";
 import { runWithInferenceRecorder } from "./inference-attempt";
 
-const state: { model?: MockLanguageModelV3 } = {};
+const state: { model?: MockLanguageModelV4 } = {};
 vi.mock("./utils", async () => ({
   ...(await vi.importActual<typeof import("./utils")>("./utils")),
   getProviderModel: () => state.model,
@@ -102,8 +102,8 @@ function makeStore(fail?: {
   };
 }
 
-function textStream(text = "Done"): LanguageModelV3StreamResult {
-  const chunks: LanguageModelV3StreamPart[] = [
+function textStream(text = "Done"): LanguageModelV4StreamResult {
+  const chunks: LanguageModelV4StreamPart[] = [
     { type: "text-start", id: "t0" },
     { type: "text-delta", id: "t0", delta: text },
     { type: "text-end", id: "t0" },
@@ -116,16 +116,16 @@ function textStream(text = "Done"): LanguageModelV3StreamResult {
   return { stream: simulateReadableStream({ chunks }) };
 }
 
-function errorStream(message: string): LanguageModelV3StreamResult {
-  const chunks: LanguageModelV3StreamPart[] = [
+function errorStream(message: string): LanguageModelV4StreamResult {
+  const chunks: LanguageModelV4StreamPart[] = [
     { type: "stream-start", warnings: [] },
     { type: "error", error: new Error(message) },
   ];
   return { stream: simulateReadableStream({ chunks }) };
 }
 
-function toolCallStream(input: string): LanguageModelV3StreamResult {
-  const chunks: LanguageModelV3StreamPart[] = [
+function toolCallStream(input: string): LanguageModelV4StreamResult {
+  const chunks: LanguageModelV4StreamPart[] = [
     { type: "stream-start", warnings: [] },
     {
       type: "tool-call",
@@ -142,7 +142,7 @@ function toolCallStream(input: string): LanguageModelV3StreamResult {
   return { stream: simulateReadableStream({ chunks }) };
 }
 
-function generated(text: string): LanguageModelV3GenerateResult {
+function generated(text: string): LanguageModelV4GenerateResult {
   return {
     content: [{ type: "text", text }],
     finishReason: { unified: "stop", raw: "stop" },
@@ -177,7 +177,7 @@ describe("recorded attempts at the model boundary", () => {
     const parent = makeStore();
     const child = makeStore();
     const doStream = vi.fn(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const hooks: AgentHooks = { inferenceRecorder: child.recorder };
     const response = runWithInferenceRecorder(parent.recorder, () =>
       streamResponse({ ...hooks, prompt: "child", model: MODEL, silent: true }),
@@ -194,7 +194,7 @@ describe("recorded attempts at the model boundary", () => {
   it("explicit undefined isolates an unrecorded child from the ambient recorder", async () => {
     const parent = makeStore();
     const doStream = vi.fn(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const response = runWithInferenceRecorder(parent.recorder, () =>
       streamResponse({
         prompt: "unrecorded child",
@@ -213,12 +213,12 @@ describe("recorded attempts at the model boundary", () => {
       start: new Error("must not reserve"),
     });
     const doStream = vi.fn(async () => textStream("provider"));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     const replay = vi.fn(async () => textStream("replayed"));
     const hooks: AgentHooks = {
       inferenceRecorder: recorder,
       languageModelMiddleware: {
-        specificationVersion: "v3",
+        specificationVersion: "v4",
         wrapStream: replay,
       },
     };
@@ -241,12 +241,12 @@ describe("recorded attempts at the model boundary", () => {
       start: new Error("must not reserve"),
     });
     const doGenerate = vi.fn(async () => generated('{"value":"provider"}'));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doGenerate });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doGenerate });
     const replay = vi.fn(async () => generated('{"value":"replayed"}'));
     const hooks: AgentHooks = {
       inferenceRecorder: recorder,
       languageModelMiddleware: {
-        specificationVersion: "v3",
+        specificationVersion: "v4",
         wrapGenerate: replay,
       },
     };
@@ -278,7 +278,7 @@ describe("recorded attempts at the model boundary", () => {
         }),
       )
       .mockImplementationOnce(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await drain(
       streamResponse({
@@ -318,7 +318,7 @@ describe("recorded attempts at the model boundary", () => {
       start: new Error("model store unreachable"),
     });
     const doStream = vi.fn(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await expect(
       runWithInferenceRecorder(recorder, async () => {
@@ -341,7 +341,7 @@ describe("recorded attempts at the model boundary", () => {
     });
     const execute = makeProbeExecute();
     const doStream = vi.fn(async () => toolCallStream('{"target":"x"}'));
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     await expect(
       runWithInferenceRecorder(recorder, async () => {
@@ -365,7 +365,7 @@ describe("recorded attempts at the model boundary", () => {
       settle: new Error("settlement store unreachable"),
     });
     const doStream = vi.fn(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     // First run completes: settlement is enqueued synchronously and never
     // blocks the stream.
@@ -431,7 +431,7 @@ describe("recorded attempts at the model boundary", () => {
           }
         : textStream();
     });
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
     await drain(
       streamResponse({
         prompt: "Synthetic recovery fixture",
@@ -449,7 +449,7 @@ describe("recorded attempts at the model boundary", () => {
       .fn()
       .mockImplementationOnce(async () => errorStream("rate limit exceeded"))
       .mockImplementationOnce(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     const response = streamResponse({
       prompt: "rate-limited work",
@@ -495,7 +495,7 @@ describe("recorded attempts at the model boundary", () => {
       .fn()
       .mockRejectedValueOnce(new Error("rate limit exceeded"))
       .mockImplementationOnce(async () => generated('{"ok":true}'));
-    state.model = new MockLanguageModelV3({
+    state.model = new MockLanguageModelV4({
       modelId: MODEL,
       doGenerate,
     });
@@ -533,7 +533,7 @@ describe("recorded attempts at the model boundary", () => {
 
   it("retains the explicit recorder through compaction and context restart", async () => {
     const { recorder, calls } = makeStore();
-    state.model = new MockLanguageModelV3({
+    state.model = new MockLanguageModelV4({
       modelId: MODEL,
       doStream: async () => textStream("A compact summary"),
       doGenerate: async () => generated("A compact summary"),
@@ -589,7 +589,7 @@ describe("recorded attempts at the model boundary", () => {
     const execute = makeProbeExecute();
     const doStream = vi.fn(async () => toolCallStream('{"target":12345}'));
     const doGenerate = vi.fn(async () => generated('{"target":"repaired"}'));
-    state.model = new MockLanguageModelV3({
+    state.model = new MockLanguageModelV4({
       modelId: MODEL,
       doStream,
       doGenerate,
@@ -636,7 +636,7 @@ describe("recorded attempts at the model boundary", () => {
         }),
       )
       .mockImplementationOnce(async () => textStream());
-    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    state.model = new MockLanguageModelV4({ modelId: MODEL, doStream });
 
     const error = await runWithInferenceRecorder(recorder, async () => {
       const response = streamResponse({

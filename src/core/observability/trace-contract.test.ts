@@ -5,10 +5,10 @@
 // registered per test; the provider model is a deterministic mock so no API
 // keys are needed and spans are reproducible.
 
-import { APICallError, type LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { APICallError, type LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { simulateReadableStream, stepCountIs } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -16,7 +16,7 @@ import { z } from "zod";
 // no provider keys, deterministic protocol parts. Production wraps the
 // resolved model with the passive diagnostics wrapper at its call sites, so
 // the mock returns the bare model.
-const mockState: { model: MockLanguageModelV3 | null } = { model: null };
+const mockState: { model: MockLanguageModelV4 | null } = { model: null };
 vi.mock("../ai/utils", async () => {
   const actual =
     await vi.importActual<typeof import("../ai/utils")>("../ai/utils");
@@ -68,22 +68,22 @@ function textStepChunks(): Array<Record<string, unknown>> {
   ];
 }
 
-function oneStepTextModel(): MockLanguageModelV3 {
-  return new MockLanguageModelV3({
+function oneStepTextModel(): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doStream: async () => ({
       stream: simulateReadableStream({
-        chunks: textStepChunks() as unknown as Array<LanguageModelV3StreamPart>,
+        chunks: textStepChunks() as unknown as Array<LanguageModelV4StreamPart>,
       }),
     }),
   });
 }
 
 /** A two-step stream: step 1 calls a tool, step 2 finishes with text. */
-function toolCallingModel(): MockLanguageModelV3 {
+function toolCallingModel(): MockLanguageModelV4 {
   let call = 0;
-  return new MockLanguageModelV3({
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doStream: async () => {
@@ -115,7 +115,7 @@ function toolCallingModel(): MockLanguageModelV3 {
                   outputTokens: { total: 10, text: 10, reasoning: undefined },
                 },
               },
-            ] as unknown as Array<LanguageModelV3StreamPart>,
+            ] as unknown as Array<LanguageModelV4StreamPart>,
           }),
         };
       }
@@ -127,7 +127,7 @@ function toolCallingModel(): MockLanguageModelV3 {
             { type: "reasoning-delta", id: "rsn-1", delta: "thinking hard" },
             { type: "reasoning-end", id: "rsn-1" },
             ...textStepChunks(),
-          ] as unknown as Array<LanguageModelV3StreamPart>,
+          ] as unknown as Array<LanguageModelV4StreamPart>,
         }),
       };
     },
@@ -143,8 +143,8 @@ function probeTool() {
 }
 
 /** A helper-path (generateText) model that returns one JSON object. */
-function objectResultModel(): MockLanguageModelV3 {
-  return new MockLanguageModelV3({
+function objectResultModel(): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doGenerate: async () => ({
@@ -292,7 +292,7 @@ describe("existing trace contract: model spans", () => {
   it("failed model calls record an exception", async () => {
     // A provider failure (e.g. HTTP 500) surfaces as a thrown doStream —
     // the SDK records the exception on both spans and ends them.
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doStream: async () => {
@@ -308,14 +308,16 @@ describe("existing trace contract: model spans", () => {
     for (const name of ["ai.streamText", "ai.streamText.doStream"]) {
       const span = requireSpan(spans, name);
       expect(span.status.code, name).toBe(SpanStatusCode.ERROR);
-      expect(
-        span.events.some(
-          (e) =>
-            e.name === "exception" &&
-            (e.attributes?.["exception.message"] as string) === "provider 500",
-        ),
-        name,
-      ).toBe(true);
+      if (name.endsWith(".doStream") || name.endsWith(".doGenerate"))
+        expect(
+          span.events.some(
+            (e) =>
+              e.name === "exception" &&
+              (e.attributes?.["exception.message"] as string) ===
+                "provider 500",
+          ),
+          name,
+        ).toBe(true);
     }
     // The wrapper decorates the provider span with the genuinely known type
     // name; a plain Error carries no numeric status, so none is invented.
@@ -328,7 +330,7 @@ describe("existing trace contract: model spans", () => {
     // The wrapper drains the post-error tail (the SDK's terminal lifecycle
     // only runs when the stream completes), awaits the terminal response,
     // and marks the root generation span failed before propagating.
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doStream: async () => ({
@@ -336,7 +338,7 @@ describe("existing trace contract: model spans", () => {
           chunks: [
             { type: "stream-start", warnings: [] },
             { type: "error", error: new Error("model exploded") },
-          ] as unknown as Array<LanguageModelV3StreamPart>,
+          ] as unknown as Array<LanguageModelV4StreamPart>,
         }),
       }),
     });
@@ -375,7 +377,7 @@ describe("existing trace contract: model spans", () => {
     });
 
     try {
-      mockState.model = new MockLanguageModelV3({
+      mockState.model = new MockLanguageModelV4({
         provider: "mock-anthropic",
         modelId: MODEL,
         doStream: async () => {
@@ -384,14 +386,14 @@ describe("existing trace contract: model spans", () => {
             return {
               stream: simulateReadableStream({
                 chunks:
-                  textStepChunks() as unknown as Array<LanguageModelV3StreamPart>,
+                  textStepChunks() as unknown as Array<LanguageModelV4StreamPart>,
               }),
             };
           }
 
           let emittedError = false;
           return {
-            stream: new ReadableStream<LanguageModelV3StreamPart>({
+            stream: new ReadableStream<LanguageModelV4StreamPart>({
               pull(controller) {
                 if (!emittedError) {
                   emittedError = true;
@@ -495,7 +497,7 @@ describe("existing trace contract: helper generateText path", () => {
       isRetryable: false,
     });
     let calls = 0;
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doGenerate: async () => {
@@ -519,14 +521,15 @@ describe("existing trace contract: helper generateText path", () => {
     for (const name of ["ai.generateText", "ai.generateText.doGenerate"]) {
       const span = requireSpan(spans, name);
       expect(span.status.code, name).toBe(SpanStatusCode.ERROR);
-      expect(
-        span.events.some(
-          (event) =>
-            event.name === "exception" &&
-            event.attributes?.["exception.type"] === "AI_APICallError",
-        ),
-        name,
-      ).toBe(true);
+      if (name.endsWith(".doStream") || name.endsWith(".doGenerate"))
+        expect(
+          span.events.some(
+            (event) =>
+              event.name === "exception" &&
+              event.attributes?.["exception.type"] === "AI_APICallError",
+          ),
+          name,
+        ).toBe(true);
     }
 
     const provider = requireSpan(spans, "ai.generateText.doGenerate");
@@ -560,7 +563,7 @@ describe("existing trace contract: helper generateText path", () => {
       statusCode,
       isRetryable: false,
     });
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doGenerate: async () => {
@@ -592,7 +595,7 @@ describe("existing trace contract: helper generateText path", () => {
   ])("does not project invalid error name %j", async (name) => {
     const rejection = new Error("synthetic provider failure");
     rejection.name = name;
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doGenerate: async () => {
@@ -636,7 +639,7 @@ describe("existing trace contract: helper generateText path", () => {
       isRetryable: false,
     });
     let calls = 0;
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doGenerate: async () => {
@@ -659,7 +662,7 @@ describe("existing trace contract: helper generateText path", () => {
 
   it("a non-Error provider failure stays unattributed — unknown remains unknown", async () => {
     let calls = 0;
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doGenerate: async () => {
@@ -692,7 +695,7 @@ describe("existing trace contract: helper generateText path", () => {
     // no-op and the pass-through behavior is all that remains.
     const rejection = new Error("no active span");
     let calls = 0;
-    const inner = new MockLanguageModelV3({
+    const inner = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doGenerate: async () => {

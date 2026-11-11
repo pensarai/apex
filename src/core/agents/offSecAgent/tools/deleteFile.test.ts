@@ -22,7 +22,11 @@ describe("deleteFile", () => {
     const tool = deleteFile(makeCtx(root));
     const result = (await tool.execute?.(
       { path: "doomed.ts", toolCallDescription: "Remove doomed file" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as DeleteFileResult;
 
     expect(result.success).toBe(true);
@@ -34,7 +38,11 @@ describe("deleteFile", () => {
     const tool = deleteFile(makeCtx(root));
     const result = (await tool.execute?.(
       { path: "missing.ts", toolCallDescription: "Try delete missing" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as DeleteFileResult;
 
     expect(result.success).toBe(false);
@@ -46,7 +54,11 @@ describe("deleteFile", () => {
     const tool = deleteFile(makeCtx(root));
     const result = (await tool.execute?.(
       { path: "../escape.ts", toolCallDescription: "Escape attempt" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as DeleteFileResult;
 
     expect(result.success).toBe(false);
@@ -74,7 +86,11 @@ describe("deleteFile backend injection", () => {
     const tool = deleteFile(ctx);
     const result = (await tool.execute?.(
       { toolCallDescription: "test", path: "doomed.ts" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as DeleteFileResult;
 
     expect(del).toHaveBeenCalledWith("doomed.ts");
@@ -93,7 +109,11 @@ describe("deleteFile backend injection", () => {
     const tool = deleteFile(ctx);
     const result = (await tool.execute?.(
       { toolCallDescription: "test", path: "doomed.ts" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as DeleteFileResult;
 
     expect(result.success).toBe(false);

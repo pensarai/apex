@@ -49,7 +49,7 @@ describeLive("Hoonify live contract", () => {
       prompt: "",
       messages: [
         { role: "user", content: "Echo probe" },
-        ...JSON.parse(JSON.stringify((await run.response).messages)),
+        ...JSON.parse(JSON.stringify(await run.responseMessages)),
         { role: "user", content: "What value did the echo tool return?" },
       ],
       abortSignal: AbortSignal.timeout(60_000),

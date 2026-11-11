@@ -37,7 +37,11 @@ async function run(ctx: ToolContext, patch: string): Promise<ApplyPatchResult> {
   const tool = applyPatch(ctx);
   return (await tool.execute?.(
     { patch, toolCallDescription: "test patch" },
-    { toolCallId: "t1", messages: [] },
+    {
+      context: {},
+      toolCallId: "t1",
+      messages: [],
+    },
   )) as ApplyPatchResult;
 }
 

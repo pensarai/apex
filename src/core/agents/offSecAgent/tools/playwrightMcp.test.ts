@@ -655,8 +655,12 @@ describe("createBrowserTools — shared session reuse", () => {
     // Invoke a browser tool; it should call through to the SHARED session.
     await tools.browser_navigate.execute?.(
       { url: "https://example.com/login", toolCallDescription: "test" },
-      // biome-ignore lint/suspicious/noExplicitAny: ai-sdk ToolCallOptions is opaque and irrelevant for this test.
-      { toolCallId: "tc1", messages: [], abortSignal: undefined } as any,
+      {
+        context: {},
+        toolCallId: "tc1",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
 
     expect(callTool).toHaveBeenCalledTimes(1);
