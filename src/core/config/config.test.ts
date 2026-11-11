@@ -224,6 +224,16 @@ describe("Strike Mode config", () => {
   });
 });
 
+describe("Default v2 config", () => {
+  it("is opt-in and survives a fresh config load", async () => {
+    expect((await init()).defaultV2Mode).toBe(false);
+    await update({ defaultV2Mode: true, strikeMode: false, lanceMode: false });
+    vi.resetModules();
+    const { get: reload } = await import("./config");
+    expect((await reload()).defaultV2Mode).toBe(true);
+  });
+});
+
 describe("finding policy config", () => {
   it("defaults to Apex finding review for new and legacy installations", async () => {
     expect((await init()).findingPolicy).toBe("native");

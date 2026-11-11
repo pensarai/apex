@@ -625,8 +625,8 @@ export const WORKSPACE_TOOL_NAMES: readonly ToolName[] = [
 
 /**
  * Subset of {@link WORKSPACE_TOOL_NAMES} that mutate the connected Console
- * workspace. Gated more strictly than the read-only `list_*` tools: only an
- * explicit mutation request may expose them (see `filterWorkspaceToolsForRun`).
+ * workspace. Legacy modes require an explicit current mutation request;
+ * default-v2 keeps them available behind the host's approval gate.
  */
 export const WORKSPACE_WRITE_TOOL_NAMES: readonly ToolName[] = [
   "create_workspace_domain",

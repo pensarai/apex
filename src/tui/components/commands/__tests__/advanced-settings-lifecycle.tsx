@@ -6,6 +6,8 @@ import { act } from "react";
 import type { Config } from "../../../../core/config/config";
 
 const scenario = process.argv[2];
+const defaultV2 = scenario?.includes("default-v2") ?? false;
+const resuming = scenario?.startsWith("resume-") ?? false;
 assert.ok(
   scenario === "lance-time" ||
     scenario === "native" ||
@@ -14,9 +16,10 @@ assert.ok(
     scenario === "lance-time" ||
     scenario === "lance" ||
     scenario === "lance-compact" ||
-    scenario === "resume-lance",
+    scenario === "resume-lance" ||
+    defaultV2,
 );
-const compact = scenario === "compact" || scenario === "lance-compact";
+const compact = scenario === "compact" || scenario?.endsWith("-compact");
 
 const saved: Partial<Config>[] = [];
 let closes = 0;
@@ -25,9 +28,10 @@ mock.module(join(import.meta.dirname, "../../../context/config.tsx"), () => ({
     data: {
       strikeMode: false,
       lanceMode: scenario === "resume-lance",
+      defaultV2Mode: scenario === "resume-default-v2",
       lanceBudget:
         scenario === "resume-lance" ? { kind: "steps", limit: 750 } : undefined,
-      findingPolicy: scenario === "resume-lance" ? "external" : "native",
+      findingPolicy: resuming ? "external" : "native",
     },
     update: async (patch: Partial<Config>) => {
       saved.push(patch);
@@ -83,30 +87,38 @@ try {
     scenario === "lance" ||
     scenario === "lance-compact" ||
     scenario === "resume-lance";
-  let policy: "native" | "external" =
-    scenario === "resume-lance" ? "external" : "native";
+  let policy: "native" | "external" = resuming ? "external" : "native";
 
-  if (scenario !== "resume-lance") {
+  if (!resuming) {
     await press("TAB");
     assert.ok((await frame()).includes("Strike ▾"));
-    if (lance) {
+    if (lance || defaultV2) {
       await press("RETURN");
       const choices = await frame();
       assert.ok(choices.includes("Standard"), choices);
       assert.ok(choices.includes("Lance"), choices);
       assert.ok(choices.includes("Save settings"), choices);
       await press("ARROW_DOWN");
+      if (defaultV2) await press("ARROW_DOWN");
       await press("RETURN");
     }
   }
   const selectedFrame = await frame();
   assert.ok(
-    selectedFrame.includes(lance ? "Lance ▾" : "Strike ▾"),
+    selectedFrame.includes(
+      defaultV2 ? "Default v2 ▾" : lance ? "Lance ▾" : "Strike ▾",
+    ),
     selectedFrame,
   );
   assert.ok(selectedFrame.includes("Finding judge"), selectedFrame);
   assert.ok(
-    selectedFrame.includes(lance ? "offensive-capability" : "Focused research"),
+    selectedFrame.includes(
+      defaultV2
+        ? "Experimental adaptive"
+        : lance
+          ? "offensive-capability"
+          : "Focused research",
+    ),
     selectedFrame,
   );
   assert.ok(selectedFrame.includes("Save settings"), selectedFrame);
@@ -133,9 +145,12 @@ try {
   await press("TAB");
   await press("TAB");
   await press("TAB");
+  await press("TAB");
   const restoredFrame = await frame();
   assert.ok(
-    restoredFrame.includes(lance ? "Lance ▾" : "Strike ▾"),
+    restoredFrame.includes(
+      defaultV2 ? "Default v2 ▾" : lance ? "Lance ▾" : "Strike ▾",
+    ),
     restoredFrame,
   );
   assert.ok(
@@ -188,7 +203,8 @@ try {
   await press("RETURN");
   assert.deepEqual(saved, [
     {
-      strikeMode: !lance,
+      strikeMode: !lance && !defaultV2,
+      defaultV2Mode: defaultV2,
       lanceMode: lance,
       findingPolicy: policy,
       ...(lance

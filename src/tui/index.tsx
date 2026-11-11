@@ -504,6 +504,7 @@ function AppContent({
         target,
         strikeMode: false,
         lanceMode: false,
+        defaultV2Mode: false,
         sandbox: isBlackbox,
         headers: sessionConfig.headers,
       },

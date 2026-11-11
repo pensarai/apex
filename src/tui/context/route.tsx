@@ -72,6 +72,7 @@ export type Route =
         /** Overrides the persisted Strike Mode preference for this new session. */
         strikeMode?: boolean;
         lanceMode?: boolean;
+        defaultV2Mode?: boolean;
         lanceBudget?: LanceBudget;
         findingPolicy?: import("../../core/agents/offSecAgent").FindingPolicy;
         sandbox?: boolean;

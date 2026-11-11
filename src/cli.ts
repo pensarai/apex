@@ -289,6 +289,8 @@ resume options:
 
 operator options (-p):
   -p, --prompt <text|@file>  (required) Prompt for the operator agent
+  --default-v2             Use the experimental adaptive operator harness
+  --external-findings      Return findings without Apex's in-run finding judge
   -s, --system <text|@file>  Override the default system prompt
   --target <url>             Target URL / domain / IP
   --model <model>            AI model (default: auto-selected from configured provider)
@@ -373,6 +375,11 @@ Custom inference:
 // ---------------------------------------------------------------------------
 
 async function runPentest() {
+  if (hasFlag("--default-v2")) {
+    throw new Error(
+      "Use -p <prompt> --default-v2 to run the adaptive operator directly",
+    );
+  }
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
 
@@ -696,7 +703,35 @@ async function runOperator() {
 
   const prompt = resolveFlagValue(promptRaw);
   const systemRaw = getArg("-s") ?? getArg("--system");
-  const systemPrompt = systemRaw ? resolveFlagValue(systemRaw) : undefined;
+  let systemPrompt = systemRaw ? resolveFlagValue(systemRaw) : undefined;
+  const defaultV2Mode = hasFlag("--default-v2");
+  if (
+    defaultV2Mode &&
+    ["--lance", "--fast-strike", "--task-driven"].some((flag) => hasFlag(flag))
+  ) {
+    throw new Error(
+      "Default v2 cannot be combined with Lance, Strike, or task-driven workflows",
+    );
+  }
+  const findingPolicy = hasFlag("--external-findings") ? "external" : "native";
+  let skillsRegistry: import("./core/skills").SkillsRegistry | undefined;
+  let approvalGate: import("./core/operator").ApprovalGate | undefined;
+  if (defaultV2Mode) {
+    const { createSkillsRegistry } = await import("./core/skills");
+    const { buildDefaultV2SystemPrompt } = await import(
+      "./core/agents/offSecAgent"
+    );
+    const { ApprovalGate } = await import("./core/operator");
+    skillsRegistry = createSkillsRegistry();
+    await skillsRegistry.load({ projectRoot: process.cwd() });
+    systemPrompt = [
+      systemPrompt ?? buildDefaultV2SystemPrompt({ findingPolicy }),
+      skillsRegistry.buildCatalog(),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    approvalGate = new ApprovalGate({ requireApproval: false });
+  }
   const target = getArg("--target");
   const evidenceOutput = nativeRolloutEvidenceOutput();
   const pensarConfig = await appConfig.get();
@@ -707,7 +742,7 @@ async function runOperator() {
   console.log(`${sep}
 OPERATOR SESSION
 ${sep}
-Model:   ${model}${target ? `\nTarget:  ${target}` : ""}
+Model:   ${model}${defaultV2Mode ? "\nHarness: default-v2" : ""}${target ? `\nTarget:  ${target}` : ""}
 ${sep}\n`);
 
   const headers = await resolveCliHeaders();
@@ -724,6 +759,8 @@ ${sep}\n`);
         initialMode: "auto",
         requireApproval: false,
         enableSuggestions: false,
+        defaultV2Mode,
+        findingPolicy,
       },
       ...(headers !== undefined ? { headers } : {}),
       ...(evidenceOutput
@@ -767,6 +804,10 @@ ${sep}\n`);
           reportHerdrState("working");
           await runOffensiveSecurityAgent({
             prompt: currentPrompt,
+            mode: defaultV2Mode ? "default-v2" : "default",
+            findingPolicy,
+            skillsRegistry,
+            approvalGate,
             ...(systemPrompt ? { system: systemPrompt } : {}),
             model,
             reasoning,
@@ -787,6 +828,7 @@ ${sep}\n`);
             messages = normalizeMessages(getResumeMessages(allMessages));
           }
 
+          if (defaultV2Mode && !process.stdin.isTTY) break;
           const followUp = await askFollowUp();
           if (!followUp) break;
           currentPrompt = followUp;
@@ -885,7 +927,11 @@ try {
       const { startTui } = await import("./tui/index.tsx");
       await startTui(options);
     }
-  } else if (hasFlag("-p") || command === "--prompt") {
+  } else if (
+    hasFlag("-p") ||
+    command === "--prompt" ||
+    (command === "--default-v2" && hasFlag("--prompt"))
+  ) {
     await runOperator();
   } else if (
     command === "version" ||
