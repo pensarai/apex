@@ -6,6 +6,7 @@ import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, expect, it, vi } from "vitest";
 import type { OffensiveSecurityAgentInput } from "../agents/offSecAgent";
+import type { SessionInfo } from "../session";
 import {
   createOffensiveSecurityAgentClient,
   runOffensiveSecurityAgent,
@@ -46,6 +47,19 @@ vi.mock("../ai/utils", async (original) => ({
     }),
 }));
 let root: string | undefined;
+function session(rootPath: string, id: string): SessionInfo {
+  return {
+    id,
+    version: "1",
+    time: { created: 0, updated: 0 },
+    rootPath,
+    logsPath: join(rootPath, "logs"),
+    findingsPath: join(rootPath, "findings"),
+    scratchpadPath: join(rootPath, "scratchpad"),
+    pocsPath: join(rootPath, "pocs"),
+    targets: [],
+  };
+}
 afterEach(async () => {
   if (root) await rm(root, { recursive: true, force: true });
   observed.calls = [];
@@ -59,13 +73,8 @@ it("shares durable v2 continuation between the API and cancellable client", asyn
     prompt: "Inspect the parser",
     activeTools: [],
     system: "Follow the user's objective",
-    session: {
-      id: "ses_v2",
-      rootPath: root,
-      scratchpadPath: join(root, "scratchpad"),
-      targets: [],
-    },
-  } as OffensiveSecurityAgentInput;
+    session: session(root, "ses_v2"),
+  } satisfies OffensiveSecurityAgentInput;
   const first = await runOffensiveSecurityAgent(input);
   expect(first.messages).toEqual([
     { role: "user", content: input.prompt },
@@ -106,13 +115,8 @@ it("serializes overlapping v2 inputs so neither correction is lost", async () =>
     model: "gpt-6.1-sol",
     prompt: "",
     activeTools: [],
-    session: {
-      id: "ses_queued",
-      rootPath: root,
-      scratchpadPath: join(root, "scratchpad"),
-      targets: [],
-    },
-  } as OffensiveSecurityAgentInput;
+    session: session(root, "ses_queued"),
+  } satisfies OffensiveSecurityAgentInput;
   await Promise.all(
     ["First lead", "Second correction"].map((content) =>
       runOffensiveSecurityAgent({
