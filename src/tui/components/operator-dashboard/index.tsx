@@ -254,7 +254,7 @@ export default function OperatorDashboard({
           !["/pentest", "/plan", "/skills"].includes(option.value)),
     );
     const skillOptions = skillsRegistry
-      .list()
+      .list(defaultV2Mode ? "default-v2" : undefined)
       .filter(
         (skill) =>
           !lanceMode &&
@@ -279,6 +279,7 @@ export default function OperatorDashboard({
     return [...commandOptions, ...operatorOnlyOptions, ...skillOptions];
   }, [
     allAutocompleteOptions,
+    defaultV2Mode,
     skillsRegistry,
     skillsVersion,
     strikeMode,
@@ -959,7 +960,7 @@ export default function OperatorDashboard({
 
       const skillsCatalog = lanceMode
         ? undefined
-        : skillsRegistry.buildCatalog() || undefined;
+        : skillsRegistry.buildCatalog(agentMode) || undefined;
 
       const commonInput = {
         prompt: prompt ?? "",
@@ -1070,7 +1071,10 @@ export default function OperatorDashboard({
               findingPolicy,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
-            codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
+            codebasePath:
+              initialConfig?.sandbox || defaultV2Mode
+                ? undefined
+                : process.cwd(),
             taskDriven: initialConfig?.taskDriven,
             ...(initialConfig?.headers !== undefined
               ? { headers: { ...initialConfig.headers } }
@@ -1298,10 +1302,13 @@ export default function OperatorDashboard({
 
     (async () => {
       try {
-        const { content } = await skillsRegistry.readSkillContent(slug);
+        const { content } = await skillsRegistry.readSkillContent(
+          slug,
+          agentMode,
+        );
 
         let fullContent: string;
-        if (slug === "threat-model") {
+        if (slug === "threat-model" && agentMode !== "default-v2") {
           const outputPath = args?.output || "threat-model.md";
           const resolvedPath = isAbsolute(outputPath)
             ? outputPath
@@ -1380,7 +1387,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         );
       }
     })();
-  }, [loading, route.data, skillsRegistry]);
+  }, [loading, route.data, skillsRegistry, agentMode]);
 
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
@@ -1545,9 +1552,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           try {
             const { content } = await skillsRegistry.readSkillContent(
               action.slug,
+              agentMode,
             );
             let fullContent: string;
-            if (action.slug === "threat-model") {
+            if (action.slug === "threat-model" && agentMode !== "default-v2") {
               const resolvedPath = resolve(process.cwd(), "threat-model.md");
               fullContent = buildThreatModelPrompt({
                 outputPath: resolvedPath,
@@ -1597,6 +1605,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       }
     },
     [
+      agentMode,
       resolveSkillContent,
       skillsRegistry,
       handleSubmit,

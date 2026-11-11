@@ -1,11 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
+import {
+  resolveWhiteboxBackend,
+  resolveWhiteboxPath,
+} from "../../../tools/backends/whitebox";
 import type { ScanKind } from "../../../whitebox";
 import {
   profileCodebase,
-  resolvePathWithinCodebaseRoot,
-  resolveWhiteboxCodebaseRoot,
   runScanAdapter,
   selectScanAdaptersWithMeta,
   writeWhiteboxArtifact,
@@ -57,15 +58,9 @@ ${verificationGuidance}`,
         .describe("A concise description of the scan"),
     }),
     execute: async ({ path, kind, scannerIds, timeoutSeconds = 120 }) => {
-      const codebaseRoot = resolveWhiteboxCodebaseRoot({
-        agentCwd: ctx.agentCwd,
-        codebasePath: ctx.session.config?.codebasePath,
-      });
       let rootPath: string;
       try {
-        rootPath = path
-          ? resolvePathWithinCodebaseRoot(codebaseRoot, path)
-          : codebaseRoot;
+        rootPath = await resolveWhiteboxPath(ctx, path);
       } catch (error) {
         return {
           success: false,
