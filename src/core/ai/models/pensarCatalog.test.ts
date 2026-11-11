@@ -4,7 +4,7 @@ import {
   getSavedModelForConfig,
 } from "../../providers/utils";
 import { getReasoningCapabilities } from "../reasoning";
-import { getMaxOutputTokens, getModelInfo } from "./index";
+import { getMaxOutputTokens, getModelInfo, isRegisteredModel } from "./index";
 import { loadPensarCatalog } from "./pensarCatalog";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -34,6 +34,8 @@ describe("Pensar gateway model discovery", () => {
       gatewayUrl: "https://gateway.example",
     };
     const pensarModels = await loadPensarCatalog(cfg);
+    expect(isRegisteredModel("pensar:vendor/new-reasoner")).toBe(true);
+    expect(isRegisteredModel("pensar:vendor/not-in-catalog")).toBe(false);
     expect(getAvailableModels({ ...cfg, pensarModels })).toContainEqual(
       expect.objectContaining({
         id: "pensar:vendor/new-reasoner",

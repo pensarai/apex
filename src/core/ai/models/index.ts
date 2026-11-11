@@ -46,6 +46,13 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...INCEPTION_MODELS,
 ];
 
+export function isRegisteredModel(id: string): boolean {
+  return (
+    AVAILABLE_MODELS.some((model) => model.id === id) ||
+    getPensarCatalogModel(id) !== undefined
+  );
+}
+
 export function getModelInfo(model: AIModel): ModelInfo {
   if (model.startsWith("pensar:") && model.includes("/"))
     return (
