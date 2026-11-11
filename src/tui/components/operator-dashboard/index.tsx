@@ -1703,7 +1703,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
 
-      if (defaultV2Mode) {
+      if (agentMode === "default-v2") {
         pendingV2InputRef.current = [
           {
             role: "user",
@@ -1743,7 +1743,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
       runAgentRef.current(null);
     },
-    [defaultV2Mode],
+    [agentMode],
   );
 
   const handleQuestionsSubmit = useCallback(
@@ -1912,7 +1912,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (pendingQuestions && key.ctrl && key.name === "c") {
       key.preventDefault?.();
       const toolCallId = pendingToolCallIdRef.current;
-      if (toolCallId && defaultV2Mode) {
+      if (toolCallId && agentMode === "default-v2") {
         pendingV2InputRef.current = [
           {
             role: "user",
