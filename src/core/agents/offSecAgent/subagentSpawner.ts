@@ -1,7 +1,7 @@
 import type {
+  GenerateTextOnStepEndCallback,
   LanguageModelMiddleware,
   StopCondition,
-  StreamTextOnStepFinishCallback,
   ToolSet,
 } from "ai";
 import type { z } from "zod";
@@ -144,7 +144,7 @@ export interface SpawnRuntime {
    * spawner path uses these for usage accounting; the durable runtime attributes
    * usage via {@link usageRecorder} instead and leaves them unset.
    */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: GenerateTextOnStepEndCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
 }
 
@@ -306,7 +306,7 @@ export interface SpawnedPentestWorkerInput {
   subagentName?: string;
   findingsRegistry?: FindingsRegistry;
   browserSession?: PlaywrightMcpSession;
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: GenerateTextOnStepEndCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   environmentVariables?: Record<string, string>;
   secretValues?: string[];

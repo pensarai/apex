@@ -12,7 +12,11 @@ import {
 } from "./smsListMessages";
 import type { ToolContext } from "./types";
 
-const executeOpts = { toolCallId: "call_1", messages: [] };
+const executeOpts = {
+  context: {},
+  toolCallId: "call_1",
+  messages: [],
+};
 
 function makeCtx(cm?: CredentialManager, smsInbox?: SmsInbox): ToolContext {
   const credentialManager = cm ?? new CredentialManager();

@@ -172,7 +172,11 @@ describe("Lance shared harness integration", () => {
     const tools = observed.streams[0].tools!;
     const result = await tools.execute_command.execute!(
       { command: "curl https://outside.test", toolCallDescription: "probe" },
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     );
     expect(JSON.stringify(result)).toMatch(/scope/i);
     const destructive = await tools.execute_command.execute!(
@@ -180,7 +184,11 @@ describe("Lance shared harness integration", () => {
         command: "curl -X DELETE https://example.test/resource",
         toolCallDescription: "destructive guard fixture",
       },
-      { toolCallId: "destructive", messages: [] },
+      {
+        context: {},
+        toolCallId: "destructive",
+        messages: [],
+      },
     );
     expect(JSON.stringify(destructive)).toMatch(/Destructive action blocked/);
     expect(args.sandbox.execute).not.toHaveBeenCalled();

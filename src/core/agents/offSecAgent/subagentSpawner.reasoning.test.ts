@@ -135,7 +135,11 @@ describe.each(
       agentCwd: "/fixture",
       subagentSpawner: inProcessSubagentSpawner,
     }) as ToolContext;
-  const options = { toolCallId: "call-child", messages: [] };
+  const options = {
+    context: {},
+    toolCallId: "call-child",
+    messages: [],
+  };
   it.each([
     "whitebox",
     "blackbox",

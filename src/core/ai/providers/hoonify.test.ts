@@ -224,7 +224,7 @@ describe("built-in Hoonify inference", () => {
       }),
     );
     const history = JSON.parse(
-      JSON.stringify((await run.response).messages),
+      JSON.stringify(await run.responseMessages),
     ) as ModelMessage[];
     const resumed = streamResponse({
       model: modelId,

@@ -279,7 +279,11 @@ async function run(variant: Variant, profile: Profile, repetition: number) {
           timeout: 60,
           toolCallDescription: "Collect benchmark evidence",
         },
-        { toolCallId: `capture-${current}`, messages: [] },
+        {
+          context: {},
+          toolCallId: `capture-${current}`,
+          messages: [],
+        },
       );
     },
     toModelOutput: async (options) => {
@@ -504,6 +508,7 @@ async function offline(variants: Variant[]) {
             toolCallDescription: "Offline scaling check",
           };
           const result = await execute.execute(input, {
+            context: {},
             toolCallId: `offline-${index}`,
             messages: [],
           });
@@ -528,7 +533,11 @@ async function offline(variants: Variant[]) {
                 flags: "-n",
                 toolCallDescription: "Recover omitted fixture evidence",
               },
-              { toolCallId: `grep-${index}`, messages: [] },
+              {
+                context: {},
+                toolCallId: `grep-${index}`,
+                messages: [],
+              },
             );
             recovered = JSON.stringify(grep).includes(fixture.token);
           }

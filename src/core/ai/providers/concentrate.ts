@@ -1,8 +1,8 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   APICallError,
-  type LanguageModelV3,
-  type LanguageModelV3CallOptions,
+  type LanguageModelV4,
+  type LanguageModelV4CallOptions,
 } from "@ai-sdk/provider";
 
 import { getClaudeCapabilities } from "../models";
@@ -185,12 +185,12 @@ export function createConcentrateFetch(
 }
 
 function withConcentrateDefaults(
-  model: LanguageModelV3,
+  model: LanguageModelV4,
   forceReasoning: boolean,
-): LanguageModelV3 {
+): LanguageModelV4 {
   const withDefaults = (
-    options: LanguageModelV3CallOptions,
-  ): LanguageModelV3CallOptions => ({
+    options: LanguageModelV4CallOptions,
+  ): LanguageModelV4CallOptions => ({
     ...options,
     providerOptions: {
       ...options.providerOptions,
@@ -217,7 +217,7 @@ function withConcentrateDefaults(
 export function createConcentrateModel(
   modelId: string,
   options: { apiKey?: string; fetch?: ConcentrateFetch },
-): LanguageModelV3 {
+): LanguageModelV4 {
   const apiKey = options.apiKey?.trim();
   if (!apiKey) {
     throw new Error(

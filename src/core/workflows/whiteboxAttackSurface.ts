@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import type { GenerateTextOnStepEndCallback, ToolSet } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import type { AgentHooks } from "../agents/offSecAgent";
@@ -145,7 +145,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   registerOwnedAgentDrain?: (drain: () => Promise<void>) => void;
   eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: GenerateTextOnStepEndCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   reasoning?: ReasoningSetting;
@@ -212,7 +212,7 @@ export interface WhiteboxAttackSurfaceAppInput {
   abortSignal?: AbortSignal;
   eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: GenerateTextOnStepEndCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   reasoning?: ReasoningSetting;

@@ -71,6 +71,7 @@ async function runList(
   input: ListFilesCall,
 ): Promise<ListFilesResult> {
   return (await listFiles(ctx).execute?.(input, {
+    context: {},
     toolCallId: "tc_test",
     messages: [],
     abortSignal: ctx.abortSignal,

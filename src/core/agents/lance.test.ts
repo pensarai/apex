@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { LANCE_CONFIG, LanceRuntime } from "./lance";
 
-const context = { toolCallId: "test", messages: [] };
+const context = {
+  context: {},
+  toolCallId: "test",
+  messages: [],
+};
 const execute = (
   tools: ReturnType<LanceRuntime["tools"]>,
   name: string,

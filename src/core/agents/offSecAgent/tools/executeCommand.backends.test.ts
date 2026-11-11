@@ -28,7 +28,11 @@ async function invoke(
       toolCallDescription: "Verify command execution",
       timeout,
     },
-    { toolCallId: "command-1", messages: [] },
+    {
+      context: {},
+      toolCallId: "command-1",
+      messages: [],
+    },
   )) as ExecuteCommandResult;
 }
 

@@ -242,6 +242,16 @@ it.each([
       return {
         stream: simulateReadableStream({
           chunks: [
+            ...(toolChoice === "required"
+              ? [
+                  {
+                    type: "tool-call",
+                    toolCallId: "done-probe",
+                    toolName: "probe",
+                    input: "{}",
+                  },
+                ]
+              : []),
             { type: "text-start", id: "done" },
             { type: "text-delta", id: "done", delta: "done" },
             { type: "text-end", id: "done" },
@@ -263,6 +273,9 @@ it.each([
       system: "Keep all source evidence available.",
       messages: priorMessages,
       toolChoice,
+      tools: {
+        probe: { inputSchema: z.object({}), execute: async () => "done" },
+      },
       silent: true,
       authConfig: {
         customProviders: {

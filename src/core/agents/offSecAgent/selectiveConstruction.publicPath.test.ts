@@ -269,7 +269,11 @@ describe("response injection on the real path", () => {
       const finding = { reportedFindings: ["Observed cross-tenant access"] };
       await response.execute(
         { result: finding },
-        { toolCallId: "tc_response", messages: [] },
+        {
+          context: {},
+          toolCallId: "tc_response",
+          messages: [],
+        },
       );
 
       await expect(agent.responseCaptured).resolves.toEqual(finding);

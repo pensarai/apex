@@ -44,6 +44,7 @@ function makeCtx(): ToolContext {
 }
 
 const executionOptions = {
+  context: {},
   toolCallId: "tc_test",
   messages: [],
   abortSignal: undefined,

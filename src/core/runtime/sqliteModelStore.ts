@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
-import { InferenceAttemptSchema, parseInferenceAttempt } from "../ai";
+import {
+  InferenceAttemptSchema,
+  parseInferenceAttempt,
+} from "../ai/inference-attempt";
 import type { ContextReference } from "./runContext";
 import {
   type RecordedModelAttempt,

@@ -38,7 +38,7 @@ type ExecutionContext = {
   parentToolCallId: string;
   messages: ModelMessage[];
   abortSignal?: AbortSignal;
-  experimental_context?: unknown;
+  context?: Record<string, unknown>;
 };
 
 type Cell = {
@@ -493,7 +493,7 @@ export class CodeModeRuntime {
               parentToolCallId: context.parentToolCallId,
               messages: context.messages,
               abortSignal: context.abortSignal,
-              experimental_context: context.experimental_context,
+              context: context.context,
             })
             .then((result) => {
               const encoded = JSON.stringify(result ?? null);

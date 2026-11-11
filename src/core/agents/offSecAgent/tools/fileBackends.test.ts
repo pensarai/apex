@@ -4,7 +4,11 @@ import { gitStatus } from "./gitStatus";
 import type { ToolContext } from "./types";
 import { updateFile } from "./updateFile";
 
-const options = { toolCallId: "test", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "test",
+  messages: [],
+};
 function context(): ToolContext {
   const ctx = {
     agentCwd: "/workspace",

@@ -8,7 +8,10 @@ import { wrapRecordedTools } from "./recordedTools";
 
 type SettledOutput = ToolResultPart["output"];
 type WiredTool = {
-  execute: (i: unknown, o: ToolExecutionOptions) => Promise<unknown>;
+  execute: (
+    i: unknown,
+    o: ToolExecutionOptions<Record<string, unknown>>,
+  ) => Promise<unknown>;
   toModelOutput: (c: unknown) => Promise<SettledOutput>;
 };
 
@@ -46,13 +49,14 @@ function fakeRecorder(overrides: Partial<ToolExecutionRecorder> = {}) {
 }
 
 const OPTIONS = (
-  overrides: Partial<ToolExecutionOptions> = {},
-): ToolExecutionOptions =>
+  overrides: Partial<ToolExecutionOptions<Record<string, unknown>>> = {},
+): ToolExecutionOptions<Record<string, unknown>> =>
   ({
+    context: {},
     toolCallId: "tc_1",
     messages: [],
     ...overrides,
-  }) as ToolExecutionOptions;
+  }) as ToolExecutionOptions<Record<string, unknown>>;
 
 function makeTool(overrides: Record<string, unknown> = {}) {
   const tool = {
@@ -114,7 +118,10 @@ describe("wrapRecordedTools dispatch and settlement", () => {
 
     const result = await (
       wrapped.probe as {
-        execute: (i: unknown, o: ToolExecutionOptions) => Promise<unknown>;
+        execute: (
+          i: unknown,
+          o: ToolExecutionOptions<Record<string, unknown>>,
+        ) => Promise<unknown>;
       }
     ).execute({ q: "x" }, OPTIONS());
 
@@ -141,12 +148,18 @@ describe("wrapRecordedTools dispatch and settlement", () => {
 
     await (
       wrapped.text as {
-        execute: (i: unknown, o: ToolExecutionOptions) => Promise<unknown>;
+        execute: (
+          i: unknown,
+          o: ToolExecutionOptions<Record<string, unknown>>,
+        ) => Promise<unknown>;
       }
     ).execute({}, OPTIONS({ toolCallId: "tc_text" }));
     await (
       wrapped.empty as {
-        execute: (i: unknown, o: ToolExecutionOptions) => Promise<unknown>;
+        execute: (
+          i: unknown,
+          o: ToolExecutionOptions<Record<string, unknown>>,
+        ) => Promise<unknown>;
       }
     ).execute({}, OPTIONS({ toolCallId: "tc_empty" }));
 
@@ -559,7 +572,10 @@ describe("OffensiveSecurityAgent tool journal wiring", () => {
     void agent.streamResult; // createStream is lazy — force construction
 
     const wiredProbe = streamResponseCalls[0].tools.probe as unknown as {
-      execute: (i: unknown, o: ToolExecutionOptions) => Promise<unknown>;
+      execute: (
+        i: unknown,
+        o: ToolExecutionOptions<Record<string, unknown>>,
+      ) => Promise<unknown>;
     };
     expect(wiredProbe.execute).not.toBe(probe.execute);
 

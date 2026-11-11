@@ -88,7 +88,11 @@ describe("SandboxBrowserBackend", () => {
         : createBrowserToolset(ctx);
     const result = await tools.browser_screenshot.execute?.(
       { filename: "proof", toolCallDescription: "capture" },
-      { toolCallId: "proof", messages: [] },
+      {
+        context: {},
+        toolCallId: "proof",
+        messages: [],
+      },
     );
     if (!result || Symbol.asyncIterator in result || !result.path)
       throw new Error("missing evidence result");

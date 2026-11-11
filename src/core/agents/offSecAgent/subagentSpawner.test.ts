@@ -92,7 +92,7 @@ describe("inProcessSubagentSpawner", () => {
     });
     consumeHook = async () => {
       const base = {
-        specificationVersion: "v3" as const,
+        specificationVersion: "v4" as const,
         provider: "fixture",
         modelId: "fixture-model",
         supportedUrls: {},

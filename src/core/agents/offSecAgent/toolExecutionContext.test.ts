@@ -30,7 +30,16 @@ it("establishes context before tool work and preserves concurrent tool identitie
   expect(
     await Promise.all(
       ["first", "second"].map((toolCallId) =>
-        collect(run({}, { toolCallId, messages: [] })),
+        collect(
+          run(
+            {},
+            {
+              context: {},
+              toolCallId,
+              messages: [],
+            },
+          ),
+        ),
       ),
     ),
   ).toEqual([["first"], ["second"]]);
@@ -49,7 +58,16 @@ it("lets the host reject a tool before any effect", async () => {
     },
   );
   await expect(
-    collect(tools.probe!.execute!({}, { toolCallId: "call", messages: [] })),
+    collect(
+      tools.probe!.execute!(
+        {},
+        {
+          context: {},
+          toolCallId: "call",
+          messages: [],
+        },
+      ),
+    ),
   ).rejects.toThrow("blocked");
   expect(execute).not.toHaveBeenCalled();
 });
@@ -199,7 +217,11 @@ it("closes a partially consumed generator inside its host context", async () => 
   );
   const output = tools.probe!.execute!(
     {},
-    { toolCallId: "cancelled", messages: [] },
+    {
+      context: {},
+      toolCallId: "cancelled",
+      messages: [],
+    },
   ) as AsyncIterable<unknown>;
   for await (const value of output) {
     expect(value).toBe("partial");
@@ -225,7 +247,16 @@ it("propagates an iterator failure with the host identity intact", async () => {
     { run: (call, execute) => scope.run(call.toolCallId, execute) },
   );
   await expect(
-    collect(tools.probe!.execute!({}, { toolCallId: "failed", messages: [] })),
+    collect(
+      tools.probe!.execute!(
+        {},
+        {
+          context: {},
+          toolCallId: "failed",
+          messages: [],
+        },
+      ),
+    ),
   ).rejects.toThrow("stream failed");
 });
 
@@ -260,7 +291,11 @@ it("finishes the scope only after a yielding generator finalizer drains", async 
   );
   for await (const value of tools.probe!.execute!(
     {},
-    { toolCallId: "returning", messages: [] },
+    {
+      context: {},
+      toolCallId: "returning",
+      messages: [],
+    },
   ) as AsyncIterable<unknown>) {
     expect(value).toBe("partial");
     break;
@@ -297,7 +332,16 @@ it.each([
     { run: (_call, execute) => execute(), finish },
   );
   await expect(
-    collect(tools.probe!.execute!({}, { toolCallId: "failed", messages: [] })),
+    collect(
+      tools.probe!.execute!(
+        {},
+        {
+          context: {},
+          toolCallId: "failed",
+          messages: [],
+        },
+      ),
+    ),
   ).rejects.toBe(failure);
   expect(finish).toHaveBeenCalledOnce();
   expect(finish).toHaveBeenCalledWith({
@@ -338,7 +382,11 @@ it.each([
   );
   const iterator = tools.probe!.execute!(
     {},
-    { toolCallId: "call", messages: [] },
+    {
+      context: {},
+      toolCallId: "call",
+      messages: [],
+    },
   ) as AsyncGenerator;
   if (phase === "return") await iterator.next();
   const result =
@@ -361,7 +409,16 @@ it("preserves a repeated failure's identity and rejects work before execution", 
     },
   );
   await expect(
-    collect(tools.probe!.execute!({}, { toolCallId: "call", messages: [] })),
+    collect(
+      tools.probe!.execute!(
+        {},
+        {
+          context: {},
+          toolCallId: "call",
+          messages: [],
+        },
+      ),
+    ),
   ).rejects.toBe(failure);
   expect(execute).not.toHaveBeenCalled();
 });
@@ -398,7 +455,12 @@ it("does not enter a generator aborted during acquisition, but still closes it",
     collect(
       tools.probe!.execute!(
         {},
-        { toolCallId: "call", messages: [], abortSignal: abort.signal },
+        {
+          context: {},
+          toolCallId: "call",
+          messages: [],
+          abortSignal: abort.signal,
+        },
       ),
     ),
   ).rejects.toBe(failure);

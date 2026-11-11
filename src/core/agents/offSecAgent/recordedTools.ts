@@ -12,7 +12,10 @@ type JsonValue = Extract<ToolResultPart["output"], { type: "json" }>["value"];
 
 type ExecutableTool = {
   readonly [key: string]: unknown;
-  execute?: (input: never, options: ToolExecutionOptions) => unknown;
+  execute?: (
+    input: never,
+    options: ToolExecutionOptions<Record<string, unknown>>,
+  ) => unknown;
   toModelOutput?: (options: {
     toolCallId: string;
     input: unknown;
@@ -93,13 +96,16 @@ export function wrapRecordedTools(
     }
     const originalExecute = tool.execute.bind(tool) as unknown as (
       input: unknown,
-      options: ToolExecutionOptions,
+      options: ToolExecutionOptions<Record<string, unknown>>,
     ) => Promise<unknown>;
     const originalToModelOutput = tool.toModelOutput?.bind(tool);
 
     wrapped[name] = {
       ...tool,
-      execute: async (input: unknown, options: ToolExecutionOptions) => {
+      execute: async (
+        input: unknown,
+        options: ToolExecutionOptions<Record<string, unknown>>,
+      ) => {
         // Snapshot synchronously before the gate: caller mutation during
         // the intent wait cannot change what executes versus what commits.
         const committedInput = structuredClone(input);

@@ -1,8 +1,8 @@
 import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
-  LanguageModelV3GenerateResult,
-  LanguageModelV3StreamPart,
+  LanguageModelV4,
+  LanguageModelV4CallOptions,
+  LanguageModelV4GenerateResult,
+  LanguageModelV4StreamPart,
 } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -24,7 +24,7 @@ const options = {
       content: [{ type: "text", text: "hello" }],
     },
   ],
-} as LanguageModelV3CallOptions;
+} as LanguageModelV4CallOptions;
 
 const KNOWN_USAGE = {
   inputTokens: { total: 2, noCache: 2, cacheRead: 0, cacheWrite: 0 },
@@ -32,8 +32,8 @@ const KNOWN_USAGE = {
 };
 
 function generated(
-  overrides: Partial<LanguageModelV3GenerateResult> = {},
-): LanguageModelV3GenerateResult {
+  overrides: Partial<LanguageModelV4GenerateResult> = {},
+): LanguageModelV4GenerateResult {
   return {
     content: [{ type: "text", text: "world" }],
     finishReason: { unified: "stop", raw: "stop" },
@@ -43,9 +43,9 @@ function generated(
   };
 }
 
-function streamOf(parts: LanguageModelV3StreamPart[]) {
+function streamOf(parts: LanguageModelV4StreamPart[]) {
   return {
-    stream: new ReadableStream<LanguageModelV3StreamPart>({
+    stream: new ReadableStream<LanguageModelV4StreamPart>({
       start(controller) {
         for (const part of parts) controller.enqueue(part);
         controller.close();
@@ -72,11 +72,11 @@ function toolCallStream(): ReturnType<typeof streamOf> {
 }
 
 function model(input?: {
-  doGenerate?: LanguageModelV3["doGenerate"];
-  doStream?: LanguageModelV3["doStream"];
-}): LanguageModelV3 {
+  doGenerate?: LanguageModelV4["doGenerate"];
+  doStream?: LanguageModelV4["doStream"];
+}): LanguageModelV4 {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     provider: "openai.chat",
     modelId: "provider-model",
     supportedUrls: {},
@@ -85,16 +85,16 @@ function model(input?: {
   };
 }
 
-function wrap(provider: LanguageModelV3): LanguageModelV3 {
+function wrap(provider: LanguageModelV4): LanguageModelV4 {
   return withNativeRolloutEvidenceModel(provider, {
     requestedModelId: "test-model",
     operationKind: "agent.stream",
   });
 }
 
-async function drain(stream: ReadableStream<LanguageModelV3StreamPart>) {
+async function drain(stream: ReadableStream<LanguageModelV4StreamPart>) {
   const reader = stream.getReader();
-  const parts: LanguageModelV3StreamPart[] = [];
+  const parts: LanguageModelV4StreamPart[] = [];
   for (;;) {
     const next = await reader.read();
     if (next.done) return parts;
@@ -103,10 +103,10 @@ async function drain(stream: ReadableStream<LanguageModelV3StreamPart>) {
 }
 
 async function drainUntilError(
-  stream: ReadableStream<LanguageModelV3StreamPart>,
-): Promise<{ parts: LanguageModelV3StreamPart[]; error: unknown }> {
+  stream: ReadableStream<LanguageModelV4StreamPart>,
+): Promise<{ parts: LanguageModelV4StreamPart[]; error: unknown }> {
   const reader = stream.getReader();
-  const parts: LanguageModelV3StreamPart[] = [];
+  const parts: LanguageModelV4StreamPart[] = [];
   for (;;) {
     try {
       const next = await reader.read();
@@ -199,7 +199,7 @@ describe("critical inference recording without evidence capture", () => {
           ],
         },
       ],
-    } as unknown as LanguageModelV3CallOptions;
+    } as unknown as LanguageModelV4CallOptions;
 
     const { recorder, events } = makeRecorder();
     const result = await runWithInferenceRecorder(recorder, () =>
@@ -266,7 +266,7 @@ describe("critical inference recording without evidence capture", () => {
           {
             type: "finish",
             finishReason: { unified: "stop", raw: "stop" },
-          } as LanguageModelV3StreamPart,
+          } as LanguageModelV4StreamPart,
         ]),
     });
     const unknownStream = await runWithInferenceRecorder(unknown.recorder, () =>

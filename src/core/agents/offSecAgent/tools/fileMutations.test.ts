@@ -7,7 +7,11 @@ import type { ToolContext } from "./types";
 import { updateFile } from "./updateFile";
 
 const roots: string[] = [];
-const options = { toolCallId: "mutation-contract", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "mutation-contract",
+  messages: [],
+};
 const toolCallDescription = "Verify exact file mutation";
 afterEach(async () => {
   for (const root of roots.splice(0))
