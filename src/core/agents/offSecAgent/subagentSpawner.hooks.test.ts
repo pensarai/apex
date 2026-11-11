@@ -12,13 +12,15 @@ const mocks = vi.hoisted(() => ({
 
 // runSpawnedPentestWorker does: await import("../specialized/pentest/agent")
 vi.mock("../specialized/pentest/agent", () => ({
-  TargetedPentestAgent: vi.fn((input: Record<string, unknown>) => {
-    mocks.pentestInput = input;
-    return {
-      consume: async () => ({ findings: [] }),
-      drained: Promise.resolve(),
-    };
-  }),
+  TargetedPentestAgent: class {
+    drained = Promise.resolve();
+    constructor(input: Record<string, unknown>) {
+      mocks.pentestInput = input;
+    }
+    async consume() {
+      return { findings: [] };
+    }
+  },
 }));
 
 vi.mock("../specialized/reconWorker/agent", () => ({

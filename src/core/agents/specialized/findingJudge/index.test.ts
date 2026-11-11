@@ -17,12 +17,12 @@ vi.mock("./agent", () => ({
     "get_page",
     "response",
   ],
-  FindingJudgeAgent: vi.fn().mockImplementation((args) => {
-    mocks.constructorArgs(args);
-    return {
-      consume: mocks.consume,
-    };
-  }),
+  FindingJudgeAgent: class {
+    consume = mocks.consume;
+    constructor(args: unknown) {
+      mocks.constructorArgs(args);
+    }
+  },
 }));
 
 const { createJudgeFailureResult, judgeFinding } = await import("./index");
