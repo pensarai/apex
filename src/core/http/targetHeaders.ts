@@ -14,6 +14,7 @@ import {
   getSessionAllowedPorts,
   isHostInScope,
   isUrlInSessionScope,
+  isUrlReachable,
 } from "./targetScope";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
@@ -30,6 +31,8 @@ export interface ResolverSession {
     };
     readonly authCredentials?: unknown;
   };
+  /** Validated host-owned callback domains (see `targetScope.ts`). */
+  readonly callbackDomains?: ReadonlyArray<string>;
   readonly credentialManager?: {
     listCredentialsWithHeaders?: () => ReadonlyArray<{
       readonly tokens?: { readonly customHeaders?: HeaderRecord };
@@ -164,7 +167,7 @@ export function targetFetch(
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const { headers: _headers, ...requestInit } = init ?? {};
   return fetchWithScopedRedirects(url, requestInit, (hopUrl, context) => {
-    if (strict && !isUrlInSessionScope(hopUrl, session)) {
+    if (strict && !isUrlReachable(hopUrl, session)) {
       throw new Error(
         context.redirectCount > 0
           ? `Scope violation: redirect destination ${hopUrl} is not in the immutable run policy`

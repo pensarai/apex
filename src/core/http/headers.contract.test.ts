@@ -275,6 +275,52 @@ describe("targetFetch", () => {
     spy.mockRestore();
   });
 
+  it("reaches a test domain under strict scope without the session's headers", async () => {
+    const session = makeSession({
+      callbackDomains: ["probe.cb.example.net"],
+      config: {
+        headers: { Authorization: "Bearer secret" },
+        scopeConstraints: {
+          strictScope: true,
+          allowedHosts: ["example.com"],
+        },
+      },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok"));
+    try {
+      await targetFetch(session, "https://probe.cb.example.net/marker-1");
+
+      expect(spy).toHaveBeenCalledOnce();
+      const headers = (spy.mock.calls[0]?.[1]?.headers ?? {}) as Record<
+        string,
+        string
+      >;
+      expect(headers.Authorization).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still blocks a non-test host under strict scope", async () => {
+    const session = makeSession({
+      callbackDomains: ["probe.cb.example.net"],
+      config: {
+        scopeConstraints: { strictScope: true, allowedHosts: ["example.com"] },
+      },
+    });
+    const spy = vi.spyOn(globalThis, "fetch");
+    try {
+      await expect(
+        targetFetch(session, "https://outside.example/x"),
+      ).rejects.toThrow(/immutable run policy/i);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("blocks a default strict-scope redirect before connecting to its destination", async () => {
     const session = makeSession({
       config: {
