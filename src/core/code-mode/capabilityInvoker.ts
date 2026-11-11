@@ -7,7 +7,7 @@ type InvokeOptions = {
   parentToolCallId: string;
   messages: ModelMessage[];
   abortSignal?: AbortSignal;
-  experimental_context?: unknown;
+  context?: Record<string, unknown>;
 };
 
 type CapabilityInvokerOptions = {
@@ -177,7 +177,10 @@ export class CanonicalCapabilityInvoker {
     if (!tool) throw new Error(`Unknown capability: ${toolName}`);
     return {
       name: toolName,
-      description: tool.description,
+      description:
+        typeof tool.description === "function"
+          ? tool.description({ context: {} })
+          : tool.description,
       inputSchema: await asSchema(tool.inputSchema).jsonSchema,
     };
   }
@@ -343,10 +346,10 @@ export class CanonicalCapabilityInvoker {
 
     try {
       const execution = tool.execute(validation.value, {
+        context: options.context ?? {},
         toolCallId,
         messages: options.messages,
         abortSignal: options.abortSignal,
-        experimental_context: options.experimental_context,
       });
 
       let output: unknown;

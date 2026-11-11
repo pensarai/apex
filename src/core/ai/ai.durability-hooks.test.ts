@@ -1,7 +1,7 @@
 import type {
+  GenerateTextOnStepEndCallback,
   LanguageModel,
   LanguageModelMiddleware,
-  StreamTextOnStepFinishCallback,
   ToolSet,
 } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +9,7 @@ import { z } from "zod";
 
 const mocks = vi.hoisted(() => {
   const baseModel = {
-    specificationVersion: "v3" as const,
+    specificationVersion: "v4" as const,
     provider: "test",
     modelId: "base",
     supportedUrls: {},
@@ -74,7 +74,7 @@ function step(inputTokens: number, outputTokens: number) {
       totalTokens: inputTokens + outputTokens,
     },
     providerMetadata: undefined,
-  } as unknown as Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0];
+  } as unknown as Parameters<GenerateTextOnStepEndCallback<ToolSet>>[0];
 }
 
 function stepWithCache(
@@ -91,7 +91,7 @@ function stepWithCache(
       inputTokenDetails: { cacheReadTokens, cacheWriteTokens },
     },
     providerMetadata: undefined,
-  } as unknown as Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0];
+  } as unknown as Parameters<GenerateTextOnStepEndCallback<ToolSet>>[0];
 }
 
 function objectResult(
@@ -121,7 +121,7 @@ function streamCall(index: number) {
   return call[0] as {
     model: unknown;
     maxRetries: number;
-    onStepFinish: StreamTextOnStepFinishCallback<ToolSet>;
+    onStepFinish: GenerateTextOnStepEndCallback<ToolSet>;
   };
 }
 
@@ -150,7 +150,7 @@ describe("streamResponse durability hooks", () => {
       expect(mocks.wrapLanguageModel).toHaveBeenCalledWith({
         model: mocks.baseModel,
         middleware: {
-          specificationVersion: "v3",
+          specificationVersion: "v4",
           wrapStream: expect.any(Function),
         },
       });
@@ -164,7 +164,7 @@ describe("streamResponse durability hooks", () => {
         .mockReturnValueOnce(mocks.wrappedModel)
         .mockReturnValueOnce(attemptModel);
       const middleware: LanguageModelMiddleware = {
-        specificationVersion: "v3",
+        specificationVersion: "v4",
       };
       streamResponse({
         model: "test-model",
@@ -179,7 +179,7 @@ describe("streamResponse durability hooks", () => {
       expect(mocks.wrapLanguageModel).toHaveBeenNthCalledWith(2, {
         model: mocks.wrappedModel,
         middleware: {
-          specificationVersion: "v3",
+          specificationVersion: "v4",
           wrapStream: expect.any(Function),
         },
       });
@@ -386,7 +386,7 @@ describe("generateObjectResponse languageModelMiddleware", () => {
   });
 
   it("wraps the model with the middleware when set", async () => {
-    const middleware: LanguageModelMiddleware = { specificationVersion: "v3" };
+    const middleware: LanguageModelMiddleware = { specificationVersion: "v4" };
     await generateObjectResponse({
       model: "test-model",
       schema: objectSchema,
@@ -424,7 +424,7 @@ describe("generateObjectResponse languageModelMiddleware", () => {
       model: "test-model",
       schema: objectSchema,
       prompt: "hi",
-      languageModelMiddleware: { specificationVersion: "v3", wrapGenerate },
+      languageModelMiddleware: { specificationVersion: "v4", wrapGenerate },
     });
 
     expect(wrapGenerate).toHaveBeenCalledOnce();

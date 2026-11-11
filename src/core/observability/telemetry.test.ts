@@ -2,13 +2,13 @@
 // operation identifiers are a fixed low-cardinality set; payload capture
 // stays opt-in; metadata propagates to span attributes.
 
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { simulateReadableStream, stepCountIs } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-const mockState: { model: MockLanguageModelV3 | null } = { model: null };
+const mockState: { model: MockLanguageModelV4 | null } = { model: null };
 vi.mock("../ai/utils", async () => {
   const actual =
     await vi.importActual<typeof import("../ai/utils")>("../ai/utils");
@@ -55,7 +55,7 @@ function summaryStream(
           usage,
           providerMetadata,
         },
-      ] as unknown as Array<LanguageModelV3StreamPart>,
+      ] as unknown as Array<LanguageModelV4StreamPart>,
     }),
   };
 }
@@ -72,8 +72,8 @@ function summarySpan<
   return span;
 }
 
-function oneStepTextModel(): MockLanguageModelV3 {
-  return new MockLanguageModelV3({
+function oneStepTextModel(): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doStream: async (options) => {
@@ -108,7 +108,7 @@ function oneStepTextModel(): MockLanguageModelV3 {
                 outputTokens: { total: 20, text: 20, reasoning: undefined },
               },
             },
-          ] as unknown as Array<LanguageModelV3StreamPart>,
+          ] as unknown as Array<LanguageModelV4StreamPart>,
         }),
       };
     },
@@ -116,9 +116,9 @@ function oneStepTextModel(): MockLanguageModelV3 {
 }
 
 /** A model whose step-1 tool args fail zod validation, triggering repair. */
-function invalidToolArgsModel(): MockLanguageModelV3 {
+function invalidToolArgsModel(): MockLanguageModelV4 {
   let call = 0;
-  return new MockLanguageModelV3({
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doStream: async () => {
@@ -148,7 +148,7 @@ function invalidToolArgsModel(): MockLanguageModelV3 {
                   outputTokens: { total: 5, text: 5, reasoning: undefined },
                 },
               },
-            ] as unknown as Array<LanguageModelV3StreamPart>,
+            ] as unknown as Array<LanguageModelV4StreamPart>,
           }),
         };
       }
@@ -172,15 +172,15 @@ function invalidToolArgsModel(): MockLanguageModelV3 {
                 outputTokens: { total: 6, text: 6, reasoning: undefined },
               },
             },
-          ] as unknown as Array<LanguageModelV3StreamPart>,
+          ] as unknown as Array<LanguageModelV4StreamPart>,
         }),
       };
     },
   });
 }
 
-function generateModel(): MockLanguageModelV3 {
-  return new MockLanguageModelV3({
+function generateModel(): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doGenerate: async () => ({
@@ -520,7 +520,7 @@ describe("full payload capture (stream path)", () => {
   it("includes prompt, response, reasoning, and tool payloads", async () => {
     process.env.AI_TRACE_RECORD_PAYLOADS = "true";
     let call = 0;
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doStream: async () => {
@@ -555,7 +555,7 @@ describe("full payload capture (stream path)", () => {
                     outputTokens: { total: 10, text: 10, reasoning: undefined },
                   },
                 },
-              ] as unknown as Array<LanguageModelV3StreamPart>,
+              ] as unknown as Array<LanguageModelV4StreamPart>,
             }),
           };
         }
@@ -579,7 +579,7 @@ describe("full payload capture (stream path)", () => {
                   outputTokens: { total: 9, text: 9, reasoning: undefined },
                 },
               },
-            ] as unknown as Array<LanguageModelV3StreamPart>,
+            ] as unknown as Array<LanguageModelV4StreamPart>,
           }),
         };
       },
@@ -644,8 +644,8 @@ describe("full payload capture (stream path)", () => {
 // ---------------------------------------------------------------------------
 
 /** A model that streams one text step AND generates with cache + metadata. */
-function generateAndStreamModel(): MockLanguageModelV3 {
-  return new MockLanguageModelV3({
+function generateAndStreamModel(): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
     provider: "mock-anthropic",
     modelId: MODEL,
     doStream: async (options) => {
@@ -684,7 +684,7 @@ function generateAndStreamModel(): MockLanguageModelV3 {
                 outputTokens: { total: 5, text: 5, reasoning: undefined },
               },
             },
-          ] as unknown as Array<LanguageModelV3StreamPart>,
+          ] as unknown as Array<LanguageModelV4StreamPart>,
         }),
       };
     },
@@ -775,7 +775,7 @@ describe("auxiliary model lifecycle", () => {
 
   it("preserves a successful tool repair when its usage callback rejects", async () => {
     let call = 0;
-    mockState.model = new MockLanguageModelV3({
+    mockState.model = new MockLanguageModelV4({
       provider: "mock-anthropic",
       modelId: MODEL,
       doStream: async () => {
@@ -804,7 +804,7 @@ describe("auxiliary model lifecycle", () => {
                     outputTokens: { total: 5, text: 5, reasoning: undefined },
                   },
                 },
-              ] as unknown as Array<LanguageModelV3StreamPart>,
+              ] as unknown as Array<LanguageModelV4StreamPart>,
             }),
           };
         }
@@ -828,7 +828,7 @@ describe("auxiliary model lifecycle", () => {
                   outputTokens: { total: 6, text: 6, reasoning: undefined },
                 },
               },
-            ] as unknown as Array<LanguageModelV3StreamPart>,
+            ] as unknown as Array<LanguageModelV4StreamPart>,
           }),
         };
       },

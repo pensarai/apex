@@ -602,6 +602,48 @@ function generateToolResultSummary(toolName: string, text: string): string {
   return `[${toolName}] → ${len} chars, ${lines} lines`;
 }
 
+/** Keep unsent user corrections after the tool results they were waiting on. */
+export function orderResolvedToolMessages(
+  messages: ModelMessage[],
+): ModelMessage[] {
+  const resolved = new Set(
+    messages.flatMap((message) =>
+      message.role === "tool"
+        ? message.content.flatMap((part) =>
+            part.type === "tool-result" ? [part.toolCallId] : [],
+          )
+        : [],
+    ),
+  );
+  const pending = new Set<string>();
+  const deferred: ModelMessage[] = [];
+  const ordered: ModelMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (
+          part.type === "tool-call" &&
+          !part.providerExecuted &&
+          resolved.has(part.toolCallId)
+        )
+          pending.add(part.toolCallId);
+      }
+    }
+    if (message.role === "user" && pending.size > 0) {
+      deferred.push(message);
+      continue;
+    }
+    ordered.push(message);
+    if (message.role === "tool") {
+      for (const part of message.content) {
+        if (part.type === "tool-result") pending.delete(part.toolCallId);
+      }
+    }
+    if (pending.size === 0) ordered.push(...deferred.splice(0));
+  }
+  return [...ordered, ...deferred];
+}
+
 /**
  * Tail the SDK needs to replay pending approvals: unresolved responses in the
  * last message, plus their requests, tool calls and everything after them.

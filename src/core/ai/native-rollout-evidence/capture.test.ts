@@ -1,9 +1,9 @@
 import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
-  LanguageModelV3GenerateResult,
-  LanguageModelV3StreamPart,
-  LanguageModelV3Usage,
+  LanguageModelV4,
+  LanguageModelV4CallOptions,
+  LanguageModelV4GenerateResult,
+  LanguageModelV4StreamPart,
+  LanguageModelV4Usage,
 } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
 import type { InferenceAttempt } from "../inference-attempt";
@@ -22,11 +22,11 @@ const options = {
       content: [{ type: "text", text: "hello" }],
     },
   ],
-} as LanguageModelV3CallOptions;
+} as LanguageModelV4CallOptions;
 
 function generated(
-  overrides: Partial<LanguageModelV3GenerateResult> = {},
-): LanguageModelV3GenerateResult {
+  overrides: Partial<LanguageModelV4GenerateResult> = {},
+): LanguageModelV4GenerateResult {
   return {
     content: [{ type: "text", text: "world" }],
     finishReason: { unified: "stop", raw: "stop" },
@@ -51,11 +51,11 @@ function generated(
 }
 
 function model(input?: {
-  doGenerate?: LanguageModelV3["doGenerate"];
-  doStream?: LanguageModelV3["doStream"];
-}): LanguageModelV3 {
+  doGenerate?: LanguageModelV4["doGenerate"];
+  doStream?: LanguageModelV4["doStream"];
+}): LanguageModelV4 {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     provider: "openai.chat",
     modelId: "provider-model",
     supportedUrls: {},
@@ -63,7 +63,7 @@ function model(input?: {
     doStream:
       input?.doStream ??
       (async () => ({
-        stream: new ReadableStream<LanguageModelV3StreamPart>({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
           start(controller) {
             controller.enqueue({ type: "stream-start", warnings: [] });
             controller.enqueue({ type: "text-start", id: "text-1" });
@@ -91,8 +91,8 @@ function model(input?: {
   };
 }
 
-async function drain(stream: ReadableStream<LanguageModelV3StreamPart>) {
-  const values: LanguageModelV3StreamPart[] = [];
+async function drain(stream: ReadableStream<LanguageModelV4StreamPart>) {
+  const values: LanguageModelV4StreamPart[] = [];
   const reader = stream.getReader();
   for (;;) {
     const result = await reader.read();
@@ -108,7 +108,7 @@ describe("native rollout capture", () => {
     "native",
   ] as const)("retains a bounded %s stream prefix including its JSON envelope", async (boundary) => {
     const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
-    const part: LanguageModelV3StreamPart =
+    const part: LanguageModelV4StreamPart =
       boundary === "native"
         ? { type: "raw", rawValue: "x".repeat(120) }
         : { type: "text-delta", id: "t", delta: "x".repeat(81) };
@@ -501,7 +501,7 @@ describe("native rollout capture", () => {
         cacheWrite: 0,
       },
       outputTokens: { total: 1, text: 1, reasoning: 0 },
-    } as LanguageModelV3Usage;
+    } as LanguageModelV4Usage;
     const capture = createNativeRolloutEvidenceCapture({
       enabled: true,
       runId: "run-invalid-attempt-usage",
@@ -1037,7 +1037,7 @@ describe("native rollout capture", () => {
         },
       },
     });
-    let observed: LanguageModelV3StreamPart[] = [];
+    let observed: LanguageModelV4StreamPart[] = [];
 
     await capture.run(async () => {
       const wrapped = withNativeRolloutEvidenceModel(model(), {
@@ -1069,7 +1069,7 @@ describe("native rollout capture", () => {
 
   it("marks a complete raw stream prefix truncated without changing provider parts", async () => {
     const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
-    const parts: LanguageModelV3StreamPart[] = [
+    const parts: LanguageModelV4StreamPart[] = [
       { type: "raw", rawValue: { text: "x".repeat(100) } },
       { type: "raw", rawValue: { text: "x".repeat(2_000) } },
       {
@@ -1088,13 +1088,13 @@ describe("native rollout capture", () => {
       },
       limits: { maxAssetBytes: 1_024 },
     });
-    let observed: LanguageModelV3StreamPart[] = [];
+    let observed: LanguageModelV4StreamPart[] = [];
 
     await capture.run(async () => {
       const wrapped = withNativeRolloutEvidenceModel(
         model({
           doStream: async () => ({
-            stream: new ReadableStream<LanguageModelV3StreamPart>({
+            stream: new ReadableStream<LanguageModelV4StreamPart>({
               start(controller) {
                 for (const part of parts) controller.enqueue(part);
                 controller.close();
@@ -1163,7 +1163,7 @@ describe("native rollout capture", () => {
       const wrapped = withNativeRolloutEvidenceModel(
         model({
           doStream: async () => ({
-            stream: new ReadableStream<LanguageModelV3StreamPart>({
+            stream: new ReadableStream<LanguageModelV4StreamPart>({
               start(controller) {
                 controller.enqueue(rawPart);
                 controller.close();
@@ -1216,7 +1216,7 @@ describe("native rollout capture", () => {
       const wrapped = withNativeRolloutEvidenceModel(
         model({
           doStream: async () => ({
-            stream: new ReadableStream<LanguageModelV3StreamPart>({
+            stream: new ReadableStream<LanguageModelV4StreamPart>({
               pull(controller) {
                 controller.enqueue({
                   type: "raw",
@@ -1266,7 +1266,7 @@ describe("native rollout capture", () => {
     await capture.run(async () => {
       const base = model({
         doStream: async () => ({
-          stream: new ReadableStream<LanguageModelV3StreamPart>({
+          stream: new ReadableStream<LanguageModelV4StreamPart>({
             pull(controller) {
               controller.enqueue({
                 type: "text-delta",
@@ -1310,7 +1310,7 @@ describe("native rollout capture", () => {
     await capture.run(async () => {
       const base = model({
         doStream: async () => ({
-          stream: new ReadableStream<LanguageModelV3StreamPart>({
+          stream: new ReadableStream<LanguageModelV4StreamPart>({
             start(controller) {
               controller.enqueue({
                 type: "finish",
@@ -1340,7 +1340,7 @@ describe("native rollout capture", () => {
   });
 
   it("returns an unchanged provider stream when collector setup fails", async () => {
-    const stream = new ReadableStream<LanguageModelV3StreamPart>();
+    const stream = new ReadableStream<LanguageModelV4StreamPart>();
     const lock = stream.getReader();
     const result = { stream, request: { body: { input: "hello" } } };
     const doStream = vi.fn(async () => result);
@@ -1370,7 +1370,7 @@ describe("native rollout capture", () => {
   });
 
   it("labels helper operations without changing model inputs", async () => {
-    const seen: LanguageModelV3CallOptions[] = [];
+    const seen: LanguageModelV4CallOptions[] = [];
     const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
     const base = model({
       doGenerate: async (input) => {
@@ -1728,7 +1728,7 @@ describe("native rollout capture", () => {
 
   it("keeps forwarding an evicted stream without collecting or emitting it again", async () => {
     const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
-    const lateParts: LanguageModelV3StreamPart[] = [
+    const lateParts: LanguageModelV4StreamPart[] = [
       { type: "raw", rawValue: { text: "late raw" } },
       { type: "text-start", id: "late" },
       { type: "text-delta", id: "late", delta: "late text" },
@@ -1749,13 +1749,13 @@ describe("native rollout capture", () => {
       },
       limits: { maxPendingRecords: 1 },
     });
-    let firstStream: ReadableStream<LanguageModelV3StreamPart> | undefined;
+    let firstStream: ReadableStream<LanguageModelV4StreamPart> | undefined;
 
     await capture.run(async () => {
       const first = withNativeRolloutEvidenceModel(
         model({
           doStream: async () => ({
-            stream: new ReadableStream<LanguageModelV3StreamPart>({
+            stream: new ReadableStream<LanguageModelV4StreamPart>({
               start(controller) {
                 for (const part of lateParts) controller.enqueue(part);
                 controller.close();

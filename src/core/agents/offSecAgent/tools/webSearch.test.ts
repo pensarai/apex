@@ -50,7 +50,11 @@ describe("webSearch broker capabilities", () => {
         query: "security advisory",
         toolCallDescription: "Search for an advisory",
       },
-      { messages: [], toolCallId: "tc_search" },
+      {
+        context: {},
+        messages: [],
+        toolCallId: "tc_search",
+      },
     )) as WebSearchResponse;
 
     expect(result.success).toBe(true);
@@ -102,7 +106,11 @@ describe("webSearch broker capabilities", () => {
         query: "security advisory",
         toolCallDescription: "Search for an advisory",
       },
-      { messages: [], toolCallId: "tc_search" },
+      {
+        context: {},
+        messages: [],
+        toolCallId: "tc_search",
+      },
     )) as WebSearchResponse;
 
     expect(result).toMatchObject({
@@ -143,7 +151,11 @@ describe("webSearch broker capabilities", () => {
         query: "security advisory",
         toolCallDescription: "Search for an advisory",
       },
-      { messages: [], toolCallId: "tc_search" },
+      {
+        context: {},
+        messages: [],
+        toolCallId: "tc_search",
+      },
     )) as WebSearchResponse;
 
     expect(result).toMatchObject({
@@ -168,7 +180,12 @@ describe("webSearch Exa BYOK", () => {
         query: "security advisory",
         toolCallDescription: "Search for an advisory",
       },
-      { messages: [], toolCallId: "tc_exa", abortSignal },
+      {
+        context: {},
+        messages: [],
+        toolCallId: "tc_exa",
+        abortSignal,
+      },
     )) as WebSearchResponse;
   }
 

@@ -74,7 +74,11 @@ function invoke(sessionId: string): Promise<unknown> {
   } as unknown as ToolContext;
   return queryWhiteboxCatalog(ctx).execute?.(
     { query: "auth", limit: 3, toolCallDescription: "fixture" },
-    { toolCallId: "tc_test", messages: [] },
+    {
+      context: {},
+      toolCallId: "tc_test",
+      messages: [],
+    },
   ) as Promise<unknown>;
 }
 

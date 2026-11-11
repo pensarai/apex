@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { LanguageModelV3, LanguageModelV4 } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
 import {
   type CustomProviders,
@@ -11,7 +11,7 @@ import {
 export function createCustomModel(
   id: string,
   providers?: CustomProviders,
-): LanguageModelV3 {
+): LanguageModelV3 | LanguageModelV4 {
   const { providerId, provider, model } = resolveCustomModel(id, providers);
   if (provider.apiType === "responses") {
     if (!provider.apiKeyEnv)

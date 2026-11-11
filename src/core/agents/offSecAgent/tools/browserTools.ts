@@ -126,6 +126,7 @@ export function createBrowserToolsetFactories(ctx: ToolContext) {
     }
 
     const execOptions = {
+      context: {},
       toolCallId: "",
       messages: [],
       abortSignal: undefined as never,

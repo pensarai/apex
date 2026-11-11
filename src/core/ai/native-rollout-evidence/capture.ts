@@ -1,12 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   APICallError,
-  type LanguageModelV3,
-  type LanguageModelV3CallOptions,
-  type LanguageModelV3GenerateResult,
-  type LanguageModelV3StreamPart,
-  type LanguageModelV3StreamResult,
-  type LanguageModelV3Usage,
+  type LanguageModelV4,
+  type LanguageModelV4CallOptions,
+  type LanguageModelV4GenerateResult,
+  type LanguageModelV4StreamPart,
+  type LanguageModelV4StreamResult,
+  type LanguageModelV4Usage,
 } from "@ai-sdk/provider";
 import {
   type AttemptUsageInput,
@@ -147,7 +147,7 @@ interface StreamCollector {
   sawFinish: boolean;
   finishReason?: string;
   providerMetadata?: unknown;
-  usage?: LanguageModelV3Usage;
+  usage?: LanguageModelV4Usage;
   responseId?: string;
   responseModelId?: string;
 }
@@ -639,7 +639,7 @@ function optionalContent(
   };
 }
 
-function normalizedCallOptions(options: LanguageModelV3CallOptions): unknown {
+function normalizedCallOptions(options: LanguageModelV4CallOptions): unknown {
   return {
     prompt: options.prompt,
     maxOutputTokens: options.maxOutputTokens,
@@ -678,7 +678,7 @@ function beginAttempt(
   context: NativeRolloutModelContext,
   provider: string,
   modelId: string,
-  options: LanguageModelV3CallOptions,
+  options: LanguageModelV4CallOptions,
   retry?: PendingFailure,
 ): AttemptCapture {
   // Disabled stores skip input capture entirely — a recorder-only attempt
@@ -734,7 +734,7 @@ function beginAttempt(
 }
 
 function isAborted(
-  options: LanguageModelV3CallOptions,
+  options: LanguageModelV4CallOptions,
   error: unknown,
 ): boolean {
   return (
@@ -761,7 +761,7 @@ function emitAttempt(
     nativeOutputAbsent?: "omitted" | "unsupported";
     nativeOutputReason?: string;
     providerMetadata?: unknown;
-    usage?: LanguageModelV3Usage;
+    usage?: LanguageModelV4Usage;
     providerRequestId?: string;
     effectiveModelId?: string;
     limitations?: CaptureDiagnosticV1[];
@@ -982,7 +982,7 @@ function safeEmitAttempt(
 function collectStreamPart(
   store: CaptureStore,
   collector: StreamCollector,
-  part: LanguageModelV3StreamPart,
+  part: LanguageModelV4StreamPart,
 ): void {
   if (part.type === "finish") {
     collector.sawFinish = true;
@@ -1041,10 +1041,10 @@ function wrapCapturedStream(
   store: CaptureStore,
   recorder: InferenceRecorder | undefined,
   capture: AttemptCapture,
-  result: LanguageModelV3StreamResult,
-  options: LanguageModelV3CallOptions,
+  result: LanguageModelV4StreamResult,
+  options: LanguageModelV4CallOptions,
   retainFailure: (emit: PendingFailure["emit"]) => void,
-): LanguageModelV3StreamResult {
+): LanguageModelV4StreamResult {
   const collector: StreamCollector = {
     parts: [],
     rawParts: [],
@@ -1144,9 +1144,9 @@ function wrapCapturedStream(
     store.openFinalizers.values().next().value?.();
   }
   store.openFinalizers.add(interrupt);
-  let stream: ReadableStream<LanguageModelV3StreamPart>;
+  let stream: ReadableStream<LanguageModelV4StreamPart>;
   try {
-    stream = new ReadableStream<LanguageModelV3StreamPart>({
+    stream = new ReadableStream<LanguageModelV4StreamPart>({
       async pull(controller) {
         try {
           const next = await reader.read();
@@ -1211,9 +1211,9 @@ function wrapCapturedStream(
 }
 
 export function withNativeRolloutEvidenceModel(
-  model: LanguageModelV3,
+  model: LanguageModelV4,
   defaultContext: NativeRolloutModelContext,
-): LanguageModelV3 {
+): LanguageModelV4 {
   const recorder = getInferenceRecorder();
   const store =
     captureStore.getStore() ??
@@ -1371,8 +1371,8 @@ export function withNativeRolloutEvidenceModel(
   };
 
   async function doGenerate(
-    options: LanguageModelV3CallOptions,
-  ): Promise<LanguageModelV3GenerateResult> {
+    options: LanguageModelV4CallOptions,
+  ): Promise<LanguageModelV4GenerateResult> {
     const current = context();
     const retry = takePendingFailure(current.invocation);
     if (retry) {
@@ -1405,7 +1405,7 @@ export function withNativeRolloutEvidenceModel(
       options.abortSignal?.throwIfAborted();
     }
 
-    let result: LanguageModelV3GenerateResult;
+    let result: LanguageModelV4GenerateResult;
     try {
       result = await model.doGenerate(options);
     } catch (error) {
@@ -1480,8 +1480,8 @@ export function withNativeRolloutEvidenceModel(
   }
 
   async function doStream(
-    options: LanguageModelV3CallOptions,
-  ): Promise<LanguageModelV3StreamResult> {
+    options: LanguageModelV4CallOptions,
+  ): Promise<LanguageModelV4StreamResult> {
     const current = context();
     const retry = takePendingFailure(current.invocation);
     if (retry) {
@@ -1514,7 +1514,7 @@ export function withNativeRolloutEvidenceModel(
       options.abortSignal?.throwIfAborted();
     }
 
-    let result: LanguageModelV3StreamResult;
+    let result: LanguageModelV4StreamResult;
     try {
       result = await model.doStream(options);
     } catch (error) {

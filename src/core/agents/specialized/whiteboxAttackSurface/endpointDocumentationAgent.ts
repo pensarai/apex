@@ -1,4 +1,4 @@
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import type { GenerateTextOnStepEndCallback, ToolSet } from "ai";
 import type {
   AIModel,
   CacheMetrics,
@@ -67,7 +67,7 @@ interface SharedAgentOptions {
   abortSignal?: AbortSignal;
   eventBus?: AgentEventBus;
   attackSurfaceRegistry?: AttackSurfaceRegistry;
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: GenerateTextOnStepEndCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   reasoning?: ReasoningSetting;

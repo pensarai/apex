@@ -48,6 +48,7 @@ type GrepCall = Parameters<NonNullable<ReturnType<typeof grep>["execute"]>>[0];
 
 async function runGrep(ctx: ToolContext, input: GrepCall): Promise<GrepResult> {
   return (await grep(ctx).execute?.(input, {
+    context: {},
     toolCallId: "tc_test",
     messages: [],
     abortSignal: ctx.abortSignal,
@@ -219,7 +220,12 @@ describe("grep interruption labeling", () => {
         directory: ".",
         toolCallDescription: "search that gets aborted",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     );
     ac.abort();
     const result = (await pending) as GrepResult;

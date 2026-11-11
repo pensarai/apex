@@ -1,6 +1,6 @@
 import type {
+  GenerateTextOnStepEndCallback,
   StopCondition,
-  StreamTextOnStepFinishCallback,
   StreamTextResult,
   ToolSet,
 } from "ai";
@@ -68,7 +68,7 @@ export interface AgentDefinition<
   resolveResult?: (
     opts: TOpts,
     state: TState,
-    streamResult: StreamTextResult<ToolSet, never>,
+    streamResult: StreamTextResult<ToolSet, Record<string, unknown>, never>,
     validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
@@ -116,7 +116,7 @@ export interface AgentDefinition<
   onStepFinish?: (
     opts: TOpts,
     state: TState,
-  ) => StreamTextOnStepFinishCallback<ToolSet> | undefined;
+  ) => GenerateTextOnStepEndCallback<ToolSet> | undefined;
 }
 
 /**

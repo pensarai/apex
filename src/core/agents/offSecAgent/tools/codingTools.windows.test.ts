@@ -24,7 +24,11 @@ import type { ToolContext } from "./types";
 import { updateFile } from "./updateFile";
 
 const roots: string[] = [];
-const callOptions = { toolCallId: "windows-file-contract", messages: [] };
+const callOptions = {
+  context: {},
+  toolCallId: "windows-file-contract",
+  messages: [],
+};
 const toolCallDescription = "Exercise native Windows file operations";
 
 const sandbox: UnifiedSandbox = {
