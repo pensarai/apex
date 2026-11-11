@@ -94,6 +94,7 @@ import {
   resolveReasoningSetting,
 } from "./reasoning";
 import { STREAM_DEBUG } from "./streamTelemetry";
+import { createToolResultPresenter } from "./toolResultPresentation";
 import {
   type AIAuthConfig,
   CompactionRejectedError,
@@ -1678,6 +1679,10 @@ function streamResponseWithinOperation(
   let recorderBase: ModelMessage[] | undefined;
   let responseMessageLength = 0;
   let responseMessages: ModelMessage[] = [];
+  const presentToolResults =
+    opts.preserveHistory && sessionPath
+      ? createToolResultPresenter(opts.messages ?? [], sessionPath)
+      : (messages: ModelMessage[]) => messages;
   const estimatedOverheadTokens = estimateToolsOverheadTokens(tools) + 1_000;
   let preparedInputEstimateTokens = 0;
   let inputSafetyMarginTokens = 10_000;
@@ -1693,7 +1698,10 @@ function streamResponseWithinOperation(
       step.response.id !== "summarization" &&
       step.response.id !== "tool-repair"
     ) {
-      responseMessages = [...responseMessages, ...step.response.messages];
+      responseMessages = [
+        ...responseMessages,
+        ...presentToolResults(step.response.messages),
+      ];
       const response = {
         ...step.response,
         messages: responseMessages as typeof step.response.messages,
@@ -2164,6 +2172,7 @@ function streamResponseWithinOperation(
           ]),
           step.steps.flatMap((previous) => previous.toolCalls),
         );
+        stepMessages = presentToolResults(stepMessages);
         if (nativeCompaction)
           stepMessages = nativeCompactionWindow(stepMessages);
         if (!nativeCompaction && step.stepNumber > 0) {

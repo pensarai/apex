@@ -1,10 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
+import {
+  resolveWhiteboxBackend,
+  resolveWhiteboxPath,
+} from "../../../tools/backends/whitebox";
 import {
   profileCodebase as buildRepoProfile,
-  resolvePathWithinCodebaseRoot,
-  resolveWhiteboxCodebaseRoot,
   selectCatalogForProfile,
   summarizeCatalogRecords,
   writeWhiteboxArtifact,
@@ -31,15 +32,9 @@ Full structured output is written to the session artifact; inline data is a comp
         .describe("A concise description of the profiling task"),
     }),
     execute: async ({ path }) => {
-      const codebaseRoot = resolveWhiteboxCodebaseRoot({
-        agentCwd: ctx.agentCwd,
-        codebasePath: ctx.session.config?.codebasePath,
-      });
       let rootPath: string;
       try {
-        rootPath = path
-          ? resolvePathWithinCodebaseRoot(codebaseRoot, path)
-          : codebaseRoot;
+        rootPath = await resolveWhiteboxPath(ctx, path);
       } catch (error) {
         return {
           success: false,

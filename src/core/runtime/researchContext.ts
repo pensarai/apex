@@ -167,10 +167,30 @@ export class ResearchContext implements RunContextRecorder {
     reasoning?: ReasoningSetting;
   } {
     if (this.state.system === undefined) this.state.system = system;
-    else if (this.state.currentSystem !== system) {
+    else if ((this.state.currentSystem ?? this.state.system) !== system) {
+      const before = (this.state.currentSystem ?? this.state.system).split(
+        "\n",
+      );
+      const after = system.split("\n");
+      let start = 0;
+      while (
+        start < before.length &&
+        start < after.length &&
+        before[start] === after[start]
+      )
+        start++;
+      let end = 0;
+      while (
+        end < before.length - start &&
+        end < after.length - start &&
+        before[before.length - 1 - end] === after[after.length - 1 - end]
+      )
+        end++;
+      const removed = before.slice(start, before.length - end).join("\n");
+      const added = after.slice(start, after.length - end).join("\n");
       this.state.messages.push({
         role: "system",
-        content: `Updated session instructions. These supersede earlier session instructions where they differ.\n\n${system}`,
+        content: `Session instruction update. Keep all other instructions unchanged.\n\nWithdraw these earlier instructions:\n${removed || "(none)"}\n\nApply these replacement instructions:\n${added || "(none)"}`,
       });
     }
     this.state.currentSystem = system;

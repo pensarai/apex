@@ -5,7 +5,10 @@ import { threatModelSkill } from "./threatModel";
 
 export { buildPentestPrompt } from "./pentest";
 export { promptInjectionSkill } from "./promptInjection";
-export { buildThreatModelPrompt } from "./threatModel";
+export {
+  adaptiveThreatModelSkill,
+  buildThreatModelPrompt,
+} from "./threatModel";
 
 /**
  * Code-defined skills bundled with the application.

@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readSkill } from "../agents/offSecAgent/tools/readSkill";
+import type { ToolContext } from "../agents/offSecAgent/tools/types";
 import { BUILTIN_SKILLS } from "./builtins";
 import { SkillsRegistry } from "./registry";
 import type { BuiltInSkill } from "./types";
@@ -65,6 +67,17 @@ describe("SkillsRegistry", () => {
   });
 
   describe("buildCatalog", () => {
+    it("keeps catalog ordering stable across discovery order and refreshes", async () => {
+      await createDirSkill(`${TEST_PREFIX}z`, "Z", "Last");
+      await createDirSkill(`${TEST_PREFIX}a`, "A", "First");
+      await registry.load({ projectRoot: tmpRoot });
+      const slugs = registry.list().map((skill) => skill.slug);
+      expect(slugs).toEqual([...slugs].sort((a, b) => a.localeCompare(b)));
+      const catalog = registry.buildCatalog();
+      await registry.refresh();
+      expect(registry.buildCatalog()).toBe(catalog);
+    });
+
     it("returns empty string when no skills", async () => {
       const emptyRegistry = new SkillsRegistry();
       expect(emptyRegistry.buildCatalog()).toBe("");
@@ -90,6 +103,32 @@ describe("SkillsRegistry", () => {
   });
 
   describe("readSkillContent", () => {
+    it("loads adaptive guidance through the v2 tool without changing legacy workflows", async () => {
+      await registry.load({ projectRoot: tmpRoot });
+      const tool = readSkill({
+        mode: "default-v2",
+        skillsRegistry: registry,
+      } as ToolContext);
+      const result = await tool.execute?.(
+        { name: "threat-model", toolCallDescription: "Follow the parser hint" },
+        { toolCallId: "skill", context: {}, messages: [] },
+      );
+      expect(result).toMatchObject({ success: true });
+      expect(result).toEqual({
+        success: true,
+        ...(await registry.readSkillContent("threat-model", "default-v2")),
+      });
+      expect(JSON.stringify(result)).not.toContain(
+        "Work through these eight phases",
+      );
+      expect(registry.buildCatalog("default-v2")).toContain(
+        "scoped to the user's objective",
+      );
+      expect(
+        (await registry.readSkillContent("threat-model")).content,
+      ).toContain("Work through these eight phases");
+    });
+
     it("reads skill instructions from disk", async () => {
       await createDirSkill(
         `${TEST_PREFIX}read`,

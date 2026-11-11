@@ -1,5 +1,22 @@
 import type { BuiltInSkill } from "../types";
 
+export const adaptiveThreatModelSkill: BuiltInSkill = {
+  slug: "threat-model",
+  manifest: {
+    name: "Threat Model",
+    description:
+      "Source-grounded threat modeling and research guidance, scoped to the user's objective",
+    tags: ["security", "threat-modeling", "whitebox"],
+  },
+  instructions: `Use threat modeling to answer the user's security question and identify useful investigations. Choose the scope, depth, order, and output format from the request, hints, and evidence. There are no required phases, coverage quotas, attack-path counts, or minimum step counts.
+
+Ground relevant assets, actors, trust boundaries, and security properties in source or observed behavior. Trace promising inputs through their controls to consequential operations. Follow specific hints and contradictory evidence deeply enough to resolve them; expand coverage when the investigation warrants it.
+
+Distinguish intended capabilities from security violations. State deployment assumptions, attacker access, missing evidence, and product-intent dependencies. Separate confirmed behavior, hypotheses, and demonstrated impact. For a promising lead, identify a discriminating test and a negative control when useful. Do not label a hypothesis a verified vulnerability.
+
+When a research oracle is requested, capture the relevant invariants, source references, unresolved leads, and what would confirm or refute them. Preserve reproductions and evidence as the work develops. Write a separate report when requested or useful for continuation; do not generate a large document merely to satisfy a template.`,
+};
+
 /**
  * Build the full prompt sent to the agent for threat model generation.
  * Used by the workflow, CLI, and TUI to ensure identical prompts.

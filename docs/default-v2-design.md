@@ -196,6 +196,21 @@ context is committed through its existing recorder before the local snapshot.
 Execution, approvals, retained artifacts, and job handles continue to use the
 existing agent/runtime/backend contracts; no separate workflow scheduler is added.
 
+Model-visible tool results are now a separate presentation from captured execution
+evidence. New file/search/command result batches receive a shared preview budget
+before persistence and the next model request. Omitted captured text is retained
+behind an agent-owned reference that supports reading and searching. The exact
+presentation is reused on subsequent steps; previously consumed messages and opaque
+reasoning are not edited. Producer truncation remains explicitly marked as incomplete
+capture. Initial preview sizes are experimental, not a claim of optimal tuning.
+
+Session instruction changes append only the changed span, and skill catalogs have a
+stable order. A local v2 launch directory is a default location, not an implicit source
+scope: profiling, queries, scans, and jobs accept explicit repository paths while
+configured codebase and file-workspace boundaries remain enforced. V2 skills supply
+optional expertise; the threat-model capability and its TUI entry points impose no
+phase sequence or report quotas.
+
 The SDK 7 foundation requires a coordinated Console dependency and middleware
 migration. Its downstream compatibility check must pass against the matching
 Console revision before merge. This is integration work, not an interface redesign.

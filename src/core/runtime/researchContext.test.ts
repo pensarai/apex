@@ -23,6 +23,31 @@ const defaults = {
 };
 
 describe("research session context", () => {
+  it("appends only changed instruction lines and keeps the consumed prefix across restarts", async () => {
+    const path = await root();
+    const catalog = "skills and tools\n".repeat(500);
+    const original = `Research\napproval=required\n${catalog}`;
+    const updated = `Research\napproval=automatic\n${catalog}`;
+    const first = new ResearchContext(path, defaults);
+    await first.checkpoint(first.prepare(original));
+    const resumed = new ResearchContext(path, { ...defaults, newMessages: [] });
+    const prepared = resumed.prepare(updated);
+    expect(prepared.system).toBe(original);
+    expect(prepared.messages.slice(0, first.latest().length)).toEqual(
+      first.latest(),
+    );
+    const update = prepared.messages.at(-1)?.content;
+    expect(update).toContain("approval=required");
+    expect(update).toContain("approval=automatic");
+    expect(update).not.toContain("skills and tools");
+    await resumed.checkpoint(prepared);
+    const next = new ResearchContext(path, { ...defaults, newMessages: [] });
+    expect(next.prepare(updated).messages).toEqual(prepared.messages);
+    expect(
+      next.prepare(`Research\n${catalog}`).messages.at(-1)?.content,
+    ).toContain("approval=automatic");
+  });
+
   it("preserves consumed results and reasoning while appending a user correction after restart", async () => {
     const path = await root();
     const first = new ResearchContext(path, defaults);
