@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   console-typecheck:
+    # Fork PRs don't receive secrets, so the private console checkout can't run there.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Checkout apex (this repo)
