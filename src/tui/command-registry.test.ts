@@ -102,7 +102,7 @@ describe("recorded runs command", () => {
   });
 });
 
-describe("autonomous workflow Strike Mode overrides", () => {
+describe("autonomous workflow mode overrides", () => {
   it("keeps direct /pentest launches in standard mode", async () => {
     const navigate = vi.fn();
 
@@ -114,7 +114,11 @@ describe("autonomous workflow Strike Mode overrides", () => {
     expect(navigate).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "operator",
-        initialConfig: expect.objectContaining({ strikeMode: false }),
+        initialConfig: expect.objectContaining({
+          defaultV2Mode: false,
+          strikeMode: false,
+          lanceMode: false,
+        }),
         initialSkill: expect.objectContaining({ slug: "pentest" }),
       }),
     );
@@ -128,7 +132,11 @@ describe("autonomous workflow Strike Mode overrides", () => {
     expect(navigate).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "operator",
-        initialConfig: expect.objectContaining({ strikeMode: false }),
+        initialConfig: expect.objectContaining({
+          defaultV2Mode: false,
+          strikeMode: false,
+          lanceMode: false,
+        }),
         initialSkill: expect.objectContaining({ slug: "threat-model" }),
       }),
     );
