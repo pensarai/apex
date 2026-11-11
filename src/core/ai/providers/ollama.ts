@@ -1,7 +1,11 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { type OllamaCatalog, resolveOllamaModel } from "../../ollama";
 
-export function createOllamaModel(id: string, catalog?: OllamaCatalog) {
+export function createOllamaModel(
+  id: string,
+  catalog?: OllamaCatalog,
+): LanguageModelV3 {
   const { model, baseURL } = resolveOllamaModel(id, catalog);
   return createOpenAICompatible({
     name: "ollama",

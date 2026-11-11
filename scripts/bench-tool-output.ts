@@ -127,7 +127,11 @@ type ExecTool = {
   description: string;
   execute: (
     input: Record<string, unknown>,
-    options: { toolCallId: string; messages: unknown[] },
+    options: {
+      context: Record<string, unknown>;
+      toolCallId: string;
+      messages: unknown[];
+    },
   ) => Promise<Record<string, unknown>>;
   toModelOutput?: (options: {
     toolCallId: string;
@@ -139,7 +143,11 @@ type ExecTool = {
 type SimpleTool = {
   execute: (
     input: Record<string, unknown>,
-    options: { toolCallId: string; messages: unknown[] },
+    options: {
+      context: Record<string, unknown>;
+      toolCallId: string;
+      messages: unknown[];
+    },
   ) => Promise<Record<string, unknown>>;
 };
 
@@ -344,6 +352,7 @@ async function captureFixture(
   };
   const start = performance.now();
   const result = await execTool.execute(input, {
+    context: {},
     toolCallId: `bench-capture-${tag}`,
     messages: [],
   });
@@ -449,6 +458,7 @@ async function recoverViaReadFile(
     };
     if (startLine !== undefined) input.startLine = startLine;
     const res = await readTool.execute(input, {
+      context: {},
       toolCallId: `bench-read-${page}`,
       messages: [],
     });
@@ -477,7 +487,11 @@ async function recoverViaGrep(
       flags: "-n",
       toolCallDescription: "benchmark evidence recovery",
     },
-    { toolCallId: "bench-grep", messages: [] },
+    {
+      context: {},
+      toolCallId: "bench-grep",
+      messages: [],
+    },
   );
   return {
     recovered:
@@ -494,7 +508,11 @@ async function probeReadFile(
 ): Promise<{ reachable: boolean; tokenFound: boolean }> {
   const res = await readTool.execute(
     { path, toolCallDescription: "benchmark evidence recovery" },
-    { toolCallId: "bench-probe", messages: [] },
+    {
+      context: {},
+      toolCallId: "bench-probe",
+      messages: [],
+    },
   );
   const content = typeof res.content === "string" ? res.content : "";
   return {

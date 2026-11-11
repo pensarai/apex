@@ -202,7 +202,11 @@ describe.skipIf(process.platform === "win32")("owned background jobs", () => {
         timeoutSeconds: 5,
         toolCallDescription: "test",
       },
-      { toolCallId: "separate", messages: [] },
+      {
+        context: {},
+        toolCallId: "separate",
+        messages: [],
+      },
     );
     expect(result).toMatchObject({ success: true });
     if (!("data" in result) || !result.data) throw new Error("missing record");
@@ -276,7 +280,11 @@ describe.skipIf(process.platform === "win32")("owned background jobs", () => {
         timeoutSeconds: 5,
         toolCallDescription: "test",
       },
-      { toolCallId: "tool-start", messages: [] },
+      {
+        context: {},
+        toolCallId: "tool-start",
+        messages: [],
+      },
     );
     if (!("data" in result) || !result.data)
       throw new Error("missing tool record");
@@ -286,7 +294,11 @@ describe.skipIf(process.platform === "win32")("owned background jobs", () => {
     if (!read.execute) throw new Error("missing execute");
     const log = await read.execute(
       { path: result.artifactPaths[0], toolCallDescription: "read" },
-      { toolCallId: "tool-read", messages: [] },
+      {
+        context: {},
+        toolCallId: "tool-read",
+        messages: [],
+      },
     );
     expect(JSON.stringify(log)).toContain("public-tool");
     expect(calls).toHaveLength(2);

@@ -23,7 +23,11 @@ describe("createFile (golden, LocalBackends)", () => {
         content: "export {}",
         toolCallDescription: "Create new.ts",
       },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as CreateFileResult;
 
     expect(result.success).toBe(true);
@@ -38,11 +42,19 @@ describe("createFile (golden, LocalBackends)", () => {
     const tool = createFile(makeCtx(root));
     await tool.execute?.(
       { toolCallDescription: "test", path: "a.ts", content: "one" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     );
     const result = (await tool.execute?.(
       { toolCallDescription: "test", path: "a.ts", content: "two" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as CreateFileResult;
 
     expect(result.success).toBe(false);
@@ -55,7 +67,11 @@ describe("createFile (golden, LocalBackends)", () => {
     const tool = createFile(makeCtx(root));
     await tool.execute?.(
       { toolCallDescription: "test", path: "a.ts", content: "one" },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     );
     const result = (await tool.execute?.(
       {
@@ -64,7 +80,11 @@ describe("createFile (golden, LocalBackends)", () => {
         content: "two",
         overwrite: true,
       },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as CreateFileResult;
 
     expect(result.success).toBe(true);
@@ -101,7 +121,11 @@ describe("createFile backend injection", () => {
         content: "hi",
         overwrite: true,
       },
-      { toolCallId: "t1", messages: [] },
+      {
+        context: {},
+        toolCallId: "t1",
+        messages: [],
+      },
     )) as CreateFileResult;
 
     expect(write).toHaveBeenCalledWith("new.ts", "hi", { mode: "overwrite" });

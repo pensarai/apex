@@ -26,7 +26,11 @@ describe("report_error tool", () => {
         reason: "authentication_failed",
         message: "Login at https://app.example.com/login returned 401",
       },
-      { toolCallId: "tc_1", messages: [] },
+      {
+        context: {},
+        toolCallId: "tc_1",
+        messages: [],
+      },
     );
 
     expect(onError).toHaveBeenCalledTimes(1);

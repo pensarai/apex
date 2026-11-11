@@ -94,7 +94,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/null-body",
         toolCallDescription: "Read a bodyless response",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(error === undefined);
@@ -117,7 +122,12 @@ describe("getPage body liveness", () => {
 
     const pending = getPage(makeCtx()).execute?.(
       { url: "https://example.com/stall", toolCallDescription: "Stalled page" },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
     await vi.advanceTimersByTimeAsync(30_000);
     const result = (await pending) as GetPageResponse;
@@ -162,7 +172,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/endless",
         toolCallDescription: "Endless page",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -203,7 +218,12 @@ describe("getPage body liveness", () => {
 
     const result = (await getPage(makeCtx()).execute?.(
       { url: "https://example.com/broken", toolCallDescription: "Broken page" },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -246,7 +266,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/slow",
         toolCallDescription: "Page aborted by the host mid-body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -280,7 +305,12 @@ describe("getPage body liveness", () => {
 
     const result = (await getPage(makeCtx()).execute?.(
       { url: "https://example.com/missing", toolCallDescription: "404 page" },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -314,7 +344,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/binary",
         toolCallDescription: "Binary download",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -361,7 +396,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/adversarial",
         toolCallDescription: "Adversarially chunked page",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -403,7 +443,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/hanging-cancel",
         toolCallDescription: "Page whose stream cancel never settles",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -443,7 +488,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/pre-aborted",
         toolCallDescription: "Page pre-aborted between headers and body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -469,7 +519,12 @@ describe("getPage body liveness", () => {
         url: "https://example.com/ok",
         toolCallDescription: "Healthy page",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(true);
@@ -521,7 +576,12 @@ describe("getPage research broker", () => {
         fetchToken: "signed-search-result",
         toolCallDescription: "Read an advisory",
       },
-      { toolCallId: "tc_broker", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_broker",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(true);
@@ -566,7 +626,12 @@ describe("getPage research broker", () => {
         fetchToken: "signed-search-result",
         toolCallDescription: "Read an advisory",
       },
-      { toolCallId: "tc_broker_cfg", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_broker_cfg",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(true);
@@ -590,7 +655,12 @@ describe("getPage research broker", () => {
         url: "https://prod.example.com/admin",
         toolCallDescription: "Read a sibling",
       },
-      { toolCallId: "tc_broker", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_broker",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -633,7 +703,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/big-broken",
         toolCallDescription: "big + error",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -670,7 +745,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/big-capped",
         toolCallDescription: "big + cap",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -706,7 +786,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/big-abort",
         toolCallDescription: "big + abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -729,7 +814,12 @@ describe("getPage preview-limit vs producer failure", () => {
 
     const result = (await getPage(makeCtx()).execute?.(
       { url: "https://example.com/big-ok", toolCallDescription: "big + EOF" },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     // Complete capture, preview-limited — this IS a success.
@@ -770,7 +860,12 @@ describe("getPage preview-limit vs producer failure", () => {
         toolCallDescription:
           "page landing exactly at the cap via an empty chunk",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(true);
@@ -808,7 +903,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/exact-cap-empty-overflow",
         toolCallDescription: "page with empties before real overflow",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -843,7 +943,12 @@ describe("getPage preview-limit vs producer failure", () => {
           url: "https://example.com/exact-cap-stall",
           toolCallDescription: "page stalling at the exact cap",
         },
-        { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: "tc_test",
+          messages: [],
+          abortSignal: undefined,
+        },
       );
       await vi.advanceTimersByTimeAsync(30_000);
       const result = (await pending) as GetPageResponse;
@@ -896,7 +1001,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/eof-then-abort",
         toolCallDescription: "page whose EOF beats a same-turn abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(true);
@@ -941,7 +1051,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/abort-first",
         toolCallDescription: "page whose same-turn abort beats the end",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -982,7 +1097,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/cap-then-abort",
         toolCallDescription: "page capped before a racing abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -1025,7 +1145,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/error-then-abort",
         toolCallDescription: "page whose stream error beats the abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -1068,7 +1193,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/abort-then-error",
         toolCallDescription: "page whose abort beats a same-turn error",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -1111,7 +1241,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/unrelated-abort-error",
         toolCallDescription: "page with an unrelated AbortError",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -1157,7 +1292,12 @@ describe("getPage preview-limit vs producer failure", () => {
         toolCallDescription:
           "page with an unrelated AbortError before a host abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -1203,7 +1343,12 @@ describe("getPage preview-limit vs producer failure", () => {
         url: "https://example.com/processing-failure",
         toolCallDescription: "page whose chunk processing fails",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
@@ -1234,7 +1379,11 @@ describe("getPage backend routing", () => {
         url: "https://example.com/page",
         toolCallDescription: "Read remote page",
       },
-      { toolCallId: "page", messages: [] },
+      {
+        context: {},
+        toolCallId: "page",
+        messages: [],
+      },
     );
     expect(result).toMatchObject({
       success: true,

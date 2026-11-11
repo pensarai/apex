@@ -103,6 +103,7 @@ interface CrawlResult {
 
 function execute(input: typeof CRAWL_INPUT) {
   return crawlAuthenticated(makeCtx()).execute?.(input, {
+    context: {},
     toolCallId: "tc_test",
     messages: [],
     abortSignal: undefined,
@@ -215,6 +216,7 @@ describe("crawlAuthenticated", () => {
       config: { headers: { Authorization: "Bearer fixture-token" } },
     });
     const result = (await crawlAuthenticated(ctx).execute?.(CRAWL_INPUT, {
+      context: {},
       toolCallId: "tc_test",
       messages: [],
       abortSignal: undefined,

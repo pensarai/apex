@@ -83,6 +83,7 @@ async function runRead(
   input: ReadFileCall,
 ): Promise<ReadFileResult> {
   return (await readFile(ctx).execute?.(input, {
+    context: {},
     toolCallId: "tc_test",
     messages: [],
     abortSignal: ctx.abortSignal,

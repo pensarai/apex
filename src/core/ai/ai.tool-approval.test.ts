@@ -121,8 +121,8 @@ describe("tool approval through streamResponse and the event bus", () => {
     await t.drive(t.mock(toolCallsStep), [user]);
     expect(t.executed).toEqual(["read"]);
     expect(t.events).toEqual([
-      { kind: "tool-result", toolCallId: "c1", toolName: "read" },
       { kind: "tool-approval-request", toolCallId: "c2", toolName: "del" },
+      { kind: "tool-result", toolCallId: "c1", toolName: "read" },
     ]);
     expect(t.getApprovalId()).toBeTruthy();
   });

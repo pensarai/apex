@@ -48,6 +48,7 @@ async function runClone(
   input: CloneInput,
 ): Promise<Record<string, unknown>> {
   return (await cloneRepository(ctx).execute?.(input, {
+    context: {},
     toolCallId: "tc_test",
     messages: [],
     abortSignal: ctx.abortSignal,

@@ -93,7 +93,12 @@ describe("httpRequest prompt injection refs", () => {
         timeout: 1000,
         toolCallDescription: "Send hidden prompt-injection reference",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(capturedBody).toBe(payload);
@@ -124,7 +129,12 @@ describe("httpRequest prompt injection refs", () => {
         timeout: 1000,
         toolCallDescription: "Send literal placeholder text",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
 
     expect(capturedBody).toBe(
@@ -164,7 +174,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Rate-limited GET",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
 
     expect(acquireSlot).toHaveBeenCalledTimes(1);
@@ -183,7 +198,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Out-of-scope GET",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -209,7 +229,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Follow a scoped redirect",
       },
-      { toolCallId: "tc_redirect", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_redirect",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -237,7 +262,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Follow a scoped redirect",
       },
-      { toolCallId: "tc_redirect", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_redirect",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -263,7 +293,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Sandbox GET",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(acquireSlot).toHaveBeenCalledTimes(1);
@@ -294,7 +329,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Sandbox POST",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
 
     const bodyFile = commands
@@ -321,7 +361,12 @@ describe("httpRequest rate limiting", () => {
         timeout: 1000,
         toolCallDescription: "Aborted GET",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: controller.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: controller.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -395,7 +440,12 @@ describe("httpRequest body liveness", () => {
         timeout: 100,
         toolCallDescription: "GET with a stalling body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -441,7 +491,12 @@ describe("httpRequest body liveness", () => {
         timeout: 30_000,
         toolCallDescription: "GET with an endless body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -504,7 +559,12 @@ describe("httpRequest body liveness", () => {
         timeout: 10_000,
         toolCallDescription: "GET with adversarial chunking",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -549,7 +609,12 @@ describe("httpRequest body liveness", () => {
         timeout: 10_000,
         toolCallDescription: "GET whose stream cancel never settles",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     // The cap path invoked the real cancel but never awaited it — completion
@@ -594,7 +659,12 @@ describe("httpRequest body liveness", () => {
         timeout: 10_000,
         toolCallDescription: "GET pre-aborted between headers and body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -635,7 +705,12 @@ describe("httpRequest body liveness", () => {
         timeout: 1_000,
         toolCallDescription: "GET cut off by curl --max-time",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -684,7 +759,12 @@ describe("httpRequest body liveness", () => {
         timeout: 1_000,
         toolCallDescription: "Read a response without a reason phrase",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(success);
@@ -720,7 +800,12 @@ describe("httpRequest body liveness", () => {
         timeout: 1_000,
         toolCallDescription: "Sandbox GET with CRLF body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -761,7 +846,12 @@ describe("httpRequest body liveness", () => {
         timeout: 1_000,
         toolCallDescription: "Complete sandbox GET",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -793,7 +883,12 @@ describe("httpRequest body liveness", () => {
         timeout: 30_000,
         toolCallDescription: "Sandbox GET capped by head",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -866,7 +961,12 @@ describe("httpRequest body liveness", () => {
           timeout: 10_000,
           toolCallDescription: "Read a POSIX response at the byte cap",
         },
-        { toolCallId: "boundary", messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: "boundary",
+          messages: [],
+          abortSignal: undefined,
+        },
       )) as HttpRequestResult;
       expect(result.success).toBe(delta <= 0);
       expect(result.capture.complete).toBe(delta <= 0);
@@ -949,7 +1049,12 @@ describe("httpRequest body liveness", () => {
           timeout: 20_000,
           toolCallDescription: "Endless loopback download through sandbox curl",
         },
-        { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: "tc_test",
+          messages: [],
+          abortSignal: undefined,
+        },
       )) as HttpRequestResult;
       const elapsed = Date.now() - started;
 
@@ -1003,7 +1108,12 @@ describe("httpRequest body liveness", () => {
         timeout: 2_000,
         toolCallDescription: "GET with a broken body stream",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1048,7 +1158,12 @@ describe("httpRequest body liveness", () => {
         timeout: 30_000,
         toolCallDescription: "GET aborted by the host mid-body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1094,7 +1209,12 @@ describe("httpRequest body liveness", () => {
         timeout: stopReason === "timeout" ? 20 : 2_000,
         toolCallDescription: "Read a response whose spill write fails",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.capture).toMatchObject({
@@ -1133,7 +1253,12 @@ describe("httpRequest body liveness", () => {
         timeout: 2_000,
         toolCallDescription: "Small GET",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(small.success).toBe(true);
@@ -1152,7 +1277,12 @@ describe("httpRequest body liveness", () => {
         timeout: 2_000,
         toolCallDescription: "GET with a save-file-sized body",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(large.success).toBe(true);
@@ -1194,7 +1324,12 @@ describe("httpRequest body liveness", () => {
         timeout: 2_000,
         toolCallDescription: "CRLF + multibyte byte counts",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -1224,7 +1359,12 @@ describe("httpRequest body liveness", () => {
         timeout: 2_000,
         toolCallDescription: "complete 404",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     // Complete capture stays success:true — only incomplete transfers flip
@@ -1264,7 +1404,12 @@ describe("httpRequest body liveness", () => {
         timeout: 30_000,
         toolCallDescription: "cap with advertised length",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1302,7 +1447,12 @@ describe("httpRequest body liveness", () => {
         toolCallDescription:
           "GET whose cap lands exactly at EOF via an empty chunk",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -1340,7 +1490,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET with empties before EOF at the cap",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -1376,7 +1531,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET whose empties precede real overflow",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1412,7 +1572,12 @@ describe("httpRequest body liveness", () => {
         timeout: 100,
         toolCallDescription: "GET stalling at the exact cap",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1446,7 +1611,12 @@ describe("httpRequest body liveness", () => {
         timeout: 30_000,
         toolCallDescription: "GET aborted at the stalled cap boundary",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1491,7 +1661,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET whose EOF beats a same-turn abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(true);
@@ -1535,7 +1710,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET whose same-turn abort beats the end",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1580,7 +1760,12 @@ describe("httpRequest body liveness", () => {
         timeout: 30_000,
         toolCallDescription: "GET capped before a racing abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1624,7 +1809,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET whose stream error beats the abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1667,7 +1857,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET whose abort beats a same-turn error",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1712,7 +1907,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET with an unrelated AbortError",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1758,7 +1958,12 @@ describe("httpRequest body liveness", () => {
         toolCallDescription:
           "GET with an unrelated AbortError before a host abort",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1844,7 +2049,12 @@ describe("httpRequest body liveness", () => {
           timeout: 30_000,
           toolCallDescription: "GET cancelled natively mid-body",
         },
-        { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+        {
+          context: {},
+          toolCallId: "tc_test",
+          messages: [],
+          abortSignal: ac.signal,
+        },
       )) as HttpRequestResult;
 
       return { result, readCalls };
@@ -1927,7 +2137,12 @@ describe("httpRequest body liveness", () => {
         timeout: 5_000,
         toolCallDescription: "GET whose chunk processing fails",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
@@ -1990,7 +2205,12 @@ describe("httpRequest body liveness", () => {
         toolCallDescription: "Windows sandbox boundary",
         ...input,
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
   it("windows sandbox: complete GET runs the helper command with env, one execute call", async () => {
@@ -2142,7 +2362,12 @@ describe("httpRequest body liveness", () => {
         timeout: 40_000,
         toolCallDescription: "Windows timeout headroom",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
 
     expect(calls.at(-1)?.opts?.timeout).toBe(55);
@@ -2211,7 +2436,12 @@ describe("httpRequest body liveness", () => {
         timeout: 40_000,
         toolCallDescription: "Linux timeout floor",
       },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_test",
+        messages: [],
+        abortSignal: undefined,
+      },
     );
 
     expect(calls.at(-1)?.opts?.timeout).toBe(40);
@@ -2363,7 +2593,12 @@ describe("http_request timeout fields (canonical timeoutMs)", () => {
         followRedirects: false,
         ...input,
       },
-      { toolCallId: "tc_alias", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_alias",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
   }
 
@@ -2453,7 +2688,12 @@ describe("http_request timeout fields (canonical timeoutMs)", () => {
         timeoutMs: 100,
         toolCallDescription: "Canonical-field GET with a stalling body",
       },
-      { toolCallId: "tc_canonical", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_canonical",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);

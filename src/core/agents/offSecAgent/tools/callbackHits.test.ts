@@ -11,7 +11,11 @@ import { listToolRegistryNames } from "./index";
 import type { ToolContext } from "./types";
 
 const CB = "3f2b8c1e.cb.example.net";
-const options = { toolCallId: "tc_1", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "tc_1",
+  messages: [],
+};
 
 type Result = {
   success: boolean;

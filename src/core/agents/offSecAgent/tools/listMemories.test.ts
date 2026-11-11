@@ -10,7 +10,11 @@ import { type ListMemoriesResult, listMemories } from "./listMemories";
 import type { ToolContext } from "./types";
 
 const ctx = { session: { id: "synthetic" } } as ToolContext;
-const options = { toolCallId: "synthetic-call", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "synthetic-call",
+  messages: [],
+};
 const list = listMemories(ctx).execute;
 const get = getMemory(ctx).execute;
 if (!list || !get) throw new Error("Memory tools must be executable");

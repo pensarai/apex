@@ -1,6 +1,6 @@
 import type {
-  LanguageModelV3CallOptions,
-  LanguageModelV3StreamPart,
+  LanguageModelV4CallOptions,
+  LanguageModelV4StreamPart,
 } from "@ai-sdk/provider";
 import { stepCountIs } from "ai";
 import { afterEach, expect, it, vi } from "vitest";
@@ -28,8 +28,8 @@ async function fixture(
   options: Partial<StreamResponseOpts> = {},
   outcome: "wire" | "valid" | "invalid" | "throw" = "valid",
 ) {
-  const primary: LanguageModelV3CallOptions[] = [],
-    repairs: LanguageModelV3CallOptions[] = [];
+  const primary: LanguageModelV4CallOptions[] = [],
+    repairs: LanguageModelV4CallOptions[] = [];
   const execute = vi.fn(async () => "ok");
   const result = streamResponse({
     model: opus,
@@ -48,10 +48,10 @@ async function fixture(
       fixture: { inputSchema: z.object({ body: z.string() }), execute },
     },
     languageModelMiddleware: {
-      specificationVersion: "v3",
+      specificationVersion: "v4",
       wrapStream: async ({ params }) => {
         primary.push(params);
-        const parts: LanguageModelV3StreamPart[] =
+        const parts: LanguageModelV4StreamPart[] =
           primary.length === 1
             ? [
                 {

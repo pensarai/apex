@@ -58,11 +58,19 @@ describe("CanonicalCapabilityInvoker", () => {
     await Promise.all([
       invoker.tools.response.execute?.(
         { result: "done" },
-        { toolCallId: "response", messages: [] },
+        {
+          context: {},
+          toolCallId: "response",
+          messages: [],
+        },
       ),
       invoker.tools.document_vulnerability.execute?.(
         { title: "finding" },
-        { toolCallId: "finding", messages: [] },
+        {
+          context: {},
+          toolCallId: "finding",
+          messages: [],
+        },
       ),
     ]);
 
@@ -101,7 +109,11 @@ describe("CanonicalCapabilityInvoker", () => {
     });
     const stream = invoker.tools.browser_navigate.execute?.(
       {},
-      { toolCallId: "direct", messages: [] },
+      {
+        context: {},
+        toolCallId: "direct",
+        messages: [],
+      },
     );
     if (
       !stream ||
@@ -198,7 +210,7 @@ describe("CanonicalCapabilityInvoker", () => {
       parentToolCallId: "exec_2",
       messages: [],
       abortSignal: controller.signal,
-      experimental_context: { tenant: "test" },
+      context: { tenant: "test" },
     };
     await invoker.invoke("custom", { value: 42 }, options);
     expect(execute).toHaveBeenCalledWith(
@@ -207,7 +219,7 @@ describe("CanonicalCapabilityInvoker", () => {
         toolCallId: "exec_2:nested:1",
         messages: [],
         abortSignal: controller.signal,
-        experimental_context: options.experimental_context,
+        context: options.context,
       },
     );
     expect(onStart).toHaveBeenCalledWith(

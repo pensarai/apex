@@ -629,6 +629,7 @@ describe("remote file workspace fallback through the real tool registry", () => 
             (tools[name].execute as (i: unknown, o: unknown) => Promise<never>)(
               input,
               {
+                context: {},
                 toolCallId: `tc_${name}`,
                 messages: [],
                 abortSignal: undefined,
@@ -693,6 +694,7 @@ describe("remote file workspace fallback through the real tool registry", () => 
                 o: unknown,
               ) => Promise<never>
             )(input, {
+              context: {},
               toolCallId: "tc_create_file",
               messages: [],
               abortSignal: undefined,

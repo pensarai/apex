@@ -12,7 +12,7 @@ import {
 } from "./reasoning";
 
 export interface RunAgentResult {
-  streamResult: StreamTextResult<ToolSet, never>;
+  streamResult: StreamTextResult<ToolSet, Record<string, unknown>, never>;
   session: SessionInfo;
   lance?: import("../agents/lance").LanceMetrics;
 }

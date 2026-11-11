@@ -6,7 +6,11 @@ import { testEndpointVariations } from "./testEndpointVariations";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
 import type { ToolContext } from "./types";
 
-const options = { toolCallId: "parent-call", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "parent-call",
+  messages: [],
+};
 function context(): ToolContext {
   const ctx = {
     agentCwd: "/workspace",

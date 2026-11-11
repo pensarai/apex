@@ -4,7 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { LanguageModelV3, LanguageModelV4 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   defaultSettingsMiddleware,
@@ -189,7 +189,7 @@ export function buildAuthConfig(cfg: {
 export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,
-): LanguageModelV3 {
+): LanguageModelV4 {
   const { provider } = getModelInfo(model);
 
   const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;
@@ -217,18 +217,21 @@ export function getProviderModel(
     process.env.LOCAL_MODEL_URL ||
     "http://127.0.0.1:1234/v1";
 
-  let providerModel: LanguageModelV3;
+  let providerModel: LanguageModelV3 | LanguageModelV4;
 
   switch (provider) {
     case "ollama":
-      return createOllamaModel(model, authConfig?.ollama);
+      providerModel = createOllamaModel(model, authConfig?.ollama);
+      break;
     case "custom":
-      return createCustomModel(model, authConfig?.customProviders);
+      providerModel = createCustomModel(model, authConfig?.customProviders);
+      break;
     case "hoonify":
-      return createHoonifyModel(model, {
+      providerModel = createHoonifyModel(model, {
         apiKey: authConfig?.hoonifyAPIKey,
         models: authConfig?.hoonifyModels,
       });
+      break;
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
@@ -348,7 +351,9 @@ export function getProviderModel(
               typeof reasoning !== "object" ||
               reasoning === null ||
               Array.isArray(reasoning) ||
+              !("type" in reasoning) ||
               reasoning.type !== "enabled" ||
+              !("budgetTokens" in reasoning) ||
               typeof reasoning.budgetTokens !== "number"
             )
               return params;
@@ -476,7 +481,7 @@ export function getProviderModel(
     }
   }
 
-  return providerModel;
+  return wrapLanguageModel({ model: providerModel, middleware: [] });
 }
 
 async function summarizeConversation(
@@ -486,7 +491,7 @@ async function summarizeConversation(
     model,
     compaction,
   }: { model: LanguageModel; compaction?: CompactionTelemetry },
-): Promise<StreamTextResult<ToolSet, never>> {
+): Promise<StreamTextResult<ToolSet, Record<string, unknown>, never>> {
   const {
     head: fullHead,
     latestUser,
@@ -551,6 +556,7 @@ async function summarizeConversation(
     // below matches on the context-length error.
     let streamError: unknown;
     const result = streamText({
+      allowSystemInMessages: true,
       model,
       providerOptions: summaryProviderOptions,
       system: cacheBreakpoint ? undefined : opts.system,
@@ -824,7 +830,7 @@ export function createSummarizationStream(
   messages: ModelMessage[],
   opts: StreamResponseOpts,
   model: LanguageModel,
-): StreamTextResult<ToolSet, never> {
+): StreamTextResult<ToolSet, Record<string, unknown>, never> {
   const compactionState = opts._compaction ?? {};
   opts = { ...opts, _compaction: compactionState };
   const compaction = beginCompaction("summarize", {
@@ -852,29 +858,29 @@ export function createSummarizationStream(
   // Create a promise that will hold the resumed stream
   // Start the summarization process
   let didCompact = true;
-  const resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>> =
-    summarizeConversation(messages, opts, { model, compaction }).catch(
-      (error) => {
-        compaction?.fail(error, opts.abortSignal?.aborted);
-        if (
-          opts._compactionTrigger === "proactive" &&
-          opts._proactiveSummaryMayFit &&
-          (error instanceof CompactionRejectedError ||
-            checkIfContextLengthError(error))
-        ) {
-          didCompact = false;
-          return streamResponse({
-            ...opts,
-            messages,
-            _compactionTrigger: undefined,
-            _proactiveSummaryMayFit: false,
-            _proactiveSummaryFailures:
-              (opts._proactiveSummaryFailures ?? 0) + 1,
-          });
-        }
-        throw error;
-      },
-    );
+  const resumedStreamPromise: Promise<
+    StreamTextResult<ToolSet, Record<string, unknown>, never>
+  > = summarizeConversation(messages, opts, { model, compaction }).catch(
+    (error) => {
+      compaction?.fail(error, opts.abortSignal?.aborted);
+      if (
+        opts._compactionTrigger === "proactive" &&
+        opts._proactiveSummaryMayFit &&
+        (error instanceof CompactionRejectedError ||
+          checkIfContextLengthError(error))
+      ) {
+        didCompact = false;
+        return streamResponse({
+          ...opts,
+          messages,
+          _compactionTrigger: undefined,
+          _proactiveSummaryMayFit: false,
+          _proactiveSummaryFailures: (opts._proactiveSummaryFailures ?? 0) + 1,
+        });
+      }
+      throw error;
+    },
+  );
 
   // Create a custom async generator that wraps the resumed stream
   const wrappedFullStream = (async function* () {
@@ -891,7 +897,11 @@ export function createSummarizationStream(
     yield toolCallEvent;
 
     // Wait for the summarization to complete
-    let resumedStream: StreamTextResult<ToolSet, never>;
+    let resumedStream: StreamTextResult<
+      ToolSet,
+      Record<string, unknown>,
+      never
+    >;
     try {
       resumedStream = await resumedStreamPromise;
     } catch (error) {
@@ -936,7 +946,11 @@ export function createSummarizationStream(
   // consumption path); these derived promises must not each reject unhandled —
   // derive them from a caught base so a failure resolves undefined here.
   const resumedForFields = resumedStreamPromise.catch(() => undefined);
-  const field = <K extends keyof StreamTextResult<ToolSet, never>>(key: K) => {
+  const field = <
+    K extends keyof StreamTextResult<ToolSet, Record<string, unknown>, never>,
+  >(
+    key: K,
+  ) => {
     const value = resumedForFields.then<unknown>((stream) => stream?.[key]);
     // The resumed stream can abort after compaction succeeded; fullStream owns that error.
     void value.catch(() => {});
@@ -962,10 +976,18 @@ export function createSummarizationStream(
       const stream = await resumedStreamPromise;
       return stream.pipeTextStreamToResponse(
         response as Parameters<
-          StreamTextResult<ToolSet, never>["pipeTextStreamToResponse"]
+          StreamTextResult<
+            ToolSet,
+            Record<string, unknown>,
+            never
+          >["pipeTextStreamToResponse"]
         >[0],
         init as Parameters<
-          StreamTextResult<ToolSet, never>["pipeTextStreamToResponse"]
+          StreamTextResult<
+            ToolSet,
+            Record<string, unknown>,
+            never
+          >["pipeTextStreamToResponse"]
         >[1],
       );
     },
@@ -977,12 +999,12 @@ export function createSummarizationStream(
         "toDataStreamResponse not supported on summarization stream",
       );
     },
-  } as unknown as StreamTextResult<ToolSet, never>;
+  } as unknown as StreamTextResult<ToolSet, Record<string, unknown>, never>;
 }
 
 /** @knipignore drives the live-API stream tests in ai.test.ts; no production caller. */
 export async function consumeStream(
-  stream: StreamTextResult<ToolSet, never>,
+  stream: StreamTextResult<ToolSet, Record<string, unknown>, never>,
   {
     onTextDelta,
     onToolCallStreaming,

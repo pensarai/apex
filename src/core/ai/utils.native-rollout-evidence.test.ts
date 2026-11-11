@@ -1,20 +1,20 @@
 import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
-  LanguageModelV3GenerateResult,
-  LanguageModelV3StreamResult,
+  LanguageModelV4,
+  LanguageModelV4CallOptions,
+  LanguageModelV4GenerateResult,
+  LanguageModelV4StreamResult,
 } from "@ai-sdk/provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const state: {
-    callOptions?: LanguageModelV3CallOptions;
-    resumedModel?: LanguageModelV3;
-    resumedCall?: Promise<LanguageModelV3GenerateResult>;
+    callOptions?: LanguageModelV4CallOptions;
+    resumedModel?: LanguageModelV4;
+    resumedCall?: Promise<LanguageModelV4GenerateResult>;
   } = {};
   return {
     state,
-    streamText: vi.fn((input: { model: LanguageModelV3 }) => {
+    streamText: vi.fn((input: { model: LanguageModelV4 }) => {
       if (!state.callOptions) throw new Error("missing fixture call options");
       const called = input.model.doStream(state.callOptions);
       return {
@@ -66,9 +66,9 @@ const { createNativeRolloutEvidenceCapture, withNativeRolloutEvidenceModel } =
 
 const callOptions = {
   prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
-} as LanguageModelV3CallOptions;
+} as LanguageModelV4CallOptions;
 
-function generated(): LanguageModelV3GenerateResult {
+function generated(): LanguageModelV4GenerateResult {
   return {
     content: [{ type: "text", text: "world" }],
     finishReason: { unified: "stop", raw: "stop" },
@@ -82,13 +82,13 @@ function generated(): LanguageModelV3GenerateResult {
   };
 }
 
-function streamed(): LanguageModelV3StreamResult {
+function streamed(): LanguageModelV4StreamResult {
   return { stream: new ReadableStream({ start: (c) => c.close() }) };
 }
 
-function model(): LanguageModelV3 {
+function model(): LanguageModelV4 {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     provider: "openai.chat",
     modelId: "provider-model",
     supportedUrls: {},

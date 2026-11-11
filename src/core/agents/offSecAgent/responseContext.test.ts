@@ -63,7 +63,11 @@ function fixture(
         if (!execute) throw new Error("Missing response tool");
         const output = execute(
           { result: `value-${index}` },
-          { toolCallId, messages: [] },
+          {
+            context: {},
+            toolCallId,
+            messages: [],
+          },
         );
         for await (const _ of output as AsyncIterable<unknown>) {
           /* Drain the real response wrapper. */

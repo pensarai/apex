@@ -96,7 +96,11 @@ describe("LocalBackends.fs.read golden parity with read_file", () => {
 
     const toolResult = (await readFileTool(ctx).execute?.(
       { toolCallDescription: "test", path: "src.ts" },
-      { toolCallId: "t", messages: [] },
+      {
+        context: {},
+        toolCallId: "t",
+        messages: [],
+      },
     )) as ReadFileResult;
     const backendResult = await LocalBackends(ctx).fs.read("src.ts");
     expect(backendResult).toEqual(toolResult);
@@ -109,7 +113,11 @@ describe("LocalBackends.fs.read golden parity with read_file", () => {
 
     const toolResult = (await readFileTool(ctx).execute?.(
       { toolCallDescription: "test", path: "src.ts", startLine: 2, endLine: 4 },
-      { toolCallId: "t", messages: [] },
+      {
+        context: {},
+        toolCallId: "t",
+        messages: [],
+      },
     )) as ReadFileResult;
     const backendResult = await LocalBackends(ctx).fs.read("src.ts", {
       startLine: 2,
@@ -124,7 +132,11 @@ describe("LocalBackends.fs.read golden parity with read_file", () => {
 
     const toolResult = (await readFileTool(ctx).execute?.(
       { toolCallDescription: "test", path: "nope.ts" },
-      { toolCallId: "t", messages: [] },
+      {
+        context: {},
+        toolCallId: "t",
+        messages: [],
+      },
     )) as ReadFileResult;
     const backendResult = await LocalBackends(ctx).fs.read("nope.ts");
     expect(backendResult).toEqual(toolResult);

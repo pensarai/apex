@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { expect, it, vi } from "vitest";
 import { LanceRuntime } from "../core/agents/lance";
 import { withNativeRolloutEvidenceModel } from "../core/ai/native-rollout-evidence";
@@ -23,8 +23,8 @@ it("captures Lance model-boundary evidence when the CLI destination is configure
   const runtime = new LanceRuntime();
   runtime.finish();
   vi.mocked(runLance).mockImplementation(async () => {
-    const model: LanguageModelV3 = {
-      specificationVersion: "v3",
+    const model: LanguageModelV4 = {
+      specificationVersion: "v4",
       provider: "fixture",
       modelId: "fixture-model",
       supportedUrls: {},

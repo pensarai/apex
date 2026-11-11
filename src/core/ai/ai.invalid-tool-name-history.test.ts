@@ -1,7 +1,7 @@
 import {
   APICallError,
-  type LanguageModelV3CallOptions,
-  type LanguageModelV3StreamPart,
+  type LanguageModelV4CallOptions,
+  type LanguageModelV4StreamPart,
 } from "@ai-sdk/provider";
 import { NoSuchToolError, stepCountIs } from "ai";
 import { describe, expect, it, vi } from "vitest";
@@ -15,7 +15,7 @@ const usage = {
 const malformedName =
   'list_memories" parameter_toolCallDescription="Synthetic request for existing memories';
 async function fixture(invalidName: string, mixed = false) {
-  const requests: LanguageModelV3CallOptions[] = [];
+  const requests: LanguageModelV4CallOptions[] = [];
   const executions = vi.fn(async () => "known tool executed");
   const repairs = vi.fn();
   const callbackEvidence: unknown[] = [];
@@ -32,7 +32,7 @@ async function fixture(invalidName: string, mixed = false) {
       callbackEvidence.push(step.toolCalls, step.toolResults);
     },
     languageModelMiddleware: {
-      specificationVersion: "v3",
+      specificationVersion: "v4",
       wrapGenerate: async () => {
         repairs();
         throw new Error("unknown names have no schema to repair");
@@ -57,7 +57,7 @@ async function fixture(invalidName: string, mixed = false) {
             statusCode: 400,
             isRetryable: false,
           });
-        const chunks: LanguageModelV3StreamPart[] =
+        const chunks: LanguageModelV4StreamPart[] =
           requests.length === 1
             ? [
                 ...(mixed
@@ -138,7 +138,7 @@ async function fixture(invalidName: string, mixed = false) {
   return { requests, parts, failure, result };
 }
 function assertRejectedCallIsTextOnly(
-  request: LanguageModelV3CallOptions,
+  request: LanguageModelV4CallOptions,
   invalidName: string,
 ) {
   const nativeCalls = request.prompt.flatMap((message) =>
@@ -246,7 +246,7 @@ describe("unregistered tool-name continuation", () => {
       silent: true,
       authConfig: { bedrock: { apiKey: "synthetic-key", region: "us-east-1" } },
       languageModelMiddleware: {
-        specificationVersion: "v3",
+        specificationVersion: "v4",
         wrapStream: async () => {
           provider();
           throw originalError;

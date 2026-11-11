@@ -24,7 +24,11 @@ vi.mock("./utils", async () => {
             );
           })(),
           response: Promise.resolve({ messages: [] }),
-        }) as unknown as StreamTextResult<ToolSet, never>,
+        }) as unknown as StreamTextResult<
+          ToolSet,
+          Record<string, unknown>,
+          never
+        >,
     ),
   };
 });

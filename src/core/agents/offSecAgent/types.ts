@@ -2,7 +2,7 @@ import type {
   LanguageModelMiddleware,
   ModelMessage,
   StopCondition,
-  StreamTextOnFinishCallback,
+  StreamTextOnEndCallback,
   StreamTextResult,
   ToolChoice,
   ToolSet,
@@ -318,7 +318,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
   streamIdFactory?: StreamIdFactory;
 
   /** Callback fired when the entire stream finishes */
-  onFinish?: StreamTextOnFinishCallback<ToolSet>;
+  onFinish?: StreamTextOnEndCallback<ToolSet>;
 
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
@@ -400,7 +400,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * If omitted, `consume()` returns `void`.
    */
   resolveResult?: (
-    streamResult: StreamTextResult<ToolSet, never>,
+    streamResult: StreamTextResult<ToolSet, Record<string, unknown>, never>,
     validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 

@@ -117,6 +117,7 @@ mock.module(join(import.meta.dirname, "../../api/offesecAgent.ts"), () => ({
     await execute(
       schema.parse({ url: `http://127.0.0.1:${port}/mutate`, method: "POST" }),
       {
+        context: {},
         toolCallId: "tc_recovery_1",
         messages: [],
       },

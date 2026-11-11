@@ -53,6 +53,7 @@ function makeCtx(): {
 }
 
 const EXEC_OPTS = {
+  context: {},
   toolCallId: "",
   messages: [],
   abortSignal: undefined as never,
