@@ -36,6 +36,7 @@ import {
 import { prepareOllamaModel } from "../../ollama";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { ResearchContext } from "../../runtime/researchContext";
 import type { RunContextRecorder } from "../../runtime/runContext";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
@@ -50,7 +51,6 @@ import {
   buildBaseSystemPrompt,
   buildDefaultV2SystemPrompt,
   buildSessionWorkspaceSection,
-  DEFAULT_V2_DELEGATION_GUIDANCE,
 } from "./prompt";
 import { wrapRecordedTools } from "./recordedTools";
 import {
@@ -71,6 +71,7 @@ import {
   CallbackListenerRegistry,
   createResponseTool,
   createToolsForNames,
+  DEFAULT_V2_EXCLUDED_TOOL_NAMES,
   EMAIL_TOOL_NAMES_ACTIVE,
   FAST_STRIKE_EXCLUDED_TOOL_NAMES,
   listToolRegistryNames,
@@ -481,6 +482,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     return this._session;
   }
 
+  get conversation(): ModelMessage[] | undefined {
+    return this.contextRecorder?.latest();
+  }
+
   /** This agent's identity on the event bus (subagent's session id, or the root session's id). */
   private get busSessionId(): string {
     return this.subagentId ?? this._session.id;
@@ -490,6 +495,25 @@ export class OffensiveSecurityAgent<TResult = void> {
   private lanceModel?: string;
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    const researchContext =
+      input.mode === "default-v2"
+        ? new ResearchContext(
+            input.messagesDir ??
+              (input.subagentId
+                ? join(input.session.rootPath, "subagents", input.subagentId)
+                : input.session.rootPath),
+            {
+              ...input,
+              recorder: input.contextRecorder,
+            },
+          )
+        : undefined;
+    if (researchContext)
+      input = {
+        ...input,
+        messages: researchContext.latest(),
+        contextRecorder: researchContext,
+      };
     this.usesOllama = input.model.startsWith("ollama:");
     if (this.usesOllama && input.authConfig?.ollama) {
       // Loading updates this run's metadata, never the picker or another run.
@@ -666,6 +690,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.credentialManager ?? input.session.credentialManager;
 
     const toolCtx: ToolContext = {
+      mode: input.mode,
       findingPolicy: input.findingPolicy,
       ...(input.attackSurfaceArtifactsPath
         ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
@@ -749,7 +774,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     let activeTools = (input.activeTools as string[]).filter(
       passesEmailSmsGates,
     );
-    if (input.mode === "lance") {
+    if (input.mode === "default-v2") {
+      activeTools = activeTools
+        .map((name) =>
+          name === "document_endpoint" ? "document_endpoint_v2" : name,
+        )
+        .filter((name) => !DEFAULT_V2_EXCLUDED_TOOL_NAMES.has(name));
+    } else if (input.mode === "lance") {
       activeTools = [...LANCE_CONFIG.tools];
     } else if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
@@ -808,28 +839,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       : { ...builtinTools };
 
     if (input.mode === "default-v2") {
-      for (const name of [
-        "spawn_coding_agent",
-        "spawn_pentest_agent",
-        "spawn_recon_agent",
-        "spawn_pentest_swarm",
-        "delegate_to_auth_subagent",
-        "run_attack_surface",
-        "run_pentest_workflow",
-      ]) {
-        const definition = tools[name];
-        if (definition) {
-          const description = definition.description;
-          const prefix = `${DEFAULT_V2_DELEGATION_GUIDANCE}\n\nThe following workflow instructions apply only after choosing delegation:\n`;
-          Object.assign(definition, {
-            description:
-              typeof description === "function"
-                ? (options: Parameters<typeof description>[0]) =>
-                    prefix + description(options)
-                : prefix + (description ?? ""),
-          });
-        }
-      }
+      for (const name of DEFAULT_V2_EXCLUDED_TOOL_NAMES) delete tools[name];
     }
 
     if (this.lanceRuntime) {
@@ -1135,16 +1145,21 @@ export class OffensiveSecurityAgent<TResult = void> {
       });
       this.lanceRuntime?.start();
       const continuation = this.lanceRuntime?.continuationContext();
+      const researchInput = researchContext?.prepare(
+        baseWithFacts + workspaceSection,
+      );
       return streamResponse({
         prompt: continuation
           ? `${input.prompt}\n\n${continuation}`
           : input.prompt,
         system:
-          input.mode === "lance"
+          researchInput?.system ??
+          (input.mode === "lance"
             ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
-            : baseWithFacts + workspaceSection,
+            : baseWithFacts + workspaceSection),
         harness: input.mode === "default-v2" ? "general" : input.harness,
         preserveHistory: input.mode === "default-v2",
+        nativeCompaction: input.mode === "default-v2",
         primaryModelOnly: input.mode === "lance",
         _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
         runContextCompaction: this.lanceRuntime?.runContextCompaction,
@@ -1158,7 +1173,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         messages:
           continuation && input.messages
             ? [...input.messages, { role: "user", content: continuation }]
-            : input.messages,
+            : (researchInput?.messages ?? input.messages),
         tools,
         activeTools,
         stopWhen,
@@ -1172,7 +1187,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             messages: [...context.messages],
             responseMessageOffset: context.responseMessageOffset,
           };
-          if (this.lanceRuntime) {
+          if (this.lanceRuntime || researchContext) {
             this.writer.setLatest(persistedMessages(context.messages));
           }
         },
@@ -1241,7 +1256,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
-        reasoning: input.reasoning,
+        reasoning: researchInput ? researchInput.reasoning : input.reasoning,
         silent: true,
       });
     };
@@ -1847,6 +1862,12 @@ export class OffensiveSecurityAgent<TResult = void> {
             partId: ids.toolPartId?.(toolCallId),
             messageId: ids.messageId,
           });
+          if (this.agentMode === "default-v2" && this.writer.latest) {
+            await this.contextRecorder?.checkpoint({
+              messages: this.writer.latest,
+            });
+            await this.contextRecorder?.flush();
+          }
         } catch (error) {
           recordFinalizationError(error);
         }
@@ -1872,6 +1893,12 @@ export class OffensiveSecurityAgent<TResult = void> {
             partIdFor: ids.toolPartId,
             messageId: ids.messageId,
           });
+          if (this.agentMode === "default-v2" && this.writer.latest) {
+            await this.contextRecorder?.checkpoint({
+              messages: this.writer.latest,
+            });
+            await this.contextRecorder?.flush();
+          }
         } catch (error) {
           recordFinalizationError(error);
         }

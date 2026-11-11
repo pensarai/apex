@@ -14,6 +14,7 @@ import {
 export interface RunAgentResult {
   streamResult: StreamTextResult<ToolSet, Record<string, unknown>, never>;
   session: SessionInfo;
+  messages?: import("ai").ModelMessage[];
   lance?: import("../agents/lance").LanceMetrics;
 }
 
@@ -32,6 +33,40 @@ export async function runOffensiveSecurityAgent(
     onSessionReady?: (session: SessionInfo) => void;
   },
 ): Promise<RunAgentResult> {
+  if (input.mode !== "default-v2") return executeAgent(input);
+  let release!: () => void;
+  const completed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const path = input.session?.rootPath;
+  const previous = path ? researchRuns.get(path) : undefined;
+  if (path) researchRuns.set(path, completed);
+  let ownedPath = path;
+  try {
+    await previous;
+    input.abortSignal?.throwIfAborted();
+    return await executeAgent({
+      ...input,
+      onSessionReady: (session) => {
+        ownedPath = session.rootPath;
+        if (!path) researchRuns.set(session.rootPath, completed);
+        input.onSessionReady?.(session);
+      },
+    });
+  } finally {
+    release();
+    if (ownedPath && researchRuns.get(ownedPath) === completed)
+      researchRuns.delete(ownedPath);
+  }
+}
+
+const researchRuns = new Map<string, Promise<void>>();
+
+async function executeAgent(
+  input: (OffensiveSecurityAgentInput | CreateAgentInput) & {
+    onSessionReady?: (session: SessionInfo) => void;
+  },
+): Promise<RunAgentResult> {
   const resolved = resolveRootReasoning(input);
   const persisted = persistRootReasoningOverride(input);
   input = persisted ? { ...resolved, session: await persisted } : resolved;
@@ -41,10 +76,18 @@ export async function runOffensiveSecurityAgent(
 
   input.onSessionReady?.(agent.session);
 
-  await startAgentExecution(agent).result;
+  const execution = startAgentExecution(agent);
+  try {
+    await execution.result;
+  } catch (error) {
+    if (input.mode === "default-v2") await execution.abortAndDrain();
+    throw error;
+  }
+  if (input.mode === "default-v2") await execution.drained;
   return {
     streamResult: agent.streamResult,
     session: agent.session,
+    ...(input.mode === "default-v2" ? { messages: agent.conversation } : {}),
     ...(agent.lanceRuntime
       ? { lance: agent.lanceRuntime.metrics(input.model) }
       : {}),
@@ -67,10 +110,11 @@ export type OffensiveSecurityAgentClientInput = (
  */
 export function createOffensiveSecurityAgentClient(): {
   run: (input: OffensiveSecurityAgentClientInput) => Promise<RunAgentResult>;
-  abort: () => void;
+  abort: () => Promise<void>;
 } {
   const controller = new AbortController();
   let started = false;
+  let running: Promise<RunAgentResult> | undefined;
   return {
     run(input) {
       if (started) {
@@ -79,13 +123,15 @@ export function createOffensiveSecurityAgentClient(): {
         );
       }
       started = true;
-      return runOffensiveSecurityAgent({
+      running = runOffensiveSecurityAgent({
         ...input,
         abortSignal: controller.signal,
       });
+      return running;
     },
-    abort() {
+    async abort() {
       controller.abort();
+      await running?.catch(() => {});
     },
   };
 }
