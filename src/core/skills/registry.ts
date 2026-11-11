@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
-import { BUILTIN_SKILLS } from "./builtins";
+import type { AgentMode } from "../agents/offSecAgent/types";
+import { adaptiveThreatModelSkill, BUILTIN_SKILLS } from "./builtins";
 import { parseSkillMd } from "./parser";
 import { scanSkillRoots } from "./scanner";
 import type { SkillEntry } from "./types";
@@ -50,8 +51,16 @@ export class SkillsRegistry {
 
   // -- Query -----------------------------------------------------------------
 
-  list(): SkillEntry[] {
-    return Array.from(this.skills.values());
+  list(mode?: AgentMode): SkillEntry[] {
+    return Array.from(this.skills.values())
+      .map((entry) =>
+        mode === "default-v2" &&
+        entry.source === "builtin" &&
+        entry.slug === "threat-model"
+          ? { ...entry, manifest: adaptiveThreatModelSkill.manifest }
+          : entry,
+      )
+      .sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
   get(slug: string): SkillEntry | undefined {
@@ -66,12 +75,16 @@ export class SkillsRegistry {
    */
   async readSkillContent(
     slug: string,
+    mode?: AgentMode,
   ): Promise<{ name: string; content: string }> {
     const entry = this.skills.get(slug);
     if (!entry) throw new Error(`Skill "${slug}" not found`);
 
     if (entry.source === "builtin") {
-      const builtin = BUILTIN_SKILLS.find((b) => b.slug === slug);
+      const builtin =
+        mode === "default-v2" && slug === "threat-model"
+          ? adaptiveThreatModelSkill
+          : BUILTIN_SKILLS.find((b) => b.slug === slug);
       if (!builtin) throw new Error(`Built-in skill "${slug}" not found`);
       return { name: builtin.manifest.name, content: builtin.instructions };
     }
@@ -87,8 +100,8 @@ export class SkillsRegistry {
    * Build a compact catalog string suitable for inclusion in the system prompt.
    * Shows name, tags, and description for progressive disclosure.
    */
-  buildCatalog(): string {
-    const all = this.list();
+  buildCatalog(mode?: AgentMode): string {
+    const all = this.list(mode);
     if (all.length === 0) return "";
 
     const lines = ["<available_skills>", ""];

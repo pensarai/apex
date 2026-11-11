@@ -34,6 +34,8 @@ export function grep(ctx: ToolContext) {
   return tool({
     description: `Search file contents using grep.
 
+${ctx.mode === "default-v2" ? "Patterns use extended regular expressions by default: | means alternation, and escape literal parentheses as \\( and \\). Use -F for literal text or -G for basic regular expressions." : ""}
+
 Runs grep with the given pattern and optional flags. The directory parameter
 also accepts this agent's tool-output: references, which search retained output
 on the Apex host even when command execution uses a remote sandbox. When searching a
