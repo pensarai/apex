@@ -61,7 +61,7 @@ import {
   readPlan,
 } from "../../../core/plan";
 import {
-  normalizeMessages,
+  prepareConversationMessages,
   type SessionConfig,
   type SessionInfo,
   sessions,
@@ -555,10 +555,12 @@ export default function OperatorDashboard({
               ) {
                 const modelMsgs = savedState.messages;
 
-                // Only pass a recent subset to the AI to avoid immediately
-                // blowing the context window and triggering summarization.
-                conversationRef.current = normalizeMessages(
-                  sessions.getResumeMessages(modelMsgs),
+                conversationRef.current = prepareConversationMessages(
+                  modelMsgs,
+                  {
+                    preserveHistory: s.config?.operatorSettings?.defaultV2Mode,
+                    resume: true,
+                  },
                 );
 
                 const uiMsgs = convertModelMessagesToUI(modelMsgs);
@@ -845,10 +847,10 @@ export default function OperatorDashboard({
           { role: "user", content: prompt, createdAt: new Date() },
         ]);
 
-        nextMessages = normalizeMessages([
-          ...conversationRef.current,
-          { role: "user", content: prompt },
-        ]);
+        nextMessages = prepareConversationMessages(
+          [...conversationRef.current, { role: "user", content: prompt }],
+          { preserveHistory: defaultV2Mode },
+        );
         conversationRef.current = nextMessages;
 
         if (sessionRef.current) {
@@ -1107,9 +1109,10 @@ export default function OperatorDashboard({
             if (existsSync(mp)) {
               const raw = JSON.parse(readFileSync(mp, "utf-8"));
               if (Array.isArray(raw) && raw.length > 0) {
-                conversationRef.current = normalizeMessages(
-                  sessions.getResumeMessages(raw as ModelMessage[]),
-                );
+                conversationRef.current = prepareConversationMessages(raw, {
+                  preserveHistory: defaultV2Mode,
+                  resume: true,
+                });
               }
             }
           } catch {
@@ -1117,10 +1120,10 @@ export default function OperatorDashboard({
             try {
               const response = await agentResult.streamResult.response;
               if (response.messages) {
-                conversationRef.current = normalizeMessages([
-                  ...nextMessages,
-                  ...response.messages,
-                ] as ModelMessage[]);
+                conversationRef.current = prepareConversationMessages(
+                  [...nextMessages, ...response.messages] as ModelMessage[],
+                  { preserveHistory: defaultV2Mode },
+                );
               }
             } catch {
               // conversation stays as-is
@@ -1643,6 +1646,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     const activeSession = sessionRef.current;
     if (activeSession) {
       conversationRef.current = recoverAbortedTranscript({
+        preserveHistory: activeSession.config?.operatorSettings?.defaultV2Mode,
         rootPath: activeSession.rootPath,
         conversation: conversationRef.current,
         partialText: displayEvents.getPartialText(),
