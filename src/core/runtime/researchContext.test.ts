@@ -158,6 +158,30 @@ describe("research session context", () => {
     ).toThrow("Pass newMessages");
   });
 
+  it("journals a fresh correction before the first prepared window compacts it", async () => {
+    const path = await root();
+    const first = new ResearchContext(path, defaults);
+    await first.checkpoint(first.prepare("instructions"));
+    const correction: ModelMessage = {
+      role: "user",
+      content: "Follow the parser hint instead of enumerating routes",
+    };
+    const resumed = new ResearchContext(path, {
+      ...defaults,
+      newMessages: [correction],
+    });
+    resumed.prepare("instructions");
+    await resumed.checkpoint({
+      messages: [{ role: "user", content: "Compacted representation" }],
+    });
+    const switched = new ResearchContext(path, {
+      ...defaults,
+      model: "claude-opus-5-5",
+      newMessages: [],
+    });
+    expect(switched.latest()).toEqual([...first.latest(), correction]);
+  });
+
   it("keeps pre-compaction evidence in the journal", async () => {
     const path = await root();
     const session = new ResearchContext(path, defaults);

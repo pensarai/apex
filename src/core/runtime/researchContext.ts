@@ -29,6 +29,7 @@ export class ResearchContext implements RunContextRecorder {
   private readonly journal: string;
   private committed: ModelMessage[] = [];
   private handoff = false;
+  private inputPending = true;
 
   constructor(
     private readonly rootPath: string,
@@ -184,6 +185,17 @@ export class ResearchContext implements RunContextRecorder {
     messages: ModelMessage[];
     system?: string | null;
   }): Promise<void> {
+    if (this.inputPending) {
+      this.inputPending = false;
+      // Journal fresh input before provider preparation can compact its prefix.
+      // Queue both writes immediately so concurrent checkpoints retain their order.
+      if (
+        !this.state.messages.every((message, index) =>
+          isDeepStrictEqual(message, input.messages[index]),
+        )
+      )
+        void this.checkpoint({ messages: this.latest() }).catch(() => {});
+    }
     const state = structuredClone({ ...this.state, messages: input.messages });
     // Anthropic's cache marker is transport-only; system text is retained separately.
     if (
