@@ -1,6 +1,6 @@
 # Default v2: target harness design
 
-Status: proposed architecture and acceptance criteria, 2026-11-11. This document
+Status: accepted architecture; implementation in progress, 2026-11-11. This document
 defines the intended behavior; it does not claim the current branch implements
 it or that the design has demonstrated a performance improvement.
 
@@ -175,6 +175,14 @@ viable leads. More tool calls, fewer tool calls, or more findings alone are not
 success criteria.
 
 ## Delivery through the default-v2 stack
+
+The first continuity slice preserves conversation history across local resume,
+follow-up, and interruption, and prevents fitting from rewriting consumed tool
+results. It opts v2 into explicit summarization with the latest user message
+replayed verbatim, and stops if required compaction fails instead of restarting
+without the investigation. This still uses Apex's custom text compaction;
+provider-native compaction and stable tool/configuration updates remain future
+work. Contract tests do not establish a research-quality improvement.
 
 Keep default-v2 runnable as an opt-in path throughout delivery. The existing
 mode selection is the development entry point, not evidence that the design is
