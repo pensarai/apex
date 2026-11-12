@@ -282,7 +282,8 @@ export function buildBaseSystemPrompt(
     ? `## Findings
 - Use the caller's requested output format for any discovered vulnerabilities. Include the affected surface, observed behavior, and likely security impact.`
     : `## Findings & PoCs
-- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.`;
+- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.
+- When a PoC sends a URL as data (SSRF, open redirect, webhook or callback payloads such as http://169.254.169.254/), use \`pocType: "http"\` with \`pocRequests\` instead of a script. Only each request's \`url\` is scope-checked; a script PoC treats every URL in it as a host it requests.`;
   const findingWorkRule = externalFindings
     ? "6. **Report findings through the requested output.** Focus on discovering vulnerabilities and gathering the evidence required by the user's task. Do not spend time on a separate in-run finding review."
     : "6. **Document security work as you go.** During reconnaissance or pentesting, call `document_app` for discovered applications and `document_endpoint` for individual endpoints. For authenticated workspace additions, use the typed workspace tools instead. Call `document_vulnerability` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.";

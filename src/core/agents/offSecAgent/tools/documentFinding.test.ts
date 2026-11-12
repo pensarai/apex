@@ -8,6 +8,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -236,6 +238,123 @@ describe("documentVulnerability judge handling", () => {
       existsSync(join(ctx.session.pocsPath, "poc_external_target.py")),
     ).toBe(false);
     expect(mockedJudgeFinding).not.toHaveBeenCalled();
+  });
+
+  it("tells the agent how to send payload URLs when a PoC is out of scope", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      {
+        ...makeDocumentInput(),
+        pocName: "ssrf_python_payload",
+        pocType: "python",
+        pocContent:
+          'import requests\nrequests.post("https://example.com/hooks", json={"url": "http://169.254.169.254/"})',
+      },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { message?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Scope violation: "169.254.169.254"');
+    expect(result.message).toContain('use pocType "http"');
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+  });
+
+  it("runs an HTTP PoC that sends an internal URL as data, and stores it as a bash script", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    let received = "";
+    const server = createServer((req, res) => {
+      req.on("data", (chunk) => {
+        received += chunk;
+      });
+      req.on("end", () => res.end("ami-id: ami-0abc"));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const ctx = makeToolContext(rootPath);
+      ctx.target = origin;
+      ctx.session.targets = [origin];
+      const tool = documentVulnerability(ctx);
+      const body = '{"url": "http://169.254.169.254/latest/meta-data/"}';
+      const { pocContent: _, ...input } = makeDocumentInput();
+      const result = (await tool.execute?.(
+        {
+          ...input,
+          endpoint: `${origin}/hooks`,
+          pocName: "ssrf_metadata",
+          pocType: "http",
+          pocRequests: [
+            {
+              method: "POST",
+              url: `${origin}/hooks`,
+              headers: { "Content-Type": "application/json" },
+              body,
+              expectStatus: 200,
+              expectBodyContains: "ami-id",
+            },
+          ],
+        },
+        { toolCallId: "test", messages: [] },
+      )) as DocumentToolResult;
+
+      expect(result.success).toBe(true);
+      expect(received).toBe(body);
+      const stored = readFileSync(
+        join(ctx.session.pocsPath, "poc_ssrf_metadata.sh"),
+        "utf8",
+      );
+      expect(stored).toContain("169.254.169.254");
+      expect(mockedJudgeFinding.mock.calls[0][0]).toMatchObject({
+        pocType: "bash",
+        pocScript: expect.stringContaining("--url"),
+      });
+    } finally {
+      server.close();
+    }
+  });
+
+  it("rejects an HTTP PoC that requests a host outside scope before running it", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const { pocContent: _, ...input } = makeDocumentInput();
+    const result = (await tool.execute?.(
+      {
+        ...input,
+        pocName: "ssrf_direct",
+        pocType: "http",
+        pocRequests: [
+          {
+            method: "GET",
+            url: "http://169.254.169.254/latest/meta-data/",
+            expectStatus: 200,
+          },
+        ],
+      },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { message?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Scope violation: "169.254.169.254"');
+    expect(result.message).not.toContain('use pocType "http"');
+    expect(existsSync(join(ctx.session.pocsPath, "poc_ssrf_direct.sh"))).toBe(
+      false,
+    );
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+  });
+
+  it("rejects a script PoC with no pocContent", async () => {
+    const tool = documentVulnerability(makeToolContext(rootPath));
+    const { pocContent: _, ...input } = makeDocumentInput();
+    const result = (await tool.execute?.(input, {
+      toolCallId: "test",
+      messages: [],
+    })) as DocumentToolResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("pocContent is required");
   });
 
   it("cleans up the POC and returns judgeRejected when a completed judge rejects", async () => {

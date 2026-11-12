@@ -71,6 +71,22 @@ describe("buildBaseSystemPrompt workspace management", () => {
   });
 });
 
+describe("finding PoC guidance", () => {
+  it("routes PoCs that send URLs as data to HTTP PoCs", () => {
+    const prompt = buildBaseSystemPrompt();
+    expect(prompt).toContain(
+      'use `pocType: "http"` with `pocRequests` instead of a script',
+    );
+    expect(prompt).toContain("Only each request's `url` is scope-checked");
+  });
+
+  it("leaves the HTTP PoC rule out when findings go to the caller", () => {
+    expect(buildBaseSystemPrompt({ findingPolicy: "external" })).not.toContain(
+      "pocRequests",
+    );
+  });
+});
+
 describe("external finding policy prompts", () => {
   const session = {
     rootPath: "/tmp/apex-external-prompt",

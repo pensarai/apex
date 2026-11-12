@@ -31,6 +31,11 @@ import {
   DestructiveActionError,
 } from "./destructiveGuard";
 import {
+  buildHttpPocScript,
+  HttpPocError,
+  httpPocRequestSchema,
+} from "./httpPoc";
+import {
   assertCommandInScope,
   assertFindingEndpointInScope,
   ScopeViolationError,
@@ -86,8 +91,21 @@ export const documentVulnerabilityInputSchema = z.object({
       "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')",
     ),
   pocName: z.string().describe("Short descriptive name for the POC"),
-  pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
-  pocContent: z.string().describe("The full POC script content"),
+  pocType: z
+    .enum(["bash", "python", "javascript", "http"])
+    .describe(
+      'Script language, or "http" to give the POC as pocRequests instead of a script',
+    ),
+  pocContent: z
+    .string()
+    .optional()
+    .describe('The full POC script content. Required unless pocType is "http"'),
+  pocRequests: z
+    .array(httpPocRequestSchema)
+    .optional()
+    .describe(
+      'The POC as HTTP requests, run in order. Required when pocType is "http". Use it when a request sends a URL as data (SSRF, open redirect, webhook): only each request\'s url is checked as a target',
+    ),
   pocDescription: z.string().describe("What this POC demonstrates"),
   generatedExecutableArtifacts: z
     .array(
@@ -169,6 +187,38 @@ function assertKnownCredentialIds(
 
 type PocType = "bash" | "python" | "javascript";
 
+/** The input with its POC resolved to the script that runs and is stored. */
+type ScriptPocInput = Omit<
+  DocumentVulnerabilityInput,
+  "pocType" | "pocContent"
+> & { pocType: PocType; pocContent: string };
+
+/**
+ * Check the POC against scope and the destructive-action block, and resolve it
+ * to a script. An HTTP POC is checked request by request, like `http_request`,
+ * and becomes a generated curl script; a script POC is scanned as a command.
+ */
+function resolvePocScript(
+  input: DocumentVulnerabilityInput,
+  ctx: ToolContext,
+): ScriptPocInput {
+  if (input.pocType === "http") {
+    return {
+      ...input,
+      pocType: "bash",
+      pocContent: buildHttpPocScript(input.pocRequests, ctx),
+    };
+  }
+  if (input.pocContent === undefined) {
+    throw new HttpPocError(
+      `pocContent is required when pocType is "${input.pocType}".`,
+    );
+  }
+  assertCommandInScope(input.pocContent, ctx);
+  assertCommandActionAllowed(input.pocContent, ctx);
+  return { ...input, pocType: input.pocType, pocContent: input.pocContent };
+}
+
 const POC_RUNNERS: Record<PocType, string> = {
   bash: "bash",
   python: "python3",
@@ -182,6 +232,9 @@ const POC_EXTENSIONS: Record<PocType, string> = {
 };
 
 const EVIDENCE_FILE_THRESHOLD = 20_000;
+
+const POC_PAYLOAD_URL_GUIDANCE =
+  ' If that URL is a payload the POC sends to the target (SSRF, open redirect, webhook) rather than a host it requests, use pocType "http" and put the URL in a request body, header or query string in pocRequests. Only each request\'s url is checked as a target.';
 
 function isRealSandbox(ctx: ToolContext): boolean {
   return ctx.backends?.sandboxed === true;
@@ -287,7 +340,7 @@ export function documentVulnerability(ctx: ToolContext) {
     description: `Document a CONFIRMED security vulnerability by providing your proof-of-concept script and finding details.
 
 This tool handles the full vulnerability documentation lifecycle:
-1. Creates and executes your POC script (bash, python, or javascript)
+1. Creates and executes your POC script (bash, python, or javascript), or the HTTP requests you give in pocRequests
 2. If the POC is syntactically invalid or fails (exit != 0), returns the failure output so you can revise pocContent and retry
 3. Validates the finding with an automated judge to ensure the POC genuinely demonstrates the claimed vulnerability
 4. If the judge rejects, returns rejection reasoning so you can address concerns and retry
@@ -297,6 +350,7 @@ This tool handles the full vulnerability documentation lifecycle:
 CRITICAL RULES — READ BEFORE CALLING:
 - ONLY call this for actual security vulnerabilities you have verified and can exploit
 - Provide your POC script inline via pocContent — do NOT create it separately
+- When the POC sends a URL as data (SSRF, open redirect, webhook), use pocType "http" with pocRequests. Script POCs are scanned for URLs, and every URL found in a script counts as a host it requests
 - POC must exit 0 on success (vulnerability confirmed), non-zero on failure
 - POC must print clear evidence of exploitation to stdout
 - Fill the materiality checklist with the concrete exploit path, material security impact, affected non-public asset or abuse path, and why common false-positive traps do not apply
@@ -337,18 +391,23 @@ CRITICAL RULES — READ BEFORE CALLING:
       }
       const credentialIds = credentialIdsCheck.credentialIds;
 
+      let poc: ScriptPocInput;
       try {
-        assertCommandInScope(input.pocContent, ctx);
-        assertCommandActionAllowed(input.pocContent, ctx);
+        poc = resolvePocScript(input, ctx);
       } catch (error) {
         if (
           error instanceof ScopeViolationError ||
-          error instanceof DestructiveActionError
+          error instanceof DestructiveActionError ||
+          error instanceof HttpPocError
         ) {
+          const guidance =
+            error instanceof ScopeViolationError && input.pocType !== "http"
+              ? POC_PAYLOAD_URL_GUIDANCE
+              : "";
           return {
             success: false,
             error: error.message,
-            message: `Finding PoC rejected: ${error.message}`,
+            message: `Finding PoC rejected: ${error.message}${guidance}`,
           };
         }
         throw error;
@@ -412,7 +471,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         // Phase 1: Write & execute POC
-        const pocResult = await executePoc(ctx, input);
+        const pocResult = await executePoc(ctx, poc);
 
         if (!pocResult.success) {
           if (pocResult.syntaxCheck?.status === "invalid") {
@@ -420,7 +479,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               success: false,
               syntaxFailed: true,
               syntaxCheck: pocResult.syntaxCheck,
-              message: `POC failed the native ${input.pocType} syntax check before execution (${pocResult.syntaxCheck.detail}). Revise pocContent.`,
+              message: `POC failed the native ${poc.pocType} syntax check before execution (${pocResult.syntaxCheck.detail}). Revise pocContent.`,
             };
           }
           return {
@@ -470,8 +529,8 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         // Phase 2: LLM Finding Judge
         const judgeInput: FindingJudgeInput = {
-          pocScript: input.pocContent,
-          pocType: input.pocType,
+          pocScript: poc.pocContent,
+          pocType: poc.pocType,
           pocPath,
           target: ctx.target ?? ctx.session.targets[0],
           pocOutput: {
@@ -980,7 +1039,7 @@ function stagedPocPath(ctx: ToolContext, filename: string): string {
  */
 async function executePoc(
   ctx: ToolContext,
-  input: DocumentVulnerabilityInput,
+  input: ScriptPocInput,
 ): Promise<PocExecResult> {
   const { filename, pocContent } = preparePoc(input);
   const pocPath = artifactPath(ctx, pocsRoot(ctx), filename);
