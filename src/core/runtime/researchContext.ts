@@ -18,6 +18,7 @@ interface ResearchState {
   model: string;
   reasoning?: ReasoningSetting;
   currentReasoning?: ReasoningSetting;
+  pendingInputs?: { id: string; text: string }[];
 }
 
 /** Durable v2 conversation authority; interfaces submit new messages, never rewrite history. */
@@ -89,6 +90,13 @@ export class ResearchContext implements RunContextRecorder {
           ? [{ role: "user", content: input.prompt }]
           : [];
     }
+    additions = [
+      ...(this.state.pendingInputs ?? []).map(
+        ({ text }): ModelMessage => ({ role: "user", content: text }),
+      ),
+      ...additions,
+    ];
+    this.state.pendingInputs = [];
     this.state.messages = [
       ...this.state.messages,
       ...structuredClone(additions),
@@ -216,45 +224,94 @@ export class ResearchContext implements RunContextRecorder {
       )
         void this.checkpoint({ messages: this.latest() }).catch(() => {});
     }
-    const state = structuredClone({ ...this.state, messages: input.messages });
+    const messages = structuredClone(input.messages);
+    return this.enqueue(() =>
+      this.commit({ ...this.state, messages }, input.system),
+    );
+  }
+
+  queueInput(input: { id: string; text: string }): Promise<void> {
+    return this.enqueue(() =>
+      this.save({
+        ...this.state,
+        pendingInputs: [...(this.state.pendingInputs ?? []), input],
+      }),
+    );
+  }
+
+  takeInputs(messages: ModelMessage[]): Promise<{
+    messages: ModelMessage[];
+    ids: string[];
+  }> {
+    return this.enqueue(async () => {
+      const inputs = this.state.pendingInputs ?? [];
+      const next: ModelMessage[] = [
+        ...messages,
+        ...inputs.map(
+          ({ text }): ModelMessage => ({ role: "user", content: text }),
+        ),
+      ];
+      if (inputs.length)
+        await this.commit({ ...this.state, messages: next, pendingInputs: [] });
+      return { messages: next, ids: inputs.map(({ id }) => id) };
+    });
+  }
+
+  private async commit(
+    state: ResearchState,
+    system?: string | null,
+  ): Promise<void> {
+    const upstreamMessages = state.messages;
     // Anthropic's cache marker is transport-only; system text is retained separately.
     if (
       state.messages[0]?.role === "system" &&
       state.messages[0].content === state.system
     )
       state.messages = state.messages.slice(1);
+    await this.upstream?.checkpoint({ messages: upstreamMessages, system });
+    await this.upstream?.flush();
+    await mkdir(this.rootPath, { recursive: true });
+    const previous = this.committed;
+    const append = previous.every((message, index) =>
+      isDeepStrictEqual(message, state.messages[index]),
+    );
+    await appendFile(
+      this.journal,
+      `${JSON.stringify({
+        kind: this.handoff ? "handoff" : append ? "append" : "replace",
+        messages:
+          append && !this.handoff
+            ? state.messages.slice(previous.length)
+            : state.messages,
+        system: state.system,
+      })}\n`,
+    );
+    await this.save(state);
+    this.handoff = false;
+    this.committed = state.messages;
+  }
+
+  private async save(state: ResearchState): Promise<void> {
+    await mkdir(this.rootPath, { recursive: true });
+    await writeFile(`${this.path}.tmp`, JSON.stringify(state));
+    await rename(`${this.path}.tmp`, this.path);
+    this.state = state;
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const work = this.tail
-      .then(async () => {
+      .then(() => {
         if (this.failure) throw this.failure;
-        await this.upstream?.checkpoint(input);
-        await this.upstream?.flush();
-        await mkdir(this.rootPath, { recursive: true });
-        const previous = this.committed;
-        const append = previous.every((message, index) =>
-          isDeepStrictEqual(message, state.messages[index]),
-        );
-        await appendFile(
-          this.journal,
-          `${JSON.stringify({
-            kind: this.handoff ? "handoff" : append ? "append" : "replace",
-            messages:
-              append && !this.handoff
-                ? state.messages.slice(previous.length)
-                : state.messages,
-            system: state.system,
-          })}\n`,
-        );
-        await writeFile(`${this.path}.tmp`, JSON.stringify(state));
-        await rename(`${this.path}.tmp`, this.path);
-        this.state = state;
-        this.handoff = false;
-        this.committed = state.messages;
+        return operation();
       })
       .catch((cause) => {
         this.failure ??= new RunPersistenceError(cause);
         throw this.failure;
       });
-    this.tail = work.catch(() => {});
+    this.tail = work.then(
+      () => {},
+      () => {},
+    );
     return work;
   }
 

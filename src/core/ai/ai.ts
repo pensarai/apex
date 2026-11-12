@@ -768,6 +768,7 @@ function wrapStreamWithErrorHandler(
           wrappedStream = (async function* () {
             consumptionStarted = true;
             let streamError: unknown;
+            let continued = false;
             let currentStepHadToolCall = false;
             try {
               for await (const chunk of withIdleTimeout(
@@ -841,7 +842,38 @@ function wrapStreamWithErrorHandler(
                 await Promise.resolve(originalStream.response).catch(() => {});
                 throw streamError;
               }
+              if (opts.steering) {
+                await opts.contextRecorder?.flush();
+                opts.abortSignal?.throwIfAborted();
+              }
+              if (opts.steering?.continue()) {
+                const conditions = opts.stopWhen
+                  ? Array.isArray(opts.stopWhen)
+                    ? opts.stopWhen
+                    : [opts.stopWhen]
+                  : [];
+                const steps =
+                  (opts as InternalStreamResponseOpts)[STREAM_STEPS] ?? [];
+                const stopped = (
+                  await Promise.all(
+                    conditions.map((condition) => condition({ steps })),
+                  )
+                ).some(Boolean);
+                if (stopped) opts.steering.close();
+                else {
+                  continued = true;
+                  const continuation = streamResponse({
+                    ...opts,
+                    messages: opts.steering.latest(),
+                  });
+                  finalAttempt = continuation;
+                  for await (const chunk of continuation.fullStream)
+                    yield chunk;
+                }
+              }
             } catch (caughtError) {
+              // A continuation owns its recovery; never retry it from this older prompt.
+              if (continued) throw caughtError;
               // A tail-drain failure must not replace the provider error that
               // put the wrapper into drain mode.
               const error =
@@ -1534,6 +1566,7 @@ export interface StreamResponseOpts {
    * unset → legacy behavior, no persistence.
    */
   contextRecorder?: RunContextRecorder;
+  steering?: import("../runtime/turnSteering").TurnSteering;
   /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
@@ -2166,16 +2199,27 @@ function streamResponseWithinOperation(
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
         let stepMessages = projectFailedToolCalls(
-          orderResolvedToolMessages([
-            ...step.initialMessages,
-            ...step.responseMessages,
-          ]),
+          orderResolvedToolMessages(
+            opts.steering && step.stepNumber > 0
+              ? opts.steering.latest()
+              : [...step.initialMessages, ...step.responseMessages],
+          ),
           step.steps.flatMap((previous) => previous.toolCalls),
         );
         stepMessages = presentToolResults(stepMessages);
+        if (opts.steering && cacheBreakpoint && systemWithToolPolicy)
+          stepMessages = withCachedSystemPrompt(
+            systemWithToolPolicy,
+            stepMessages,
+            cacheBreakpoint,
+          );
+        const beforeSteering = stepMessages;
+        if (opts.steering)
+          stepMessages = await opts.steering.take(stepMessages);
+        const receivedInput = stepMessages !== beforeSteering;
         if (nativeCompaction)
           stepMessages = nativeCompactionWindow(stepMessages);
-        if (!nativeCompaction && step.stepNumber > 0) {
+        if (!nativeCompaction && (step.stepNumber > 0 || receivedInput)) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
             (opts._proactiveSummaryFailures ?? 0) <

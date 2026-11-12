@@ -1256,8 +1256,39 @@ export default function OperatorDashboard({
         }
       }
 
-      // When agent is running, queue the message for later
       if (result.action === "blocked" && value.trim()) {
+        const client = defaultV2Mode ? agentClientRef.current : null;
+        if (client) {
+          const gen = generationRef.current;
+          const text = value.trim();
+          setInputValue("");
+          void client.steer({ expectedTurnId: client.turnId, text }).then(
+            (receipt) => {
+              if (generationRef.current !== gen) return;
+              if (receipt.accepted) {
+                setMessages((prev) => [
+                  ...prev,
+                  { role: "user", content: text, createdAt: new Date() },
+                ]);
+              } else {
+                setQueuedMessages((prev) => [
+                  ...prev,
+                  createQueuedMessage(text),
+                ]);
+              }
+            },
+            (error: unknown) => {
+              if (generationRef.current !== gen) return;
+              setInputValue((current) => current || text);
+              setError(
+                error instanceof Error
+                  ? error.message
+                  : "Could not save steering input",
+              );
+            },
+          );
+          return;
+        }
         setQueuedMessages((prev) => [
           ...prev,
           createQueuedMessage(value.trim()),
@@ -1271,7 +1302,7 @@ export default function OperatorDashboard({
       setInputValue("");
       runAgent(result.prompt);
     },
-    [status, runAgent],
+    [status, runAgent, defaultV2Mode, setMessages],
   );
 
   // Auto-send initial message once loading completes.
@@ -1391,15 +1422,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
-    if (status !== "idle") return;
+    if (status !== "idle" || queuedMessages.length === 0) return;
     const queue = queuedMessagesRef.current;
-    if (queue.length === 0) return;
 
     const next = queue[0].text;
+    setStatus("running");
     setQueuedMessages((prev) => prev.slice(1));
     setSelectedQueueIndex(-1);
     runAgentRef.current(next);
-  }, [status]);
+  }, [status, queuedMessages.length]);
 
   // Auto-run agent after plan approval (waits for mode transition to render)
   useEffect(() => {
@@ -2209,7 +2240,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
               showPlanReview
                 ? "Type feedback to refine, or Y to approve, N to reject..."
                 : status === "running"
-                  ? "Queue a follow-up message..."
+                  ? defaultV2Mode
+                    ? "Steer after current tools finish..."
+                    : "Queue a follow-up message..."
                   : status === "waiting"
                     ? "Type to redirect agent, or Y/A to approve..."
                     : "Enter directive or / for commands & skills..."

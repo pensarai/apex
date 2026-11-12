@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
@@ -23,6 +23,49 @@ const defaults = {
 };
 
 describe("research session context", () => {
+  it("preserves queued input through concurrent checkpoints and a restart", async () => {
+    const path = await root();
+    const context = new ResearchContext(path, defaults);
+    await context.checkpoint(context.prepare("Research instructions"));
+    const messages: ModelMessage[] = [
+      ...context.latest(),
+      { role: "assistant", content: "Current result" },
+    ];
+    await Promise.all([
+      context.queueInput({ id: "input-1", text: "Follow the boundary hint" }),
+      context.checkpoint({ messages }),
+    ]);
+    const resumed = new ResearchContext(path, {
+      ...defaults,
+      newMessages: [{ role: "user", content: "Then verify it" }],
+    });
+    expect(resumed.latest()).toEqual([
+      ...messages,
+      { role: "user", content: "Follow the boundary hint" },
+      { role: "user", content: "Then verify it" },
+    ]);
+    await resumed.checkpoint({ messages: resumed.latest() });
+    expect(
+      new ResearchContext(path, { ...defaults, newMessages: [] }).latest(),
+    ).toEqual(resumed.latest());
+  });
+
+  it("rejects input when its durable write fails and prevents later dispatch", async () => {
+    const path = await root();
+    const context = new ResearchContext(path, defaults);
+    await context.checkpoint(context.prepare("Research instructions"));
+    await mkdir(join(path, "research-context.json.tmp"));
+    await expect(
+      context.queueInput({ id: "unsaved", text: "Do not acknowledge this" }),
+    ).rejects.toThrow();
+    await expect(context.takeInputs(context.latest())).rejects.toThrow();
+    await expect(context.flush()).rejects.toThrow();
+    const saved = JSON.parse(
+      await readFile(join(path, "research-context.json"), "utf8"),
+    );
+    expect(saved.pendingInputs).toEqual([]);
+  });
+
   it("appends only changed instruction lines and keeps the consumed prefix across restarts", async () => {
     const path = await root();
     const catalog = "skills and tools\n".repeat(500);
