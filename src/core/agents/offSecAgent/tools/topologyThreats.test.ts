@@ -231,7 +231,7 @@ describe("review_topology threat checks", () => {
     const flagged = reviewTopologyRecords(ctx)
       .filter((i) => i.check === "no-threats")
       .map((i) => i.subject);
-    expect(flagged).toEqual(["Legacy API", "Card vault"]);
+    expect(flagged.sort()).toEqual(["Card vault", "Legacy API"]);
     await run(documentThreat(ctx), idor);
     expect(
       reviewTopologyRecords(ctx)

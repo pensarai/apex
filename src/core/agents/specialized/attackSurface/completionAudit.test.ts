@@ -225,6 +225,78 @@ describe("recon completion gate", () => {
       "cmp_idp: boundaryId references missing or retired record missing",
     ]);
   });
+  it("keeps unresolved review requirements when a correction retires a component", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    writeRecord(i.session.rootPath, i.session.id, "component", "provider", {
+      id: "cmp_provider",
+      name: "Provider",
+      kind: "saas",
+    });
+    await runGeneralizedReconToReport(
+      i,
+      factory(calls, (audit, pass) => {
+        if (pass === 1) {
+          Object.assign(audit.assessments[0]!, {
+            disposition: "needs-work",
+            rationale: "Review the provider",
+          });
+          writeRecord(
+            i.session.rootPath,
+            i.session.id,
+            "component",
+            "retired",
+            {
+              id: "cmp_provider",
+              name: "Provider",
+              status: "retired",
+              retiredReason: "Duplicate",
+            },
+          );
+        }
+      }),
+    );
+    const secondAudit = JSON.parse(calls[3]!.auditPrompt!);
+    expect(secondAudit.requirements).toContainEqual(
+      expect.objectContaining({
+        id: "component:cmp_provider",
+      }),
+    );
+  });
+  it("does not start model work after persistence fails", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    i.completion!.synchronize = async () => {
+      throw new Error("record store unavailable");
+    };
+    await expect(
+      runGeneralizedReconToReport(i, factory(calls)),
+    ).rejects.toThrow("record store unavailable");
+    expect(calls).toHaveLength(0);
+  });
+  it("cannot complete from a report that explicitly declares incomplete analysis", async () => {
+    const i = input();
+    await expect(
+      runGeneralizedReconToReport(i, (options) => {
+        const agent = factory([])(options);
+        return {
+          consume: async () => {
+            const result = await agent.consume();
+            return {
+              ...result,
+              results: {
+                ...result.results!,
+                summary: {
+                  ...result.results!.summary,
+                  analysisComplete: false,
+                },
+              },
+            };
+          },
+        };
+      }),
+    ).rejects.toMatchObject({ outcome: "budget-exhausted" });
+  });
   it("replays every model pass using checkpointed decisions", async () => {
     const i = input(),
       saved = new Map<string, unknown>();

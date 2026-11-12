@@ -86,6 +86,7 @@ export async function runAuditedRecon(
       `Recon objective changed during resume (session ${sessionId})`,
     );
   if (!options.checkpoint && ledger.status === "complete") {
+    await options.synchronize?.();
     const resultsPath = join(root, "attack-surface-results.json");
     const results = loadAttackSurfaceResults(resultsPath);
     assertCompletionAudit(root, sessionId, results);
@@ -135,11 +136,18 @@ export async function runAuditedRecon(
       `audit-input-${ledger.pass}`,
       async () => ({
         snapshot: completionSnapshot(root, result.results),
-        requirements: auditRequirements(
-          root,
-          origins,
-          repositories.map((r) => r.name),
-        ),
+        requirements: [
+          ...new Map([
+            ...ledger.requirements.map(
+              (requirement) => [requirement.id, requirement] as const,
+            ),
+            ...auditRequirements(
+              root,
+              origins,
+              repositories.map((r) => r.name),
+            ).map((requirement) => [requirement.id, requirement] as const),
+          ]).values(),
+        ],
         topology: loadTopology(root),
       }),
     );
