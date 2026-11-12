@@ -162,6 +162,10 @@ describe("assembled runtime context in streamResponse prompts", () => {
       });
       await agent.streamReady();
       const system = observed.streams[0].system as string;
+      expect(observed.streams[0]).toMatchObject({
+        harness: "general",
+        preserveHistory: true,
+      });
       expect(system).toContain("OS: RemoteOS 9.9-test");
       expect(system).toContain("Configured target: https://configured.example");
       expect(system).toContain("Shell working directory: /project");

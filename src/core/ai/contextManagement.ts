@@ -434,6 +434,8 @@ export interface FitContextResult {
 }
 
 export interface FitContextOpts {
+  /** Preserve consumed items; overflow must take an explicit compaction boundary. */
+  preserveHistory?: boolean;
   contextWindow: number;
   /** Tokens reserved for the model's response (`max_tokens`). */
   maxOutputTokens: number;
@@ -514,7 +516,7 @@ export function fitMessagesToContext(
     };
   };
 
-  if (messagesBudget <= 0) return finish(false);
+  if (messagesBudget <= 0 || opts.preserveHistory) return finish(false);
 
   // Shared across cascading Layer 1 thresholds so the same full tool result
   // is persisted to disk at most once, not 4× at progressively smaller
