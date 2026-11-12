@@ -22,6 +22,15 @@ export interface IncidentSummary {
 }
 
 export interface IncidentDetail extends IncidentSummary {
+  /** Present when the Console deployment supports code-remediation work items. */
+  codeRemediations?: Array<{
+    id: string;
+    issueId: string;
+    issueLabel: string | null;
+    recommendation: SiemTriageResult["remediation"][number];
+    verdict: SiemTriageResult["verdict"];
+    createdAt: string;
+  }>;
   workspaceId: string;
   integrationId: string | null;
   message: string | null;
