@@ -367,6 +367,13 @@ describe("open-weight gateway models", () => {
       maxOutputTokens: 131_072,
     },
     {
+      id: "moonshotai/kimi-k3.1-pro",
+      name: "Kimi K3.1 Pro",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
       id: "moonshotai/kimi-k3",
       name: "Kimi K3",
       provider: "openrouter",
