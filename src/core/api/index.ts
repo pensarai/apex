@@ -59,6 +59,7 @@ export type {
   RunToolStore,
 } from "../runtime/runToolStore";
 export { openSqliteRunStore } from "../runtime/sqliteRunStore";
+export type { SteerInput, SteerResult } from "../runtime/turnSteering";
 export type {
   PentestWorkflowInput,
   PentestWorkflowResult,
