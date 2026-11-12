@@ -14,7 +14,6 @@ export default defineConfig({
     pool: "forks",
     // Agent imports make each fork expensive; cap aggregate heap usage.
     maxWorkers: 4,
-    minWorkers: 1,
     maxConcurrency: 4,
   },
 });

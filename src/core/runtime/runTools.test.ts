@@ -116,7 +116,12 @@ function makeStore(script?: {
 
 function makeRecorder(
   store: RunToolStore,
-  collectEvidence = vi.fn(async () => ({ rootPath: "/session", files: [] })),
+  collectEvidence: Parameters<
+    typeof createRunToolRecorder
+  >[0]["collectEvidence"] = vi.fn(async () => ({
+    rootPath: "/session",
+    files: [],
+  })),
 ) {
   return createRunToolRecorder({
     runId: "run_1",

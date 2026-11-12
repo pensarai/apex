@@ -101,6 +101,7 @@ describe("detectInstallMethod", () => {
       writable: true,
     });
     process.argv = [...origArgv];
+    vi.resetAllMocks();
     vi.restoreAllMocks();
   });
 
