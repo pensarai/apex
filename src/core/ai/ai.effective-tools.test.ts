@@ -642,6 +642,59 @@ describe("effective toolset advertisement and execution", () => {
     expect(executions).toEqual({ a: 0, b: 0, response: 0 });
   });
 
+  it("repairs http_request prototype-pollution bodies without a model repair call", async () => {
+    let executedInput: unknown;
+    const tools: ToolSet = {
+      http_request: {
+        description: "http fixture",
+        inputSchema: z.object({
+          url: z.string(),
+          method: z.enum(["POST"]),
+          body: z.union([z.string(), z.record(z.string(), z.unknown())]),
+          toolCallDescription: z.string(),
+        }),
+        execute: async (input) => {
+          executedInput = input;
+          return "http ok";
+        },
+      },
+    };
+    state.model = mockModel({
+      steps: [
+        {
+          kind: "tool-call",
+          toolName: "http_request",
+          input:
+            '{"url":"https://target.test/api","method":"POST","body":{"__proto__":{"isAdmin":true}},"toolCallDescription":"prototype pollution probe"}',
+        },
+      ],
+      repairOutput: '{"url":"https://target.test/should-not-run"}',
+    });
+
+    const parts = await drain(
+      streamResponse({
+        model: MODEL,
+        prompt: "fixture",
+        tools,
+        activeTools: ["http_request"],
+        silent: true,
+      }),
+    );
+
+    expect(state.generated).toEqual([]);
+    expect(state.repairPrompts).toEqual([]);
+    expect(executedInput).toMatchObject({
+      url: "https://target.test/api",
+      method: "POST",
+      body: '{"__proto__":{"isAdmin":true}}',
+      toolCallDescription: "prototype pollution probe",
+    });
+    const repairedCall = parts.find((p) => p.type === "tool-call");
+    expect((repairedCall?.input as { body?: string })?.body).toBe(
+      '{"__proto__":{"isAdmin":true}}',
+    );
+  });
+
   it("advertises and executes a selected tool named __proto__ through the real SDK", async () => {
     const protoTool = {
       description: "prototype-shaped own name",
