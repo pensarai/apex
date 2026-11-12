@@ -46,6 +46,11 @@ describe("endpointAssetFileName", () => {
     );
   });
 
+  it("rejects a tag that could escape the directory or break the byte bound", () => {
+    expect(() => endpointAssetFileName("acme", "/a", "../x")).toThrow();
+    expect(() => endpointAssetFileName("acme", "/a", "é")).toThrow();
+  });
+
   it("rejects a tag that leaves no room for the path", () => {
     expect(() => endpointAssetFileName("acme", "/a", "x".repeat(250))).toThrow(
       /too long/,

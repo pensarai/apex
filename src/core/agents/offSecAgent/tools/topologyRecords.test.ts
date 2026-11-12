@@ -21,6 +21,7 @@ import {
   readRecordFiles,
   resolveTopology,
   seedFromBaseline,
+  writeRecord,
   writeRecordFiles,
 } from "./topologyRecords";
 import type { ToolContext } from "./types";
@@ -221,6 +222,22 @@ describe("record identity", () => {
       "component:shop api",
     );
     expect(t.flows).toHaveLength(1);
+  });
+});
+
+describe("writeRecord", () => {
+  it("writes and reads back a record whose key is past the 255-byte name limit", () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-records-long-"));
+    const title = "attacker replays a signed request ".repeat(10);
+    writeRecord(root, "ses_long", "threat", `threat:api|${title}`, {
+      id: "thr_long",
+      title,
+    });
+    const stored = readRecordFiles(root);
+    expect(stored).toMatchObject([
+      { kind: "threat", record: { id: "thr_long" } },
+    ]);
+    expect(stored.every((s) => Buffer.byteLength(s.file) <= 255)).toBe(true);
   });
 });
 

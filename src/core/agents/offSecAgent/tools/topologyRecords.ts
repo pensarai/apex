@@ -229,7 +229,11 @@ export function writeRecord(
   const dir = topologyDir(sessionRoot);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filepath = join(dir, `${kind}_${sanitize(key)}_${timestamp}.json`);
+  // Identity and order live in the contents; the key only has to fit NAME_MAX.
+  const filepath = join(
+    dir,
+    `${kind}_${sanitize(key).slice(0, 160)}_${timestamp}.json`,
+  );
   writeFileSync(
     filepath,
     JSON.stringify(
