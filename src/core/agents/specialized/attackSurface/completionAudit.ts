@@ -43,6 +43,7 @@ const ledgerSchema = z.object({
     "complete",
     "blocked",
     "budget-exhausted",
+    "audit-failed",
   ]),
   snapshot: z.string(),
   requirements: z.array(requirementSchema),

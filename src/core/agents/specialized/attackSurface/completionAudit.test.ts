@@ -38,6 +38,8 @@ function input(): GeneralizedAttackSurfaceAgentInput {
       targets: ["https://app.example"],
       config: {
         prompt: "Review customer SSO and webhook trust. Do not test providers.",
+        authenticationInstructions:
+          "Verify both tenant administrator and member access.",
       },
     } as SessionInfo,
   };
@@ -96,6 +98,9 @@ describe("recon completion gate", () => {
       "response",
     ]);
     expect(calls[1]!.auditPrompt).toContain("customer SSO");
+    expect(calls[1]!.auditPrompt).toContain(
+      "tenant administrator and member access",
+    );
     expect(() =>
       assertCompletionAudit(i.session.rootPath, i.session.id, report.results),
     ).not.toThrow();
@@ -321,6 +326,23 @@ describe("recon completion gate", () => {
       "audit:result",
       "audit:drained",
     ]);
+  });
+  it("preserves an incomplete audit without swallowing model failures", async () => {
+    const i = input();
+    await expect(
+      runGeneralizedReconToReport(i, (options) => ({
+        consume: async () => {
+          if (options.auditPrompt) throw new Error("model response failed");
+          return report;
+        },
+      })),
+    ).rejects.toThrow("model response failed");
+    expect(
+      readCompletionLedger(i.session.rootPath, i.session.id),
+    ).toMatchObject({
+      status: "audit-failed",
+      gaps: ["Audit failed before completion: model response failed"],
+    });
   });
   it("replays every model pass using checkpointed decisions", async () => {
     const i = input(),

@@ -15,7 +15,10 @@ import type {
   GeneralizedAttackSurfaceAgentInput,
   GeneralizedAttackSurfaceResult,
 } from "./generalizedAgent";
-import { buildGeneralizedAttackSurfacePrompt } from "./generalizedPrompts";
+import {
+  buildCredentialsBlock,
+  buildGeneralizedAttackSurfacePrompt,
+} from "./generalizedPrompts";
 import { loadAttackSurfaceResults } from "./types";
 
 export interface ReconCompletionOptions {
@@ -73,6 +76,10 @@ export async function runAuditedRecon(
     input.session.config?.prompt,
     undefined,
     input.updateBrief,
+    buildCredentialsBlock(
+      undefined,
+      input.session.config?.authenticationInstructions,
+    ),
   );
   const checkpoint =
     options.checkpoint ??
@@ -167,22 +174,37 @@ export async function runAuditedRecon(
       requirements: auditInput.requirements,
     };
     await persist();
-    const reviewed = await runPass({
-      ...input,
-      harness: "general",
-      stepLimit: 40,
-      auditPrompt: JSON.stringify({
-        objective: ledger.objective,
-        requirements: ledger.requirements,
-        previousGaps: ledger.gaps,
-        topology: auditInput.topology,
-        report: result.results,
-      }),
-    });
-    if (!reviewed.completionAudit)
-      throw new Error(
-        `Recon audit ended without a response (session ${sessionId})`,
-      );
+    let reviewed: GeneralizedAttackSurfaceResult;
+    try {
+      reviewed = await runPass({
+        ...input,
+        harness: "general",
+        stepLimit: 40,
+        auditPrompt: JSON.stringify({
+          objective: ledger.objective,
+          requirements: ledger.requirements,
+          previousGaps: ledger.gaps,
+          topology: auditInput.topology,
+          report: result.results,
+        }),
+      });
+      if (!reviewed.completionAudit)
+        throw new Error(
+          `Recon audit ended without a response (session ${sessionId})`,
+        );
+    } catch (error) {
+      const message =
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+          ? error.message
+          : "The model did not produce validated assessments; inspect this session's audit trace.";
+      ledger.status = "audit-failed";
+      ledger.gaps = [`Audit failed before completion: ${message}`];
+      await persist();
+      throw error;
+    }
     await options.synchronize?.();
     const completionAudit = reviewed.completionAudit;
     const decision = await checkpoint(`decision-${ledger.pass}`, async () => ({
