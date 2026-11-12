@@ -28,3 +28,6 @@ jobs:
 
       - name: Check formatting (Biome + Prettier)
         run: bun run format:check
+
+      - name: Dependency pins
+        run: bun run check:dependency-pins

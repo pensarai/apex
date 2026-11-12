@@ -354,6 +354,7 @@
     "build:lib": "bun run scripts/build-lib.ts",
     "check": "biome check --write",
     "check:ci": "biome check",
+    "check:dependency-pins": "bun scripts/check-dependency-pins.ts",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
