@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import {
   type AIAuthConfig,
-  AVAILABLE_MODELS,
+  isRegisteredModel,
   runWithInferenceRecorder,
 } from "../ai";
 import type { CredentialManager } from "../credentials";
@@ -145,7 +145,7 @@ export async function resumeRecordedAgent(
         throw new Error(`Run status ${record.status} cannot be recovered`);
       }
       if (input.abortSignal?.aborted) throw new Error("Resume was aborted");
-      if (!AVAILABLE_MODELS.some((model) => model.id === spec.model)) {
+      if (!isRegisteredModel(spec.model)) {
         throw new Error(`Model is not registered: ${spec.model}`);
       }
       assertCredentialsDeclared(spec, input.credentialManager);
@@ -323,9 +323,7 @@ async function executeRecordedRun(
 
     let result: RunAgentResult;
     try {
-      // getModelInfo resolves unknown ids to a synthetic fallback instead of
-      // throwing, so registration must be checked against the catalog itself.
-      if (!AVAILABLE_MODELS.some((m) => m.id === spec.model)) {
+      if (!isRegisteredModel(spec.model)) {
         throw new Error(`Model is not registered: ${spec.model}`);
       }
       if (!(await stat(spec.environment.cwd)).isDirectory()) {

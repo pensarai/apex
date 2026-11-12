@@ -25,6 +25,7 @@ const runAgent = vi.hoisted(() => vi.fn());
 vi.mock("../session", () => ({ create: sessionCreate }));
 vi.mock("./offesecAgent", () => ({ runOffensiveSecurityAgent: runAgent }));
 
+import { loadPensarCatalog } from "../ai/models/pensarCatalog";
 import { runRecordedAgent } from "./recordedRun";
 
 const RUN_RESULT = { streamResult: {}, session: {} } as never;
@@ -195,6 +196,28 @@ afterEach(() => {
 });
 
 describe("admission commits before any session creation or inference", () => {
+  it("admits a model discovered through the authenticated Pensar catalog", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({ data: [{ id: "vendor/recorded-model" }] }),
+      );
+    try {
+      await loadPensarCatalog({
+        pensarAPIKey: "test-discovery-key",
+        gatewayUrl: "https://gateway.example",
+      });
+      const { store } = makeStore();
+      const result = await runRecordedAgent({
+        spec: baseSpec(tempCwd(), { model: "pensar:vendor/recorded-model" }),
+        store,
+      });
+      expect(result.started).toBe(true);
+      expect(runAgent).toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
   it("admits, creates the session, marks running, then runs — in that order", async () => {
     const { store } = makeStore();
     const outcome = await runRecordedAgent({

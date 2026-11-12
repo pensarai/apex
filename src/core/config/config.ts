@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { type LanceBudget, lanceBudgetSchema } from "../agents/lanceBudget";
 import type { FindingPolicy } from "../agents/offSecAgent";
-import type { ReasoningSetting } from "../ai";
+import type { ModelInfo, ReasoningSetting } from "../ai";
+import { loadPensarCatalog } from "../ai/models/pensarCatalog";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
 import { discoverOllama, type OllamaCatalog } from "../ollama";
@@ -22,6 +23,8 @@ const DEFAULT_CONFIG: Config = {
 };
 
 export interface Config {
+  pensarModels?: ModelInfo[];
+  pensarCatalogError?: string;
   version?: string;
   openAiAPIKey?: string | null;
   anthropicAPIKey?: string | null;
@@ -202,6 +205,16 @@ export async function get(): Promise<Config> {
     }
   }
   loaded.ollama = await discoverOllama();
+  if (loaded.accessToken || loaded.pensarAPIKey) {
+    try {
+      loaded.pensarModels = await loadPensarCatalog(loaded);
+    } catch (error) {
+      loaded.pensarCatalogError =
+        error instanceof Error
+          ? error.message
+          : "Could not load Pensar models.";
+    }
+  }
   return loaded;
 }
 
@@ -223,6 +236,8 @@ export async function update(config: Partial<Config>) {
     : DEFAULT_CONFIG;
   const newConfig = { ...currentConfig, ...config };
   delete newConfig.ollama;
+  delete newConfig.pensarModels;
+  delete newConfig.pensarCatalogError;
   delete newConfig.hoonifyModels;
   delete newConfig.hoonifyCatalogError;
   await fs.writeFile(file, JSON.stringify(newConfig));
