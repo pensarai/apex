@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Tool } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
@@ -21,6 +21,7 @@ import {
   readRecordFiles,
   resolveTopology,
   seedFromBaseline,
+  writeRecord,
   writeRecordFiles,
 } from "./topologyRecords";
 import type { ToolContext } from "./types";
@@ -221,6 +222,43 @@ describe("record identity", () => {
       "component:shop api",
     );
     expect(t.flows).toHaveLength(1);
+  });
+});
+
+describe("writeRecord", () => {
+  it("writes and reads back a record whose key is past the 255-byte name limit", () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-records-long-"));
+    const title = "attacker replays a signed request ".repeat(10);
+    writeRecord(root, "ses_long", "threat", `threat:api|${title}`, {
+      id: "thr_long",
+      title,
+    });
+    const stored = readRecordFiles(root);
+    expect(stored).toMatchObject([
+      { kind: "threat", record: { id: "thr_long" } },
+    ]);
+    expect(stored.every((s) => Buffer.byteLength(s.file) <= 255)).toBe(true);
+  });
+
+  it("keeps two long keys sharing a prefix apart when written in the same millisecond", () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-records-long-"));
+    const prefix = "attacker replays a signed request ".repeat(10);
+    vi.useFakeTimers({ now: new Date("2026-01-01T00:00:00Z") });
+    try {
+      writeRecord(root, "ses_long", "threat", `threat:api|${prefix}a`, {
+        id: "thr_a",
+      });
+      writeRecord(root, "ses_long", "threat", `threat:api|${prefix}b`, {
+        id: "thr_b",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(
+      readRecordFiles(root)
+        .map((s) => s.record.id)
+        .sort(),
+    ).toEqual(["thr_a", "thr_b"]);
   });
 });
 

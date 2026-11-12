@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -229,7 +229,13 @@ export function writeRecord(
   const dir = topologyDir(sessionRoot);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filepath = join(dir, `${kind}_${sanitize(key)}_${timestamp}.json`);
+  // Identity and order live in the contents; the name only has to fit NAME_MAX and stay unique.
+  const slug = sanitize(key);
+  const name =
+    slug.length > 160
+      ? `${slug.slice(0, 151)}_${createHash("sha256").update(key).digest("hex").slice(0, 8)}`
+      : slug;
+  const filepath = join(dir, `${kind}_${name}_${timestamp}.json`);
   writeFileSync(
     filepath,
     JSON.stringify(
