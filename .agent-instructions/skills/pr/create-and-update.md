@@ -88,4 +88,4 @@ Splice only the intended human-authored section. Preserve these regions and thei
 - `<!-- CURSOR_SUMMARY -->` through `<!-- /CURSOR_SUMMARY -->`
 - `<!-- codesmith:footer -->` through `<!-- /codesmith:footer -->`
 
-After patching, GET the PR again and verify the title, base, stack block, bot-region marker counts, and current-row emphasis. Push code changes normally; force-push only with explicit authorization and only with `--force-with-lease`. Then babysit the new SHA.
+After patching, GET the PR again and verify the title, base, stack block, bot-region marker counts, and current-row emphasis. Push new commits normally. After a rebase, push with the leased form in `conflicts-and-merge.md`; any other force-push needs explicit authorization. Then babysit the new SHA.
