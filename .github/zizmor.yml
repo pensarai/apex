@@ -7,7 +7,7 @@ rules:
   unpinned-uses:
     config:
       policies:
-        '*': hash-pin
+        "*": hash-pin
 
   # These audits report existing findings. Each is switched back on as its
   # findings are fixed. Do not add to this list to get a check to pass.
