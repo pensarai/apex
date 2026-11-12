@@ -1,0 +1,35 @@
+# zizmor checks the workflows and local actions in this repository.
+# https://docs.zizmor.sh/audits/
+
+rules:
+  # Every action is pinned to a commit SHA, GitHub's own included. A tag can be
+  # repointed by whoever controls the action's repository.
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin
+
+  # These audits report existing findings. Each is switched back on as its
+  # findings are fixed. Do not add to this list to get a check to pass.
+  adhoc-packages:
+    disable: true
+  anonymous-definition:
+    disable: true
+  artipacked:
+    disable: true
+  cache-poisoning:
+    disable: true
+  concurrency-limits:
+    disable: true
+  excessive-permissions:
+    disable: true
+  self-repository:
+    disable: true
+  superfluous-actions:
+    disable: true
+  template-injection:
+    disable: true
+  undocumented-permissions:
+    disable: true
+  use-trusted-publishing:
+    disable: true
