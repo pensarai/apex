@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import type { AgentMode } from "../agents/offSecAgent/types";
-import { adaptiveThreatModelSkill, BUILTIN_SKILLS } from "./builtins";
+import { BUILTIN_SKILLS } from "./builtins";
 import { parseSkillMd } from "./parser";
 import { scanSkillRoots } from "./scanner";
 import type { SkillEntry } from "./types";
@@ -53,18 +53,19 @@ export class SkillsRegistry {
 
   list(mode?: AgentMode): SkillEntry[] {
     return Array.from(this.skills.values())
-      .map((entry) =>
-        mode === "default-v2" &&
-        entry.source === "builtin" &&
-        entry.slug === "threat-model"
-          ? { ...entry, manifest: adaptiveThreatModelSkill.manifest }
-          : entry,
-      )
+      .filter((entry) => this.get(entry.slug, mode) !== undefined)
       .sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
-  get(slug: string): SkillEntry | undefined {
-    return this.skills.get(slug);
+  get(slug: string, mode?: AgentMode): SkillEntry | undefined {
+    const entry = this.skills.get(slug);
+    if (
+      mode === "default-v2" &&
+      entry?.source === "builtin" &&
+      (slug === "threat-model" || slug === "pentest")
+    )
+      return undefined;
+    return entry;
   }
 
   // -- Content loading -------------------------------------------------------
@@ -77,14 +78,11 @@ export class SkillsRegistry {
     slug: string,
     mode?: AgentMode,
   ): Promise<{ name: string; content: string }> {
-    const entry = this.skills.get(slug);
+    const entry = this.get(slug, mode);
     if (!entry) throw new Error(`Skill "${slug}" not found`);
 
     if (entry.source === "builtin") {
-      const builtin =
-        mode === "default-v2" && slug === "threat-model"
-          ? adaptiveThreatModelSkill
-          : BUILTIN_SKILLS.find((b) => b.slug === slug);
+      const builtin = BUILTIN_SKILLS.find((b) => b.slug === slug);
       if (!builtin) throw new Error(`Built-in skill "${slug}" not found`);
       return { name: builtin.manifest.name, content: builtin.instructions };
     }

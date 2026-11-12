@@ -14,7 +14,10 @@ import type { ToolContext } from "./types";
 
 export function profileCodebase(ctx: ToolContext) {
   return tool({
-    description: `Profile a local source-code repository for whitebox security assessment.
+    description:
+      ctx.mode === "default-v2"
+        ? `Inspect repository structure: languages, manifests, package managers, build/test/run hints, entry-point hints, IaC/CI files, native-code indicators, and installed scanner availability. Returns an inventory summary and a full JSON artifact.`
+        : `Profile a local source-code repository for whitebox security assessment.
 
 Returns languages, package managers, manifests, build/test/run hints, entry-point hints,
 IaC/CI files, native-code indicators, installed scanner availability, and a narrow
@@ -25,7 +28,7 @@ Full structured output is written to the session artifact; inline data is a comp
         .string()
         .optional()
         .describe(
-          "Repository root to profile, relative to the configured codebase root or absolute if still under that root.",
+          "Repository root to inspect. Relative paths resolve from the configured codebase root or working directory; explicit source and file-workspace scopes remain enforced.",
         ),
       toolCallDescription: z
         .string()
@@ -51,14 +54,22 @@ Full structured output is written to the session artifact; inline data is a comp
           rootPath,
           resolveWhiteboxBackend(ctx).profile,
         );
-        const selection = selectCatalogForProfile(profile);
+        const selection =
+          ctx.mode === "default-v2"
+            ? undefined
+            : selectCatalogForProfile(profile);
         const artifact = await writeWhiteboxArtifact({
           session: ctx.session,
           type: "repo-profile",
           name: "repo-profile",
-          content: JSON.stringify({ profile, catalog: selection }, null, 2),
-          description:
-            "Whitebox repository profile and relevant catalog records",
+          content: JSON.stringify(
+            { profile, ...(selection ? { catalog: selection } : {}) },
+            null,
+            2,
+          ),
+          description: selection
+            ? "Whitebox repository profile and relevant catalog records"
+            : "Repository inventory",
           extension: ".json",
         });
 
@@ -75,18 +86,26 @@ Full structured output is written to the session artifact; inline data is a comp
             iacFilesCount: profile.iacFiles.length,
             ciFilesCount: profile.ciFiles.length,
             nativeCode: profile.nativeCode,
-            relevantCatalog: summarizeCatalogRecords(selection.records),
-            recommendedPasses: summarizeCatalogRecords(
-              selection.recommendedPasses,
-            ),
+            ...(selection
+              ? {
+                  relevantCatalog: summarizeCatalogRecords(selection.records),
+                  recommendedPasses: summarizeCatalogRecords(
+                    selection.recommendedPasses,
+                  ),
+                }
+              : {}),
           },
           artifactPaths: [artifact.path],
-          nextActions: [
-            "Use read_whitebox_artifact with the artifact path for the full JSON profile.",
-            "Use query_whitebox_catalog for focused sink or scanner guidance.",
-            "Use run_code_query or spawn_coding_agent for targeted source-to-sink analysis.",
-            "Use run_whitebox_scan for installed scanners that match this profile.",
-          ],
+          ...(selection
+            ? {
+                nextActions: [
+                  "Use read_whitebox_artifact with the artifact path for the full JSON profile.",
+                  "Use query_whitebox_catalog for focused sink or scanner guidance.",
+                  "Use run_code_query or spawn_coding_agent for targeted source-to-sink analysis.",
+                  "Use run_whitebox_scan for installed scanners that match this profile.",
+                ],
+              }
+            : {}),
           truncated: profile.entryPointHints.length > 15,
         };
       } catch (error) {

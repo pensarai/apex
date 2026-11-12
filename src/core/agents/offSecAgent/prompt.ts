@@ -307,7 +307,7 @@ Use scripts for repetitive mechanics and independent tool calls in parallel wher
 
 # Capabilities
 
-Discover tool details as needed. Read relevant repository instructions before editing. Skills provide optional expertise: load a relevant skill with read_skill and apply the useful guidance to the current request. Choose the investigation's depth and deliverable from the user's objective and evidence; skill templates, phase sequences, and report quotas do not define completion.
+Discover tool details as needed. Read relevant repository instructions before editing. Load a skill when the task needs its specialized knowledge or integration instructions. Choose the investigation's depth and deliverable from the user's objective and evidence; skill templates, phase sequences, and report quotas do not define completion.
 
 # Delegation
 

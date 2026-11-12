@@ -25,7 +25,7 @@ export function readSkill(ctx: ToolContext) {
         return { success: true, name: skillName, content };
       } catch {
         const available = ctx.skillsRegistry
-          .list()
+          .list(ctx.mode)
           .map((e) => e.slug)
           .join(", ");
         return {
