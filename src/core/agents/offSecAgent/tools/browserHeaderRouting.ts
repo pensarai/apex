@@ -6,6 +6,7 @@ import {
 import {
   getSessionAllowedPorts,
   getSessionHeaderHosts,
+  isUrlInHeaderScope,
 } from "../../../http/targetScope";
 import type { HeaderRecord } from "../../../http/types";
 
@@ -24,15 +25,20 @@ export function resolveBrowserHeaderPolicy(
     target && targets.length === 0
       ? { ...session, targets: [...targets, target] }
       : session;
-  const resolutionUrl = target ?? scopedSession.targets?.[0];
   const allowedHosts = getSessionHeaderHosts(scopedSession);
   const allowedPorts = getSessionAllowedPorts(scopedSession);
-  const headers =
-    resolutionUrl && allowedHosts.length > 0
-      ? stripBrowserManagedHeaders(
-          resolveEffectiveHeaders(scopedSession, resolutionUrl),
-        )
-      : undefined;
+  // The installed route gates injection per-request via allowedHosts, so the
+  // snapshot must carry engagement headers even when the session starts on an
+  // auxiliary host (e.g. a login/IdP). Resolve against any in-header-scope URL.
+  const resolutionUrl = [target, ...(scopedSession.targets ?? [])].find(
+    (candidate): candidate is string =>
+      candidate !== undefined && isUrlInHeaderScope(candidate, scopedSession),
+  );
+  const headers = resolutionUrl
+    ? stripBrowserManagedHeaders(
+        resolveEffectiveHeaders(scopedSession, resolutionUrl),
+      )
+    : undefined;
   return {
     allowedHosts,
     allowedPorts,

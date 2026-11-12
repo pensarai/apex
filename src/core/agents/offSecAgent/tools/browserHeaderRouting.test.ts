@@ -7,7 +7,7 @@ import {
 } from "./browserHeaderRouting";
 
 describe("resolveBrowserHeaderPolicy", () => {
-  it("keeps automatic browser headers off auxiliary and sibling hosts", () => {
+  it("keeps automatic browser headers scoped to header hosts regardless of start host", () => {
     const session = {
       targets: ["https://app.example.com"],
       config: {
@@ -18,19 +18,22 @@ describe("resolveBrowserHeaderPolicy", () => {
         },
       },
     };
-    expect(
-      resolveBrowserHeaderPolicy(session, "https://app.example.com"),
-    ).toEqual({
+    const scopedPolicy = {
       allowedHosts: ["app.example.com"],
       allowedPorts: [],
       headers: { "X-Workspace-Key": "secret" },
-    });
+    };
+    // allowedHosts (not the snapshot) keeps injection off auxiliary hosts, so a
+    // session that starts on login/IdP still carries headers for the target.
     expect(
-      resolveBrowserHeaderPolicy(session, "https://login.example.com").headers,
-    ).toEqual({});
+      resolveBrowserHeaderPolicy(session, "https://app.example.com"),
+    ).toEqual(scopedPolicy);
     expect(
-      resolveBrowserHeaderPolicy(session, "https://idp.example").headers,
-    ).toEqual({});
+      resolveBrowserHeaderPolicy(session, "https://login.example.com"),
+    ).toEqual(scopedPolicy);
+    expect(resolveBrowserHeaderPolicy(session, "https://idp.example")).toEqual(
+      scopedPolicy,
+    );
   });
 
   it("does not add a navigation destination to an existing session scope", () => {
@@ -45,7 +48,7 @@ describe("resolveBrowserHeaderPolicy", () => {
     ).toEqual({
       allowedHosts: ["app.example.com"],
       allowedPorts: [],
-      headers: {},
+      headers: { "X-Workspace-Key": "secret" },
     });
   });
 
