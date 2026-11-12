@@ -36,7 +36,12 @@ export class ReconIncompleteError extends Error {
     public readonly outcome: "blocked" | "budget-exhausted",
     public readonly gaps: string[],
   ) {
-    super(`Recon analysis incomplete: ${outcome}`);
+    super(
+      `Recon analysis incomplete: ${outcome}. ${gaps
+        .slice(0, 3)
+        .map((gap) => gap.slice(0, 300))
+        .join("; ")}`,
+    );
     this.name = "ReconIncompleteError";
   }
 }

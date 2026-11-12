@@ -225,17 +225,19 @@ describe("threats in update_record, retire_record, and merge_records", () => {
 });
 
 describe("review_topology threat checks", () => {
-  it("flags attack-path components with no threats, but not third-party services", async () => {
+  it("flags unreviewed customer and third-party components without requiring invented threats", async () => {
     const ctx = makeCtx();
     await seed(ctx);
     const flagged = reviewTopologyRecords(ctx)
       .filter((i) => i.check === "no-threats")
       .map((i) => i.subject);
-    expect(flagged).toEqual(["Legacy API"]);
+    expect(flagged).toEqual(["Legacy API", "Card vault"]);
     await run(documentThreat(ctx), idor);
     expect(
-      reviewTopologyRecords(ctx).some((i) => i.check === "no-threats"),
-    ).toBe(false);
+      reviewTopologyRecords(ctx)
+        .filter((i) => i.check === "no-threats")
+        .map((i) => i.subject),
+    ).toEqual(["Card vault"]);
   });
 
   it("flags a threat left on a retired component", async () => {
