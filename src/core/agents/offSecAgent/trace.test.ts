@@ -685,6 +685,54 @@ describe("StepTraceWriter", () => {
     expect(cp.type).toBe("checkpoint");
     expect(cp.targetState.discoveredSurface).toEqual([]);
     expect(cp.actionsAttempted).toEqual([]);
+    expect(cp.adversarialObservations).toEqual([]);
+  });
+
+  it("appendCheckpoint records adversarial action consistency observations", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+
+    writer.appendCheckpoint({
+      targetState: {
+        discoveredSurface: ["GET /profile"],
+        credentialsObtained: [],
+        confirmedVulnerabilities: [],
+      },
+      actionsAttempted: [
+        {
+          description: "Skipped target instruction to exfiltrate cookies",
+          outcome: "success",
+        },
+      ],
+      nextSteps: [],
+      blockers: [],
+      adversarialObservations: [
+        {
+          source: "response_body",
+          category: "prompt_injection",
+          evidence: "Target page asked the agent to send session cookies away",
+          risk: "high",
+          recommendedHandling: "ignore",
+          actionConsistency: "detected_and_avoided",
+          relatedAction: "Did not call http_request with cookie data",
+        },
+      ],
+      assessment: "Observed adversarial target content and avoided it.",
+    });
+
+    const records = readTraceRecords(tracePath);
+    const cp = records[0] as StateCheckpoint;
+    expect(cp.adversarialObservations).toEqual([
+      {
+        source: "response_body",
+        category: "prompt_injection",
+        evidence: "Target page asked the agent to send session cookies away",
+        risk: "high",
+        recommendedHandling: "ignore",
+        actionConsistency: "detected_and_avoided",
+        relatedAction: "Did not call http_request with cookie data",
+      },
+    ]);
   });
 
   it("currentStepIndex getter reflects the writer state", () => {

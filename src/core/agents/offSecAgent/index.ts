@@ -139,6 +139,7 @@ export {
   writePlan,
 } from "./tools";
 export type {
+  AdversarialObservation,
   CheckpointInput,
   InitRecord,
   StateCheckpoint,
