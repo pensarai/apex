@@ -103,27 +103,42 @@ describe("SkillsRegistry", () => {
   });
 
   describe("readSkillContent", () => {
-    it("loads adaptive guidance through the v2 tool without changing legacy workflows", async () => {
+    it("excludes built-in workflows from v2 discovery and execution while retaining specialized skills", async () => {
+      const slug = `${TEST_PREFIX}protocol`;
+      await createDirSkill(slug, "Protocol knowledge", "Protocol reference");
       await registry.load({ projectRoot: tmpRoot });
       const tool = readSkill({
         mode: "default-v2",
         skillsRegistry: registry,
       } as ToolContext);
-      const result = await tool.execute?.(
-        { name: "threat-model", toolCallDescription: "Follow the parser hint" },
-        { toolCallId: "skill", context: {}, messages: [] },
-      );
-      expect(result).toMatchObject({ success: true });
-      expect(result).toEqual({
+      for (const name of ["threat-model", "pentest"]) {
+        expect(registry.get(name, "default-v2")).toBeUndefined();
+        expect(
+          registry.list("default-v2").map((entry) => entry.slug),
+        ).not.toContain(name);
+        expect(registry.buildCatalog("default-v2")).not.toContain(
+          `**${name}**`,
+        );
+        await expect(
+          registry.readSkillContent(name, "default-v2"),
+        ).rejects.toThrow("not found");
+        const result = await tool.execute?.(
+          { name, toolCallDescription: "Load skill" },
+          { toolCallId: "skill", context: {}, messages: [] },
+        );
+        expect(result).toMatchObject({ success: false });
+      }
+      expect(
+        await tool.execute?.(
+          { name: slug, toolCallDescription: "Read protocol reference" },
+          { toolCallId: "protocol", context: {}, messages: [] },
+        ),
+      ).toEqual({
         success: true,
-        ...(await registry.readSkillContent("threat-model", "default-v2")),
+        name: "Protocol knowledge",
+        content: "Instructions for Protocol knowledge.",
       });
-      expect(JSON.stringify(result)).not.toContain(
-        "Work through these eight phases",
-      );
-      expect(registry.buildCatalog("default-v2")).toContain(
-        "scoped to the user's objective",
-      );
+      expect(registry.get("prompt-injection", "default-v2")).toBeDefined();
       expect(
         (await registry.readSkillContent("threat-model")).content,
       ).toContain("Work through these eight phases");

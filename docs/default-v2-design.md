@@ -207,9 +207,12 @@ capture. Initial preview sizes are experimental, not a claim of optimal tuning.
 Session instruction changes append only the changed span, and skill catalogs have a
 stable order. A local v2 launch directory is a default location, not an implicit source
 scope: profiling, queries, scans, and jobs accept explicit repository paths while
-configured codebase and file-workspace boundaries remain enforced. V2 skills supply
-optional expertise; the threat-model capability and its TUI entry points impose no
-phase sequence or report quotas.
+configured codebase and file-workspace boundaries remain enforced. Repository
+profiling returns inventory without catalog enrichment or follow-on workflows;
+catalog lookups search reference material without implicitly profiling a repository.
+V2 excludes the built-in pentest and threat-model workflow skills from discovery and
+loading. Specialized skills remain available when their knowledge or integrations
+are needed.
 
 The SDK 7 foundation requires a coordinated Console dependency and middleware
 migration. Its downstream compatibility check must pass against the matching

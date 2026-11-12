@@ -83,7 +83,10 @@ async function getCachedRepoProfile(
 
 export function queryWhiteboxCatalog(ctx: ToolContext) {
   return tool({
-    description: `Query the whitebox assessment catalog for focused source-analysis guidance.
+    description:
+      ctx.mode === "default-v2"
+        ? "Search reference material for source-analysis techniques, protocol sinks, scanners, and verification. Filters by query, kind, and tags without inspecting a repository."
+        : `Query the whitebox assessment catalog for focused source-analysis guidance.
 
 Use this instead of asking for the whole playbook. Examples:
 - "Node SSRF sinks"
@@ -115,7 +118,10 @@ Use this instead of asking for the whole playbook. Examples:
         agentCwd: ctx.agentCwd,
         codebasePath: ctx.session.config?.codebasePath,
       });
-      const profile = await getCachedRepoProfile(ctx, rootPath);
+      const profile =
+        ctx.mode === "default-v2"
+          ? undefined
+          : await getCachedRepoProfile(ctx, rootPath);
       const records = queryCatalog({
         profile,
         query,
@@ -129,13 +135,17 @@ Use this instead of asking for the whole playbook. Examples:
         summary: `Found ${records.length} whitebox catalog records.`,
         data: { records },
         artifactPaths: [],
-        nextActions:
-          records.length > 0
-            ? [
-                "Use the returned patterns with run_code_query for targeted source search.",
-                "Create candidates only after tracing source-to-sink reachability.",
-              ]
-            : ["Broaden the query or omit kind/tags."],
+        ...(ctx.mode === "default-v2"
+          ? {}
+          : {
+              nextActions:
+                records.length > 0
+                  ? [
+                      "Use the returned patterns with run_code_query for targeted source search.",
+                      "Create candidates only after tracing source-to-sink reachability.",
+                    ]
+                  : ["Broaden the query or omit kind/tags."],
+            }),
         truncated: false,
       };
     },
