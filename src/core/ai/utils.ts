@@ -567,7 +567,7 @@ async function summarizeConversation(
       // A forced tool choice would force a tool call instead of a summary.
       toolChoice:
         toolChoiceOverride ??
-        (opts.primaryModelOnly
+        (opts.primaryModelOnly || opts.preserveHistory
           ? "none"
           : typeof opts.toolChoice === "object" &&
               opts.toolChoice?.type === "tool"

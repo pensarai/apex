@@ -1,15 +1,12 @@
 import { isAbsolute, relative, sep } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveWhiteboxPath } from "../../../tools/backends/whitebox";
 import {
   remoteWhiteboxJobId,
   resolveWhiteboxJobs,
 } from "../../../tools/backends/whiteboxJobs";
-import {
-  readWhiteboxArtifact as loadWhiteboxSessionArtifact,
-  resolvePathWithinCodebaseRoot,
-  resolveWhiteboxCodebaseRoot,
-} from "../../../whitebox";
+import { readWhiteboxArtifact as loadWhiteboxSessionArtifact } from "../../../whitebox";
 import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
@@ -68,15 +65,9 @@ execution uses the configured tool backend.`,
         throw error;
       }
 
-      const codebaseRoot = resolveWhiteboxCodebaseRoot({
-        agentCwd: ctx.agentCwd,
-        codebasePath: ctx.session.config?.codebasePath,
-      });
       let rootPath: string;
       try {
-        rootPath = cwd
-          ? resolvePathWithinCodebaseRoot(codebaseRoot, cwd)
-          : codebaseRoot;
+        rootPath = await resolveWhiteboxPath(ctx, cwd);
       } catch (error) {
         return {
           success: false,

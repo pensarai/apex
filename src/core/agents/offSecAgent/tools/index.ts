@@ -46,6 +46,7 @@ export { detectAuthScheme } from "./detectAuthScheme";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
+export { documentEndpointV2 } from "./documentEndpointV2";
 export { documentVulnerability } from "./documentFinding";
 export {
   documentBoundary,
@@ -244,6 +245,7 @@ import { deleteFile } from "./deleteFile";
 import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
+import { documentEndpointV2 } from "./documentEndpointV2";
 import { documentVulnerability } from "./documentFinding";
 import {
   documentBoundary,
@@ -354,6 +356,20 @@ function browserEntry<N extends string & keyof BrowserToolsetFactories>(
   };
 }
 
+export const DEFAULT_V2_EXCLUDED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "document_app",
+  "document_endpoint",
+  "run_attack_surface",
+  "run_pentest_workflow",
+  "spawn_pentest_swarm",
+  "spawn_pentest_agent",
+  "spawn_recon_agent",
+  "spawn_coding_agent",
+  "delegate_to_auth_subagent",
+  "create_attack_surface_report",
+  "provide_comparison_results",
+]);
+
 const TOOL_REGISTRY = [
   // Browser automation tools (8 tools from Playwright MCP)
   browserEntry("browser_navigate"),
@@ -398,6 +414,11 @@ const TOOL_REGISTRY = [
   { name: "document_control", factory: documentControl },
   { name: "document_threat", factory: documentThreat },
   { name: "document_endpoint", factory: documentEndpoint },
+  {
+    name: "document_endpoint_v2",
+    factory: documentEndpointV2,
+    available: (ctx) => ctx.mode === "default-v2",
+  },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
   { name: "create_workspace_domain", factory: createWorkspaceDomain },
   { name: "list_workspace_apps", factory: listWorkspaceApps },
@@ -528,8 +549,12 @@ const TOOL_REGISTRY = [
 const REGISTRY_VIEW: readonly ToolFactoryEntry[] = TOOL_REGISTRY;
 
 export function listToolRegistryNames(ctx: ToolContext): string[] {
-  return REGISTRY_VIEW.filter((entry) =>
-    entry.available ? entry.available(ctx) : true,
+  return REGISTRY_VIEW.filter(
+    (entry) =>
+      !(
+        ctx.mode === "default-v2" &&
+        DEFAULT_V2_EXCLUDED_TOOL_NAMES.has(entry.name)
+      ) && (entry.available ? entry.available(ctx) : true),
   ).map((entry) => entry.name);
 }
 
@@ -597,6 +622,11 @@ export function createToolsForNames(
   const tools: Record<string, unknown> = {};
   for (const entry of REGISTRY_VIEW) {
     if (wanted && !wanted.has(entry.name)) continue;
+    if (
+      ctx.mode === "default-v2" &&
+      DEFAULT_V2_EXCLUDED_TOOL_NAMES.has(entry.name)
+    )
+      continue;
     if (entry.available && !entry.available(ctx)) continue;
     const tool = entry.group
       ? memberTool(groupCache, entry.group, ctx, entry.member ?? entry.name)

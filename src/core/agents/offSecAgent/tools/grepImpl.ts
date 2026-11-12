@@ -237,6 +237,21 @@ export async function grepImpl(
     };
   }
 
+  if (
+    ctx.mode === "default-v2" &&
+    !validated.flags.some(
+      (flag) =>
+        /^-[^-]*[EFGP]/.test(flag) ||
+        [
+          "--extended-regexp",
+          "--fixed-strings",
+          "--basic-regexp",
+          "--perl-regexp",
+        ].includes(flag),
+    )
+  )
+    validated.flags.unshift("-E");
+
   let dir: string;
   let artifact: string | undefined;
   try {

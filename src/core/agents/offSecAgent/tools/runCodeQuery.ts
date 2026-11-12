@@ -1,10 +1,12 @@
 import { relative } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { resolveWhiteboxBackend } from "../../../tools/backends/whitebox";
+import {
+  resolveWhiteboxBackend,
+  resolveWhiteboxPath,
+} from "../../../tools/backends/whitebox";
 import {
   resolvePathWithinCodebaseRoot,
-  resolveWhiteboxCodebaseRoot,
   writeWhiteboxArtifact,
 } from "../../../whitebox";
 import type { BoundedCommandRunner } from "../../../whitebox/boundedProcess";
@@ -112,15 +114,9 @@ instead of flooding context with every match. Output size and runtime are bounde
         .describe("A concise description of the code query"),
     }),
     execute: async ({ engine = "rg", queries, cwd, timeoutSeconds = 30 }) => {
-      const codebaseRoot = resolveWhiteboxCodebaseRoot({
-        agentCwd: ctx.agentCwd,
-        codebasePath: ctx.session.config?.codebasePath,
-      });
       let rootPath: string;
       try {
-        rootPath = cwd
-          ? resolvePathWithinCodebaseRoot(codebaseRoot, cwd)
-          : codebaseRoot;
+        rootPath = await resolveWhiteboxPath(ctx, cwd);
       } catch (error) {
         return {
           success: false,

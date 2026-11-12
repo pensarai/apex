@@ -53,7 +53,7 @@ export function readFile(ctx: ToolContext) {
   return tool({
     description: `Read the contents of a file from the filesystem. This tool only works on files, NOT directories. To list directory contents, use the list_files tool instead.
 
-Read tool-output: references returned by execute_command or grep to inspect saved
+Read tool-output: references returned by file or command tools to inspect saved
 output. These references address only this agent's retained output, including
 when commands run in a remote sandbox.
 

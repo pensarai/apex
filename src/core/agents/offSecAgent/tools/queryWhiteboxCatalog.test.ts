@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RepoProfile } from "../../../whitebox";
 
@@ -66,6 +67,27 @@ afterEach(() => {
 });
 
 describe("queryWhiteboxCatalog profile coalescing", () => {
+  it("searches reference material in v2 without a hidden repository profile", async () => {
+    state.profileCalls = 0;
+    const tool = queryWhiteboxCatalog({
+      ...makeCtx("v2-lookup", "/unused-repository"),
+      mode: "default-v2",
+    });
+    const result = await tool.execute?.(
+      {
+        query: "auth",
+        limit: 3,
+        toolCallDescription: "Look up auth techniques",
+      },
+      { context: {}, toolCallId: "lookup", messages: [] },
+    );
+    expect(result).toMatchObject({ success: true });
+    assert(result && "data" in result);
+    expect(result.data.records.length).toBeGreaterThan(0);
+    expect(result).not.toHaveProperty("nextActions");
+    expect(state.profileCalls).toBe(0);
+  });
+
   it("coalesces sixteen concurrent misses into one shared profile attempt", async () => {
     state.profileCalls = 0;
     state.gate = new Promise<void>((resolve) => state.releases.push(resolve));

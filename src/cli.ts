@@ -817,12 +817,18 @@ ${sep}\n`);
             authConfig: buildAuthConfig(pensarConfig),
             eventBus: bus,
             session,
-            messages,
+            ...(defaultV2Mode
+              ? {
+                  newMessages: [
+                    { role: "user" as const, content: currentPrompt },
+                  ],
+                }
+              : { messages }),
           });
 
           // Read back persisted messages for the next turn
           const messagesPath = path.join(session.rootPath, "messages.json");
-          if (existsSync(messagesPath)) {
+          if (!defaultV2Mode && existsSync(messagesPath)) {
             const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
             const allMessages: ModelMessage[] = Array.isArray(raw) ? raw : [];
             messages = prepareConversationMessages(allMessages, {
@@ -837,10 +843,11 @@ ${sep}\n`);
           currentPrompt = followUp;
           // Append the follow-up as a user message so the conversation
           // ends with a user turn (required by Anthropic models).
-          messages = prepareConversationMessages(
-            [...(messages ?? []), { role: "user", content: followUp }],
-            { preserveHistory: defaultV2Mode },
-          );
+          if (!defaultV2Mode)
+            messages = prepareConversationMessages(
+              [...(messages ?? []), { role: "user", content: followUp }],
+              { preserveHistory: defaultV2Mode },
+            );
         }
       } finally {
         rl.close();

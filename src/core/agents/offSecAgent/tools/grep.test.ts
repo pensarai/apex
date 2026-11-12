@@ -78,6 +78,33 @@ function controlledChild() {
 }
 
 describe("grep terminal ordering", () => {
+  it("uses extended regex in v2 while preserving explicit literal and legacy modes", async () => {
+    const root = scratchDir();
+    writeFileSync(
+      join(root, "source.rb"),
+      "permit(:name)\nparams[:id]\nplain\n",
+    );
+    const ctx = makeCtx({ agentCwd: root, mode: "default-v2" });
+    const input = {
+      pattern: "permit\\(|params\\[",
+      flags: "-rn",
+      toolCallDescription: "Find input boundaries",
+    };
+    expect(await runGrep(ctx, input)).toMatchObject({
+      success: true,
+      matchCount: 2,
+    });
+    expect(
+      await runGrep(ctx, { ...input, flags: "-rnF", pattern: "permit(" }),
+    ).toMatchObject({ success: true, matchCount: 1 });
+    expect(await runGrep({ ...ctx, mode: undefined }, input)).toMatchObject({
+      success: false,
+    });
+    expect(await runGrep(ctx, { ...input, flags: "-rnG" })).toMatchObject({
+      success: false,
+    });
+  });
+
   it.each([
     ["abort", 0],
     ["timeout", 0],

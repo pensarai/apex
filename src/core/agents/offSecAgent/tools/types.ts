@@ -29,6 +29,7 @@ import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type {
   AgentHooks,
+  AgentMode,
   FindingPolicy,
   StreamIdFactory,
   SystemPentestScope,
@@ -48,6 +49,7 @@ import type { SmsInbox } from "./smsInbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  mode?: AgentMode;
   findingPolicy?: FindingPolicy;
   attackSurfaceArtifactsPath?: string;
 
