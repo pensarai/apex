@@ -81,7 +81,10 @@ export type {
 export async function runGeneralizedAttackSurface(
   input: GeneralizedAttackSurfaceAgentInput,
 ): Promise<GeneralizedAttackSurfaceResult> {
-  return runGeneralizedReconToReport(input);
+  return runGeneralizedReconToReport({
+    ...input,
+    completion: input.completion ?? { version: 1, mode: "enforce" },
+  });
 }
 
 // ---------------------------------------------------------------------------

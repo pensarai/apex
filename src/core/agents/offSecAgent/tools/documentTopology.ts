@@ -577,13 +577,6 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
   });
 }
 
-/** Third-party services the system relies on but cannot be attacked through directly. */
-const UNTHREATENED_KINDS = new Set([
-  "saas",
-  "identity-provider",
-  "llm-provider",
-]);
-
 export const THREAT_CATEGORIES = [
   "spoofing",
   "tampering",
@@ -1379,14 +1372,11 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
   }
   const threatened = new Set(topology.threats.map((t) => lower(t.component)));
   for (const c of components)
-    if (
-      !UNTHREATENED_KINDS.has(String(c.kind)) &&
-      !threatened.has(lower(c.name))
-    )
+    if (!threatened.has(lower(c.name)))
       issues.push({
         check: "no-threats",
         subject: String(c.name),
-        fix: "Threat-model it with document_threat: work through each STRIDE category against its trust assumptions, its controls' gaps, and its flows.",
+        fix: "Review relevant STRIDE categories, customer integration trust, controls and flows. Document supported conditional scenarios or explain evidence-backed absence; missing evidence is an analysis limitation. Never invent threats to satisfy a count.",
       });
   const has = (v: unknown) => typeof v === "string" && v.trim().length > 0;
   for (const t of topology.threats) {
