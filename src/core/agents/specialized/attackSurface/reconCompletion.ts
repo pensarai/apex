@@ -77,7 +77,9 @@ export async function runAuditedRecon(
     undefined,
     input.updateBrief,
     buildCredentialsBlock(
-      undefined,
+      (
+        input.credentialManager ?? input.session.credentialManager
+      )?.formatForPrompt(),
       input.session.config?.authenticationInstructions,
     ),
   );

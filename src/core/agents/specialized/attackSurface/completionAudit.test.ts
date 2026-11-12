@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { CredentialManager } from "../../../credentials/manager";
 import type { SessionInfo } from "../../../session";
 import { writeRecord } from "../../offSecAgent/tools/topologyRecords";
 import {
@@ -123,6 +124,31 @@ describe("recon completion gate", () => {
     expect(calls[2]!.continuation).toContain("Missing callback tenant binding");
     expect(readCompletionLedger(i.session.rootPath, i.session.id)?.pass).toBe(
       2,
+    );
+  });
+  it("preserves supplied authentication roles without persisting secrets", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    delete i.session.config!.authenticationInstructions;
+    const credentials = new CredentialManager();
+    credentials.add({
+      id: "cred_admin",
+      role: "tenant-admin",
+      username: "admin@example.test",
+      password: "fixture-secret-never-in-ledger",
+    });
+    i.credentialManager = credentials;
+    await runGeneralizedReconToReport(i, factory(calls));
+    const ledger = readCompletionLedger(i.session.rootPath, i.session.id)!;
+    expect(ledger.objective).toContain("Map the authenticated surface");
+    expect(ledger.objective).toContain("cred_admin");
+    expect(calls[1]!.auditPrompt).toContain("tenant-admin");
+    expect(JSON.stringify(ledger)).not.toContain(
+      "fixture-secret-never-in-ledger",
+    );
+    credentials.add({ id: "cred_member", role: "member", password: "other" });
+    await expect(runGeneralizedReconToReport(i, factory([]))).rejects.toThrow(
+      "Recon objective changed during resume",
     );
   });
   it("rejects self-certification that omits requirements or evidence", () => {
