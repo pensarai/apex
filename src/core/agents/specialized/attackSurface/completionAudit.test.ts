@@ -297,6 +297,31 @@ describe("recon completion gate", () => {
       }),
     ).rejects.toMatchObject({ outcome: "budget-exhausted" });
   });
+  it("drains each pass before starting another audit or returning completion", async () => {
+    const i = input(),
+      order: string[] = [];
+    const scripted = factory([]);
+    await runGeneralizedReconToReport(i, (options) => {
+      const name = options.auditPrompt ? "audit" : "work";
+      const agent = scripted(options);
+      return {
+        consume: async () => {
+          order.push(`${name}:result`);
+          return agent.consume();
+        },
+        abortAndDrain: async () => {
+          await Promise.resolve();
+          order.push(`${name}:drained`);
+        },
+      };
+    });
+    expect(order).toEqual([
+      "work:result",
+      "work:drained",
+      "audit:result",
+      "audit:drained",
+    ]);
+  });
   it("replays every model pass using checkpointed decisions", async () => {
     const i = input(),
       saved = new Map<string, unknown>();

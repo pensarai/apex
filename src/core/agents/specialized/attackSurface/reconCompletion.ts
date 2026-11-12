@@ -50,8 +50,17 @@ export async function runAuditedRecon(
   input: GeneralizedAttackSurfaceAgentInput,
   createAgent: (input: GeneralizedAttackSurfaceAgentInput) => {
     consume(): Promise<GeneralizedAttackSurfaceResult>;
+    abortAndDrain?(): Promise<void>;
   },
 ): Promise<GeneralizedAttackSurfaceResult> {
+  const runPass = async (options: GeneralizedAttackSurfaceAgentInput) => {
+    const agent = createAgent(options);
+    try {
+      return await agent.consume();
+    } finally {
+      await agent.abortAndDrain?.();
+    }
+  };
   const options = input.completion;
   if (!options) throw new Error("Recon completion options are required");
   const root = input.session.rootPath;
@@ -114,12 +123,12 @@ export async function runAuditedRecon(
     await persist();
     // A report from an earlier pass must never satisfy the next pass's stop condition.
     rmSync(join(root, "attack-surface-results.json"), { force: true });
-    const candidate = await createAgent({
+    const candidate = await runPass({
       ...input,
       harness: "general",
       stepLimit: options.workSteps ?? 200,
       continuation: `Original objective (preserve every requirement):\n${ledger.objective}\n\nCompletion ledger:\n${JSON.stringify(ledger)}\nContinue from persisted topology. Correct the listed gaps, preserving valid evidence and justified absence, then propose a fresh report.`,
-    }).consume();
+    });
     await options.synchronize?.();
     const result = await checkpoint(
       `report-${ledger.pass}`,
@@ -158,7 +167,7 @@ export async function runAuditedRecon(
       requirements: auditInput.requirements,
     };
     await persist();
-    const reviewed = await createAgent({
+    const reviewed = await runPass({
       ...input,
       harness: "general",
       stepLimit: 40,
@@ -169,7 +178,7 @@ export async function runAuditedRecon(
         topology: auditInput.topology,
         report: result.results,
       }),
-    }).consume();
+    });
     if (!reviewed.completionAudit)
       throw new Error(
         `Recon audit ended without a response (session ${sessionId})`,

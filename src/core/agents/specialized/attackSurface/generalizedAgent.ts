@@ -177,6 +177,7 @@ export async function runGeneralizedReconToReport(
   input: GeneralizedAttackSurfaceAgentInput,
   createAgent: (input: GeneralizedAttackSurfaceAgentInput) => {
     consume(): Promise<GeneralizedAttackSurfaceResult>;
+    abortAndDrain?(): Promise<void>;
   } = (i) => new GeneralizedAttackSurfaceAgent(i),
 ): Promise<GeneralizedAttackSurfaceResult> {
   const root = input.session.rootPath;
