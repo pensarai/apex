@@ -7,6 +7,48 @@ import {
 } from "./browserHeaderRouting";
 
 describe("resolveBrowserHeaderPolicy", () => {
+  it("keeps automatic browser headers off auxiliary and sibling hosts", () => {
+    const session = {
+      targets: ["https://app.example.com"],
+      config: {
+        headers: { "X-Workspace-Key": "secret" },
+        scopeConstraints: {
+          allowedHosts: ["app.example.com", "login.example.com", "idp.example"],
+          headerHosts: ["app.example.com"],
+        },
+      },
+    };
+    expect(
+      resolveBrowserHeaderPolicy(session, "https://app.example.com"),
+    ).toEqual({
+      allowedHosts: ["app.example.com"],
+      allowedPorts: [],
+      headers: { "X-Workspace-Key": "secret" },
+    });
+    expect(
+      resolveBrowserHeaderPolicy(session, "https://login.example.com").headers,
+    ).toEqual({});
+    expect(
+      resolveBrowserHeaderPolicy(session, "https://idp.example").headers,
+    ).toEqual({});
+  });
+
+  it("does not add a navigation destination to an existing session scope", () => {
+    expect(
+      resolveBrowserHeaderPolicy(
+        {
+          targets: ["https://app.example.com"],
+          config: { headers: { "X-Workspace-Key": "secret" } },
+        },
+        "https://outside.example",
+      ),
+    ).toEqual({
+      allowedHosts: ["app.example.com"],
+      allowedPorts: [],
+      headers: {},
+    });
+  });
+
   it("snapshots session and credential headers for allowed hosts", () => {
     const policy = resolveBrowserHeaderPolicy(
       {

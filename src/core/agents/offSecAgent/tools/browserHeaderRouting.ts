@@ -4,8 +4,8 @@ import {
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
 import {
-  getSessionAllowedHosts,
   getSessionAllowedPorts,
+  getSessionHeaderHosts,
 } from "../../../http/targetScope";
 import type { HeaderRecord } from "../../../http/types";
 
@@ -21,11 +21,11 @@ export function resolveBrowserHeaderPolicy(
 ): BrowserHeaderPolicy {
   const targets = session.targets ?? [];
   const scopedSession =
-    target && !targets.includes(target)
+    target && targets.length === 0
       ? { ...session, targets: [...targets, target] }
       : session;
   const resolutionUrl = target ?? scopedSession.targets?.[0];
-  const allowedHosts = getSessionAllowedHosts(scopedSession);
+  const allowedHosts = getSessionHeaderHosts(scopedSession);
   const allowedPorts = getSessionAllowedPorts(scopedSession);
   const headers =
     resolutionUrl && allowedHosts.length > 0

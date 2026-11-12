@@ -140,6 +140,51 @@ describe("parseHeadersFromFile", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveEffectiveHeaders", () => {
+  it("allows auxiliary requests without injecting target headers", () => {
+    const session = {
+      targets: ["https://app.example.com"],
+      config: {
+        headers: { "X-Workspace-Key": "workspace-secret" },
+        scopeConstraints: {
+          allowedHosts: ["app.example.com", "login.idp.example"],
+          headerHosts: ["app.example.com"],
+          strictScope: true,
+        },
+      },
+      credentialManager: {
+        listCredentialsWithHeaders: () => [
+          {
+            tokens: {
+              customHeaders: { Authorization: "Bearer target-secret" },
+            },
+          },
+        ],
+      },
+    };
+    expect(
+      resolveEffectiveHeaders(session, "https://app.example.com/api"),
+    ).toEqual({
+      "X-Workspace-Key": "workspace-secret",
+      Authorization: "Bearer target-secret",
+    });
+    expect(
+      resolveEffectiveHeaders(session, "https://login.idp.example/token"),
+    ).toEqual({});
+    expect(
+      resolveEffectiveHeaders(session, "https://login.idp.example/token", {
+        Authorization: "Basic explicit-login-credential",
+      }),
+    ).toEqual({ Authorization: "Basic explicit-login-credential" });
+    session.config.scopeConstraints.headerHosts = ["outside.example"];
+    expect(
+      resolveEffectiveHeaders(session, "https://outside.example/api"),
+    ).toEqual({});
+    session.config.scopeConstraints.headerHosts = [];
+    expect(
+      resolveEffectiveHeaders(session, "https://app.example.com/api"),
+    ).toEqual({});
+  });
+
   it("returns empty for out-of-scope URLs (INV-scope-bound)", () => {
     const s = makeSession({
       targets: ["https://example.com"],
@@ -220,6 +265,42 @@ describe("resolveEffectiveHeaders", () => {
 // ---------------------------------------------------------------------------
 
 describe("targetFetch", () => {
+  it("follows an allowed login redirect without forwarding target headers", async () => {
+    const session = makeSession({
+      targets: ["https://example.com"],
+      config: {
+        headers: { "X-Workspace-Key": "secret" },
+        scopeConstraints: {
+          strictScope: true,
+          allowedHosts: ["example.com", "login.idp.example"],
+          headerHosts: ["example.com"],
+        },
+      },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 302,
+          headers: { location: "https://login.idp.example/signin" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+    try {
+      await targetFetch(session, "https://example.com/start", {
+        headers: { Authorization: "Bearer target-token" },
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(spy.mock.calls[0][1]?.headers).toMatchObject({
+        "X-Workspace-Key": "secret",
+        Authorization: "Bearer target-token",
+      });
+      expect(spy.mock.calls[1][1]?.headers).toEqual({});
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("merges resolved headers into the fetch call", async () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
@@ -550,6 +631,47 @@ describe("targetFetch redirect scoping", () => {
 // ---------------------------------------------------------------------------
 
 describe("applyHeadersToShellCommand", () => {
+  it("refuses automatic headers on mixed target and auxiliary shell requests", () => {
+    const session = makeSession({
+      config: {
+        headers: { "X-Workspace-Key": "secret" },
+        scopeConstraints: {
+          allowedHosts: ["example.com", "login.idp.example"],
+          headerHosts: ["example.com"],
+        },
+      },
+    });
+    const command = "curl https://example.com https://login.idp.example/token";
+    expect(
+      applyHeadersToShellCommand(command, session, [
+        "example.com",
+        "login.idp.example",
+      ]),
+    ).toEqual({ command, status: "unknown-tool", tool: null });
+  });
+
+  it("does not inject target headers into shell requests to auxiliary hosts", () => {
+    const session = makeSession({
+      targets: ["https://example.com"],
+      config: {
+        headers: { "X-Workspace-Key": "secret" },
+        scopeConstraints: {
+          allowedHosts: ["example.com", "login.idp.example"],
+          headerHosts: ["example.com"],
+        },
+      },
+    });
+    const command = "curl https://login.idp.example/token";
+    expect(
+      applyHeadersToShellCommand(command, session, ["login.idp.example"]),
+    ).toEqual({ command, status: "no-headers", tool: null });
+    expect(
+      applyHeadersToShellCommand("curl https://example.com/api", session, [
+        "example.com",
+      ]).command,
+    ).toContain("X-Workspace-Key");
+  });
+
   it("injects -H flags into curl commands", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
@@ -862,9 +984,7 @@ describe("applyHeadersToShellCommand", () => {
     }
   });
 
-  it("keeps pre-existing behavior for multi-host commands without 2>&1", () => {
-    // Scope enforcement for the whole command lives in the caller's scope
-    // guard; this layer only fail-closes the new `2>&1` acceptance.
+  it("also refuses mixed-scope commands without a descriptor redirect", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
     });
@@ -873,7 +993,7 @@ describe("applyHeadersToShellCommand", () => {
       session,
       ["example.com", "attacker.net"],
     );
-    expect(r.status).toBe("injected");
+    expect(r.status).toBe("unknown-tool");
   });
 
   it("recognizes 2>&1 only for POSIX-contract command backends", () => {

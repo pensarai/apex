@@ -11,6 +11,7 @@ export interface TargetScope {
   readonly config?: {
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
+      readonly headerHosts?: ReadonlyArray<string>;
       readonly allowedPorts?: ReadonlyArray<number>;
     };
   };
@@ -36,6 +37,27 @@ export function getSessionAllowedHosts(scope: TargetScope): string[] {
   }
 
   return [...hosts];
+}
+
+/** Hosts that may receive automatic session/credential headers; never wider than network scope. */
+export function getSessionHeaderHosts(scope: TargetScope): string[] {
+  const allowed = getSessionAllowedHosts(scope);
+  const explicit = scope.config?.scopeConstraints?.headerHosts;
+  if (explicit === undefined) return allowed;
+  return [
+    ...new Set(
+      explicit.map((host) => host.trim().toLowerCase().replace(/\.$/, "")),
+    ),
+  ].filter((host) => isHostInScope(host, allowed));
+}
+
+export function isUrlInHeaderScope(url: string, scope: TargetScope): boolean {
+  const parsed = parseTargetUrl(url);
+  return (
+    parsed !== null &&
+    isUrlInSessionScope(url, scope) &&
+    isHostInScope(parsed.hostname, getSessionHeaderHosts(scope))
+  );
 }
 
 export function getSessionAllowedPorts(scope: TargetScope): number[] {

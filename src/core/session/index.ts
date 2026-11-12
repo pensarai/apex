@@ -68,6 +68,7 @@ const AuthCredentialsObject = z.object({
 export type AuthCredentials = z.infer<typeof AuthCredentialsObject>;
 
 const ScopeConstraintsObject = z.object({
+  headerHosts: z.string().array().optional(),
   allowedHosts: z.string().array().optional(),
   allowedPorts: z.number().array().optional(),
   strictScope: z.boolean().optional(),

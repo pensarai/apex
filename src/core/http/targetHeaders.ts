@@ -10,10 +10,10 @@ import {
   type RedirectFetchResult,
 } from "./redirects";
 import {
-  getSessionAllowedHosts,
   getSessionAllowedPorts,
+  getSessionHeaderHosts,
   isHostInScope,
-  isUrlInSessionScope,
+  isUrlInHeaderScope,
   isUrlReachable,
 } from "./targetScope";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
@@ -26,6 +26,7 @@ export interface ResolverSession {
     readonly headers?: HeaderRecord;
     readonly scopeConstraints?: {
       readonly allowedHosts?: ReadonlyArray<string>;
+      readonly headerHosts?: ReadonlyArray<string>;
       readonly allowedPorts?: ReadonlyArray<number>;
       readonly strictScope?: boolean;
     };
@@ -76,7 +77,7 @@ export function resolveEffectiveHeaders(
   url: string,
   requestOverrides?: HeaderRecord,
 ): HeaderRecord {
-  if (!isUrlInSessionScope(url, session)) {
+  if (!isUrlInHeaderScope(url, session)) {
     return requestOverrides ?? {};
   }
 
@@ -177,7 +178,7 @@ export function targetFetch(
     return resolveEffectiveHeaders(
       session,
       hopUrl,
-      context.redirectCount === 0 || isUrlInSessionScope(hopUrl, session)
+      context.redirectCount === 0 || isUrlInHeaderScope(hopUrl, session)
         ? callerHeaders
         : undefined,
     );
@@ -581,7 +582,7 @@ export function applyHeadersToShellCommand(
   // CommandBackend contract — custom transports default to POSIX
   // regardless of host OS.
   const allowDescriptorRedirect = platform !== "windows";
-  const allowed = getSessionAllowedHosts(session);
+  const allowed = getSessionHeaderHosts(session);
   const inScopeHost = commandHosts.find((h) => isHostInScope(h, allowed));
   if (!inScopeHost) {
     return { command, status: "no-headers", tool: null };
@@ -594,6 +595,10 @@ export function applyHeadersToShellCommand(
   const headers = resolveEffectiveHeaders(session, url);
   if (Object.keys(headers).length === 0) {
     return { command, status: "no-headers", tool: null };
+  }
+  // Injected flags apply to every URL operand, including allowed auxiliary hosts.
+  if (commandHosts.some((host) => !isHostInScope(host, allowed))) {
+    return { command, status: "unknown-tool", tool: null };
   }
 
   const tool = detectHttpToolOnCommand(command, allowDescriptorRedirect);
