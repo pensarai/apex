@@ -1,9 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials/manager";
 import type { SessionInfo } from "../../../session";
+import { inProcessSubagentSpawner } from "../../offSecAgent/subagentSpawner";
+import { readFile } from "../../offSecAgent/tools/readFile";
+import type { ReadFileResult } from "../../offSecAgent/tools/readFileImpl";
 import { writeRecord } from "../../offSecAgent/tools/topologyRecords";
 import {
   type AuditRequirement,
@@ -134,6 +137,66 @@ describe("recon completion gate", () => {
           review.requirementId.startsWith("component:"),
       ),
     ).toHaveLength(30);
+  });
+  it("serves omitted long evidence completely through bounded byte reads", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    const evidence = "évidence🔎".repeat(15000) + "critical tail evidence";
+    writeRecord(i.session.rootPath, i.session.id, "component", "long", {
+      id: "cmp_long",
+      name: "Long record",
+      kind: "saas",
+      evidence,
+    });
+    await runGeneralizedReconToReport(i, factory(calls));
+    const packet = JSON.parse(
+      calls.find((call) => call.auditPrompt)!.auditPrompt!,
+    );
+    expect(packet.records).toEqual([]);
+    const record = packet.recordIndex.find(
+      (r: { id: string }) => r.id === "cmp_long",
+    );
+    const reader = readFile({
+      subagentSpawner: inProcessSubagentSpawner,
+      session: i.session,
+      agentCwd: i.session.rootPath,
+    });
+    let offset = 0,
+      content = "";
+    while (offset < record.evidenceBytes) {
+      const page = (await reader.execute!(
+        {
+          path: record.evidenceFile,
+          byteOffset: offset,
+          byteCount: 48000,
+          startLine: null,
+          endLine: null,
+          toolCallDescription: "Read bounded evidence page",
+        },
+        { toolCallId: "audit-page", messages: [] },
+      )) as ReadFileResult;
+      expect(page.success).toBe(true);
+      expect(page.stoppedAtByte).toBeGreaterThan(offset);
+      content += page.content;
+      offset = page.stoppedAtByte!;
+    }
+    expect(JSON.parse(content)[0].evidence).toBe(evidence);
+    expect(Buffer.byteLength(content)).toBe(record.evidenceBytes);
+  });
+  it("does not write a host evidence fallback when a classic sandbox is unavailable", async () => {
+    const i = input();
+    const execute = vi.fn().mockRejectedValue(new Error("sandbox unavailable"));
+    i.sandbox = { type: "linux", execute };
+    await expect(runGeneralizedReconToReport(i, factory([]))).rejects.toThrow(
+      "sandbox unavailable",
+    );
+    expect(execute).toHaveBeenCalled();
+    expect(
+      existsSync(join(i.session.rootPath, ".pensar/completion-audit")),
+    ).toBe(false);
+    expect(readCompletionLedger(i.session.rootPath, i.session.id)!.status).toBe(
+      "audit-failed",
+    );
   });
   it("persists earlier packet reviews but cannot certify a partially failed audit", async () => {
     const i = input();

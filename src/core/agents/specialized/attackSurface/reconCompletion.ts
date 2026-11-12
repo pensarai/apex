@@ -1,5 +1,7 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { resolveBackends } from "../../../tools/backends";
+import { inProcessSubagentSpawner } from "../../offSecAgent/subagentSpawner";
 import { loadTopology } from "../../offSecAgent/tools/topologyRecords";
 import { auditRecordIndex, buildAuditPackets } from "./auditPackets";
 import {
@@ -187,18 +189,20 @@ export async function runAuditedRecon(
       const writeEvidence = async (name: string, value: unknown) => {
         const relative = `.pensar/completion-audit/${ledger.snapshot}/${name}.json`;
         const content = JSON.stringify(value, null, 2);
-        if (input.backends) {
-          const written = await input.backends.fs.write(relative, content, {
-            mode: "overwrite",
-          });
-          if (!written.success)
-            throw new Error(`Cannot prepare audit evidence: ${written.error}`);
-          return written.path;
-        }
-        const path = join(root, relative);
-        mkdirSync(dirname(path), { recursive: true });
-        writeFileSync(path, content);
-        return path;
+        const backends = resolveBackends({
+          ...input,
+          subagentSpawner: input.subagentSpawner ?? inProcessSubagentSpawner,
+          agentCwd: input.agentCwd ?? input.session.config?.agentCwd ?? root,
+          fileWorkspaceRoot:
+            input.fileWorkspaceRoot ??
+            input.session.config?.remoteFileWorkspaceRoot,
+        });
+        const written = await backends.fs.write(relative, content, {
+          mode: "overwrite",
+        });
+        if (!written.success)
+          throw new Error(`Cannot prepare audit evidence: ${written.error}`);
+        return { path: written.path, bytes: Buffer.byteLength(content) };
       };
       const index = [];
       for (const [number, packet] of packets.entries()) {
@@ -206,7 +210,8 @@ export async function runAuditedRecon(
         index.push(
           ...packet.records.map((record) => ({
             ...auditRecordIndex(record),
-            evidenceFile: path,
+            evidenceFile: path.path,
+            evidenceBytes: path.bytes,
           })),
         );
       }
@@ -229,7 +234,8 @@ export async function runAuditedRecon(
               Buffer.byteLength(JSON.stringify(packet.records)) <= 48_000
                 ? packet.records
                 : [],
-            priorReviewsFile,
+            priorReviewsFile: priorReviewsFile?.path,
+            priorReviewsBytes: priorReviewsFile?.bytes,
             priorDispositions: assessments.map(
               ({ requirementId, disposition }) => ({
                 requirementId,
@@ -238,7 +244,7 @@ export async function runAuditedRecon(
             ),
             report: result.results,
             instructions:
-              "Review only this packet's requirements. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
+              "Review only this packet's requirements. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Read evidence and prior-review files in byte mode (byteOffset 0, byteCount 48000, startLine/endLine null), continuing at stoppedAtByte until the listed byte size is consumed. Line mode can truncate long evidence strings; a truncated page is not the complete evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
           }),
         });
         if (!reviewed.completionAudit)
