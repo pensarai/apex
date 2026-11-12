@@ -74,7 +74,7 @@ If any body has no unambiguous section boundary, stop rather than replacing it h
 ## Refresh code without breaking the stack
 
 - A refresh is always a rebase. Never merge `canary` or a parent branch into a PR branch; PR branches keep linear history.
-- Dependent stacks move bottom-to-top. Rebase the first PR onto `canary` and push it, then rebase each child onto its rebased parent, preserving each PR's isolated delta.
+- Dependent stacks move bottom-to-top. Rebase the first PR onto `canary` and push it, then rebase each child onto its rebased parent with `git rebase --onto`, as `conflicts-and-merge.md` describes, preserving each PR's isolated delta.
 - Parallel series rebase each branch independently onto `canary`.
 - Use `conflicts-and-merge.md` for conflict handling and for the leased force-push that publishes each rebased branch.
 - After each push, verify both the branch ref and PR `headRefOid`. GitHub native stacks can briefly show the old head/base and `UNKNOWN` mergeability after a successful push; wait for metadata to converge instead of trying to retarget the PR.
