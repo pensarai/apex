@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -82,6 +82,133 @@ function factory(
   });
 }
 describe("recon completion gate", () => {
+  it("audits every record in bounded packets before reconciling the whole objective", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    for (let n = 0; n < 30; n++)
+      writeRecord(
+        i.session.rootPath,
+        i.session.id,
+        "component",
+        `service-${n}`,
+        {
+          id: `cmp_${n}`,
+          name: `Service ${n}`,
+          kind: "saas",
+          evidence: `source/service-${n}.ts:1`,
+        },
+      );
+    await runGeneralizedReconToReport(i, factory(calls));
+    const packets = calls
+      .filter((call) => call.auditPrompt)
+      .map((call) => JSON.parse(call.auditPrompt!));
+    expect(packets.length).toBeGreaterThan(2);
+    expect(packets.every((packet) => packet.requirements.length <= 12)).toBe(
+      true,
+    );
+    expect(
+      packets.at(-1).requirements.map((r: AuditRequirement) => r.id),
+    ).toContain("consistency");
+    const ledger = readCompletionLedger(i.session.rootPath, i.session.id)!;
+    expect(
+      packets
+        .flatMap((packet) =>
+          packet.requirements.map((r: AuditRequirement) => r.id),
+        )
+        .sort(),
+    ).toEqual(ledger.requirements.map((r) => r.id).sort());
+    const record = packets[0].recordIndex.find(
+      (r: { id: string }) => r.id === "cmp_29",
+    );
+    expect(
+      JSON.parse(readFileSync(record.evidenceFile, "utf8")),
+    ).toContainEqual(
+      expect.objectContaining({
+        id: "cmp_29",
+        evidence: "source/service-29.ts:1",
+      }),
+    );
+    expect(
+      JSON.parse(readFileSync(packets.at(-1).priorReviewsFile, "utf8")).filter(
+        (review: { requirementId: string }) =>
+          review.requirementId.startsWith("component:"),
+      ),
+    ).toHaveLength(30);
+  });
+  it("persists earlier packet reviews but cannot certify a partially failed audit", async () => {
+    const i = input();
+    for (let n = 0; n < 13; n++)
+      writeRecord(
+        i.session.rootPath,
+        i.session.id,
+        "boundary",
+        `boundary-${n}`,
+        {
+          id: `bnd_${n}`,
+          name: `Boundary ${n}`,
+        },
+      );
+    await expect(
+      runGeneralizedReconToReport(
+        i,
+        factory([], (_audit, packet) => {
+          if (packet === 2) throw new Error("second packet unavailable");
+        }),
+      ),
+    ).rejects.toThrow("second packet unavailable");
+    const ledger = readCompletionLedger(i.session.rootPath, i.session.id)!;
+    expect(ledger.status).toBe("audit-failed");
+    expect(ledger.audit!.assessments).toHaveLength(12);
+    expect(() =>
+      assertCompletionAudit(i.session.rootPath, i.session.id, report.results),
+    ).toThrow("missing, unresolved or stale");
+  });
+  it("reopens work when the final reconciliation contradicts individually accepted records", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    for (let n = 0; n < 13; n++)
+      writeRecord(
+        i.session.rootPath,
+        i.session.id,
+        "boundary",
+        `boundary-${n}`,
+        {
+          id: `bnd_${n}`,
+          name: `Boundary ${n}`,
+        },
+      );
+    let correctionRequested = false;
+    await runGeneralizedReconToReport(
+      i,
+      factory(calls, (audit) => {
+        const consistency = audit.assessments.find(
+          (item) => item.requirementId === "consistency",
+        );
+        if (consistency && !correctionRequested) {
+          correctionRequested = true;
+          Object.assign(consistency, {
+            disposition: "needs-work",
+            rationale: "Report contradicts the boundary evidence",
+            correctiveAction: "Reconcile the report with the current source",
+          });
+        }
+      }),
+    );
+    const work = calls.filter((call) => !call.auditPrompt);
+    expect(work).toHaveLength(2);
+    expect(work[1]!.continuation).toContain(
+      "Report contradicts the boundary evidence",
+    );
+    const reviews = calls
+      .filter((call) => call.auditPrompt)
+      .flatMap((call) => JSON.parse(call.auditPrompt!).requirements);
+    expect(
+      reviews.filter((r: AuditRequirement) => r.id === "boundary:bnd_0"),
+    ).toHaveLength(2);
+    expect(readCompletionLedger(i.session.rootPath, i.session.id)?.status).toBe(
+      "complete",
+    );
+  });
   it("requires a read-only audit even when the work pass produces a report", async () => {
     const i = input(),
       calls: GeneralizedAttackSurfaceAgentInput[] = [];

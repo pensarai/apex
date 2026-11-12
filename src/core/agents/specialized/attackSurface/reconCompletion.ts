@@ -1,10 +1,12 @@
-import { rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadTopology } from "../../offSecAgent/tools/topologyRecords";
+import { auditRecordIndex, buildAuditPackets } from "./auditPackets";
 import {
   assertCompletionAudit,
   auditGaps,
   auditRequirements,
+  type CompletionAudit,
   type CompletionLedger,
   completionSnapshot,
   readCompletionLedger,
@@ -136,7 +138,7 @@ export async function runAuditedRecon(
       ...input,
       harness: "general",
       stepLimit: options.workSteps ?? 200,
-      continuation: `Original objective (preserve every requirement):\n${ledger.objective}\n\nCompletion ledger:\n${JSON.stringify(ledger)}\nContinue from persisted topology. Correct the listed gaps, preserving valid evidence and justified absence, then propose a fresh report.`,
+      continuation: `Completion ledger (preserve its original objective):\n${JSON.stringify(ledger)}\nContinue from persisted topology. Account for each supplied repository using current source and its revision, or document a concrete access limitation; historical baseline records alone do not establish current coverage. Correct the listed gaps, including inherited omissions even when this began as a drift update. Preserve valid evidence and justified absence, then propose a fresh report.`,
     });
     await options.synchronize?.();
     const result = await checkpoint(
@@ -174,26 +176,83 @@ export async function runAuditedRecon(
       status: "auditing",
       snapshot: auditInput.snapshot,
       requirements: auditInput.requirements,
+      audit: { assessments: [] },
     };
     await persist();
-    let reviewed: GeneralizedAttackSurfaceResult;
     try {
-      reviewed = await runPass({
-        ...input,
-        harness: "general",
-        stepLimit: 40,
-        auditPrompt: JSON.stringify({
-          objective: ledger.objective,
-          requirements: ledger.requirements,
-          previousGaps: ledger.gaps,
-          topology: auditInput.topology,
-          report: result.results,
-        }),
-      });
-      if (!reviewed.completionAudit)
-        throw new Error(
-          `Recon audit ended without a response (session ${sessionId})`,
+      const packets = buildAuditPackets(
+        ledger.requirements,
+        auditInput.topology,
+      );
+      const writeEvidence = async (name: string, value: unknown) => {
+        const relative = `.pensar/completion-audit/${ledger.snapshot}/${name}.json`;
+        const content = JSON.stringify(value, null, 2);
+        if (input.backends) {
+          const written = await input.backends.fs.write(relative, content, {
+            mode: "overwrite",
+          });
+          if (!written.success)
+            throw new Error(`Cannot prepare audit evidence: ${written.error}`);
+          return written.path;
+        }
+        const path = join(root, relative);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content);
+        return path;
+      };
+      const index = [];
+      for (const [number, packet] of packets.entries()) {
+        const path = await writeEvidence(`records-${number}`, packet.records);
+        index.push(
+          ...packet.records.map((record) => ({
+            ...auditRecordIndex(record),
+            evidenceFile: path,
+          })),
         );
+      }
+      const assessments: CompletionAudit["assessments"] = [];
+      for (const [number, packet] of packets.entries()) {
+        input.abortSignal?.throwIfAborted();
+        const priorReviewsFile = assessments.length
+          ? await writeEvidence(`reviews-before-${number}`, assessments)
+          : undefined;
+        const reviewed = await runPass({
+          ...input,
+          harness: "general",
+          stepLimit: 40,
+          auditPrompt: JSON.stringify({
+            objective: ledger.objective,
+            requirements: packet.requirements,
+            previousGaps: ledger.gaps,
+            recordIndex: index,
+            records:
+              Buffer.byteLength(JSON.stringify(packet.records)) <= 48_000
+                ? packet.records
+                : [],
+            priorReviewsFile,
+            priorDispositions: assessments.map(
+              ({ requirementId, disposition }) => ({
+                requirementId,
+                disposition,
+              }),
+            ),
+            report: result.results,
+            instructions:
+              "Review only this packet's requirements. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
+          }),
+        });
+        if (!reviewed.completionAudit)
+          throw new Error(
+            `Recon audit ended without a response (session ${sessionId}, packet ${number})`,
+          );
+        const audit = await checkpoint(
+          `audit-${ledger.pass}-${number}`,
+          async () => reviewed.completionAudit!,
+        );
+        assessments.push(...audit.assessments);
+        ledger.audit = { assessments: [...assessments] };
+        await persist();
+      }
     } catch (error) {
       const message =
         error &&
@@ -208,7 +267,7 @@ export async function runAuditedRecon(
       throw error;
     }
     await options.synchronize?.();
-    const completionAudit = reviewed.completionAudit;
+    const completionAudit = ledger.audit!;
     const decision = await checkpoint(`decision-${ledger.pass}`, async () => ({
       audit: completionAudit,
       structuralGaps: structuralGaps(root),
