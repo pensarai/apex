@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -19,6 +18,7 @@ import {
   type SubagentSpawner,
   spawnBatch,
 } from "../agents/offSecAgent/subagentSpawner";
+import { endpointAssetFileName } from "../agents/offSecAgent/tools/endpointAssetFileName";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
@@ -1366,13 +1366,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     // Write endpoint assets
     for (const ep of [...app.pages, ...app.apiEndpoints]) {
       const isPage = app.pages.includes(ep);
-      const rawKey = `${app.name}__${ep.path}`.toLowerCase();
-      const hash = createHash("sha256")
-        .update(rawKey)
-        .digest("hex")
-        .slice(0, 8);
-      const sanitizedPath = sanitizeName(ep.path);
-      const filename = `asset_${sanitizedPath}_${hash}.json`;
+      const filename = endpointAssetFileName(app.name, ep.path);
 
       const { riskScore: _staleScore, threatModel, ...epWithoutMeta } = ep;
       const assetData: Record<string, unknown> = {

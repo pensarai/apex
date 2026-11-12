@@ -8,6 +8,7 @@ import {
   EndpointTransportEnum,
   GrpcEndpointMetadataSchema,
 } from "../../specialized/attackSurface/grpcSchema";
+import { endpointAssetFileName } from "./endpointAssetFileName";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
 import type { ToolContext } from "./types";
 
@@ -192,9 +193,12 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         mkdirSync(targetDir, { recursive: true });
       }
 
-      const sanitizedPath = sanitizeName(input.routePath);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = `asset_${sanitizedPath}_${timestamp}.json`;
+      const filename = endpointAssetFileName(
+        input.appName,
+        input.routePath,
+        timestamp,
+      );
       const filepath = join(targetDir, filename);
 
       const heuristicRiskScore = computeBlackboxRiskScore(

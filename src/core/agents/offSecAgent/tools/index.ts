@@ -64,6 +64,7 @@ export {
   EMAIL_TOOL_NAMES,
   SEND_EMAIL_TOOL_NAME,
 } from "./email";
+export { endpointAssetFileName } from "./endpointAssetFileName";
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { extractJsEndpoints } from "./extractJsEndpoints";
