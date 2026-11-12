@@ -117,6 +117,19 @@ A tag such as `@v4` can be repointed by whoever controls the action's repository
 - **Check locally** with `zizmor --pedantic .` (`brew install zizmor`). Set `GH_TOKEN` to include the checks that need the GitHub API.
 - **Never disable an audit or add an ignore in `.github/zizmor.yml` to get a check green.** The audits disabled there have existing findings that are being worked off. Fix the finding, or ask.
 
+### Dependencies — exact versions
+
+`bun.lock` pins what CI installs. `package.json` pins what we ask for: every version is exact, so a version only changes when a diff says so. A range such as `^1.2.3` lets `bun add <pkg>`, `bun update` or a regenerated lockfile pull a release nobody chose, and a compromised release arrives the same way. `bun run check:dependency-pins` enforces this in the CI lint job.
+
+- **Versions are exact**: `"left-pad": "1.3.0"`, never `^`, `~`, `*`, `latest` or a tag. This covers `dependencies`, `devDependencies`, `optionalDependencies` and `overrides`. `bun add <pkg>` writes an exact version because `bunfig.toml` sets `exact = true`; do not remove that setting.
+- **The one exception is a package in this repository's own workspace**, which is referenced with `workspace:*`. The check rejects an exact version there, because `*` and version numbers also match a same-named package on the public registry. There are no workspace packages today.
+- **`peerDependencies` stay ranges.** They describe what a consumer may bring, not what we install.
+- **This package is published.** Everyone who installs it gets its `dependencies` at exactly these versions, so keep them few, and ship a release when one of them needs a security fix.
+- **To change a version**, edit it (or `bun add <pkg>@<version>`), run `bun install`, and read the `bun.lock` diff: it should show that package and what it pulled in, nothing else.
+- **Do not work around the release-age gate.** `bunfig.toml` refuses packages published too recently (`minimumReleaseAge`). If an install fails on it, pick an older version; do not lower the setting or add an exclusion without asking.
+- **Before adding a dependency**, check that a few lines of our own code would not do, that the package is maintained and widely used, and whether it runs an install script. Bun runs install scripts only for trusted packages. With no `trustedDependencies` in `package.json`, as here today, those are the packages on Bun's built-in default list (`bun pm default-trusted`). Defining `trustedDependencies` replaces that list, so the first time one is added, also list every default-trusted package we still need. A trusted package runs code on every machine that installs, so say why in the PR.
+- **Run tools from the lockfile**: after `bun install`, `bunx <tool>` runs the installed, pinned version of a package we depend on. If the package is not installed, `bunx` downloads whatever version is current, so install first or name the version (`bunx <tool>@<version>`). Do not `bunx` or `npx` a package that is not in `bun.lock`.
+
 ### TUI startup flow
 
 On first launch, the TUI shows a "Responsible Use Disclosure" screen that must be accepted (press Enter). After acceptance, if no AI provider API key is configured, it routes to the Provider Manager screen. Config is stored in `~/.pensar/`.
