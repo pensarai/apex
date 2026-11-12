@@ -1,28 +1,12 @@
 #!/usr/bin/env bun
 /**
- * Fails when a manifest declares a dependency by anything other than an exact
- * version, so every version change is an explicit, reviewable diff.
- *
- * A range such as `^1.2.3` lets `bun add`, `bun update` or a regenerated lockfile
- * pull a release nobody chose. The lockfile pins what CI installs; this pins
- * what the manifest asks for.
- *
- * Accepted:
- *   - an exact version: `1.2.3`, `1.2.3-beta.1`
- *   - `workspace:*`, required for this repository's own workspace packages.
- *     `*` would also match a package of the same name on the public registry.
- *   - an alias to an exact version: `npm:typescript@7.0.2`
- *
- * Checked sections: `dependencies`, `devDependencies`, `optionalDependencies`
- * and `overrides`. `peerDependencies` are ranges by design and are not checked.
- *
- * Run `bun run check:dependency-pins`. Bun-only APIs stay inside the CLI
- * functions so the module imports under vitest for its unit test.
+ * Fails when package.json declares a dependency by anything but an exact
+ * version. A range lets an install pull a release nobody chose.
  */
 import { join, resolve } from "node:path";
 
 export interface Manifest {
-  /** Path relative to the repo root, e.g. `console/package.json`. */
+  /** Path relative to the repo root. */
   path: string;
   pkg: { name?: string } & Record<string, unknown>;
 }
@@ -35,6 +19,7 @@ export interface Violation {
   fix: string;
 }
 
+// peerDependencies are ranges by design, so they are not checked.
 const SECTIONS = [
   "dependencies",
   "devDependencies",
@@ -79,6 +64,7 @@ export function findUnpinned(manifests: Manifest[]): Violation[] {
           });
           continue;
         }
+        // `*` would also match a same-named package on the public registry.
         const internal = section !== "overrides" && workspaceNames.has(name);
         if (internal) {
           if (spec !== "workspace:*") {
