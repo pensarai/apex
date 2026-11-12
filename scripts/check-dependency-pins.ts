@@ -149,7 +149,7 @@ async function main() {
     }
     console.error(
       "\nA range lets an install pull a release nobody reviewed. Declare the exact version" +
-        "\n(`bun add <pkg>` writes one) and run `bun install`.",
+        '\n(`bun add <pkg>` writes one) and run `bun install`. See AGENTS.md "Dependencies".',
     );
   }
   if (!exact) {
