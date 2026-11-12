@@ -90,6 +90,7 @@ vi.mock("./tools", () => {
     PLAN_MODE_TOOL_NAMES: ["execute_command", "read_file", "web_search"],
     createResponseTool: () => fakeTool("response"),
     RESPONSE_TOOL_NAME: "response",
+    REPORT_ERROR_TOOL_NAME: "report_error",
     ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
     WORKSPACE_TOOL_NAMES: ["list_workspace_domains"],
     WORKSPACE_WRITE_TOOL_NAMES: ["create_workspace_domain"],

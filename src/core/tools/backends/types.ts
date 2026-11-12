@@ -258,18 +258,92 @@ export interface BrowserBackend {
   getCookies(o?: { urls?: string[] }): Promise<BrowserCookiesResult>;
 }
 
+/** One request a session test domain received. */
+export interface CallbackHit {
+  id: string;
+  receivedAt: string;
+  method: string;
+  /** Path and query, as received. */
+  path: string;
+  headers: Record<string, string>;
+  sourceIp: string | null;
+  bodyPreview: string;
+  bodyTruncated: boolean;
+  /** Arrived after the test domain was closed. */
+  late: boolean;
+}
+
+export interface CallbackHits {
+  /** Every stored hit, oldest first. */
+  hits: CallbackHit[];
+  /** Every request received, including ones past the host's storage cap. */
+  totalHits: number;
+}
+
+/** The host could not answer. Never the same as "no callback arrived". */
+export interface CallbackHitsUnavailable {
+  state: "unavailable";
+  reason: string;
+}
+
+/**
+ * A host-owned callback receiver: the domains it records requests on, and a
+ * reader for what they received. The host allocates, records and expires
+ * them; Apex only sends payloads there and reads the hits.
+ */
+export interface CallbackBackend {
+  /** Bare hostnames; validated against the target scope where read. */
+  readonly domains: ReadonlyArray<string>;
+  readHits(): Promise<CallbackHits | CallbackHitsUnavailable>;
+}
+
 /** The #1051 inbox seams, relocated. */
 export interface InboxBackend {
   email: EmailAdapterResolver;
   sms: SmsInbox;
 }
 
+export interface RepoCloneRequest {
+  /** Clone URL for the repository, taken from the connected-repo allowlist. */
+  repoUrl: string;
+  /** Branch/ref to check out; defaults to the repository's default branch. */
+  ref?: string;
+  /** Workspace-relative destination subpath (e.g. `repos/<name>`). */
+  dest: string;
+}
+
+export interface RepoCloneResult {
+  success: boolean;
+  /** Absolute path the repository was cloned to inside the workspace. */
+  path: string;
+  error?: string;
+}
+
+/**
+ * Materializes a connected repository inside the agent's workspace. Unlike
+ * {@link FsBackend.git}'s single-destination `clone`, this clones into a named
+ * subdirectory so the generalized attack-surface agent can pull several repos.
+ * Optional: hosts without a sandbox (local runs) leave it unset and the
+ * `clone_repository` tool reports that cloning is unavailable.
+ */
+export interface RepoCloneBackend {
+  clone(req: RepoCloneRequest): Promise<RepoCloneResult>;
+}
+
 export interface ToolBackends {
   fs: FsBackend;
   command: CommandBackend;
+  /**
+   * Multi-repo clone seam for the generalized attack-surface agent. Unset on
+   * hosts that don't support cloning (e.g. local backends); the
+   * `clone_repository` tool returns a structured "unavailable" error then.
+   */
+  repoClone?: RepoCloneBackend;
   http: HttpBackend;
   browser: BrowserBackend;
   inbox: InboxBackend;
+  /** Requests to the session's test domains. Only a host that owns them supplies it. */
+  callbacks?: CallbackBackend;
   /**
    * True when these backends route through a real sandbox whose filesystem is
    * the contained workspace root (not the host). Tools that write artifacts

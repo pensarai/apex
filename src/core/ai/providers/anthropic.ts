@@ -19,7 +19,8 @@ export function createAnthropicModel(
         type: capabilities.alwaysOnThinking ? "adaptive" : "disabled",
       };
       const headers = new Headers(init?.headers);
-      if (capabilities.bindsThinking) {
+      // The API rejects block_binding on a disabled thinking config.
+      if (capabilities.bindsThinking && body.thinking.type !== "disabled") {
         // Context fitting can edit earlier turns; drop invalid bound blocks instead of failing.
         body.thinking.block_binding = {
           prefix_mismatch_behavior: "drop_block",

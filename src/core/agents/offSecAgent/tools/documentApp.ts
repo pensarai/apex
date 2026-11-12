@@ -144,6 +144,24 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe("Additional notes or observations about the application"),
+      repository: z
+        .string()
+        .optional()
+        .describe(
+          "Name of the connected repository this application's source lives in, when you confirmed the mapping by reading its code. Omit when no connected repository matches — do not guess.",
+        ),
+      businessLogic: z
+        .string()
+        .optional()
+        .describe(
+          "App-level business logic analysis: what the application does, its primary actors, the sensitive data and operations it handles, and the trust boundaries. Fuse what was observed on the wire with what was read in the mapped source repository. Markdown.",
+        ),
+      threatModel: z
+        .string()
+        .optional()
+        .describe(
+          "App-level threat model: attacker profiles, the most relevant attack vectors for this application, and an overall risk assessment. This replaces per-endpoint threat modeling — reason about the application as a whole. Markdown.",
+        ),
       domain: z
         .string()
         .optional()
@@ -234,6 +252,9 @@ Each application creates a JSON file in the apps directory for tracking and anal
         appName: input.appName,
         appType: input.appType,
         domain: input.domain,
+        repository: input.repository,
+        businessLogic: input.businessLogic,
+        threatModel: input.threatModel,
         filepath,
         message: `Application '${input.appName}' documented successfully`,
       };

@@ -20,7 +20,10 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
-import type { ToolBackends } from "../../../tools/backends/types";
+import type {
+  CallbackBackend,
+  ToolBackends,
+} from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
@@ -88,6 +91,8 @@ export type ToolContext = {
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
   toolProtocol?: AgentToolProtocolPreference;
+  /** Effective tool roster inherited by scoped recon workers. */
+  activeToolNames?: readonly string[];
 
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
@@ -265,6 +270,9 @@ export type ToolContext = {
    * `pensar-managed` inbox). Unset → the config-driven factory.
    */
   emailAdapterFor?: EmailAdapterResolver;
+
+  /** Host-supplied run callback domain reader; local backends expose it as `backends.callbacks`. */
+  callbacks?: CallbackBackend;
 
   toolExecutionContext?: AgentHooks["toolExecutionContext"];
 

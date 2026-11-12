@@ -20,7 +20,7 @@ import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo } from "../../session";
-import type { ToolBackends } from "../../tools/backends/types";
+import type { CallbackBackend, ToolBackends } from "../../tools/backends/types";
 import { runWithBoundedConcurrency } from "../../utils/concurrency";
 import {
   type BrowserSessionProvider,
@@ -50,6 +50,7 @@ import type {
 export type SubagentType =
   | "pentest"
   | "code"
+  | "recon-worker"
   | "whitebox-attack-surface"
   | "blackbox-attack-surface"
   | "authentication"
@@ -77,6 +78,14 @@ export type SubagentSpec =
       stopWhen?: StopCondition<ToolSet>;
       excludeTools?: string[];
       projectThreatModel?: string;
+      attackSurfaceRegistry?: AttackSurfaceRegistry;
+    }
+  | {
+      type: "recon-worker";
+      goal: string;
+      target?: string;
+      codebasePath?: string;
+      excludeTools?: string[];
       attackSurfaceRegistry?: AttackSurfaceRegistry;
     }
   | {
@@ -116,6 +125,8 @@ export interface SpawnRuntime {
   abortSignal?: AbortSignal;
   sandbox?: UnifiedSandbox;
   backends?: ToolBackends;
+  /** The run's callback domain reader, inherited so workers can read callbacks. */
+  callbacks?: CallbackBackend;
   credentialManager?: CredentialManager;
   display?: string;
   enableThinking?: boolean;
@@ -410,6 +421,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     hooks: {
       findingPolicy: ctx.findingPolicy,
       backends: ctx.backends,
+      callbacks: ctx.callbacks,
       sandbox: ctx.sandbox,
       languageModelMiddleware: ctx.languageModelMiddleware,
       toolProtocol: ctx.toolProtocol,
@@ -458,6 +470,43 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     streamIdFactory: ctx.streamIdFactory,
   });
   return { run: () => agent.consume(), drained: () => agent.drained };
+};
+
+const runReconWorkerChild: SubagentRunner<"recon-worker"> = async (
+  spec,
+  ctx,
+) => {
+  const { ReconWorkerAgent } = await import("../specialized/reconWorker/agent");
+  const agent = new ReconWorkerAgent({
+    goal: spec.goal,
+    target: spec.target,
+    codebasePath: spec.codebasePath,
+    excludeTools: spec.excludeTools,
+    attackSurfaceRegistry: spec.attackSurfaceRegistry,
+    ...getModelSettings(ctx),
+    session: ctx.session,
+    abortSignal: ctx.abortSignal,
+    eventBus: ctx.eventBus,
+    subagentId: ctx.subagentId,
+    subagentName: ctx.subagentName,
+    sandbox: ctx.sandbox,
+    backends: ctx.backends,
+    credentialManager: ctx.credentialManager,
+    environmentVariables: ctx.environmentVariables,
+    secretValues: ctx.secretValues,
+    display: ctx.display,
+    onStepFinish: ctx.onStepFinish,
+    onCacheMetrics: ctx.onCacheMetrics,
+    languageModelMiddleware: ctx.languageModelMiddleware,
+    toolProtocol: ctx.toolProtocol,
+    usageRecorder: ctx.usageRecorder,
+    toolExecutionContext: ctx.toolExecutionContext,
+    streamIdFactory: ctx.streamIdFactory,
+  });
+  return {
+    run: async () => ({ response: await agent.consume() }),
+    drained: () => agent.drained,
+  };
 };
 
 const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
@@ -557,6 +606,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         subagentName: ctx.subagentName,
         sandbox: ctx.sandbox,
         backends: ctx.backends,
+        callbacks: ctx.callbacks,
         target: spec.target,
         languageModelMiddleware: ctx.languageModelMiddleware,
         toolProtocol: ctx.toolProtocol,
@@ -570,6 +620,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
 const RUNNERS: { [T in SubagentType]: SubagentRunner<T> } = {
   pentest: runPentestChild,
   code: runCodeChild,
+  "recon-worker": runReconWorkerChild,
   "whitebox-attack-surface": runWhiteboxChild,
   "blackbox-attack-surface": runBlackboxChild,
   authentication: runAuthChild,

@@ -10,7 +10,9 @@ function truncate(value: string, limit: number): string {
   return `${value.substring(0, limit)}\n... [truncated]`;
 }
 
-export const FINDING_JUDGE_SYSTEM_PROMPT = `You are a security finding validation specialist running as an agentic verifier inside an automated penetration testing pipeline.
+const judgeSystemPrompt = (
+  outOfBandRule: string,
+) => `You are a security finding validation specialist running as an agentic verifier inside an automated penetration testing pipeline.
 
 You are the last line of defense against false positives, hallucinated findings, fabricated evidence, and overstated impact. Your job is to independently verify whether a submitted proof-of-concept and its output support the claimed finding.
 
@@ -43,7 +45,7 @@ You are the last line of defense against false positives, hallucinated findings,
 - IDOR: output should show access to another user's/account's resource while authentication exists.
 - Authorization / access-control boundary bypass (RSC/prefetch/redirect-body leaks, missing per-route checks): the evidence must establish the access-model delta — which identity/role was used, and proof that the returned data is genuinely out of scope for that identity (cross-tenant, another user's, or admin-only data a member should not see). A 200 response, a leaked RSC payload, or a skipped redirect alone does NOT prove sensitive exposure. If the bypass is real but the returned data is non-sensitive or plausibly same-tenant/expected-visible, classify as a valid lower-impact finding and require the claim's impact/severity to match — do NOT accept it as high-confidence sensitive/cross-tenant exposure.
 - Authentication bypass: output should show protected access without valid credentials.
-- Email/HTML injection: ideally verify delivery and rendering. If only server acceptance is shown, confidence must stay below 0.7 and limitations must state rendering was not independently verified.
+${outOfBandRule}- Email/HTML injection: ideally verify delivery and rendering. If only server acceptance is shown, confidence must stay below 0.7 and limitations must state rendering was not independently verified.
 - Missing rate limiting / anti-automation: a modest burst (~20 requests) with no observed throttling, delays, or 429s is sufficient to demonstrate the gap. For endpoints with real-world side effects (sending email/SMS/push, creating tickets/notifications, contact/support/feedback forms, payments), as few as 2–3 attempts plus the observed response is sufficient — do NOT require volume-testing that would spam real recipients. Evidence must state exact request count, timing/distribution, and observed statuses.
 
 ### Common Low-Signal Patterns
@@ -84,6 +86,19 @@ Call the response tool exactly once. Include:
 - reproducedPoc: whether you reran or independently reproduced the PoC.
 - webResearchUsed: whether web research materially informed the judgment.
 - limitations: remaining gaps.`;
+
+export const FINDING_JUDGE_SYSTEM_PROMPT = judgeSystemPrompt("");
+
+// Only a judge whose host supplies callback domains can see hits cited
+// from them, so only it gets the out-of-band rule.
+const OUT_OF_BAND_RULE =
+  "- Out-of-band (blind SSRF, XXE, webhook, host-header or password-reset poisoning, blind injection): the target's own response won't show the impact. Accept a claim that cites a callback hit (hitId, method, path, source IP, user agent, time) read with read_callback_hits when its path carries the marker the PoC sends and the PoC makes the target, not the PoC itself, request that URL. You can't read callbacks yourself, so confidence must stay below 0.7 and limitations must state the callback was not independently re-observed. Reject an out-of-band claim with no cited hit, or one where the PoC requests the test domain directly.\n";
+
+export function findingJudgeSystemPrompt(
+  callbackDomains: readonly string[],
+): string {
+  return judgeSystemPrompt(callbackDomains.length > 0 ? OUT_OF_BAND_RULE : "");
+}
 
 export function buildFindingJudgePrompt(input: FindingJudgeInput): string {
   const { pocScript, pocType, pocOutput, claim } = input;

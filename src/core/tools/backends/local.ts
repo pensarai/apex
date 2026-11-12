@@ -72,6 +72,7 @@ import type {
   RawReadResult,
   ReadFileResult,
   ReadOpts,
+  RepoCloneBackend,
   RunOpts,
   ToolBackends,
   WriteOpts,
@@ -126,6 +127,10 @@ function extractTextContent(html: string): string {
     .filter((line) => line.length > 0);
   return lines.join("\n");
 }
+
+const CLONE_COMMAND_POLICY: ToolPolicy = {
+  beforeCall: () => ({ allow: true }),
+};
 
 /**
  * Build the local backends for `ctx`. `policy` is consulted before every call;
@@ -357,12 +362,51 @@ export function LocalBackends(
     sms: ctx.smsInbox ?? new HttpSmsInbox(),
   };
 
+  const repoClone: RepoCloneBackend = {
+    async clone({ repoUrl, ref, dest }) {
+      await checkPolicy("fs", "repoClone", { repoUrl, ref, dest });
+      const target = join(ctx.agentCwd, dest);
+      const quote = (arg: string) => `'${arg.replace(/'/g, `'\\''`)}'`;
+      const cloneArgs = [
+        "clone",
+        "--depth",
+        "1",
+        ...(ref ? ["--branch", ref] : []),
+        "--",
+        repoUrl,
+        target,
+      ];
+      // A repo the agent already cloned this run is reused, not re-cloned.
+      const cmd = `if [ -d ${quote(join(target, ".git"))} ]; then exit 0; fi; git ${cloneArgs.map(quote).join(" ")}`;
+      // The repoClone check above authorizes this call. The URL comes from the
+      // host's connected-repository allowlist, not the agent, so the
+      // target-host scope rules for agent commands do not apply to it.
+      const result = await collectCommand(
+        runCommand(ctx, CLONE_COMMAND_POLICY, cmd, {
+          timeoutSeconds: 600,
+          abortSignal: ctx.abortSignal,
+        }),
+      );
+      return result.exitCode === 0
+        ? { success: true, path: target }
+        : {
+            success: false,
+            path: target,
+            error:
+              result.stderr.trim() ||
+              `git clone exited with code ${result.exitCode}`,
+          };
+    },
+  };
+
   return {
     fs,
     command,
+    repoClone,
     http,
     browser,
     inbox,
+    ...(ctx.callbacks ? { callbacks: ctx.callbacks } : {}),
     ...(ctx.sandbox ? { sandboxed: true } : {}),
   };
 }

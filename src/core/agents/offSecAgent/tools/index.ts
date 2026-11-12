@@ -19,6 +19,8 @@ export {
   createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
+// Out-of-band hits on host-owned test domains (the callbacks backend).
+export { readCallbackHits } from "./callbackHits";
 // Callback helper tools — narrow nonce-correlated listener surface over the
 // whitebox job infra (Fast Strike blind/out-of-band testing).
 export {
@@ -29,6 +31,8 @@ export {
 } from "./callbackListener";
 // Observability tools
 export { checkpointState } from "./checkpointState";
+// Repository cloning (connected repos only) — generalized attack surface
+export { cloneRepository } from "./cloneRepository";
 // Authentication tools
 export { completeAuthentication } from "./completeAuthentication";
 export { crawlAuthenticated } from "./crawlAuthenticated";
@@ -43,6 +47,17 @@ export { detectAuthScheme } from "./detectAuthScheme";
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
 export { documentVulnerability } from "./documentFinding";
+export {
+  documentBoundary,
+  documentComponent,
+  documentControl,
+  documentFlow,
+  documentThreat,
+  mergeRecords,
+  retireRecord,
+  reviewTopology,
+  updateRecord,
+} from "./documentTopology";
 // Email tools
 export {
   createEmailToolset,
@@ -158,6 +173,7 @@ export {
 export { spawnCodingAgent } from "./spawnCodingAgent";
 export { spawnPentestAgent } from "./spawnPentestAgent";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
+export { spawnReconAgent } from "./spawnReconAgent";
 export { submitPlan } from "./submitPlan";
 export { testEndpointVariations } from "./testEndpointVariations";
 export type { ToolContext } from "./types";
@@ -198,6 +214,7 @@ export { writePlan } from "./writePlan";
 // ---------------------------------------------------------------------------
 
 import type { ToolSet } from "ai";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import { addMemory } from "./addMemory";
 import { applyPatch } from "./applyPatch";
 import {
@@ -209,12 +226,14 @@ import {
   type createBrowserToolset,
   createBrowserToolsetFactories,
 } from "./browserTools";
+import { readCallbackHits } from "./callbackHits";
 import {
   pollCallbackListener,
   startCallbackListener,
   stopCallbackListener,
 } from "./callbackListener";
 import { checkpointState } from "./checkpointState";
+import { cloneRepository } from "./cloneRepository";
 import { completeAuthentication } from "./completeAuthentication";
 import { crawlAuthenticated } from "./crawlAuthenticated";
 import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
@@ -226,6 +245,17 @@ import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { documentVulnerability } from "./documentFinding";
+import {
+  documentBoundary,
+  documentComponent,
+  documentControl,
+  documentFlow,
+  documentThreat,
+  mergeRecords,
+  retireRecord,
+  reviewTopology,
+  updateRecord,
+} from "./documentTopology";
 import {
   emailGetAttachments,
   emailGetMessage,
@@ -263,6 +293,7 @@ import { smsListMessages } from "./smsListMessages";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { spawnPentestAgent } from "./spawnPentestAgent";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
+import { spawnReconAgent } from "./spawnReconAgent";
 import { submitPlan } from "./submitPlan";
 import { testEndpointVariations } from "./testEndpointVariations";
 import type { ToolContext } from "./types";
@@ -353,9 +384,19 @@ const TOOL_REGISTRY = [
   { name: "apply_patch", factory: applyPatch },
   { name: "git_status", factory: gitStatus },
   { name: "git_diff", factory: gitDiff },
+  { name: "clone_repository", factory: cloneRepository },
 
   // Attack surface / recon tools
   { name: "document_app", factory: documentApp },
+  { name: "document_boundary", factory: documentBoundary },
+  { name: "document_component", factory: documentComponent },
+  { name: "document_flow", factory: documentFlow },
+  { name: "review_topology", factory: reviewTopology },
+  { name: "retire_record", factory: retireRecord },
+  { name: "merge_records", factory: mergeRecords },
+  { name: "update_record", factory: updateRecord },
+  { name: "document_control", factory: documentControl },
+  { name: "document_threat", factory: documentThreat },
   { name: "document_endpoint", factory: documentEndpoint },
   { name: "list_workspace_domains", factory: listWorkspaceDomains },
   { name: "create_workspace_domain", factory: createWorkspaceDomain },
@@ -382,6 +423,7 @@ const TOOL_REGISTRY = [
   { name: "spawn_pentest_swarm", factory: spawnPentestSwarm },
   { name: "spawn_pentest_agent", factory: spawnPentestAgent },
   { name: "spawn_coding_agent", factory: spawnCodingAgent },
+  { name: "spawn_recon_agent", factory: spawnReconAgent },
   { name: "run_pentest_workflow", factory: runPentestWorkflow },
   { name: "run_whitebox_scan", factory: runWhiteboxScan },
   { name: "create_whitebox_candidate", factory: createWhiteboxCandidate },
@@ -394,9 +436,28 @@ const TOOL_REGISTRY = [
 
   // Callback helper tools (Fast Strike blind/out-of-band testing) — a
   // constrained generated listener over the job infra, not arbitrary jobs.
-  { name: "start_callback_listener", factory: startCallbackListener },
-  { name: "poll_callback_listener", factory: pollCallbackListener },
-  { name: "stop_callback_listener", factory: stopCallbackListener },
+  // A host-owned callback domain replaces the local listener: one callback
+  // mechanism per session, never both.
+  {
+    name: "start_callback_listener",
+    factory: startCallbackListener,
+    available: (ctx) => callbackDomains(ctx).length === 0,
+  },
+  {
+    name: "poll_callback_listener",
+    factory: pollCallbackListener,
+    available: (ctx) => callbackDomains(ctx).length === 0,
+  },
+  {
+    name: "stop_callback_listener",
+    factory: stopCallbackListener,
+    available: (ctx) => callbackDomains(ctx).length === 0,
+  },
+  {
+    name: "read_callback_hits",
+    factory: readCallbackHits,
+    available: (ctx) => callbackDomains(ctx).length > 0,
+  },
 
   // Reporting / benchmark tools
   { name: "provide_comparison_results", factory: provideComparisonResults },
@@ -627,7 +688,17 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "apply_patch",
   "git_status",
   "git_diff",
+  "clone_repository",
   "document_app",
+  "document_boundary",
+  "document_component",
+  "document_flow",
+  "review_topology",
+  "retire_record",
+  "merge_records",
+  "update_record",
+  "document_control",
+  "document_threat",
   "document_endpoint",
   ...WORKSPACE_TOOL_NAMES,
   "delegate_to_auth_subagent",
@@ -637,6 +708,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
   "spawn_coding_agent",
+  "spawn_recon_agent",
   "run_pentest_workflow",
   "run_whitebox_scan",
   "create_whitebox_candidate",
@@ -649,6 +721,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "start_callback_listener",
   "poll_callback_listener",
   "stop_callback_listener",
+  "read_callback_hits",
   // "generate_report",
   "provide_comparison_results",
   // Memory
@@ -688,8 +761,20 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
   "spawn_coding_agent",
+  "spawn_recon_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
+  // Generalized recon only
+  "clone_repository",
+  "document_boundary",
+  "document_component",
+  "document_flow",
+  "review_topology",
+  "retire_record",
+  "merge_records",
+  "update_record",
+  "document_control",
+  "document_threat",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",
