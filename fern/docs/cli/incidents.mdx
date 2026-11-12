@@ -1,0 +1,32 @@
+---
+title: "pensar incidents"
+description: "Read grouped alerts, raw Datadog events, triage results, and agent logs"
+---
+
+Uses the workspace selected by `pensar login`. API keys need `incidents:read`.
+Every command returns the complete API JSON; `--json` is accepted for consistency
+with other read commands.
+
+```bash
+pensar incidents
+pensar incidents --verdict benign-true-positive
+pensar incidents events --group-of <incidentId>
+pensar incidents get <incidentId> --json
+pensar incidents logs <incidentId> --limit 20
+pensar incidents attachment <incidentId> <partId>
+```
+
+`incidents` lists grouped alerts across all verdicts. `events` lists individual
+Datadog records. `get` returns the raw event payload, evidence, indicators,
+analysis, recommendations, and status timestamps for either list's id.
+
+Filter lists with `--verdict`, `--status`, or `--triage-status`. Use `--limit`
+(1–100, default 50) and pass the returned `nextCursor` as `--cursor` to continue.
+
+`logs` returns execution parts for the current triage run (1–50 per page, default
+20). Restart pagination after re-triage or to refresh active tool calls. When a
+part has `hasAttachment: true`, `attachment` returns a download URL for its full
+stored output. The URL expires after 60 seconds.
+
+These commands read data. Review recommended changes before applying them;
+the CLI does not execute remediation commands.
