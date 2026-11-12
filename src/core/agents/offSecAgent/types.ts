@@ -185,6 +185,8 @@ export interface AgentHooks {
 
   /** Recorded-run durable context authority. Unset → no canonical persistence. */
   contextRecorder?: RunContextRecorder;
+  /** Owned by the single-use API client; only default-v2 admits live input. */
+  steering?: import("../../runtime/turnSteering").TurnSteering;
 
   /** Recorded-run tool journal. Unset → tool executes are never wrapped. */
   toolExecutionRecorder?: ToolExecutionRecorder;

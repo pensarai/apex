@@ -74,6 +74,29 @@ through its app-server. This motivates the ownership boundary; it does not
 require Apex to reproduce that transport. [Codex platform](https://developers.openai.com/blog/codex-as-a-platform),
 [app-server](https://developers.openai.com/codex/app-server).
 
+#### Live steering
+
+In v2, Enter during a run submits a correction to the shared runtime. The runtime
+finishes and records the current tool batch, then appends accepted messages in
+arrival order before the next model request. Earlier messages and provider state
+remain intact. A correction arriving during a final answer triggers a continuation
+using the same tools and execution resources. It does not restart the investigation.
+
+The single-use API client exposes `turnId` and
+`steer({ expectedTurnId, text, inputId? })`. A stale or inactive turn rejects new
+input; an optional input ID makes delivery retries idempotent within that client.
+Acceptance acknowledges durable storage, not that the model has already read it.
+Pending input survives cancellation or a host stop limit and is appended on resume.
+Cancellation remains a separate operation. Steering cannot bypass configured scope,
+permissions, or the host's stop conditions. Slash commands retain their
+existing routing, and non-v2 modes retain their existing queue behavior.
+
+This follows Codex's identified active-turn admission and Claude Code's delivery
+after tool calls finish. It does not add another planner, an interrupt-and-restart
+policy, or a separate model call to classify the correction.
+[Codex turn/steer](https://developers.openai.com/codex/app-server#steer-an-active-turn),
+[Claude Code queued messages](https://code.claude.com/docs/en/interactive-mode#queue-messages-while-claude-works).
+
 ### 3. Preserve the capabilities of the selected model
 
 Provider adapters must preserve supported reasoning items, tool-call identities,
