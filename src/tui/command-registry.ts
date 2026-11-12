@@ -234,6 +234,7 @@ export const commands: CommandConfig[] = [
           initialConfig: {
             requireApproval: false,
             target: flags.target,
+            defaultV2Mode: false,
             strikeMode: false,
             lanceMode: false,
             sandbox: true,
@@ -374,6 +375,7 @@ export const commands: CommandConfig[] = [
         nonce: Date.now(),
         initialConfig: {
           requireApproval: true,
+          defaultV2Mode: false,
           strikeMode: false,
           lanceMode: false,
         },

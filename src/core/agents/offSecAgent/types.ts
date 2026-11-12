@@ -109,7 +109,12 @@ export type Finding = Omit<
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 /** Agent operating mode that controls which tools are available. */
-export type AgentMode = "default" | "plan" | "fast-strike" | "lance";
+export type AgentMode =
+  | "default"
+  | "default-v2"
+  | "plan"
+  | "fast-strike"
+  | "lance";
 
 /** Selects Apex's native finding judge or a caller-owned evaluation boundary. */
 export type FindingPolicy = "native" | "external";
@@ -211,7 +216,7 @@ export interface AgentHooks {
 
 export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
   attackSurfaceArtifactsPath?: string;
-  /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
+  /** Overrides the system prompt supplied by the selected mode. */
   system?: string;
 
   /** Initial user prompt that kicks off the agent */
@@ -224,6 +229,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * Operating mode that controls which tools are available.
    *
    * - `"default"` — all tools in `activeTools` are available (default)
+   * - `"default-v2"` — adaptive operator; workspace tools remain available behind the approval gate
    * - `"plan"` — only read-only / non-mutating tools are available
    * - `"fast-strike"` — live registry minus {@link FAST_STRIKE_EXCLUDED_TOOL_NAMES}; ignores `activeTools`
    *

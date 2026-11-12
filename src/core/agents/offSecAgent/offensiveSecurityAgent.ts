@@ -46,7 +46,12 @@ import {
   type FinalizeInterruptedStepInput,
 } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
-import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import {
+  buildBaseSystemPrompt,
+  buildDefaultV2SystemPrompt,
+  buildSessionWorkspaceSection,
+  DEFAULT_V2_DELEGATION_GUIDANCE,
+} from "./prompt";
 import { wrapRecordedTools } from "./recordedTools";
 import {
   buildBundledAssetsSection,
@@ -216,18 +221,15 @@ function hasExplicitWorkspaceWriteRequest(
   });
 }
 
-// ponytail: current-message opt-in avoids persistent workspace capability state.
-//
-// Read (`list_*`) and write (`create_*` / `update_*`) tools are gated
-// separately: recon phrasing (find/search/show/list a domain, app, or endpoint on the "console"/
-// "workspace") is common in ordinary Operator pentests, so it must never
-// expose mutation tools. Write tools require an explicit mutation request —
-// a write verb, a "break down …" import, or a direct tool-name mention.
+// Legacy modes keep their current-message opt-in; v2 separates availability from approval.
 export function filterWorkspaceToolsForRun(
   activeTools: string[],
   prompt: string,
   hasInteractiveApprovalGate: boolean,
+  mode?: AgentMode,
 ): string[] {
+  // Availability follows the session; each execution still passes through the gate.
+  if (mode === "default-v2" && hasInteractiveApprovalGate) return activeTools;
   const gated =
     hasInteractiveApprovalGate && !prompt.trimStart().startsWith("<skill ");
 
@@ -783,6 +785,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       input.prompt,
       input.approvalGate !== undefined,
+      input.mode,
     );
 
     toolCtx.activeToolNames = activeTools;
@@ -799,6 +802,26 @@ export class OffensiveSecurityAgent<TResult = void> {
     let tools: ToolSet = extraTools
       ? { ...builtinTools, ...extraTools }
       : { ...builtinTools };
+
+    if (input.mode === "default-v2") {
+      for (const name of [
+        "spawn_coding_agent",
+        "spawn_pentest_agent",
+        "spawn_recon_agent",
+        "spawn_pentest_swarm",
+        "delegate_to_auth_subagent",
+        "run_attack_surface",
+        "run_pentest_workflow",
+      ]) {
+        const definition = tools[name];
+        if (definition) {
+          tools[name] = {
+            ...definition,
+            description: `${DEFAULT_V2_DELEGATION_GUIDANCE}\n\nThe following workflow instructions apply only after choosing delegation:\n${definition.description ?? ""}`,
+          };
+        }
+      }
+    }
 
     if (this.lanceRuntime) {
       const runtime = this.lanceRuntime;
@@ -1026,7 +1049,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // ./runtimeContext) — asynchronous, so the stream is created once they settle.
     const baseSystemPrompt =
       input.system ??
-      buildBaseSystemPrompt({
+      (input.mode === "default-v2"
+        ? buildDefaultV2SystemPrompt
+        : buildBaseSystemPrompt)({
         sandboxMode: agentCwd === input.session.rootPath,
         findingPolicy: input.findingPolicy,
       });
@@ -1037,6 +1062,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       canonicalActiveTools,
       fileWorkspaceRoot,
       input.findingPolicy,
+      input.mode,
     );
     // Bundled wordlist paths are host-local: advertise them only when
     // commands execute locally.
@@ -1049,6 +1075,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         baseSystemPrompt,
         codeModeInstructions,
       ].filter(Boolean);
+      if (input.mode === "default-v2" && input.target) {
+        sections.push(
+          `Configured target: ${input.target}. Use it only as relevant to the user's current request.`,
+        );
+      }
       if (facts) {
         sections.push(
           buildRuntimeContextSection(facts, {

@@ -1,6 +1,7 @@
 import {
   type AgentMode,
   buildBaseSystemPrompt,
+  buildDefaultV2SystemPrompt,
   type FindingPolicy,
 } from "../../../core/agents/offSecAgent";
 import type {
@@ -56,9 +57,11 @@ export function resolveOperatorAgentMode(
   operatorMode: OperatorMode,
   strikeMode: boolean,
   lanceMode = false,
+  defaultV2Mode = false,
 ): AgentMode {
   if (lanceMode) return "lance";
   if (operatorMode === "plan") return "plan";
+  if (defaultV2Mode) return "default-v2";
   return strikeMode ? "fast-strike" : "default";
 }
 
@@ -83,6 +86,7 @@ interface FindingPolicyResolutionInput {
   resuming: boolean;
   strikeMode: boolean;
   lanceMode?: boolean;
+  defaultV2Mode?: boolean;
   savedSessionValue?: FindingPolicy;
   routeOverride?: FindingPolicy;
   persistedDefault?: FindingPolicy;
@@ -92,11 +96,12 @@ export function resolveOperatorFindingPolicy({
   resuming,
   strikeMode,
   lanceMode,
+  defaultV2Mode,
   savedSessionValue,
   routeOverride,
   persistedDefault,
 }: FindingPolicyResolutionInput): FindingPolicy {
-  if (!strikeMode && !lanceMode) return "native";
+  if (!strikeMode && !lanceMode && !defaultV2Mode) return "native";
   if (resuming) return savedSessionValue ?? "native";
   return routeOverride ?? persistedDefault ?? "native";
 }
@@ -105,7 +110,9 @@ export function resolveActiveFindingPolicy(
   agentMode: AgentMode,
   findingPolicy: FindingPolicy,
 ): FindingPolicy {
-  return agentMode === "fast-strike" || agentMode === "lance"
+  return agentMode === "fast-strike" ||
+    agentMode === "lance" ||
+    agentMode === "default-v2"
     ? findingPolicy
     : "native";
 }
@@ -374,7 +381,7 @@ Spend your reasoning on choosing techniques and interpreting evidence; use scrip
 
 # Approved Plan
 
-The operator has approved the following pentest plan. Execute it systematically, following the prioritized attack vectors and testing methodology outlined below.
+${agentMode === "default-v2" ? "Use this approved plan as context for the current request. Incorporate subsequent user corrections and changes of direction." : "The operator has approved the following pentest plan. Execute it systematically, following the prioritized attack vectors and testing methodology outlined below."}
 
 <plan>
 ${opts.approvedPlanContent}
@@ -385,15 +392,18 @@ ${opts.approvedPlanContent}
   // Runtime execution facts and bundled assets are appended by the agent
   // harness after this persona (OffensiveSecurityAgent assembles the final
   // system prompt) — embedding them here would duplicate the blocks.
-  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode, findingPolicy: opts?.findingPolicy })}
+  const buildPrompt =
+    agentMode === "default-v2"
+      ? buildDefaultV2SystemPrompt
+      : buildBaseSystemPrompt;
+  let prompt = `${buildPrompt({ sandboxMode: opts?.sandboxMode, findingPolicy: opts?.findingPolicy })}
 
 # Operator Mode
 
 You are operating in interactive operator mode. The human operator will guide your actions through directives.
 
 Target: ${target || "unknown"}
-Stage: ${operatorState.currentStage}
-Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
+${agentMode === "default-v2" ? "" : `Stage: ${operatorState.currentStage}\n`}Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
 
 ## Session-wide Custom HTTP Headers
 

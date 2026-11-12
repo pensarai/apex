@@ -146,6 +146,32 @@ async function withRoot(
 // ---------------------------------------------------------------------------
 
 describe("assembled runtime context in streamResponse prompts", () => {
+  it("gives v2 execution facts without turning the working directory into an assessment", async () => {
+    await withRoot(async (root) => {
+      const { backend } = fakeRemoteBackends(remoteInventoryEvents);
+      const agent = new OffensiveSecurityAgent({
+        prompt: "Explain this project",
+        target: "https://configured.example",
+        model: "fixture-model",
+        session: makeSession(root),
+        mode: "default-v2",
+        agentCwd: "/project",
+        fileWorkspaceRoot: "/helpers",
+        activeTools: ["execute_command", "read_file"],
+        backends: backend,
+      });
+      await agent.streamReady();
+      const system = observed.streams[0].system as string;
+      expect(system).toContain("OS: RemoteOS 9.9-test");
+      expect(system).toContain("Configured target: https://configured.example");
+      expect(system).toContain("Shell working directory: /project");
+      expect(system).toContain("Native file tools are confined to /helpers");
+      expect(system).toContain("Source access is read-only");
+      expect(system).not.toContain("# Source Code Assessment");
+      expect(system).not.toContain("# Core Capabilities");
+    });
+  });
+
   it("appends backend facts to the Fast Strike persona", async () => {
     await withRoot(async (root) => {
       const { backend } = fakeRemoteBackends(remoteInventoryEvents);

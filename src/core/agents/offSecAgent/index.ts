@@ -17,6 +17,7 @@ export {
   BASE_SYSTEM_PROMPT,
   type BaseSystemPromptOptions,
   buildBaseSystemPrompt,
+  buildDefaultV2SystemPrompt,
   buildProvidedFilesSection,
   buildSessionWorkspaceSection,
 } from "./prompt";

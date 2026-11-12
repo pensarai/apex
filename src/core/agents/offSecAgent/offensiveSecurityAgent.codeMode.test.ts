@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { CodeCellResult } from "../../code-mode";
 import { AgentEventBus } from "../../eventBus";
 import { ApprovalGate } from "../../operator";
+import { SkillsRegistry } from "../../skills";
 import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 import type { OffensiveSecurityAgentInput } from "./types";
 
@@ -95,6 +96,113 @@ async function executeDirect(tools: ToolSet, name: string) {
 }
 
 describe("agent code mode", () => {
+  it("discourages v2 delegation consistently in direct tools and code-mode discovery", async () => {
+    const names = [
+      "spawn_coding_agent",
+      "spawn_pentest_agent",
+      "spawn_recon_agent",
+      "spawn_pentest_swarm",
+      "delegate_to_auth_subagent",
+      "run_attack_surface",
+      "run_pentest_workflow",
+    ];
+    const { request: standard } = makeAgent({ activeTools: names });
+    const { request: v2 } = makeAgent({
+      mode: "default-v2",
+      activeTools: names,
+    });
+    const preference = "Work directly in the primary agent by default.";
+    expect(v2.system).toContain(preference);
+    expect(standard.system).not.toContain(preference);
+    for (const name of names) {
+      expect(v2.activeTools).toContain(name);
+      expect(v2.tools[name].execute).toBeTypeOf("function");
+      expect(v2.tools[name].description).toContain(
+        standard.tools[name].description,
+      );
+      expect(v2.tools[name].description?.startsWith(preference)).toBe(true);
+      expect(standard.tools[name].description).not.toContain(preference);
+    }
+    const discovered = await execute(v2.tools, "exec", {
+      code: 'text((await tools.describe("spawn_coding_agent")).description)',
+    });
+    expect(discovered.status).toBe("completed");
+    expect(discovered.output).toBe(v2.tools.spawn_coding_agent.description);
+  });
+
+  it("keeps v2 capabilities available across conversational pivots without bypassing approval", async () => {
+    const gate = new ApprovalGate({ requireApproval: false });
+    const check = vi.spyOn(gate, "check");
+    const write = vi.fn(async () => ({ success: true }));
+    const mutation = tool({ inputSchema: z.object({}), execute: write });
+    const skillsRegistry = new SkillsRegistry();
+    const tools = ["update_workspace_app", "read_skill", "spawn_coding_agent"];
+    for (const prompt of [
+      "Repair the workspace inventory",
+      "apply now",
+      "Explain the authentication requirements",
+      "Fix the route extractor",
+      "Now test the customer portal",
+      "Show me the workspace changes",
+    ]) {
+      const { agent, request } = makeAgent({
+        mode: "default-v2",
+        prompt,
+        activeTools: tools,
+        approvalGate: gate,
+        skillsRegistry,
+        extraTools: { update_workspace_app: mutation },
+        nestedTools: ["update_workspace_app"],
+      });
+      expect(agent.lanceRuntime).toBeUndefined();
+      expect(request.activeTools).toEqual(["exec", "wait", ...tools]);
+      expect(request.system).toContain("Follow the conversation");
+      expect(request.system).not.toContain("Consult memories first");
+    }
+    expect(write).not.toHaveBeenCalled();
+    const request = observed.requests.at(-1);
+    if (!request) throw new Error("Agent did not create a stream");
+    const result = await execute(request.tools, "exec", {
+      code: 'text(await tools.call("update_workspace_app", {}))',
+    });
+    expect(result.status).toBe("completed");
+    expect(check).toHaveBeenCalledWith(
+      "update_workspace_app",
+      "exec_test:nested:1",
+      {},
+    );
+    expect(write).toHaveBeenCalledTimes(1);
+
+    gate.updateConfig({ requireApproval: true });
+    const approvalReady = new Promise<void>((resolve) =>
+      gate.once("approval-needed", () => resolve()),
+    );
+    try {
+      const cell = await execute(request.tools, "exec", {
+        code: 'text(await tools.call("update_workspace_app", {}))',
+        yield_time_ms: 0,
+      });
+      await approvalReady;
+      gate.deny(gate.getPendingApprovals()[0].id);
+      const denied = await execute(request.tools, "wait", {
+        cell_id: cell.cellId,
+      });
+      expect(denied.status).toBe("completed");
+      expect(JSON.parse(denied.output)).toMatchObject({ blocked: true });
+      expect(gate.getActionHistory().at(-1)?.decision).toBe("denied");
+      expect(write).toHaveBeenCalledTimes(1);
+    } finally {
+      gate.denyAll();
+    }
+
+    const { request: unattended } = makeAgent({
+      mode: "default-v2",
+      prompt: "apply now",
+      activeTools: ["update_workspace_app"],
+    });
+    expect(unattended.activeTools).not.toContain("update_workspace_app");
+  });
+
   it("executes findings, checkpoint, and response contracts together in one SDK step", async () => {
     let release = () => {};
     const held = new Promise<void>((resolve) => {

@@ -76,6 +76,26 @@ describe("filterOperatorAutocomplete", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveOperatorAgentMode", () => {
+  it("selects v2 while respecting read-only planning", () => {
+    expect(resolveOperatorAgentMode("manual", false, false, true)).toBe(
+      "default-v2",
+    );
+    expect(resolveOperatorAgentMode("auto", false, false, true)).toBe(
+      "default-v2",
+    );
+    expect(resolveOperatorAgentMode("plan", false, false, true)).toBe("plan");
+    expect(resolveActiveFindingPolicy("default-v2", "external")).toBe(
+      "external",
+    );
+    expect(
+      resolveOperatorFindingPolicy({
+        resuming: true,
+        strikeMode: false,
+        defaultV2Mode: true,
+        savedSessionValue: "external",
+      }),
+    ).toBe("external");
+  });
   it("uses Strike Mode for manual and automatic operator sessions", () => {
     expect(resolveOperatorAgentMode("manual", true)).toBe("fast-strike");
     expect(resolveOperatorAgentMode("auto", true)).toBe("fast-strike");
@@ -667,6 +687,22 @@ describe("buildOperatorSystemPrompt", () => {
     actionHistory: [],
     stageProgress: {},
   } as unknown as OperatorSessionState;
+
+  it("keeps v2 expertise discoverable without mandatory testing phases", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "default-v2", {
+      taskDriven: true,
+      skillsCatalog: "available skill catalog",
+      approvedPlanContent: "repair inventory",
+      findingPolicy: "external",
+    });
+    expect(prompt).toContain("available skill catalog");
+    expect(prompt).toContain("repair inventory");
+    expect(prompt).toContain("subsequent user corrections");
+    expect(prompt).not.toContain("# Task-Driven Testing");
+    expect(prompt).not.toContain("# Strike Mode");
+    expect(prompt).not.toContain("# Core Capabilities");
+    expect(prompt).not.toContain("document_vulnerability");
+  });
 
   it("includes the target", () => {
     const prompt = buildOperatorSystemPrompt(target, state);

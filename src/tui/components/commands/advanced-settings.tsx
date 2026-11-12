@@ -25,6 +25,12 @@ const MODES = [
     description: "Focused research; no auto-discovery or agent fan-out.",
   },
   { value: "lance", label: "Lance", description: LANCE_DESCRIPTION },
+  {
+    value: "default-v2",
+    label: "Default v2",
+    description:
+      "Experimental adaptive operator for research and everyday work.",
+  },
 ] as const;
 type ExecutionMode = (typeof MODES)[number]["value"];
 type SelectSetting = "mode" | "judge" | "budget";
@@ -53,9 +59,11 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
   const [draftMode, setDraftMode] = useState<ExecutionMode>(
     config.data.lanceMode
       ? "lance"
-      : config.data.strikeMode
-        ? "strike"
-        : "standard",
+      : config.data.defaultV2Mode
+        ? "default-v2"
+        : config.data.strikeMode
+          ? "strike"
+          : "standard",
   );
   const [draftFindingPolicy, setDraftFindingPolicy] = useState<FindingPolicy>(
     config.data.findingPolicy ?? "native",
@@ -170,6 +178,7 @@ export default function AdvancedSettings({ onClose }: AdvancedSettingsProps) {
       await config.update({
         strikeMode: draftMode === "strike",
         lanceMode: draftMode === "lance",
+        defaultV2Mode: draftMode === "default-v2",
         findingPolicy: draftFindingPolicy,
         ...(budget ? { lanceBudget: budget } : {}),
       });
