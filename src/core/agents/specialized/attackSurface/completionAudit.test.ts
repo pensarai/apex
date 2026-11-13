@@ -24,6 +24,7 @@ import {
   auditGaps,
   auditRequirements,
   type CompletionAudit,
+  packetAuditSchema,
   readCompletionLedger,
   structuralGaps,
   targetScopeGaps,
@@ -96,6 +97,31 @@ function factory(
   });
 }
 describe("recon completion gate", () => {
+  it("requires exactly one assessment for every assigned packet requirement", () => {
+    const requirements = [
+      { id: "component:api", description: "API" },
+      { id: "component:worker", description: "Worker" },
+    ];
+    const schema = packetAuditSchema(requirements.map((r) => r.id));
+    const valid = assessment(requirements);
+    expect(schema.parse(valid)).toEqual(valid);
+    expect(
+      schema.safeParse({ assessments: [valid.assessments[0]] }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        assessments: [valid.assessments[0], valid.assessments[0]],
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        assessments: [
+          ...valid.assessments,
+          { ...valid.assessments[0], requirementId: "stride-coverage" },
+        ],
+      }).success,
+    ).toBe(false);
+  });
   it("does not treat customer ownership or free-form descriptions as test authorization", () => {
     const outside = [
       "https://staging-api.example",
@@ -169,6 +195,7 @@ describe("recon completion gate", () => {
     "pass",
     "failure",
     "repair",
+    "invalid-assignment",
   ] as const)("joins read-only audits before global review (%s)", async (outcome) => {
     const i = input(),
       calls: GeneralizedAttackSurfaceAgentInput[] = [];
@@ -196,7 +223,11 @@ describe("recon completion gate", () => {
           expect(spec.type).toBe("completion-audit");
           if (spec.type !== "completion-audit")
             throw new Error("Wrong child mode");
-          return JSON.parse(spec.prompt);
+          const prompt = JSON.parse(spec.prompt);
+          expect(spec.requirementIds).toEqual(
+            prompt.requirements.map((r: AuditRequirement) => r.id),
+          );
+          return prompt;
         });
         expect(new Set(prompts.map((p) => p.candidateSnapshot)).size).toBe(1);
         expect(prompts.every((p) => p.priorDispositions.length === 0)).toBe(
@@ -212,23 +243,32 @@ describe("recon completion gate", () => {
             : {
                 status: "fulfilled" as const,
                 value:
-                  outcome === "repair" && batches === 1 && n === 0
+                  outcome === "invalid-assignment" && n === 0
                     ? {
-                        assessments: assessment(
-                          prompt.requirements,
-                        ).assessments.map((item, index) =>
-                          index === 0
-                            ? {
-                                ...item,
-                                disposition: "needs-work" as const,
-                                rationale: "Missing independent attack path",
-                                correctiveAction:
-                                  "Inspect the unreviewed write path",
-                              }
-                            : item,
-                        ),
+                        assessments: [
+                          {
+                            ...assessment(prompt.requirements).assessments[0]!,
+                            requirementId: "stride-coverage",
+                          },
+                        ],
                       }
-                    : assessment(prompt.requirements),
+                    : outcome === "repair" && batches === 1 && n === 0
+                      ? {
+                          assessments: assessment(
+                            prompt.requirements,
+                          ).assessments.map((item, index) =>
+                            index === 0
+                              ? {
+                                  ...item,
+                                  disposition: "needs-work" as const,
+                                  rationale: "Missing independent attack path",
+                                  correctiveAction:
+                                    "Inspect the unreviewed write path",
+                                }
+                              : item,
+                          ),
+                        }
+                      : assessment(prompt.requirements),
               },
         );
       },
@@ -250,11 +290,15 @@ describe("recon completion gate", () => {
       ).toHaveLength(13);
     });
     const run = runGeneralizedReconToReport(i, create);
-    if (outcome === "failure") {
+    if (outcome === "failure" || outcome === "invalid-assignment") {
       await expect(run).rejects.toThrow("Completion audit workers failed");
       const ledger = readCompletionLedger(i.session.rootPath, i.session.id)!;
       expect(ledger.status).toBe("audit-failed");
-      expect(ledger.gaps.join(" ")).toContain("review unavailable");
+      expect(ledger.gaps.join(" ")).toContain(
+        outcome === "failure"
+          ? "review unavailable"
+          : "out-of-scope assessments: stride-coverage",
+      );
       expect(ledger.audit!.assessments.length).toBeGreaterThan(0);
       expect(calls.some((c) => c.auditPrompt)).toBe(false);
     } else {

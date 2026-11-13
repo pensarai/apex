@@ -328,6 +328,7 @@ export async function runAuditedRecon(
               type: "completion-audit",
               target: input.target,
               prompt: await promptFor(number),
+              requirementIds: packets[number]!.requirements.map((r) => r.id),
             },
             runtime: input,
             parentBus: input.eventBus,
@@ -344,9 +345,13 @@ export async function runAuditedRecon(
         );
         const failures: unknown[] = [];
         for (const [index, outcome] of outcomes.entries()) {
-          if (outcome.status === "fulfilled")
-            await accept(local[index]!, outcome.value);
-          else failures.push(outcome.reason);
+          if (outcome.status === "fulfilled") {
+            try {
+              await accept(local[index]!, outcome.value);
+            } catch (error) {
+              failures.push(error);
+            }
+          } else failures.push(outcome.reason);
         }
         if (failures.length)
           throw new AggregateError(
@@ -372,6 +377,7 @@ export async function runAuditedRecon(
           harness: "general",
           stepLimit: 40,
           auditPrompt: await promptFor(number),
+          auditRequirementIds: packet.requirements.map((r) => r.id),
         });
         if (!reviewed.completionAudit)
           throw new Error(

@@ -63,6 +63,7 @@ export type SubagentSpec =
       type: "completion-audit";
       target: string;
       prompt: string;
+      requirementIds?: string[];
     }
   | {
       type: "pentest";
@@ -533,6 +534,7 @@ const runCompletionAuditChild: SubagentRunner<"completion-audit"> = async (
     ...getModelSettings(ctx),
     target: spec.target,
     auditPrompt: spec.prompt,
+    auditRequirementIds: spec.requirementIds,
     stepLimit: 40,
   });
   return {

@@ -33,6 +33,29 @@ export const completionAuditSchema = z.object({
 export type CompletionAudit = z.infer<typeof completionAuditSchema>;
 export type AuditRequirement = z.infer<typeof requirementSchema>;
 
+export function packetAuditSchema(requirementIds: string[]) {
+  if (
+    !requirementIds.length ||
+    new Set(requirementIds).size !== requirementIds.length
+  )
+    throw new Error("Audit packet requires non-empty, unique requirement IDs");
+  return completionAuditSchema.extend({
+    assessments: z
+      .array(
+        completionAuditSchema.shape.assessments.element.extend({
+          requirementId: z.enum(requirementIds as [string, ...string[]]),
+        }),
+      )
+      .length(requirementIds.length)
+      .refine(
+        (items) =>
+          new Set(items.map((item) => item.requirementId)).size ===
+          requirementIds.length,
+        "Assess every assigned requirement exactly once",
+      ),
+  });
+}
+
 const ledgerSchema = z.object({
   version: z.literal(1),
   revision: z.number().int().nonnegative(),

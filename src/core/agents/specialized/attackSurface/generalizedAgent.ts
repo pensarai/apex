@@ -10,6 +10,7 @@ import {
   COMPLETION_AUDIT_SYSTEM,
   type CompletionAudit,
   completionAuditSchema,
+  packetAuditSchema,
 } from "./completionAudit";
 import {
   buildCredentialsBlock,
@@ -52,6 +53,7 @@ export interface GeneralizedAttackSurfaceAgentInput
   harness?: "general";
   completion?: ReconCompletionOptions;
   auditPrompt?: string;
+  auditRequirementIds?: string[];
   stepLimit?: number;
   /** Re-map from an earlier run's map instead of from scratch. */
   update?: ReconUpdate;
@@ -101,7 +103,11 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
       ? COMPLETION_AUDIT_SYSTEM
       : GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
   responseSchema: (opts) =>
-    opts.auditPrompt ? completionAuditSchema : undefined,
+    opts.auditPrompt
+      ? opts.auditRequirementIds
+        ? packetAuditSchema(opts.auditRequirementIds)
+        : completionAuditSchema
+      : undefined,
   activeTools: (opts) => {
     if (opts.auditPrompt)
       return ["read_file", "list_files", "grep", "glob", "response"];
