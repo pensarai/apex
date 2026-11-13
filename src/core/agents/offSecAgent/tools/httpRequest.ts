@@ -388,16 +388,19 @@ COMMON TESTING PATTERNS:
         return notSent(e instanceof Error ? e.message : String(e));
       }
 
-      // Rate-limit chokepoint for both dispatch paths (no-op when unset).
-      const slotAcquired =
-        (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
-      if (ctx.abortSignal?.aborted) {
-        if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
-        return notSent("Request aborted by user", "aborted");
+      const backends = resolveBackends(ctx);
+      if (!backends.http.enforcesRateLimit) {
+        const slotAcquired =
+          (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ??
+          false;
+        if (ctx.abortSignal?.aborted) {
+          if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
+          return notSent("Request aborted by user", "aborted");
+        }
       }
 
       {
-        const response = await resolveBackends(ctx).http.request(
+        const response = await backends.http.request(
           { url, method, headers, body: resolvedBody, followRedirects },
           { timeoutMs: effectiveTimeoutMs, abortSignal: ctx.abortSignal },
         );

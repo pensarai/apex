@@ -266,6 +266,7 @@ async function requestSandboxHttpSingleHop(
   },
 ): Promise<HttpRequestResult> {
   const { url, method, headers, body, timeout } = opts;
+  const deadline = timeout === undefined ? undefined : Date.now() + timeout;
 
   const { sandbox } = ctx;
   if (!sandbox) {
@@ -297,10 +298,58 @@ async function requestSandboxHttpSingleHop(
   // file behind for the life of the sandbox, and a body-heavy scan can fill
   // the disk (ENOSPC).
   let bodyTempFile: string | null = null;
+  let dispatchAbortError: DOMException | undefined;
 
   try {
+    if (
+      sandbox.type !== "windows" &&
+      body &&
+      ["POST", "PUT", "PATCH"].includes(method)
+    ) {
+      bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
+
+      const escapedForPrintf = body.replace(/\\/g, "\\\\").replace(/%/g, "%%");
+      const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
+
+      const writeResult = await sandbox.execute(writeCommand, {
+        timeout: 30,
+      });
+      if (!writeResult.success || writeResult.exitCode !== 0) {
+        return {
+          success: false,
+          error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+          capture: {
+            complete: false,
+            stopReason: "error",
+            capturedBytes: 0,
+            capturedBytesBasis: "raw",
+          },
+        };
+      }
+    }
+
+    const slotAcquired = await ctx.session._rateLimiter?.acquireSlot(
+      ctx.abortSignal,
+    );
+    const remaining =
+      deadline === undefined ? undefined : deadline - Date.now();
+    if (
+      ctx.abortSignal?.aborted ||
+      (remaining !== undefined && remaining <= 0)
+    ) {
+      if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
+      dispatchAbortError = new DOMException("Request aborted", "AbortError");
+      throw dispatchAbortError;
+    }
     const timeoutSeconds =
-      timeout === undefined ? 0 : Math.ceil(timeout / 1000);
+      remaining === undefined ? 0 : Math.ceil(remaining / 1000);
     const nonce = randomBytes(8).toString("hex");
     const exitMarker = `__APEX_${nonce}_CURL_EXIT_`;
     // Windows: +15s headroom — 5s PowerShell startup, 5s EOF/drain process-exit
@@ -341,40 +390,7 @@ async function requestSandboxHttpSingleHop(
         curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
       }
 
-      // If we have a body to send, write it to a temp file in the sandbox
-      // to avoid shell escaping issues with multiline content
-      if (body && ["POST", "PUT", "PATCH"].includes(method)) {
-        bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
-
-        // Use printf to safely write the body to the temp file
-        const escapedForPrintf = body
-          .replace(/\\/g, "\\\\")
-          .replace(/%/g, "%%");
-        const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
-
-        const writeResult = await sandbox.execute(writeCommand, {
-          timeout: 30,
-        });
-        if (!writeResult.success || writeResult.exitCode !== 0) {
-          return {
-            success: false,
-            error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-            capture: {
-              complete: false,
-              stopReason: "error",
-              capturedBytes: 0,
-              capturedBytesBasis: "raw",
-            },
-          };
-        }
-
+      if (bodyTempFile) {
         curlCommand += ` --data-binary @${bodyTempFile}`;
       }
 
@@ -505,6 +521,7 @@ async function requestSandboxHttpSingleHop(
       },
     };
   } catch (error: unknown) {
+    if (dispatchAbortError && error === dispatchAbortError) throw error;
     const msg = error instanceof Error ? error.message : String(error);
     return {
       success: false,

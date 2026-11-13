@@ -219,6 +219,8 @@ export interface HttpResponse {
 }
 
 export interface HttpBackend {
+  /** Acquires the session rate-limit slot for every target request, including redirects. */
+  enforcesRateLimit?: boolean;
   request(req: HttpRequest, o?: HttpOpts): Promise<HttpResponse>;
 }
 
