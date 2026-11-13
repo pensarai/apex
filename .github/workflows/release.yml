@@ -5,11 +5,18 @@ on:
     branches:
       - release
 
-permissions:
-  contents: write
+# Two pushes releasing at once would race on the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
 
 jobs:
   build:
+    name: build (${{ matrix.name }})
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -38,28 +45,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
+      # A release never restores a cache another run could have written.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
+          no-cache: true
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Generate ASCII art
         run: bun run generate:ascii
 
       - name: Build binary (Unix)
         if: runner.os != 'Windows'
+        env:
+          TARGET: ${{ matrix.target }}
+          NAME: ${{ matrix.name }}
         run: |
-          bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=${{ matrix.target }} --outfile pensar
-          tar -czvf ${{ matrix.name }}.tar.gz pensar
+          bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js "--target=$TARGET" --outfile pensar
+          tar -czvf "$NAME.tar.gz" pensar
 
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
+        env:
+          TARGET: ${{ matrix.target }}
+          NAME: ${{ matrix.name }}
         run: |
-          bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=${{ matrix.target }} --outfile pensar.exe
-          Compress-Archive -Path "pensar.exe" -DestinationPath "${{ matrix.name }}.zip"
+          bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js "--target=$env:TARGET" --outfile pensar.exe
+          Compress-Archive -Path "pensar.exe" -DestinationPath "$env:NAME.zip"
 
       - name: Upload artifact (Unix)
         if: runner.os != 'Windows'
@@ -76,81 +93,87 @@ jobs:
           path: ${{ matrix.name }}.zip
 
   release:
+    name: release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the release and its tag
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - name: Get version from package.json
         id: get_version
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
 
-      - name: Create tag
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git tag -a "v${{ steps.get_version.outputs.version }}" -m "Release v${{ steps.get_version.outputs.version }}"
-          git push origin "v${{ steps.get_version.outputs.version }}"
-
+      # The release API creates the tag on this commit, so nothing is pushed
+      # from the runner.
       - name: Create Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: v${{ steps.get_version.outputs.version }}
-          files: |
-            artifacts/pensar-darwin-arm64/pensar-darwin-arm64.tar.gz
-            artifacts/pensar-darwin-x64/pensar-darwin-x64.tar.gz
-            artifacts/pensar-linux-x64/pensar-linux-x64.tar.gz
-            artifacts/pensar-linux-arm64/pensar-linux-arm64.tar.gz
-            artifacts/pensar-windows-x64/pensar-windows-x64.zip
-          generate_release_notes: true
-          body: |
-            ## Upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          notes="## Upgrade
 
-            If you already have Pensar installed, upgrade to the latest version:
-            ```bash
-            pensar upgrade
-            ```
+          If you already have Pensar installed, upgrade to the latest version:
+          \`\`\`bash
+          pensar upgrade
+          \`\`\`
 
-            ## Fresh Install
+          ## Fresh Install
 
-            **macOS / Linux (Quick Install)**
-            ```bash
-            curl -fsSL https://pensarai.com/install.sh | bash
-            ```
+          **macOS / Linux (Quick Install)**
+          \`\`\`bash
+          curl -fsSL https://pensarai.com/install.sh | bash
+          \`\`\`
 
-            **Homebrew**
-            ```bash
-            brew tap pensarai/tap
-            brew install apex
-            ```
+          **Homebrew**
+          \`\`\`bash
+          brew tap pensarai/tap
+          brew install apex
+          \`\`\`
 
-            **npm**
-            ```bash
-            npm install -g @pensar/apex
-            ```
+          **npm**
+          \`\`\`bash
+          npm install -g @pensar/apex
+          \`\`\`"
+          gh release create "v${VERSION}" \
+            artifacts/pensar-darwin-arm64/pensar-darwin-arm64.tar.gz \
+            artifacts/pensar-darwin-x64/pensar-darwin-x64.tar.gz \
+            artifacts/pensar-linux-x64/pensar-linux-x64.tar.gz \
+            artifacts/pensar-linux-arm64/pensar-linux-arm64.tar.gz \
+            artifacts/pensar-windows-x64/pensar-windows-x64.zip \
+            --target "$GITHUB_SHA" --title "v${VERSION}" --notes "$notes" --generate-notes --latest
 
   npm:
+    name: npm
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
+      # A release never restores a cache another run could have written.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
+          no-cache: true
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Generate ASCII art
         run: bun run generate:ascii
@@ -158,11 +181,12 @@ jobs:
       - name: Build project
         run: bun run build
 
+      # v4 caches only when `cache` is set, and it is not.
       - name: Setup Node.js for npm publish
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          registry-url: "https://registry.npmjs.org" # zizmor: ignore[cache-poisoning]
 
       - name: Publish to npm
         run: npm publish --access public
@@ -170,16 +194,21 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   homebrew:
+    name: homebrew
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Get version from package.json
         id: get_version
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download release assets and calculate SHA256
         id: sha256
@@ -202,12 +231,14 @@ jobs:
           echo "linux_x64=$(sha256sum linux-x64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
           echo "linux_arm64=$(sha256sum linux-arm64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
+      # Keeps the tap token: the last step pushes the formula with it. This job
+      # installs and runs nothing from either checkout.
       - name: Checkout Homebrew tap
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: pensarai/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-tap
+          path: homebrew-tap # zizmor: ignore[artipacked]
 
       - name: Update formula
         env:
@@ -257,6 +288,8 @@ jobs:
           EOF
 
       - name: Commit and push formula
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
         run: |
           cd homebrew-tap
           git config user.name "GitHub Actions"
@@ -264,20 +297,25 @@ jobs:
           # Remove old formula if it exists
           git rm -f Formula/pensar.rb 2>/dev/null || true
           git add Formula/apex.rb
-          git commit -m "apex ${{ steps.get_version.outputs.version }}"
+          git commit -m "apex ${VERSION}"
           git push
 
   notify:
+    name: notify
     needs: [release, npm, homebrew]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Get version from package.json
         id: get_version
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Send release notification to Discord
         env:
@@ -285,7 +323,7 @@ jobs:
           VERSION: ${{ steps.get_version.outputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
 
           RELEASE_BODY=$(gh release view "v${VERSION}" --json body -q .body 2>/dev/null || echo "")
           if [ ${#RELEASE_BODY} -gt 4000 ]; then
