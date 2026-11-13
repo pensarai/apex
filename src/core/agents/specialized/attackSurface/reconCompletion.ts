@@ -1,0 +1,457 @@
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { resolveBackends } from "../../../tools/backends";
+import {
+  inProcessSubagentSpawner,
+  type SpawnOptions,
+  spawnBatch,
+} from "../../offSecAgent/subagentSpawner";
+import { loadTopology } from "../../offSecAgent/tools/topologyRecords";
+import { auditRecordIndex, buildAuditPackets } from "./auditPackets";
+import {
+  assertCompletionAudit,
+  auditGaps,
+  auditRequirements,
+  type CompletionAudit,
+  type CompletionLedger,
+  completionAuditSchema,
+  completionSnapshot,
+  readCompletionLedger,
+  saveCompletionLedger,
+  structuralGaps,
+  targetScopeGaps,
+} from "./completionAudit";
+import type {
+  GeneralizedAttackSurfaceAgentInput,
+  GeneralizedAttackSurfaceResult,
+} from "./generalizedAgent";
+import {
+  buildCredentialsBlock,
+  buildGeneralizedAttackSurfacePrompt,
+} from "./generalizedPrompts";
+import { loadAttackSurfaceResults } from "./types";
+
+export interface ReconCompletionOptions {
+  version: 1;
+  mode: "observe" | "enforce";
+  maxPasses?: number;
+  auditConcurrency?: number;
+  /** Durable hosts replay every pass, checkpointing decisions in call order. */
+  checkpoint?: <T>(name: string, execute: () => Promise<T>) => Promise<T>;
+  workSteps?: number;
+  /** Host restores this run after any update baseline has been seeded. */
+  restore?: () => Promise<void>;
+  /** Drain pending writes and pull worker records before auditing or returning. */
+  synchronize?: () => Promise<void>;
+}
+
+export class ReconIncompleteError extends Error {
+  constructor(
+    public readonly outcome: "blocked" | "budget-exhausted",
+    public readonly gaps: string[],
+  ) {
+    super(
+      `Recon analysis incomplete: ${outcome}. ${gaps
+        .slice(0, 3)
+        .map((gap) => gap.slice(0, 300))
+        .join("; ")}`,
+    );
+    this.name = "ReconIncompleteError";
+  }
+}
+
+export async function runAuditedRecon(
+  input: GeneralizedAttackSurfaceAgentInput,
+  createAgent: (input: GeneralizedAttackSurfaceAgentInput) => {
+    consume(): Promise<GeneralizedAttackSurfaceResult>;
+    abortAndDrain?(): Promise<void>;
+  },
+): Promise<GeneralizedAttackSurfaceResult> {
+  const runPass = async (options: GeneralizedAttackSurfaceAgentInput) => {
+    const agent = createAgent(options);
+    try {
+      return await agent.consume();
+    } finally {
+      await agent.abortAndDrain?.();
+    }
+  };
+  const options = input.completion;
+  if (!options) throw new Error("Recon completion options are required");
+  const root = input.session.rootPath;
+  const sessionId = input.session.id;
+  const origins = [...new Set([input.target, ...input.session.targets])];
+  const repositories = input.session.config?.connectedRepositories ?? [];
+  const objective = buildGeneralizedAttackSurfacePrompt(
+    origins,
+    repositories,
+    input.session.config?.prompt,
+    undefined,
+    input.updateBrief,
+    buildCredentialsBlock(
+      (
+        input.credentialManager ?? input.session.credentialManager
+      )?.formatForPrompt(),
+      input.session.config?.authenticationInstructions,
+    ),
+  );
+  const checkpoint =
+    options.checkpoint ??
+    (async <T>(_name: string, execute: () => Promise<T>) => execute());
+  let ledger: CompletionLedger = (!options.checkpoint
+    ? readCompletionLedger(root, sessionId)
+    : undefined) ?? {
+    version: 1,
+    revision: 0,
+    objective,
+    origins,
+    pass: 0,
+    status: "working",
+    snapshot: "",
+    requirements: [],
+    audit: null,
+    gaps: [],
+  };
+  if (ledger.objective !== objective)
+    throw new Error(
+      `Recon objective changed during resume (session ${sessionId})`,
+    );
+  if (!options.checkpoint && ledger.status === "complete") {
+    await options.synchronize?.();
+    const resultsPath = join(root, "attack-surface-results.json");
+    const results = loadAttackSurfaceResults(resultsPath);
+    assertCompletionAudit(root, sessionId, results);
+    return {
+      results,
+      targets: results.targets,
+      resultsPath,
+      assetsPath: join(root, "assets"),
+    };
+  }
+  const persist = async () => {
+    ledger.revision++;
+    ledger = await checkpoint(`ledger-${ledger.revision}`, async () => {
+      saveCompletionLedger(root, sessionId, ledger);
+      await options.synchronize?.();
+      return structuredClone(ledger);
+    });
+  };
+  const auditConcurrency = options.auditConcurrency ?? 1;
+  if (
+    !Number.isInteger(auditConcurrency) ||
+    auditConcurrency < 1 ||
+    auditConcurrency > 6
+  )
+    throw new Error("Recon audit concurrency must be an integer from 1 to 6");
+  const maxPasses = options.maxPasses ?? 4;
+  if (!Number.isInteger(maxPasses) || maxPasses < 1)
+    throw new Error("Recon maxPasses must be a positive integer");
+  while (ledger.pass < maxPasses) {
+    input.abortSignal?.throwIfAborted();
+    ledger = { ...ledger, pass: ledger.pass + 1, status: "working" };
+    await persist();
+    // A report from an earlier pass must never satisfy the next pass's stop condition.
+    rmSync(join(root, "attack-surface-results.json"), { force: true });
+    const correctiveContext = {
+      ...ledger,
+      audit: ledger.audit
+        ? {
+            assessments: ledger.audit.assessments.filter(
+              (assessment) =>
+                assessment.disposition === "needs-work" ||
+                assessment.disposition === "blocked",
+            ),
+          }
+        : null,
+    };
+    const candidate = await runPass({
+      ...input,
+      harness: "general",
+      stepLimit: options.workSteps ?? 200,
+      continuation: `Completion ledger (preserve its original objective):\n${JSON.stringify(correctiveContext)}\nContinue from persisted topology. Account for each supplied repository using current source and its revision, or document a concrete access limitation; historical baseline records alone do not establish current coverage. Correct the listed gaps, including inherited omissions even when this began as a drift update. For each correction, inspect the current records and reconcile every affected component, flow, control, threat, and report claim, including scenario, attack steps, preconditions, verification, evidence, and rationale. Search related records for the old claim; changing only a rationale or the report leaves contradictory analysis unresolved. Cross-reference the corrected analysis where appropriate instead of duplicating it. Preserve valid evidence and justified absence, then propose a fresh report.`,
+    });
+    await options.synchronize?.();
+    const result = await checkpoint(
+      `report-${ledger.pass}`,
+      async () => candidate,
+    );
+    if (!result.results) {
+      ledger.gaps = [
+        "This pass ended without a fresh report; continue from persisted records.",
+      ];
+      await persist();
+      continue;
+    }
+    const auditInput = await checkpoint(
+      `audit-input-${ledger.pass}`,
+      async () => ({
+        snapshot: completionSnapshot(root, result.results),
+        requirements: [
+          ...new Map([
+            ...ledger.requirements.map(
+              (requirement) => [requirement.id, requirement] as const,
+            ),
+            ...auditRequirements(
+              root,
+              origins,
+              repositories.map((r) => r.name),
+            ).map((requirement) => {
+              const previous = ledger.requirements.find(
+                (r) => r.id === requirement.id,
+              );
+              return [
+                requirement.id,
+                {
+                  ...requirement,
+                  ...(requirement.recordIds || previous?.recordIds
+                    ? {
+                        recordIds: [
+                          ...new Set([
+                            ...(previous?.recordIds ?? []),
+                            ...(requirement.recordIds ?? []),
+                          ]),
+                        ],
+                      }
+                    : {}),
+                },
+              ] as const;
+            }),
+          ]).values(),
+        ],
+        topology: loadTopology(root),
+      }),
+    );
+    ledger = {
+      ...ledger,
+      status: "auditing",
+      snapshot: auditInput.snapshot,
+      requirements: auditInput.requirements,
+      audit: { assessments: [] },
+    };
+    await persist();
+    let deferredRequirements: string[] = [];
+    try {
+      const packets = buildAuditPackets(
+        ledger.requirements,
+        auditInput.topology,
+      );
+      const writeEvidence = async (name: string, value: unknown) => {
+        const relative = `.pensar/completion-audit/${ledger.snapshot}/${name}.json`;
+        const content = JSON.stringify(value, null, 2);
+        const backends = resolveBackends({
+          ...input,
+          subagentSpawner: input.subagentSpawner ?? inProcessSubagentSpawner,
+          agentCwd: input.agentCwd ?? input.session.config?.agentCwd ?? root,
+          fileWorkspaceRoot:
+            input.fileWorkspaceRoot ??
+            input.session.config?.remoteFileWorkspaceRoot,
+        });
+        const written = await backends.fs.write(relative, content, {
+          mode: "overwrite",
+        });
+        if (!written.success)
+          throw new Error(`Cannot prepare audit evidence: ${written.error}`);
+        return { path: written.path, bytes: Buffer.byteLength(content) };
+      };
+      const index: (ReturnType<typeof auditRecordIndex> & {
+        evidenceFile: string;
+        evidenceBytes: number;
+      })[] = [];
+      for (const [number, packet] of packets.entries()) {
+        const path = await writeEvidence(`records-${number}`, packet.records);
+        index.push(
+          ...packet.records.map((record) => ({
+            ...auditRecordIndex(record),
+            evidenceFile: path.path,
+            evidenceBytes: path.bytes,
+          })),
+        );
+      }
+      const assessments: CompletionAudit["assessments"] = [];
+      const promptFor = async (number: number) => {
+        const packet = packets[number]!;
+        const priorReviewsFile = assessments.length
+          ? await writeEvidence(`reviews-before-${number}`, assessments)
+          : undefined;
+        return JSON.stringify({
+          objective: ledger.objective,
+          candidatePass: ledger.pass,
+          candidateSnapshot: ledger.snapshot,
+          packetNumber: number + 1,
+          packetCount: packets.length,
+          requirements: packet.requirements,
+          previousGaps: ledger.gaps,
+          recordIndex: index,
+          records:
+            Buffer.byteLength(JSON.stringify(packet.records)) <= 48_000
+              ? packet.records
+              : [],
+          priorReviewsFile: priorReviewsFile?.path,
+          priorReviewsBytes: priorReviewsFile?.bytes,
+          priorDispositions: assessments.map(
+            ({ requirementId, disposition }) => ({
+              requirementId,
+              disposition,
+            }),
+          ),
+          report: result.results,
+          instructions:
+            "Review only this packet's requirements, including every recordId assigned to each connected review. Every packet in this pass reviews the same immutable candidate; no corrective work occurs between packets. Prior reviews from this pass are sibling assessments, not earlier correction attempts. Do not fault this candidate for failing to implement a sibling packet's newly requested correction. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Read evidence and prior-review files in byte mode (byteOffset 0, byteCount 48000, startLine/endLine null), continuing at stoppedAtByte until the listed byte size is consumed. Line mode can truncate long evidence strings; a truncated page is not the complete evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
+        });
+      };
+      const accept = async (number: number, response: unknown) => {
+        const packet = packets[number]!;
+        const audit = await checkpoint(
+          `audit-${ledger.pass}-${number}`,
+          async () => completionAuditSchema.parse(response),
+        );
+        const allowed = new Set(packet.requirements.map((r) => r.id));
+        const unexpected = audit.assessments.filter(
+          (assessment) => !allowed.has(assessment.requirementId),
+        );
+        if (unexpected.length)
+          throw new Error(
+            `Audit packet ${number + 1} returned out-of-scope assessments: ${unexpected.map((a) => a.requirementId).join(", ")}`,
+          );
+        assessments.push(...audit.assessments);
+        ledger.audit = { assessments: [...assessments] };
+        await persist();
+      };
+      const local = packets.flatMap((packet, number) =>
+        packet.records.length ? [number] : [],
+      );
+      const concurrent = auditConcurrency > 1 && local.length > 1;
+      if (concurrent) {
+        const requests: SpawnOptions<CompletionAudit>[] = [];
+        for (const number of local)
+          requests.push({
+            spec: {
+              type: "completion-audit",
+              target: input.target,
+              prompt: await promptFor(number),
+              requirementIds: packets[number]!.requirements.map((r) => r.id),
+            },
+            runtime: input,
+            parentBus: input.eventBus,
+            parentSessionId: sessionId,
+            subagentName: `Completion audit ${ledger.pass}.${number + 1}`,
+          });
+        const outcomes = await spawnBatch(
+          input.subagentSpawner ?? inProcessSubagentSpawner,
+          requests,
+          {
+            concurrency: auditConcurrency,
+            abortSignal: input.abortSignal,
+          },
+        );
+        const failures: unknown[] = [];
+        for (const [index, outcome] of outcomes.entries()) {
+          if (outcome.status === "fulfilled") {
+            try {
+              await accept(local[index]!, outcome.value);
+            } catch (error) {
+              failures.push(error);
+            }
+          } else failures.push(outcome.reason);
+        }
+        if (failures.length)
+          throw new AggregateError(
+            failures,
+            `Completion audit workers failed: ${failures.map((error) => (error instanceof Error ? `${error.name}: ${error.message}` : String(error))).join("; ")}`,
+          );
+        const localRequirements = local.flatMap(
+          (number) => packets[number]!.requirements,
+        );
+        if (auditGaps(localRequirements, { assessments }).length)
+          deferredRequirements = packets
+            .filter((packet) => !packet.records.length)
+            .flatMap((packet) =>
+              packet.requirements.map((requirement) => requirement.id),
+            );
+      }
+      for (const [number, packet] of packets.entries()) {
+        if (concurrent && packet.records.length) continue;
+        if (deferredRequirements.length && !packet.records.length) continue;
+        input.abortSignal?.throwIfAborted();
+        const reviewed = await runPass({
+          ...input,
+          harness: "general",
+          stepLimit: 40,
+          auditPrompt: await promptFor(number),
+          auditRequirementIds: packet.requirements.map((r) => r.id),
+        });
+        if (!reviewed.completionAudit)
+          throw new Error(
+            `Recon audit ended without a response (session ${sessionId}, packet ${number})`,
+          );
+        await accept(number, reviewed.completionAudit);
+      }
+    } catch (error) {
+      const message =
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+          ? error.message
+          : "The model did not produce validated assessments; inspect this session's audit trace.";
+      ledger.status = "audit-failed";
+      ledger.gaps = [`Audit failed before completion: ${message}`];
+      await persist();
+      throw error;
+    }
+    await options.synchronize?.();
+    const completionAudit = ledger.audit!;
+    const decision = await checkpoint(`decision-${ledger.pass}`, async () => ({
+      audit: completionAudit,
+      structuralGaps: structuralGaps(root),
+      stale: ledger.snapshot !== completionSnapshot(root, result.results),
+      deferredRequirements,
+      scopeGaps: targetScopeGaps(result.results, origins),
+    }));
+    ledger.audit = decision.audit;
+    ledger.gaps = [
+      ...auditGaps(
+        ledger.requirements.filter(
+          (requirement) =>
+            !decision.deferredRequirements?.includes(requirement.id),
+        ),
+        ledger.audit,
+      ),
+      ...decision.structuralGaps,
+      ...(decision.scopeGaps ?? []),
+      ...(decision.deferredRequirements?.length
+        ? [
+            "Global review is deferred until component corrections are resolved; the runtime must run it before completion.",
+          ]
+        : []),
+    ];
+    if (!result.results.summary.analysisComplete)
+      ledger.gaps.push("Report explicitly declares analysis incomplete");
+    if (decision.stale)
+      ledger.gaps.push(
+        "Topology changed during audit; inspect the current snapshot again",
+      );
+    if (!ledger.gaps.length) {
+      ledger.status = "complete";
+      await persist();
+      assertCompletionAudit(root, sessionId, result.results);
+      return result;
+    }
+    ledger.status = "correcting";
+    await persist();
+    if (options.mode === "observe") return result;
+    const actionable = ledger.audit.assessments.some(
+      (a) => a.disposition === "needs-work",
+    );
+    if (
+      !actionable &&
+      ledger.audit.assessments.some((a) => a.disposition === "blocked")
+    ) {
+      ledger.status = "blocked";
+      await persist();
+      throw new ReconIncompleteError("blocked", ledger.gaps);
+    }
+  }
+  ledger.status = "budget-exhausted";
+  await persist();
+  throw new ReconIncompleteError("budget-exhausted", ledger.gaps);
+}

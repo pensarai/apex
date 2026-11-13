@@ -411,30 +411,36 @@ describe("update_record", () => {
   });
 
   it("resolves changed references by id, so a later rename still follows", async () => {
-    const ctx = makeCtx();
-    await baseline(ctx);
-    await run(documentBoundary(ctx), {
-      name: "Public",
-      kind: "subnet",
-      evidence,
-    });
-    await run(updateRecord(ctx), {
-      kind: "component",
-      name: "Shop API",
-      changes: { boundary: "Public" },
-      evidence,
-    });
-    await run(documentBoundary(ctx), {
-      name: "DMZ",
-      kind: "subnet",
-      renameFrom: "Public",
-      evidence,
-    });
-    expect(
-      loadTopology(ctx.session.rootPath).components.find(
-        (c) => c.name === "Shop API",
-      )?.boundary,
-    ).toBe("DMZ");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const ctx = makeCtx();
+      await baseline(ctx);
+      await run(documentBoundary(ctx), {
+        name: "Public",
+        kind: "subnet",
+        evidence,
+      });
+      await run(updateRecord(ctx), {
+        kind: "component",
+        name: "Shop API",
+        changes: { boundary: "Public" },
+        evidence,
+      });
+      vi.advanceTimersByTime(1);
+      await run(documentBoundary(ctx), {
+        name: "DMZ",
+        kind: "subnet",
+        renameFrom: "Public",
+        evidence,
+      });
+      expect(
+        loadTopology(ctx.session.rootPath).components.find(
+          (c) => c.name === "Shop API",
+        )?.boundary,
+      ).toBe("DMZ");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects a field the kind does not have, an unknown reference, and an empty change", async () => {

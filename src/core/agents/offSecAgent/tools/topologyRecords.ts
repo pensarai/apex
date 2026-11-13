@@ -27,7 +27,8 @@ export type RecordKind =
   | "component"
   | "flow"
   | "control"
-  | "threat";
+  | "threat"
+  | "completion";
 export type TopologyRecord = Record<string, unknown> & { id: string };
 
 const ID_PREFIX: Record<RecordKind, string> = {
@@ -36,6 +37,7 @@ const ID_PREFIX: Record<RecordKind, string> = {
   flow: "flw",
   control: "ctl",
   threat: "thr",
+  completion: "audit",
 };
 const KINDS = Object.keys(ID_PREFIX) as RecordKind[];
 const COLLECTION = {
@@ -269,7 +271,7 @@ export function seedFromBaseline(
     latest.set(`${s.kind}:${s.record.id}`, s);
   let seeded = 0;
   for (const s of latest.values()) {
-    if (s.record.status === "retired") continue;
+    if (s.record.status === "retired" || s.kind === "completion") continue;
     writeFileSync(join(dir, s.file), JSON.stringify(s.record, null, 2));
     seeded++;
   }
@@ -379,7 +381,7 @@ export function diffLoadedTopology(
 ): TopologyChangeSet {
   const index = (t: LoadedTopology) => {
     const m = new Map<string, { kind: RecordKind; record: TopologyRecord }>();
-    for (const kind of KINDS)
+    for (const kind of KINDS.filter((k) => k !== "completion"))
       for (const record of t[COLLECTION[kind]])
         m.set(`${kind}:${record.id}`, { kind, record });
     return m;

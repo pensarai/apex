@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { streamResponse } from "../../ai";
 import type { SessionInfo } from "../../session";
+import { packetAuditSchema } from "../specialized/attackSurface/completionAudit";
 import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 import {
   createReportErrorTool,
@@ -39,7 +40,10 @@ afterEach(() => {
   observed.model = undefined;
 });
 
-function fixture(turns: Array<{ result: unknown } | "finish">) {
+function fixture(
+  turns: Array<{ result: unknown } | "finish">,
+  responseSchema: z.ZodType = z.object({ done: z.boolean() }),
+) {
   let calls = 0;
   const model = new MockLanguageModelV3({
     doStream: async () => {
@@ -99,12 +103,37 @@ function fixture(turns: Array<{ result: unknown } | "finish">) {
     prompt: "Submit the fixture result",
     toolProtocol: "direct",
     activeTools: ["response"],
-    responseSchema: z.object({ done: z.boolean() }),
+    responseSchema,
   });
   return { agent, calls: () => calls };
 }
 
 describe("structured response through the SDK loop", () => {
+  it("lets an audit reviewer correct an unassigned requirement before ending", async () => {
+    const review = {
+      requirementId: "component:api",
+      disposition: "needs-work",
+      rationale: "OAuth binding analysis is missing",
+      evidence: ["oauth.ts:12"],
+      correctiveAction: "Review the callback binding",
+    };
+    const valid = { assessments: [review] };
+    const f = fixture(
+      [
+        {
+          result: {
+            assessments: [{ ...review, requirementId: "stride-coverage" }],
+          },
+        },
+        { result: valid },
+      ],
+      packetAuditSchema(["component:api"]),
+    );
+    await expect(f.agent.consume()).resolves.toEqual(valid);
+    await f.agent.drained;
+    expect(f.calls()).toBe(2);
+  });
+
   it("continues after invalid response arguments and stops after valid capture", async () => {
     const f = fixture([{ result: {} }, { result: { done: true } }]);
     await expect(f.agent.consume()).resolves.toEqual({ done: true });
