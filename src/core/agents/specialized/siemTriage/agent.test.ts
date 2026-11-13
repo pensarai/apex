@@ -6,10 +6,12 @@ vi.mock("../../offSecAgent/offensiveSecurityAgent", () => ({
 
 import {
   buildAwsInvestigationTool,
+  buildRepositoryInvestigationTool,
   buildSearchSiemLogsTool,
   buildSiemTriageActiveTools,
   buildSiemTriagePrompt,
   buildSiemTriageSystemPrompt,
+  buildValidateIncidentPatchTool,
   compactLogEvents,
   SEARCH_SIEM_LOGS_TOOL_NAME,
   type SiemLogSearch,
@@ -36,6 +38,112 @@ const validResult = {
 };
 
 describe("SiemTriageAgent contracts", () => {
+  it("inspects source only for host-provided applications without enabling write tools", async () => {
+    const applicationId = "22222222-2222-4222-8222-222222222222";
+    const inspect = vi
+      .fn()
+      .mockResolvedValue({ content: "export function login() {}" });
+    const repositoryTool = buildRepositoryInvestigationTool({
+      applications: [
+        { id: applicationId, name: "Example API", repository: "acme/api" },
+      ],
+      inspect,
+      validatePatch: vi.fn(),
+    });
+    const query = {
+      operation: "read" as const,
+      offset: 0,
+      applicationId,
+      path: "src/auth.ts",
+    };
+    await expect(
+      repositoryTool.execute?.(query, { toolCallId: "repo", messages: [] }),
+    ).resolves.toEqual({ content: "export function login() {}" });
+    expect(inspect).toHaveBeenCalledWith(query);
+    await expect(
+      repositoryTool.execute?.(
+        { ...query, applicationId: "33333333-3333-4333-8333-333333333333" },
+        { toolCallId: "foreign", messages: [] },
+      ),
+    ).rejects.toThrow("outside this investigation");
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(buildSiemTriageActiveTools(false, false, true)).toEqual([
+      "web_search",
+      "response",
+      "inspect_incident_repository",
+      "validate_incident_patch",
+    ]);
+    expect(buildSiemTriageActiveTools(false)).not.toContain(
+      "inspect_incident_repository",
+    );
+    expect(buildSiemTriageSystemPrompt(false, false, true)).toContain(
+      "files you actually read",
+    );
+    expect(buildSiemTriageSystemPrompt(false)).toContain(
+      "Do not supply codeChange",
+    );
+  });
+
+  it("preserves a verified code recommendation and rejects incomplete repository evidence", () => {
+    const codeChange = {
+      applicationId: "22222222-2222-4222-8222-222222222222",
+      ref: "a".repeat(40),
+      files: [
+        {
+          path: "src/auth.ts",
+          diff: "--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1 +1 @@\n-old\n+new\n",
+          explanation: "Validate authentication",
+        },
+      ],
+      evidence: "The inspected login handler serves the affected route.",
+    };
+    const candidate = {
+      ...validResult,
+      remediation: [{ ...validResult.remediation[0], codeChange }],
+    };
+    expect(
+      SiemTriageResultSchema.parse(candidate).remediation[0].codeChange,
+    ).toEqual(codeChange);
+    expect(
+      SiemTriageResultSchema.safeParse({
+        ...candidate,
+        remediation: [
+          {
+            ...candidate.remediation[0],
+            codeChange: { ...codeChange, files: [] },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      SiemTriageResultSchema.parse(validResult).remediation[0].codeChange,
+    ).toBeUndefined();
+  });
+
+  it("returns validation failures so triage can repair its own patch", async () => {
+    const applicationId = "22222222-2222-4222-8222-222222222222";
+    const validatePatch = vi
+      .fn()
+      .mockRejectedValue(new Error("Patch does not apply cleanly"));
+    const t = buildValidateIncidentPatchTool({
+      applications: [
+        { id: applicationId, name: "API", repository: "acme/api" },
+      ],
+      inspect: vi.fn(),
+      validatePatch,
+    });
+    const change = {
+      applicationId,
+      ref: "a".repeat(40),
+      evidence: "Observed handler",
+      files: [{ path: "auth.ts", diff: "bad diff", explanation: "Fix auth" }],
+    };
+    await expect(
+      t.execute?.(change, { toolCallId: "patch", messages: [] }),
+    ).resolves.toEqual({ error: "Patch does not apply cleanly" });
+    expect(validatePatch).toHaveBeenCalledWith(change);
+  });
+
   it("can investigate AWS independently of SIEM logs and cite the observation", async () => {
     expect(buildSiemTriageActiveTools(false, true)).toEqual([
       "web_search",
