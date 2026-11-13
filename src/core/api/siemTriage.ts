@@ -26,14 +26,18 @@ export function runSiemTriageAgent(
 
 export type {
   SiemAlertEvidence,
+  SiemCodeChange,
+  SiemCodePatchDraft,
   SiemLogEvent,
   SiemLogSearch,
   SiemLogSearchQuery,
   SiemLogSearchResult,
+  SiemRepositories,
   SiemTriageAgentInput,
   SiemTriageResult,
 } from "../agents/specialized/siemTriage/agent";
 export {
+  SiemCodeChangeSchema,
   SiemTriageResultSchema,
   SiemTriageSeveritySchema,
   SiemTriageVerdictSchema,

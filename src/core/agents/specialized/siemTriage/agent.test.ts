@@ -6,6 +6,7 @@ vi.mock("../../offSecAgent/offensiveSecurityAgent", () => ({
 
 import {
   buildAwsInvestigationTool,
+  buildCloneRepositoryTool,
   buildSearchSiemLogsTool,
   buildSiemTriageActiveTools,
   buildSiemTriagePrompt,
@@ -36,6 +37,163 @@ const validResult = {
 };
 
 describe("SiemTriageAgent contracts", () => {
+  it("clones only connected repositories and exposes local file tools, not execution", async () => {
+    const applicationId = "22222222-2222-4222-8222-222222222222";
+    const clone = vi
+      .fn()
+      .mockResolvedValue({ path: "/sources/api", ref: "a".repeat(40) });
+    const repositories = {
+      rootPath: "/sources",
+      applications: [
+        { id: applicationId, name: "API", repository: "acme/api" },
+      ],
+      clone,
+      capturePatch: vi.fn(),
+    };
+    const t = buildCloneRepositoryTool(repositories);
+    const call = { toolCallId: "clone", messages: [] };
+    await expect(t.execute?.({ applicationId }, call)).resolves.toMatchObject({
+      path: "/sources/api",
+    });
+    await expect(
+      t.execute?.(
+        { applicationId: "33333333-3333-4333-8333-333333333333" },
+        call,
+      ),
+    ).rejects.toThrow("outside this investigation");
+    expect(clone).toHaveBeenCalledTimes(1);
+    const tools = buildSiemTriageActiveTools(false, false, true);
+    for (const name of [
+      "clone_repository",
+      "read_file",
+      "list_files",
+      "grep",
+      "glob",
+      "create_file",
+      "update_file",
+      "delete_file",
+      "apply_patch",
+    ])
+      expect(tools).toContain(name);
+    for (const name of [
+      "inspect_incident_repository",
+      "execute_command",
+      "git_commit",
+      "http_request",
+    ])
+      expect(tools).not.toContain(name);
+    expect(buildSiemTriageActiveTools(false)).not.toContain("clone_repository");
+    clone.mockRejectedValueOnce(new Error("Repository unavailable"));
+    await expect(t.execute?.({ applicationId }, call)).resolves.toEqual({
+      error: "Repository unavailable",
+    });
+  });
+
+  it("captures edited source through the host before returning a validated remediation", async () => {
+    const codeChange = {
+      applicationId: "22222222-2222-4222-8222-222222222222",
+      ref: "a".repeat(40),
+      evidence: "The service uses this handler",
+      files: [
+        {
+          path: "auth.ts",
+          explanation: "Fix auth",
+          diff: "generated from local edits",
+        },
+      ],
+    };
+    const draft = {
+      applicationId: codeChange.applicationId,
+      evidence: codeChange.evidence,
+      files: [{ path: "auth.ts", explanation: "Fix auth" }],
+    };
+    const capturePatch = vi.fn().mockResolvedValue(codeChange);
+    const opts = {
+      repositories: {
+        rootPath: "/sources",
+        applications: [
+          { id: codeChange.applicationId, name: "API", repository: "acme/api" },
+        ],
+        clone: vi.fn(),
+        capturePatch,
+      },
+    } as unknown as Parameters<
+      NonNullable<typeof siemTriageDefinition.resolveResult>
+    >[0];
+    const result = await siemTriageDefinition.resolveResult!(
+      opts,
+      undefined,
+      {} as never,
+      {
+        ...validResult,
+        remediation: [{ ...validResult.remediation[0], codeChange: draft }],
+      },
+    );
+    expect(capturePatch).toHaveBeenCalledWith(draft);
+    expect(result.remediation[0].codeChange).toEqual(codeChange);
+    capturePatch.mockClear();
+    await expect(
+      siemTriageDefinition.resolveResult!(opts, undefined, {} as never, {
+        ...validResult,
+        remediation: [
+          {
+            ...validResult.remediation[0],
+            codeChange: {
+              ...draft,
+              applicationId: "33333333-3333-4333-8333-333333333333",
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("outside this investigation");
+    expect(capturePatch).not.toHaveBeenCalled();
+    expect(siemTriageDefinition.fileWorkspaceRoot!(opts, undefined)).toBe(
+      "/sources",
+    );
+    await expect(
+      siemTriageDefinition.resolveResult!({} as never, undefined, {} as never, {
+        ...validResult,
+        remediation: [{ ...validResult.remediation[0], codeChange: draft }],
+      }),
+    ).rejects.toThrow("No repository workspace");
+  });
+
+  it("preserves a verified code recommendation and rejects incomplete repository evidence", () => {
+    const codeChange = {
+      applicationId: "22222222-2222-4222-8222-222222222222",
+      ref: "a".repeat(40),
+      files: [
+        {
+          path: "src/auth.ts",
+          diff: "--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1 +1 @@\n-old\n+new\n",
+          explanation: "Validate authentication",
+        },
+      ],
+      evidence: "The inspected login handler serves the affected route.",
+    };
+    const candidate = {
+      ...validResult,
+      remediation: [{ ...validResult.remediation[0], codeChange }],
+    };
+    expect(
+      SiemTriageResultSchema.parse(candidate).remediation[0].codeChange,
+    ).toEqual(codeChange);
+    expect(
+      SiemTriageResultSchema.safeParse({
+        ...candidate,
+        remediation: [
+          {
+            ...candidate.remediation[0],
+            codeChange: { ...codeChange, files: [] },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      SiemTriageResultSchema.parse(validResult).remediation[0].codeChange,
+    ).toBeUndefined();
+  });
+
   it("can investigate AWS independently of SIEM logs and cite the observation", async () => {
     expect(buildSiemTriageActiveTools(false, true)).toEqual([
       "web_search",
