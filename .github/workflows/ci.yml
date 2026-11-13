@@ -39,27 +39,27 @@ jobs:
           annotations: true
 
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: $/.github/workflows/lint.yml
     permissions:
       contents: read
 
   dead-code:
-    uses: ./.github/workflows/knip.yml
+    uses: $/.github/workflows/knip.yml
     permissions:
       contents: read
 
   typecheck:
-    uses: ./.github/workflows/typecheck.yml
+    uses: $/.github/workflows/typecheck.yml
     permissions:
       contents: read
 
   test:
-    uses: ./.github/workflows/test.yml
+    uses: $/.github/workflows/test.yml
     permissions:
       contents: read
 
   build:
-    uses: ./.github/workflows/build.yml
+    uses: $/.github/workflows/build.yml
     permissions:
       contents: read
 
