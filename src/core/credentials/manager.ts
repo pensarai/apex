@@ -254,6 +254,9 @@ export class CredentialManager {
 
     const result: AuthCredentials = {};
     if (stored.id) result.id = stored.id;
+    if (stored.role) result.role = stored.role;
+    if (typeof stored.metadata?.context === "string")
+      result.context = stored.metadata.context;
     if (stored.username) result.username = stored.username;
     if (stored.password) result.password = stored.password;
     if (stored.apiKey) result.apiKey = stored.apiKey;

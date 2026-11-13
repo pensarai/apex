@@ -61,6 +61,7 @@ import {
   readPlan,
 } from "../../../core/plan";
 import {
+  type AuthCredentials,
   normalizeMessages,
   type SessionConfig,
   type SessionInfo,
@@ -92,6 +93,7 @@ import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { InputArea } from "../chat/input-area";
 import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
+import { SessionCredentialsDialog } from "../commands/session-credentials";
 import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
 import { deriveApprovedActionLabel, isToolMessage } from "../shared";
 import {
@@ -269,6 +271,11 @@ export default function OperatorDashboard({
         description: "Open session folder in Finder",
       },
     ];
+    operatorOnlyOptions.push({
+      value: "/credentials",
+      label: "/credentials",
+      description: "View and add session credentials",
+    });
     return [...commandOptions, ...operatorOnlyOptions, ...skillOptions];
   }, [
     allAutocompleteOptions,
@@ -804,6 +811,43 @@ export default function OperatorDashboard({
   // Run agent
   // ---------------------------------------------------------------------------
 
+  const newSessionConfig = useMemo<SessionConfig>(
+    () => ({
+      sessionType: "web-app",
+      mode: "operator",
+      operatorSettings: {
+        initialMode: operatorMode,
+        requireApproval,
+        enableSuggestions: true,
+        strikeMode,
+        lanceMode,
+        lanceBudget,
+        findingPolicy,
+      },
+      agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+      codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
+      taskDriven: initialConfig?.taskDriven,
+      ...(initialConfig?.headers !== undefined
+        ? { headers: { ...initialConfig.headers } }
+        : {}),
+      promptInjectionLibrarySource:
+        initialConfig?.promptInjectionLibrarySource ??
+        (route.data.type === "operator"
+          ? route.data.initialSkill?.args?.library
+          : undefined),
+    }),
+    [
+      operatorMode,
+      requireApproval,
+      strikeMode,
+      lanceMode,
+      lanceBudget,
+      findingPolicy,
+      initialConfig,
+      route.data,
+    ],
+  );
+
   const runAgent = useCallback(
     async (prompt: string | null) => {
       const gen = ++generationRef.current;
@@ -954,7 +998,7 @@ export default function OperatorDashboard({
           stepCountIs(10000),
           hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
         ],
-        target: initialConfig?.target,
+        target: initialConfig?.target ?? session?.targets[0],
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
           ...SKILL_TOOL_NAMES,
@@ -998,13 +1042,15 @@ export default function OperatorDashboard({
         const systemPrompt = lanceMode
           ? undefined
           : buildOperatorSystemPrompt(
-              initialConfig?.target,
+              initialConfig?.target ?? session?.targets[0],
               operatorState,
               agentMode,
               {
                 requireApproval,
                 sandboxMode: !!initialConfig?.sandbox,
                 skillsCatalog,
+                credentialContext:
+                  session?.credentialManager?.formatForPrompt(),
                 planFilePath: sessionRef.current
                   ? getPlanFilePath(sessionRef.current.rootPath)
                   : undefined,
@@ -1023,6 +1069,17 @@ export default function OperatorDashboard({
             );
 
         if (session) {
+          if (session.nameOnFirstMessage && prompt) {
+            await sessions.startNaming(session, {
+              model: model.id,
+              authConfig: commonInput.authConfig,
+              userMessage: prompt,
+              onNameGenerated: (name) =>
+                setSession((prev) =>
+                  prev?.id === session.id ? { ...prev, name } : prev,
+                ),
+            });
+          }
           agentResult = await agentClient.run({
             ...commonInput,
             ...(lanceMode ? {} : { system: systemPrompt }),
@@ -1030,34 +1087,10 @@ export default function OperatorDashboard({
           });
         } else {
           // First call — let the agent factory create the session
-          const sessionConfig: SessionConfig = {
-            sessionType: "web-app",
-            mode: "operator",
-            operatorSettings: {
-              initialMode: operatorMode,
-              requireApproval,
-              enableSuggestions: true,
-              strikeMode,
-              lanceMode,
-              lanceBudget,
-              findingPolicy,
-            },
-            agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
-            codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
-            taskDriven: initialConfig?.taskDriven,
-            ...(initialConfig?.headers !== undefined
-              ? { headers: { ...initialConfig.headers } }
-              : {}),
-            promptInjectionLibrarySource:
-              initialConfig?.promptInjectionLibrarySource ??
-              (route.data.type === "operator"
-                ? route.data.initialSkill?.args?.library
-                : undefined),
-          };
           agentResult = await agentClient.run({
             ...commonInput,
             ...(lanceMode ? {} : { system: systemPrompt }),
-            sessionConfig,
+            sessionConfig: newSessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
               setSession((prev) => (prev ? { ...prev, name } : prev));
@@ -1175,10 +1208,10 @@ export default function OperatorDashboard({
     },
     [
       session,
+      newSessionConfig,
       model.id,
       config.data,
       operatorState,
-      operatorMode,
       agentMode,
       displayEvents,
       runEventProjections,
@@ -1188,12 +1221,9 @@ export default function OperatorDashboard({
       initialConfig?.sandbox,
       initialConfig?.taskDriven,
       initialConfig?.target,
-      initialConfig?.headers,
       initialConfig?.promptInjectionLibrarySource,
-      strikeMode,
       lanceMode,
       lanceBudget,
-      findingPolicy,
       activeFindingPolicy,
       route.data,
       setSessionCwd,
@@ -1473,6 +1503,39 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     [addSystemMessage],
   );
 
+  const saveCredential = useCallback(
+    async (credential: AuthCredentials) => {
+      const active = sessionRef.current;
+      const updated = active
+        ? await sessions.addCredential(active.id, credential)
+        : await sessions.create({
+            ...(lanceMode ? { name: "Lance" } : { nameOnFirstMessage: true }),
+            targets: initialConfig?.target ? [initialConfig.target] : [],
+            config: {
+              ...newSessionConfig,
+              authCredentials: credential,
+              modelReasoning:
+                reasoning === undefined
+                  ? undefined
+                  : { model: model.id, setting: reasoning },
+            },
+          });
+      sessionRef.current = updated;
+      setSession(updated);
+      setSessionCwd(updated.rootPath);
+      addSystemMessage("Credential saved to this session.");
+    },
+    [
+      initialConfig?.target,
+      newSessionConfig,
+      reasoning,
+      model.id,
+      lanceMode,
+      setSessionCwd,
+      addSystemMessage,
+    ],
+  );
+
   const handleCommandExecute = useCallback(
     async (command: string) => {
       const action = routeCommand(command, resolveSkillContent);
@@ -1552,6 +1615,24 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           );
           return;
         }
+        case "credentials": {
+          if (loading || status === "running" || status === "waiting") {
+            addSystemMessage(
+              "Open /credentials after the current turn finishes.",
+            );
+            return;
+          }
+          replaceDialog(
+            <SessionCredentialsDialog
+              saved={
+                sessionRef.current?.credentialManager?.listReferences() ?? []
+              }
+              onSave={saveCredential}
+            />,
+            { bare: true, selfHandlesEscape: true },
+          );
+          return;
+        }
         case "headers": {
           await handleHeadersSlash(action.op);
           return;
@@ -1569,6 +1650,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       showModelPicker,
       addSystemMessage,
       handleHeadersSlash,
+      saveCredential,
+      replaceDialog,
+      loading,
+      status,
       strikeMode,
       lanceMode,
     ],
