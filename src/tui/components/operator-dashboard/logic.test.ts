@@ -1,7 +1,11 @@
+import { simulateReadableStream, streamText, type ToolSet, tool } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { OperatorSessionState } from "../../../core/operator";
 import type { AutocompleteOption } from "../shared";
 import {
+  buildOperatorStopConditions,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -88,6 +92,98 @@ describe("resolveOperatorAgentMode", () => {
 
   it("gives plan mode precedence over Strike Mode", () => {
     expect(resolveOperatorAgentMode("plan", true)).toBe("plan");
+  });
+});
+
+describe("operator SDK loop stopping", () => {
+  it.each([
+    {
+      name: "retries a failed plan submission and stops after success",
+      mode: "plan" as const,
+      toolName: "submit_plan",
+      outputs: [{ success: false }, { success: true }],
+      expectedModelCalls: 2,
+    },
+    {
+      name: "continues after plan submission outside plan mode",
+      mode: "default" as const,
+      toolName: "submit_plan",
+      outputs: [{ success: false }, { success: true }],
+      expectedModelCalls: 3,
+    },
+    {
+      name: "continues after other successful tools in plan mode",
+      mode: "plan" as const,
+      toolName: "read_file",
+      outputs: [{ success: true }],
+      expectedModelCalls: 2,
+    },
+    {
+      name: "stops when the operator is asked a question",
+      mode: "default" as const,
+      toolName: "ask_user_questions",
+      outputs: [{}],
+      expectedModelCalls: 1,
+    },
+  ])("$name", async ({ mode, toolName, outputs, expectedModelCalls }) => {
+    let modelCalls = 0;
+    let toolExecutions = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async () => {
+        const callsTool = modelCalls++ < outputs.length;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              ...(callsTool
+                ? [
+                    {
+                      type: "tool-call" as const,
+                      toolCallId: `call-${modelCalls}`,
+                      toolName,
+                      input: "{}",
+                    },
+                  ]
+                : []),
+              {
+                type: "finish",
+                finishReason: {
+                  unified: callsTool ? "tool-calls" : "stop",
+                  raw: callsTool ? "tool_calls" : "stop",
+                },
+                usage: {
+                  inputTokens: {
+                    total: 1,
+                    noCache: 1,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 1, text: 1, reasoning: 0 },
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const result = streamText<ToolSet>({
+      model,
+      prompt: "Prepare a plan for review",
+      tools: {
+        [toolName]: tool({
+          inputSchema: z.object({}),
+          execute: async () => outputs[toolExecutions++],
+        }),
+      },
+      stopWhen: buildOperatorStopConditions(mode),
+    });
+
+    const steps = await result.steps;
+
+    expect(modelCalls).toBe(expectedModelCalls);
+    expect(steps.flatMap((step) => step.toolResults)).toHaveLength(
+      outputs.length,
+    );
   });
 });
 

@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { BoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
+import type { ModelMessage } from "ai";
 import {
   useCallback,
   useEffect,
@@ -33,7 +33,6 @@ import {
   AgentEventBus,
   type AgentMode,
   ALL_TOOL_NAMES,
-  ASK_USER_QUESTIONS_TOOL_NAME,
   type FindingPolicy,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
@@ -104,6 +103,7 @@ import {
 } from "./display-state";
 import { buildHerdrSnapshot, buildHomeHerdrReport } from "./herdr-state";
 import {
+  buildOperatorStopConditions,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -950,10 +950,7 @@ export default function OperatorDashboard({
         prompt: prompt ?? "",
         model: model.id,
         messages: nextMessages,
-        stopWhen: [
-          stepCountIs(10000),
-          hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
-        ],
+        stopWhen: buildOperatorStopConditions(agentMode),
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
