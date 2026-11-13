@@ -4,11 +4,13 @@ on:
   pull_request:
     types: [opened, ready_for_review]
 
-permissions:
-  pull-requests: write
+permissions: {}
 
 jobs:
   assign:
+    name: assign
+    permissions:
+      pull-requests: write # requests reviewers
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
