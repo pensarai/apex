@@ -311,6 +311,14 @@ export function installObservabilityExitHandlers(
     error?: unknown,
     source?: "uncaughtException" | "unhandledRejection",
   ) => {
+    if (
+      exitPromise &&
+      (exitCode === 130 || exitCode === 143) &&
+      (error === undefined ||
+        (error instanceof Error && error.name === "AbortError"))
+    ) {
+      return exitPromise;
+    }
     let pendingReport: (() => void) | null = null;
     if (error !== undefined && !fatalSeen) {
       fatalSeen = true;
