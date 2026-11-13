@@ -1,7 +1,7 @@
 ---
 name: pr
-description: Create, update, format, babysit, resolve conflicts and review findings on, and merge Apex pull requests and PR stacks. Use when the user asks to open or update a PR or merge request, align a stack, get CI green, address review or Bugbot findings, resolve merge conflicts, or merge.
-argument-hint: "[create | update | stack | babysit | comments | conflicts | merge | PR number]"
+description: Create, update, independently review, babysit, resolve conflicts on, and merge Apex pull requests and PR stacks. Use when the user asks to open or update a PR, run two independent reviewers, align a stack, get CI green, address review findings, resolve conflicts, or merge.
+argument-hint: "[create | update | review | stack | babysit | comments | conflicts | merge | PR number]"
 allowed-tools: Bash(gh *) Bash(git *) Bash(bun *)
 ---
 
@@ -25,13 +25,14 @@ This is repository-development guidance for coding agents working on Apex. Keep 
 
 ## Route
 
-| Intent                                               | Playbook                                                                                  |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Create or update a feature/fix/docs PR               | [`create-and-update.md`](../../../.agent-instructions/skills/pr/create-and-update.md)     |
-| Create, inspect, format, or refresh a PR stack       | [`stacks.md`](../../../.agent-instructions/skills/pr/stacks.md)                           |
-| Stay until CI and mergeability settle                | [`babysit.md`](../../../.agent-instructions/skills/pr/babysit.md)                         |
-| Review comments, Cursor Bugbot, or thread resolution | [`comments-and-bugbot.md`](../../../.agent-instructions/skills/pr/comments-and-bugbot.md) |
-| Resolve conflicts or perform an authorized merge     | [`conflicts-and-merge.md`](../../../.agent-instructions/skills/pr/conflicts-and-merge.md) |
+| Intent                                                  | Playbook                                                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Create or update a feature/fix/docs PR                  | [`create-and-update.md`](../../../.agent-instructions/skills/pr/create-and-update.md)     |
+| Run two independent reviews and address scoped findings | [`independent-review.md`](../../../.agent-instructions/skills/pr/independent-review.md)   |
+| Create, inspect, format, or refresh a PR stack          | [`stacks.md`](../../../.agent-instructions/skills/pr/stacks.md)                           |
+| Stay until CI and mergeability settle                   | [`babysit.md`](../../../.agent-instructions/skills/pr/babysit.md)                         |
+| Review comments, Cursor Bugbot, or thread resolution    | [`comments-and-bugbot.md`](../../../.agent-instructions/skills/pr/comments-and-bugbot.md) |
+| Resolve conflicts or perform an authorized merge        | [`conflicts-and-merge.md`](../../../.agent-instructions/skills/pr/conflicts-and-merge.md) |
 
 After creating, updating, refreshing, or fixing a PR, babysit the new SHA. If it belongs to a stack, also apply `stacks.md`. If review findings exist, apply `comments-and-bugbot.md` before declaring the PR ready.
 
