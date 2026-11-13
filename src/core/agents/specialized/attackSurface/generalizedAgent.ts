@@ -21,7 +21,12 @@ import {
   runAuditedRecon,
 } from "./reconCompletion";
 import { GENERALIZED_ATTACK_SURFACE_TOOLS } from "./reconToolset";
-import { finishUpdate, type ReconUpdate, startUpdate } from "./reconUpdate";
+import {
+  buildUpdateBrief,
+  finishUpdate,
+  type ReconUpdate,
+  startUpdate,
+} from "./reconUpdate";
 import {
   type AttackSurfaceAnalysisResults,
   loadAttackSurfaceResults,
@@ -193,7 +198,12 @@ export async function runGeneralizedReconToReport(
         skipped: start.skip,
         ...finishUpdate(input.update, root, input.session.id),
       };
-    first = { ...input, updateBrief: start.brief };
+    first = {
+      ...input,
+      updateBrief: start.skip
+        ? buildUpdateBrief(input.update, root)
+        : start.brief,
+    };
   }
   if (input.completion) {
     await input.completion.restore?.();

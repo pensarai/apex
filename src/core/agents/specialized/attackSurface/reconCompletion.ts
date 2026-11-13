@@ -271,6 +271,14 @@ export async function runAuditedRecon(
           `audit-${ledger.pass}-${number}`,
           async () => reviewed.completionAudit!,
         );
+        const allowed = new Set(packet.requirements.map((r) => r.id));
+        const unexpected = audit.assessments.filter(
+          (assessment) => !allowed.has(assessment.requirementId),
+        );
+        if (unexpected.length)
+          throw new Error(
+            `Audit packet ${number + 1} returned out-of-scope assessments: ${unexpected.map((a) => a.requirementId).join(", ")}`,
+          );
         assessments.push(...audit.assessments);
         ledger.audit = { assessments: [...assessments] };
         await persist();

@@ -85,6 +85,71 @@ function factory(
   });
 }
 describe("recon completion gate", () => {
+  it("preserves the update brief when an audited commit changes only prose", async () => {
+    const baseline = input(),
+      i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    writeRecord(
+      baseline.session.rootPath,
+      baseline.session.id,
+      "component",
+      "idp",
+      {
+        id: "cmp_idp",
+        name: "Identity provider",
+        kind: "saas",
+      },
+    );
+    i.update = {
+      baselineSessionRoot: baseline.session.rootPath,
+      trigger: {
+        kind: "commit",
+        repository: "app",
+        range: "before..after",
+        changedFiles: ["README.md"],
+      },
+    };
+    await runGeneralizedReconToReport(i, factory(calls));
+    expect(calls[0]!.updateBrief).toContain("do not rebuild it");
+    expect(calls[0]!.updateBrief).toContain("before..after");
+    expect(
+      readCompletionLedger(i.session.rootPath, i.session.id)!.objective,
+    ).toContain("Rules for an update");
+  });
+  it("rejects out-of-packet assessments before adding them to the ledger", async () => {
+    const i = input();
+    for (let n = 0; n < 13; n++)
+      writeRecord(
+        i.session.rootPath,
+        i.session.id,
+        "boundary",
+        `boundary-${n}`,
+        {
+          id: `bnd_${n}`,
+          name: `Boundary ${n}`,
+        },
+      );
+    const calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    await expect(
+      runGeneralizedReconToReport(
+        i,
+        factory(calls, (audit) => {
+          audit.assessments.push({
+            ...audit.assessments[0]!,
+            requirementId: "objective",
+          });
+        }),
+      ),
+    ).rejects.toThrow("out-of-scope assessments: objective");
+    expect(calls).toHaveLength(2);
+    expect(
+      readCompletionLedger(i.session.rootPath, i.session.id),
+    ).toMatchObject({
+      status: "audit-failed",
+      audit: { assessments: [] },
+      gaps: [expect.stringContaining("out-of-scope assessments")],
+    });
+  });
   it("audits every record in bounded packets before reconciling the whole objective", async () => {
     const i = input(),
       calls: GeneralizedAttackSurfaceAgentInput[] = [];
