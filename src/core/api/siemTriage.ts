@@ -27,11 +27,12 @@ export function runSiemTriageAgent(
 export type {
   SiemAlertEvidence,
   SiemCodeChange,
+  SiemCodePatchDraft,
   SiemLogEvent,
   SiemLogSearch,
   SiemLogSearchQuery,
   SiemLogSearchResult,
-  SiemRepositoryInvestigation,
+  SiemRepositories,
   SiemTriageAgentInput,
   SiemTriageResult,
 } from "../agents/specialized/siemTriage/agent";

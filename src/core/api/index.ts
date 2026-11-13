@@ -212,11 +212,12 @@ export {
 export type {
   SiemAlertEvidence,
   SiemCodeChange,
+  SiemCodePatchDraft,
   SiemLogEvent,
   SiemLogSearch,
   SiemLogSearchQuery,
   SiemLogSearchResult,
-  SiemRepositoryInvestigation,
+  SiemRepositories,
   SiemTriageAgentInput,
   SiemTriageResult,
 } from "./siemTriage";
