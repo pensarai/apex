@@ -5,18 +5,28 @@ on:
     paths:
       - "fern/**"
 
+concurrency:
+  group: preview-docs-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
 jobs:
   run:
+    name: run
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: write # comments the docs preview URL
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
+      # The version is pinned in fern/fern.config.json.
       - name: Install Fern CLI tool
-        run: npm install -g fern-api
+        run: npm install -g "fern-api@$(jq -r .version fern/fern.config.json)" # zizmor: ignore[adhoc-packages]
 
       - name: Generate preview URL
         id: generate-docs
