@@ -384,6 +384,12 @@ export const siemTriageDefinition = defineAgent<
       }
       if (!opts.repositories)
         throw new Error("No repository workspace for code patch");
+      if (
+        !opts.repositories.applications.some(
+          (app) => app.id === recommendation.codeChange?.applicationId,
+        )
+      )
+        throw new Error("Application is outside this investigation");
       const codeChange = await opts.repositories.capturePatch(
         recommendation.codeChange,
       );

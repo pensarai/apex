@@ -111,7 +111,9 @@ describe("SiemTriageAgent contracts", () => {
     const opts = {
       repositories: {
         rootPath: "/sources",
-        applications: [],
+        applications: [
+          { id: codeChange.applicationId, name: "API", repository: "acme/api" },
+        ],
         clone: vi.fn(),
         capturePatch,
       },
@@ -129,6 +131,22 @@ describe("SiemTriageAgent contracts", () => {
     );
     expect(capturePatch).toHaveBeenCalledWith(draft);
     expect(result.remediation[0].codeChange).toEqual(codeChange);
+    capturePatch.mockClear();
+    await expect(
+      siemTriageDefinition.resolveResult!(opts, undefined, {} as never, {
+        ...validResult,
+        remediation: [
+          {
+            ...validResult.remediation[0],
+            codeChange: {
+              ...draft,
+              applicationId: "33333333-3333-4333-8333-333333333333",
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("outside this investigation");
+    expect(capturePatch).not.toHaveBeenCalled();
     expect(siemTriageDefinition.fileWorkspaceRoot!(opts, undefined)).toBe(
       "/sources",
     );
