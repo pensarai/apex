@@ -115,7 +115,12 @@ A tag such as `@v4` can be repointed by whoever controls the action's repository
 - **Find the SHA from the release tag**: `gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq .object`. When `.type` is `tag`, follow it with `gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha`. Pin a release that has been out for at least 7 days.
 - **Reach for `gh` or a few lines of shell before adding a third-party action.** Every action is code that runs with the job's token.
 - **Check locally** with `zizmor --pedantic .` (`brew install zizmor`). Set `GH_TOKEN` to include the checks that need the GitHub API.
-- **Never disable an audit or add an ignore in `.github/zizmor.yml` to get a check green.** The audits disabled there have existing findings that are being worked off. Fix the finding, or ask.
+- **Permissions start empty.** Every workflow sets `permissions: {}`, and each job lists only what it uses. Each write, `id-token` or non-`contents` grant carries a comment saying what needs it: `contents: write # creates the release and its tag`.
+- **Expressions never go inside a script.** Pass `${{ … }}` values to `run:` steps through `env:` and quote them (`"$VERSION"`). Default variables like `$GITHUB_EVENT_NAME` and `$GITHUB_SHA` are already in the environment.
+- **Checkouts set `persist-credentials: false`** unless a later step runs git against the remote. Prefer `gh api` or `gh release` for tags and releases, which need no saved credential.
+- **In-repo actions and workflows use the self-repository form**, `uses: $/.github/workflows/build.yml`, not `./`. An action that runs files from the checkout stays `./`, with an inline ignore saying why.
+- **CI workflows set a `concurrency` group** that cancels superseded PR runs. A release or publish workflow uses a group that queues instead of cancelling.
+- **Never disable an audit or add an ignore to get a check green.** Each ignore in `.github/zizmor.yml` or inline `# zizmor: ignore[...]` comment says why the finding is safe. A new one needs the same, and a review. Otherwise fix the finding, or ask.
 
 ### Dependencies — exact versions
 
