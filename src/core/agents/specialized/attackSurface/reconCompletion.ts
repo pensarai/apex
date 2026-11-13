@@ -136,11 +136,23 @@ export async function runAuditedRecon(
     await persist();
     // A report from an earlier pass must never satisfy the next pass's stop condition.
     rmSync(join(root, "attack-surface-results.json"), { force: true });
+    const correctiveContext = {
+      ...ledger,
+      audit: ledger.audit
+        ? {
+            assessments: ledger.audit.assessments.filter(
+              (assessment) =>
+                assessment.disposition === "needs-work" ||
+                assessment.disposition === "blocked",
+            ),
+          }
+        : null,
+    };
     const candidate = await runPass({
       ...input,
       harness: "general",
       stepLimit: options.workSteps ?? 200,
-      continuation: `Completion ledger (preserve its original objective):\n${JSON.stringify(ledger)}\nContinue from persisted topology. Account for each supplied repository using current source and its revision, or document a concrete access limitation; historical baseline records alone do not establish current coverage. Correct the listed gaps, including inherited omissions even when this began as a drift update. Preserve valid evidence and justified absence, then propose a fresh report.`,
+      continuation: `Completion ledger (preserve its original objective):\n${JSON.stringify(correctiveContext)}\nContinue from persisted topology. Account for each supplied repository using current source and its revision, or document a concrete access limitation; historical baseline records alone do not establish current coverage. Correct the listed gaps, including inherited omissions even when this began as a drift update. For each correction, inspect the current records and reconcile every affected component, flow, control, threat, and report claim, including scenario, attack steps, preconditions, verification, evidence, and rationale. Search related records for the old claim; changing only a rationale or the report leaves contradictory analysis unresolved. Cross-reference the corrected analysis where appropriate instead of duplicating it. Preserve valid evidence and justified absence, then propose a fresh report.`,
     });
     await options.synchronize?.();
     const result = await checkpoint(
@@ -227,6 +239,10 @@ export async function runAuditedRecon(
           stepLimit: 40,
           auditPrompt: JSON.stringify({
             objective: ledger.objective,
+            candidatePass: ledger.pass,
+            candidateSnapshot: ledger.snapshot,
+            packetNumber: number + 1,
+            packetCount: packets.length,
             requirements: packet.requirements,
             previousGaps: ledger.gaps,
             recordIndex: index,
@@ -244,7 +260,7 @@ export async function runAuditedRecon(
             ),
             report: result.results,
             instructions:
-              "Review only this packet's requirements. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Read evidence and prior-review files in byte mode (byteOffset 0, byteCount 48000, startLine/endLine null), continuing at stoppedAtByte until the listed byte size is consumed. Line mode can truncate long evidence strings; a truncated page is not the complete evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
+              "Review only this packet's requirements. Every packet in this pass reviews the same immutable candidate; no corrective work occurs between packets. Prior reviews from this pass are sibling assessments, not earlier correction attempts. Do not fault this candidate for failing to implement a sibling packet's newly requested correction. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Read evidence and prior-review files in byte mode (byteOffset 0, byteCount 48000, startLine/endLine null), continuing at stoppedAtByte until the listed byte size is consumed. Line mode can truncate long evidence strings; a truncated page is not the complete evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
           }),
         });
         if (!reviewed.completionAudit)

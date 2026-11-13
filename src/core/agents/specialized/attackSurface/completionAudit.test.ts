@@ -316,6 +316,38 @@ describe("recon completion gate", () => {
       2,
     );
   });
+  it("focuses corrective context on unresolved reviews while retaining the requirement inventory", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    await runGeneralizedReconToReport(
+      i,
+      factory(calls, (audit, pass) => {
+        if (pass !== 1) return;
+        Object.assign(audit.assessments[0]!, {
+          disposition: "needs-work",
+          rationale: "Tenant binding contradicts the component",
+          correctiveAction: "Reconcile the control and component",
+          evidence: ["unresolved-source-reference"],
+        });
+        audit.assessments[1]!.evidence = ["already-reviewed-evidence-detail"];
+      }),
+    );
+    const correction = calls[2]!.continuation!;
+    expect(correction).toContain("unresolved-source-reference");
+    expect(correction).not.toContain("already-reviewed-evidence-detail");
+    const prompt = JSON.parse(calls[1]!.auditPrompt!);
+    for (const requirement of prompt.requirements)
+      expect(correction).toContain(requirement.id);
+    expect(prompt).toMatchObject({
+      candidatePass: 1,
+      packetNumber: 1,
+      packetCount: 1,
+    });
+    expect(prompt.candidateSnapshot).toBeTruthy();
+    expect(
+      readCompletionLedger(i.session.rootPath, i.session.id)!.requirements,
+    ).toHaveLength(prompt.requirements.length);
+  });
   it("preserves supplied authentication roles without persisting secrets", async () => {
     const i = input(),
       calls: GeneralizedAttackSurfaceAgentInput[] = [];
