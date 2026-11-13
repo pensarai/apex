@@ -21,6 +21,17 @@ export const PentestReportFindingSchema = z.object({
   attackPath: AttackPathSchema.optional(),
 });
 
+const PentestCoverageSchema = z.object({
+  status: z.enum(["complete", "incomplete"]),
+  targets: z.array(
+    z.object({
+      target: z.string(),
+      objectives: z.array(z.string()),
+      status: z.enum(["completed", "failed", "untested"]),
+    }),
+  ),
+});
+
 export const PentestReportSchema = z.object({
   version: z.string().regex(/^1\.\d+$/),
   metadata: z.object({
@@ -40,9 +51,11 @@ export const PentestReportSchema = z.object({
     }),
   }),
   findings: z.array(PentestReportFindingSchema),
+  coverage: PentestCoverageSchema.optional(),
 });
 
-export const REPORT_VERSION = "1.0";
+export const REPORT_VERSION = "1.1";
 
+export type PentestCoverage = z.infer<typeof PentestCoverageSchema>;
 export type PentestReport = z.infer<typeof PentestReportSchema>;
 export type PentestReportFinding = z.infer<typeof PentestReportFindingSchema>;
