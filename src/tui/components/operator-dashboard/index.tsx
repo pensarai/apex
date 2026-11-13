@@ -413,6 +413,7 @@ export default function OperatorDashboard({
     null,
   );
   const [showPlanReview, setShowPlanReview] = useState(false);
+  const planReviewContentRef = useRef<string | null>(null);
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
@@ -807,6 +808,7 @@ export default function OperatorDashboard({
   const runAgent = useCallback(
     async (prompt: string | null) => {
       const gen = ++generationRef.current;
+      planSubmittedRef.current = false;
       displayEvents.finish();
       // Abort any previous run before starting a new one
       if (agentClientRef.current) {
@@ -1349,7 +1351,13 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
-    if (status !== "idle") return;
+    if (
+      status !== "idle" ||
+      showPlanReview ||
+      planApprovedPendingRunRef.current ||
+      (agentMode === "plan" && planRejectedRef.current)
+    )
+      return;
     const queue = queuedMessagesRef.current;
     if (queue.length === 0) return;
 
@@ -1357,7 +1365,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     setQueuedMessages((prev) => prev.slice(1));
     setSelectedQueueIndex(-1);
     runAgentRef.current(next);
-  }, [status]);
+  }, [status, showPlanReview, agentMode]);
 
   // Auto-run agent after plan approval (waits for mode transition to render)
   useEffect(() => {
@@ -1761,6 +1769,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       stack.length > 0 || externalDialogOpen || !!pendingQuestions;
     // Queue navigation: handle before general shortcuts
     if (
+      !showPlanReview &&
       shouldHandleQueuedMessageKey(
         status,
         queuedMessages.length,
@@ -1827,12 +1836,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (showPlanReview && !inputValue.trim()) {
       if (key.name === "y" || key.raw === "Y") {
         key.preventDefault?.();
-        const planContent = sessionRef.current
-          ? readPlan(sessionRef.current.rootPath)
-          : null;
+        const planContent = planReviewContentRef.current;
         if (!planContent?.trim()) {
           setShowPlanReview(false);
-          addSystemMessage("Plan file is missing or empty. Cannot approve.");
+          addSystemMessage(
+            "Reviewed plan is missing or empty. Cannot approve.",
+          );
           return;
         }
         approvedPlanRef.current = planContent;
@@ -1957,20 +1966,20 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   });
 
   // Show plan review prompt when triggered.
-  // Guard ref prevents duplicate injection (e.g., React StrictMode double-fire).
-  const planReviewInjectedRef = useRef(false);
+  // Keep the displayed snapshot for approval even if the plan file changes.
   useEffect(() => {
     if (!showPlanReview) {
-      planReviewInjectedRef.current = false;
+      planReviewContentRef.current = null;
       return;
     }
-    if (planReviewInjectedRef.current || !sessionRef.current) return;
+    if (planReviewContentRef.current !== null || !sessionRef.current) return;
     const planContent = readPlan(sessionRef.current.rootPath);
     if (!planContent) {
       setShowPlanReview(false);
       return;
     }
-    planReviewInjectedRef.current = true;
+    planReviewContentRef.current = planContent;
+    setSelectedQueueIndex(-1);
     setMessages((prev) => [
       ...prev,
       {
@@ -2133,7 +2142,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
                     if (!trimmed) return;
                     planRejectedRef.current = true;
                     setShowPlanReview(false);
-                    handleSubmit(trimmed);
+                    setInputValue("");
+                    approvalGateRef.current.denyAll();
+                    runAgentRef.current(trimmed);
                   }
                 : handleSubmit
             }
