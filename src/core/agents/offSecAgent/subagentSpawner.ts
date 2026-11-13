@@ -51,6 +51,7 @@ export type SubagentType =
   | "pentest"
   | "code"
   | "recon-worker"
+  | "completion-audit"
   | "whitebox-attack-surface"
   | "blackbox-attack-surface"
   | "authentication"
@@ -58,6 +59,11 @@ export type SubagentType =
 
 /** Type-specific construction fields; the `type` also selects the registry entry. */
 export type SubagentSpec =
+  | {
+      type: "completion-audit";
+      target: string;
+      prompt: string;
+    }
   | {
       type: "pentest";
       target: string;
@@ -509,6 +515,38 @@ const runReconWorkerChild: SubagentRunner<"recon-worker"> = async (
   };
 };
 
+const runCompletionAuditChild: SubagentRunner<"completion-audit"> = async (
+  spec,
+  ctx,
+) => {
+  const { GeneralizedAttackSurfaceAgent } = await import(
+    "../specialized/attackSurface/generalizedAgent"
+  );
+  const {
+    enableThinking: _enableThinking,
+    thinkingEffort: _thinkingEffort,
+    openAIReasoningEffort: _openAIReasoningEffort,
+    ...runtime
+  } = ctx;
+  const agent = new GeneralizedAttackSurfaceAgent({
+    ...runtime,
+    ...getModelSettings(ctx),
+    target: spec.target,
+    auditPrompt: spec.prompt,
+    stepLimit: 40,
+  });
+  return {
+    run: async () => {
+      try {
+        return (await agent.consume()).completionAudit;
+      } finally {
+        await agent.abortAndDrain();
+      }
+    },
+    drained: () => agent.drained,
+  };
+};
+
 const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
   spec,
   ctx,
@@ -621,6 +659,7 @@ const RUNNERS: { [T in SubagentType]: SubagentRunner<T> } = {
   pentest: runPentestChild,
   code: runCodeChild,
   "recon-worker": runReconWorkerChild,
+  "completion-audit": runCompletionAuditChild,
   "whitebox-attack-surface": runWhiteboxChild,
   "blackbox-attack-surface": runBlackboxChild,
   authentication: runAuthChild,

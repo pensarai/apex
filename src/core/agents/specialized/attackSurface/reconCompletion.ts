@@ -1,7 +1,11 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { resolveBackends } from "../../../tools/backends";
-import { inProcessSubagentSpawner } from "../../offSecAgent/subagentSpawner";
+import {
+  inProcessSubagentSpawner,
+  type SpawnOptions,
+  spawnBatch,
+} from "../../offSecAgent/subagentSpawner";
 import { loadTopology } from "../../offSecAgent/tools/topologyRecords";
 import { auditRecordIndex, buildAuditPackets } from "./auditPackets";
 import {
@@ -10,10 +14,12 @@ import {
   auditRequirements,
   type CompletionAudit,
   type CompletionLedger,
+  completionAuditSchema,
   completionSnapshot,
   readCompletionLedger,
   saveCompletionLedger,
   structuralGaps,
+  targetScopeGaps,
 } from "./completionAudit";
 import type {
   GeneralizedAttackSurfaceAgentInput,
@@ -29,6 +35,7 @@ export interface ReconCompletionOptions {
   version: 1;
   mode: "observe" | "enforce";
   maxPasses?: number;
+  auditConcurrency?: number;
   /** Durable hosts replay every pass, checkpointing decisions in call order. */
   checkpoint?: <T>(name: string, execute: () => Promise<T>) => Promise<T>;
   workSteps?: number;
@@ -96,6 +103,7 @@ export async function runAuditedRecon(
     version: 1,
     revision: 0,
     objective,
+    origins,
     pass: 0,
     status: "working",
     snapshot: "",
@@ -127,6 +135,13 @@ export async function runAuditedRecon(
       return structuredClone(ledger);
     });
   };
+  const auditConcurrency = options.auditConcurrency ?? 1;
+  if (
+    !Number.isInteger(auditConcurrency) ||
+    auditConcurrency < 1 ||
+    auditConcurrency > 6
+  )
+    throw new Error("Recon audit concurrency must be an integer from 1 to 6");
   const maxPasses = options.maxPasses ?? 4;
   if (!Number.isInteger(maxPasses) || maxPasses < 1)
     throw new Error("Recon maxPasses must be a positive integer");
@@ -179,7 +194,27 @@ export async function runAuditedRecon(
               root,
               origins,
               repositories.map((r) => r.name),
-            ).map((requirement) => [requirement.id, requirement] as const),
+            ).map((requirement) => {
+              const previous = ledger.requirements.find(
+                (r) => r.id === requirement.id,
+              );
+              return [
+                requirement.id,
+                {
+                  ...requirement,
+                  ...(requirement.recordIds || previous?.recordIds
+                    ? {
+                        recordIds: [
+                          ...new Set([
+                            ...(previous?.recordIds ?? []),
+                            ...(requirement.recordIds ?? []),
+                          ]),
+                        ],
+                      }
+                    : {}),
+                },
+              ] as const;
+            }),
           ]).values(),
         ],
         topology: loadTopology(root),
@@ -193,6 +228,7 @@ export async function runAuditedRecon(
       audit: { assessments: [] },
     };
     await persist();
+    let deferredRequirements: string[] = [];
     try {
       const packets = buildAuditPackets(
         ledger.requirements,
@@ -216,7 +252,10 @@ export async function runAuditedRecon(
           throw new Error(`Cannot prepare audit evidence: ${written.error}`);
         return { path: written.path, bytes: Buffer.byteLength(content) };
       };
-      const index = [];
+      const index: (ReturnType<typeof auditRecordIndex> & {
+        evidenceFile: string;
+        evidenceBytes: number;
+      })[] = [];
       for (const [number, packet] of packets.entries()) {
         const path = await writeEvidence(`records-${number}`, packet.records);
         index.push(
@@ -228,48 +267,42 @@ export async function runAuditedRecon(
         );
       }
       const assessments: CompletionAudit["assessments"] = [];
-      for (const [number, packet] of packets.entries()) {
-        input.abortSignal?.throwIfAborted();
+      const promptFor = async (number: number) => {
+        const packet = packets[number]!;
         const priorReviewsFile = assessments.length
           ? await writeEvidence(`reviews-before-${number}`, assessments)
           : undefined;
-        const reviewed = await runPass({
-          ...input,
-          harness: "general",
-          stepLimit: 40,
-          auditPrompt: JSON.stringify({
-            objective: ledger.objective,
-            candidatePass: ledger.pass,
-            candidateSnapshot: ledger.snapshot,
-            packetNumber: number + 1,
-            packetCount: packets.length,
-            requirements: packet.requirements,
-            previousGaps: ledger.gaps,
-            recordIndex: index,
-            records:
-              Buffer.byteLength(JSON.stringify(packet.records)) <= 48_000
-                ? packet.records
-                : [],
-            priorReviewsFile: priorReviewsFile?.path,
-            priorReviewsBytes: priorReviewsFile?.bytes,
-            priorDispositions: assessments.map(
-              ({ requirementId, disposition }) => ({
-                requirementId,
-                disposition,
-              }),
-            ),
-            report: result.results,
-            instructions:
-              "Review only this packet's requirements. Every packet in this pass reviews the same immutable candidate; no corrective work occurs between packets. Prior reviews from this pass are sibling assessments, not earlier correction attempts. Do not fault this candidate for failing to implement a sibling packet's newly requested correction. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Read evidence and prior-review files in byte mode (byteOffset 0, byteCount 48000, startLine/endLine null), continuing at stoppedAtByte until the listed byte size is consumed. Line mode can truncate long evidence strings; a truncated page is not the complete evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
-          }),
+        return JSON.stringify({
+          objective: ledger.objective,
+          candidatePass: ledger.pass,
+          candidateSnapshot: ledger.snapshot,
+          packetNumber: number + 1,
+          packetCount: packets.length,
+          requirements: packet.requirements,
+          previousGaps: ledger.gaps,
+          recordIndex: index,
+          records:
+            Buffer.byteLength(JSON.stringify(packet.records)) <= 48_000
+              ? packet.records
+              : [],
+          priorReviewsFile: priorReviewsFile?.path,
+          priorReviewsBytes: priorReviewsFile?.bytes,
+          priorDispositions: assessments.map(
+            ({ requirementId, disposition }) => ({
+              requirementId,
+              disposition,
+            }),
+          ),
+          report: result.results,
+          instructions:
+            "Review only this packet's requirements, including every recordId assigned to each connected review. Every packet in this pass reviews the same immutable candidate; no corrective work occurs between packets. Prior reviews from this pass are sibling assessments, not earlier correction attempts. Do not fault this candidate for failing to implement a sibling packet's newly requested correction. Every record is available unabridged via read_file at its evidenceFile; omitted inline records are not absent evidence. Read evidence and prior-review files in byte mode (byteOffset 0, byteCount 48000, startLine/endLine null), continuing at stoppedAtByte until the listed byte size is consumed. Line mode can truncate long evidence strings; a truncated page is not the complete evidence. Inspect related records and source as needed. Other packets review the remaining records. Global requirements must reconcile the record index, prior reviews and report against the original inputs, including missing surfaces. Prior reviews are claims to challenge, not proof. Keep each rationale and corrective action concise (at most three sentences each).",
         });
-        if (!reviewed.completionAudit)
-          throw new Error(
-            `Recon audit ended without a response (session ${sessionId}, packet ${number})`,
-          );
+      };
+      const accept = async (number: number, response: unknown) => {
+        const packet = packets[number]!;
         const audit = await checkpoint(
           `audit-${ledger.pass}-${number}`,
-          async () => reviewed.completionAudit!,
+          async () => completionAuditSchema.parse(response),
         );
         const allowed = new Set(packet.requirements.map((r) => r.id));
         const unexpected = audit.assessments.filter(
@@ -282,6 +315,69 @@ export async function runAuditedRecon(
         assessments.push(...audit.assessments);
         ledger.audit = { assessments: [...assessments] };
         await persist();
+      };
+      const local = packets.flatMap((packet, number) =>
+        packet.records.length ? [number] : [],
+      );
+      const concurrent = auditConcurrency > 1 && local.length > 1;
+      if (concurrent) {
+        const requests: SpawnOptions<CompletionAudit>[] = [];
+        for (const number of local)
+          requests.push({
+            spec: {
+              type: "completion-audit",
+              target: input.target,
+              prompt: await promptFor(number),
+            },
+            runtime: input,
+            parentBus: input.eventBus,
+            parentSessionId: sessionId,
+            subagentName: `Completion audit ${ledger.pass}.${number + 1}`,
+          });
+        const outcomes = await spawnBatch(
+          input.subagentSpawner ?? inProcessSubagentSpawner,
+          requests,
+          {
+            concurrency: auditConcurrency,
+            abortSignal: input.abortSignal,
+          },
+        );
+        const failures: unknown[] = [];
+        for (const [index, outcome] of outcomes.entries()) {
+          if (outcome.status === "fulfilled")
+            await accept(local[index]!, outcome.value);
+          else failures.push(outcome.reason);
+        }
+        if (failures.length)
+          throw new AggregateError(
+            failures,
+            `Completion audit workers failed: ${failures.map((error) => (error instanceof Error ? `${error.name}: ${error.message}` : String(error))).join("; ")}`,
+          );
+        const localRequirements = local.flatMap(
+          (number) => packets[number]!.requirements,
+        );
+        if (auditGaps(localRequirements, { assessments }).length)
+          deferredRequirements = packets
+            .filter((packet) => !packet.records.length)
+            .flatMap((packet) =>
+              packet.requirements.map((requirement) => requirement.id),
+            );
+      }
+      for (const [number, packet] of packets.entries()) {
+        if (concurrent && packet.records.length) continue;
+        if (deferredRequirements.length && !packet.records.length) continue;
+        input.abortSignal?.throwIfAborted();
+        const reviewed = await runPass({
+          ...input,
+          harness: "general",
+          stepLimit: 40,
+          auditPrompt: await promptFor(number),
+        });
+        if (!reviewed.completionAudit)
+          throw new Error(
+            `Recon audit ended without a response (session ${sessionId}, packet ${number})`,
+          );
+        await accept(number, reviewed.completionAudit);
       }
     } catch (error) {
       const message =
@@ -302,11 +398,25 @@ export async function runAuditedRecon(
       audit: completionAudit,
       structuralGaps: structuralGaps(root),
       stale: ledger.snapshot !== completionSnapshot(root, result.results),
+      deferredRequirements,
+      scopeGaps: targetScopeGaps(result.results, origins),
     }));
     ledger.audit = decision.audit;
     ledger.gaps = [
-      ...auditGaps(ledger.requirements, ledger.audit),
+      ...auditGaps(
+        ledger.requirements.filter(
+          (requirement) =>
+            !decision.deferredRequirements?.includes(requirement.id),
+        ),
+        ledger.audit,
+      ),
       ...decision.structuralGaps,
+      ...(decision.scopeGaps ?? []),
+      ...(decision.deferredRequirements?.length
+        ? [
+            "Global review is deferred until component corrections are resolved; the runtime must run it before completion.",
+          ]
+        : []),
     ];
     if (!result.results.summary.analysisComplete)
       ledger.gaps.push("Report explicitly declares analysis incomplete");

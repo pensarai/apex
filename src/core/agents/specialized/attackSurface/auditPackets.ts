@@ -20,30 +20,44 @@ export function buildAuditPackets(
     ...topology.retired.map((item) => item.record),
   ];
   const byId = new Map(records.map((record) => [record.id, record]));
-  const recordFor = (requirement: AuditRequirement) =>
-    byId.get(requirement.id.slice(requirement.id.indexOf(":") + 1));
+  for (const requirement of requirements)
+    for (const id of requirement.recordIds ?? [])
+      if (!byId.has(id))
+        throw new Error(`Audit record unavailable: ${id} (${requirement.id})`);
+  const recordsFor = (requirement: AuditRequirement) =>
+    (
+      requirement.recordIds ?? [
+        requirement.id.slice(requirement.id.indexOf(":") + 1),
+      ]
+    )
+      .map((id) => byId.get(id))
+      .filter((record): record is TopologyRecord => record !== undefined);
   const packets: {
     requirements: AuditRequirement[];
     records: TopologyRecord[];
   }[] = [];
   let current: (typeof packets)[number] = { requirements: [], records: [] };
-  for (const requirement of requirements.filter(recordFor)) {
-    const record = recordFor(requirement)!;
+  for (const requirement of requirements.filter((r) => recordsFor(r).length)) {
+    const group = recordsFor(requirement);
+    const combined = [
+      ...new Map([...current.records, ...group].map((r) => [r.id, r])).values(),
+    ];
     if (
       current.requirements.length &&
       (current.requirements.length >= MAX_REQUIREMENTS ||
-        Buffer.byteLength(JSON.stringify([...current.records, record])) >
-          MAX_RECORD_BYTES)
+        Buffer.byteLength(JSON.stringify(combined)) > MAX_RECORD_BYTES)
     ) {
       packets.push(current);
       current = { requirements: [], records: [] };
     }
     current.requirements.push(requirement);
-    current.records.push(record);
+    current.records = [
+      ...new Map([...current.records, ...group].map((r) => [r.id, r])).values(),
+    ];
   }
   if (current.requirements.length) packets.push(current);
   const global = requirements
-    .filter((requirement) => !recordFor(requirement))
+    .filter((requirement) => !recordsFor(requirement).length)
     .sort((a, b) => Number(!a.id.includes(":")) - Number(!b.id.includes(":")));
   if (packets.length <= 1 && requirements.length <= MAX_REQUIREMENTS) {
     return [{ requirements, records }];

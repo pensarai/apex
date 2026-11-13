@@ -1,10 +1,20 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials/manager";
 import type { SessionInfo } from "../../../session";
-import { inProcessSubagentSpawner } from "../../offSecAgent/subagentSpawner";
+import {
+  inProcessSubagentSpawner,
+  type SpawnOptions,
+  type SubagentSpawner,
+} from "../../offSecAgent/subagentSpawner";
 import { readFile } from "../../offSecAgent/tools/readFile";
 import type { ReadFileResult } from "../../offSecAgent/tools/readFileImpl";
 import { writeRecord } from "../../offSecAgent/tools/topologyRecords";
@@ -16,6 +26,7 @@ import {
   type CompletionAudit,
   readCompletionLedger,
   structuralGaps,
+  targetScopeGaps,
 } from "./completionAudit";
 import {
   type GeneralizedAttackSurfaceAgentInput,
@@ -49,7 +60,7 @@ function input(): GeneralizedAttackSurfaceAgentInput {
   };
 }
 const report = {
-  results: { summary: { analysisComplete: true } },
+  results: { summary: { analysisComplete: true }, targets: [] },
   targets: [],
   resultsPath: "",
   assetsPath: "",
@@ -85,6 +96,333 @@ function factory(
   });
 }
 describe("recon completion gate", () => {
+  it("does not treat customer ownership or free-form descriptions as test authorization", () => {
+    const outside = [
+      "https://staging-api.example",
+      "ftp://api.example",
+      "https://api.example.evil.test",
+      "https://api.example@evil.test",
+      "https://api.example:8443",
+      "https://api.example and its origin URL",
+      "sandbox in a test workspace",
+      "https://<probe>.callback.example",
+    ];
+    expect(
+      targetScopeGaps({ targets: [{ target: "https://API.example/path" }] }, [
+        "https://api.example/",
+      ]),
+    ).toEqual([]);
+    expect(
+      targetScopeGaps({ targets: [{ target: "https://api.example/path" }] }, [
+        "api.example",
+      ]),
+    ).toEqual([]);
+    expect(
+      targetScopeGaps({ targets: [{ target: "api.example" }] }, [
+        "https://api.example",
+      ]),
+    ).toEqual([]);
+    for (const target of outside)
+      expect(
+        targetScopeGaps({ targets: [{ target }] }, ["https://api.example/"]),
+      ).toHaveLength(1);
+    expect(
+      targetScopeGaps({ targets: [{ target: "https://api.example" }] }, []),
+    ).toHaveLength(1);
+    expect(targetScopeGaps({}, ["https://api.example"])).toEqual([
+      "Report does not contain a valid target inventory",
+    ]);
+  });
+  it("rejects out-of-scope targets even when the model approves authorization", async () => {
+    const i = input();
+    i.completion!.maxPasses = 1;
+    const create = factory([]);
+    await expect(
+      runGeneralizedReconToReport(i, (options) => {
+        const agent = create(options);
+        return {
+          consume: async () => ({
+            ...(await agent.consume()),
+            results: {
+              ...report.results!,
+              targets: [
+                {
+                  target: "https://discovered.example",
+                  objective: "Test discovered service",
+                  rationale: "Customer-owned",
+                },
+              ],
+            },
+          }),
+        };
+      }),
+    ).rejects.toThrow("Recommended target is not a concrete authorized origin");
+    const ledger = readCompletionLedger(i.session.rootPath, i.session.id)!;
+    expect(ledger.status).toBe("budget-exhausted");
+    expect(
+      ledger.audit!.assessments.every(
+        (item) => item.disposition === "satisfied",
+      ),
+    ).toBe(true);
+  });
+  it.each([
+    "pass",
+    "failure",
+    "repair",
+  ] as const)("joins read-only audits before global review (%s)", async (outcome) => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    i.completion!.auditConcurrency = 6;
+    for (let n = 0; n < 13; n++)
+      writeRecord(i.session.rootPath, i.session.id, "component", `cmp_${n}`, {
+        id: `cmp_${n}`,
+        name: `Service ${n}`,
+        evidence: "fixture".repeat(1000),
+      });
+    let joined = false;
+    let batches = 0;
+    const batch = vi.fn(
+      async (
+        requests: readonly SpawnOptions<CompletionAudit>[],
+        options: { concurrency: number },
+      ) => {
+        batches++;
+        expect(options.concurrency).toBe(6);
+        expect(
+          readCompletionLedger(i.session.rootPath, i.session.id)!.audit!
+            .assessments,
+        ).toEqual([]);
+        const prompts = requests.map(({ spec }) => {
+          expect(spec.type).toBe("completion-audit");
+          if (spec.type !== "completion-audit")
+            throw new Error("Wrong child mode");
+          return JSON.parse(spec.prompt);
+        });
+        expect(new Set(prompts.map((p) => p.candidateSnapshot)).size).toBe(1);
+        expect(prompts.every((p) => p.priorDispositions.length === 0)).toBe(
+          true,
+        );
+        joined = true;
+        return prompts.map((prompt, n) =>
+          outcome === "failure" && n === 0
+            ? {
+                status: "rejected" as const,
+                reason: new Error("review unavailable"),
+              }
+            : {
+                status: "fulfilled" as const,
+                value:
+                  outcome === "repair" && batches === 1 && n === 0
+                    ? {
+                        assessments: assessment(
+                          prompt.requirements,
+                        ).assessments.map((item, index) =>
+                          index === 0
+                            ? {
+                                ...item,
+                                disposition: "needs-work" as const,
+                                rationale: "Missing independent attack path",
+                                correctiveAction:
+                                  "Inspect the unreviewed write path",
+                              }
+                            : item,
+                        ),
+                      }
+                    : assessment(prompt.requirements),
+              },
+        );
+      },
+    );
+    i.subagentSpawner = {
+      spawn: vi.fn(),
+      spawnMany: vi.fn(),
+      spawnBatch: batch as SubagentSpawner["spawnBatch"],
+    };
+    const create = factory(calls, (_audit, _pass, options) => {
+      expect(joined).toBe(true);
+      if (outcome === "repair") expect(batches).toBe(2);
+      const prompt = JSON.parse(options.auditPrompt!);
+      expect(prompt.records).toEqual([]);
+      expect(
+        prompt.priorDispositions.filter((r: { requirementId: string }) =>
+          r.requirementId.startsWith("component:"),
+        ),
+      ).toHaveLength(13);
+    });
+    const run = runGeneralizedReconToReport(i, create);
+    if (outcome === "failure") {
+      await expect(run).rejects.toThrow("Completion audit workers failed");
+      const ledger = readCompletionLedger(i.session.rootPath, i.session.id)!;
+      expect(ledger.status).toBe("audit-failed");
+      expect(ledger.gaps.join(" ")).toContain("review unavailable");
+      expect(ledger.audit!.assessments.length).toBeGreaterThan(0);
+      expect(calls.some((c) => c.auditPrompt)).toBe(false);
+    } else {
+      await run;
+      expect(
+        readCompletionLedger(i.session.rootPath, i.session.id)!.status,
+      ).toBe("complete");
+    }
+    expect(batch).toHaveBeenCalledTimes(outcome === "repair" ? 2 : 1);
+    if (outcome === "repair") {
+      const work = calls.filter((call) => !call.auditPrompt);
+      expect(work).toHaveLength(2);
+      expect(work[1]!.continuation).toContain(
+        "Inspect the unreviewed write path",
+      );
+      expect(work[1]!.continuation).toContain("Global review is deferred");
+      expect(calls.findIndex((call) => call.auditPrompt)).toBe(2);
+    }
+  });
+  it("keeps connected review ownership stable across restored record order", () => {
+    const first = input(),
+      second = input();
+    const records = [
+      ["boundary", { id: "bnd_shared", name: "Shared" }],
+      ["component", { id: "cmp_a", name: "A", boundaryId: "bnd_shared" }],
+      ["component", { id: "cmp_b", name: "B", boundaryId: "bnd_shared" }],
+      [
+        "control",
+        {
+          id: "ctl_shared",
+          name: "Shared control",
+          appliesToIds: ["bnd_shared"],
+        },
+      ],
+    ] as const;
+    for (const [i, record] of records.entries()) {
+      const [kind, value] = record;
+      for (const [session, order] of [
+        [first.session, i],
+        [second.session, records.length - i],
+      ] as const) {
+        const file = writeRecord(
+          session.rootPath,
+          session.id,
+          kind,
+          value.id,
+          value,
+        );
+        writeFileSync(
+          file,
+          JSON.stringify({
+            ...value,
+            recordedAt: `2026-01-01T00:00:0${order}.000Z`,
+            sessionId: session.id,
+          }),
+        );
+      }
+    }
+    expect(auditRequirements(first.session.rootPath, [], [])).toEqual(
+      auditRequirements(second.session.rootPath, [], []),
+    );
+  });
+  it("reviews connected claims together without losing unrelated records", () => {
+    const i = input();
+    const records = [
+      ["boundary", { id: "bnd_app", name: "Application" }],
+      ["component", { id: "cmp_api", name: "API", boundaryId: "bnd_app" }],
+      [
+        "component",
+        { id: "cmp_worker", name: "Worker", boundaryId: "bnd_app" },
+      ],
+      ["flow", { id: "flw_call", fromId: "cmp_api", toId: "cmp_worker" }],
+      [
+        "threat",
+        { id: "thr_tenant", componentId: "cmp_api", title: "Tenant access" },
+      ],
+      [
+        "control",
+        {
+          id: "ctl_auth",
+          name: "Auth",
+          appliesToIds: ["flw_call", "cmp_worker"],
+        },
+      ],
+      ["control", { id: "ctl_orphan", name: "Unmapped control" }],
+    ] as const;
+    for (const [kind, record] of records)
+      writeRecord(i.session.rootPath, i.session.id, kind, record.id, record);
+    const requirements = auditRequirements(i.session.rootPath, [], []);
+    const group = requirements.find((r) => r.id === "component:cmp_api")!;
+    expect(group.recordIds!.sort()).toEqual([
+      "bnd_app",
+      "cmp_api",
+      "ctl_auth",
+      "flw_call",
+      "thr_tenant",
+    ]);
+    expect(group.description).toContain("supported preconditions");
+    expect(group.description).toContain("evidence of enforcement");
+    expect(group.description).toContain("tenant binding");
+    expect(requirements.map((r) => r.id)).toContain("control:ctl_orphan");
+    expect(
+      requirements
+        .flatMap(
+          (r) =>
+            r.recordIds ??
+            (r.id.includes(":") && !r.id.startsWith("structure:")
+              ? [r.id.slice(r.id.indexOf(":") + 1)]
+              : []),
+        )
+        .sort(),
+    ).toEqual(records.map(([, r]) => r.id).sort());
+  });
+  it("keeps a retired member of a connected review in the correction audit", async () => {
+    const i = input(),
+      calls: GeneralizedAttackSurfaceAgentInput[] = [];
+    writeRecord(i.session.rootPath, i.session.id, "component", "api", {
+      id: "cmp_api",
+      name: "API",
+    });
+    writeRecord(i.session.rootPath, i.session.id, "threat", "tenant", {
+      id: "thr_tenant",
+      componentId: "cmp_api",
+      title: "Tenant access",
+    });
+    const create = factory(calls, (audit, pass) => {
+      if (pass === 1)
+        Object.assign(
+          audit.assessments.find(
+            (a) => a.requirementId === "component:cmp_api",
+          )!,
+          {
+            disposition: "needs-work",
+            rationale: "Unsupported bypass",
+            correctiveAction: "Correct the threat",
+          },
+        );
+    });
+    await runGeneralizedReconToReport(i, (options) => {
+      if (options.continuation?.includes("Unsupported bypass"))
+        writeRecord(
+          i.session.rootPath,
+          i.session.id,
+          "threat",
+          "tenant-retired",
+          {
+            id: "thr_tenant",
+            componentId: "cmp_api",
+            title: "Tenant access",
+            status: "retired",
+            retiredReason: "Source refutes bypass",
+          },
+        );
+      return create(options);
+    });
+    const audits = calls
+      .filter((call) => call.auditPrompt)
+      .map((call) => JSON.parse(call.auditPrompt!));
+    expect(audits).toHaveLength(2);
+    expect(
+      audits[1].requirements.find(
+        (r: AuditRequirement) => r.id === "component:cmp_api",
+      ).recordIds,
+    ).toContain("thr_tenant");
+    expect(audits[1].records).toContainEqual(
+      expect.objectContaining({ id: "thr_tenant", status: "retired" }),
+    );
+  });
   it("preserves the update brief when an audited commit changes only prose", async () => {
     const baseline = input(),
       i = input(),
