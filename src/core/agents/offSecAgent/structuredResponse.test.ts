@@ -118,8 +118,8 @@ describe("structured response through the SDK loop", () => {
     await f.agent.drained;
     expect(failure).toBeInstanceOf(Error);
     expect(failure).toMatchObject({
-      message:
-        "Structured agent ses_structured_response ended without a validated response",
+      message: "Structured agent ended without a validated response",
+      sessionId: "ses_structured_response",
       cause: expect.stringContaining("Invalid input for tool response"),
     });
     expect(f.calls()).toBe(2);
@@ -240,8 +240,8 @@ describe("report_error as a structured terminal result", () => {
 
     expect(failure).toBeInstanceOf(Error);
     expect(failure).toMatchObject({
-      message:
-        "Structured agent ses_structured_report_error ended without a validated response",
+      message: "Structured agent ended without a validated response",
+      sessionId: "ses_structured_report_error",
     });
     expect(failure).not.toMatchObject({ name: "PentestReportedError" });
   });

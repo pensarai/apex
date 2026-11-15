@@ -148,8 +148,8 @@ describe("whitebox Phase 1 umbrella lifecycle with a real CodeAgent", () => {
 
     expect(failure).toBeInstanceOf(Error);
     expect(failure).toMatchObject({
-      message:
-        "Structured agent ses_apps_umbrella ended without a validated response",
+      message: "Structured agent ended without a validated response",
+      sessionId: "ses_apps_umbrella",
     });
     expect(f.calls()).toBe(1);
     expect(f.spawns.map((event) => event.subagentId)).toEqual([
