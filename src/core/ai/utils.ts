@@ -70,6 +70,7 @@ import { createHoonifyModel } from "./providers/hoonify";
 import { createOllamaModel } from "./providers/ollama";
 import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
+import { createPensarOpenRouterModel } from "./providers/pensarOpenRouter";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
 
@@ -87,7 +88,9 @@ export class CompactionRejectedError extends Error {}
 export function isAnthropicProvider(model: AIModel): boolean {
   const { provider } = getModelInfo(model);
   return (
-    provider === "anthropic" || provider === "bedrock" || provider === "pensar"
+    provider === "anthropic" ||
+    provider === "bedrock" ||
+    (provider === "pensar" && !model.includes("/"))
   );
 }
 
@@ -456,7 +459,13 @@ export function getProviderModel(
         };
       }
 
-      providerModel = createPensarModel(bedrockModelId, modelConfig);
+      if (bedrockModelId.includes("/") && hasSandboxAgentAuth)
+        throw new Error(
+          "Pensar OpenRouter models require the customer inference gateway.",
+        );
+      providerModel = bedrockModelId.includes("/")
+        ? createPensarOpenRouterModel(bedrockModelId, modelConfig)
+        : createPensarModel(bedrockModelId, modelConfig);
       break;
     }
 
