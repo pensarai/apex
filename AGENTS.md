@@ -136,7 +136,7 @@ The `vulnerable-dependencies` CI job runs `scripts/osv-gate.ts` on every PR. It 
 
 - **Introduced means new to that package.** An advisory already on a package at the base does not block, so upgrading to a less vulnerable version passes. Advisories already in the lockfile and the licenses of added packages appear in the job summary only. An introduced advisory with no score is a warning.
 - **Fix the dependency first**: upgrade, choose another package, or pin a patched transitive in `overrides`. A blocking advisory with no fixed version still blocks.
-- **An exception is an `[[IgnoredVulns]]` entry in `osv-scanner.toml`** with the advisory `id` and a `reason` that says why it is safe here (not reachable, dev-only path, no fix and accepted). The gate fails on an entry without a reason. `ignoreUntil` is optional. Never add one just to get the check green; it is reviewed like any other change.
+- **An exception is an `[[IgnoredVulns]]` entry in `osv-scanner.toml`** with the advisory `id` and a `reason` that says why it is safe here (not reachable, dev-only path, no fix and accepted). The gate fails on an entry without a reason, and on a `[[PackageOverrides]]` entry that ignores a package or its vulnerabilities without one. `ignoreUntil` is optional. Never add one just to get the check green; it is reviewed like any other change.
 
 ### TUI startup flow
 
