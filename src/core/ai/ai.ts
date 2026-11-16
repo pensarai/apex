@@ -128,6 +128,11 @@ function nativeRolloutOperation(
 const REPAIR_FAIL_CLOSED_TOOLS: ReadonlySet<string> = new Set([
   "spawn_pentest_agent",
 ]);
+const PROTOTYPE_POLLUTION_BODY_KEYS = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
 
 /**
  * Whether tool-call repair must fail closed (no argument synthesis) for a tool.
@@ -135,6 +140,165 @@ const REPAIR_FAIL_CLOSED_TOOLS: ReadonlySet<string> = new Set([
  */
 export function isRepairFailClosedTool(toolName: string): boolean {
   return REPAIR_FAIL_CLOSED_TOOLS.has(toolName);
+}
+
+/**
+ * The provider SDK rejects tool-call JSON containing prototype-shaped object
+ * keys before `http_request` can run. For the one safe recovery case, keep
+ * every argument byte-for-byte and wrap only the top-level `body` object or
+ * array as a string so the target, not the agent process, receives it.
+ */
+export function repairHttpRequestPrototypeBodyToolCallInput(
+  toolName: string,
+  rawInput: unknown,
+): string | null {
+  if (toolName !== "http_request" || typeof rawInput !== "string") return null;
+  const body = findTopLevelJsonProperty(rawInput, "body");
+  if (!body) return null;
+  const bodyText = rawInput.slice(body.valueStart, body.valueEnd);
+  const first = bodyText.trimStart()[0];
+  if (first !== "{" && first !== "[") return null;
+  if (!jsonTextContainsPrototypeKey(bodyText)) return null;
+  return `${rawInput.slice(0, body.valueStart)}${JSON.stringify(bodyText)}${rawInput.slice(body.valueEnd)}`;
+}
+
+function findTopLevelJsonProperty(
+  input: string,
+  propertyName: string,
+): { valueStart: number; valueEnd: number } | null {
+  let index = skipJsonWhitespace(input, 0);
+  if (input[index] !== "{") return null;
+  index++;
+  while (index < input.length) {
+    index = skipJsonWhitespace(input, index);
+    if (input[index] === "}") return null;
+    if (input[index] !== '"') return null;
+    const keyEnd = findJsonStringEnd(input, index);
+    if (keyEnd < 0) return null;
+    let key: string;
+    try {
+      key = JSON.parse(input.slice(index, keyEnd)) as string;
+    } catch {
+      return null;
+    }
+    index = skipJsonWhitespace(input, keyEnd);
+    if (input[index] !== ":") return null;
+    index = skipJsonWhitespace(input, index + 1);
+    const valueStart = index;
+    const valueEnd = findJsonValueEnd(input, valueStart);
+    if (valueEnd < 0) return null;
+    if (key === propertyName) return { valueStart, valueEnd };
+    index = skipJsonWhitespace(input, valueEnd);
+    if (input[index] === ",") {
+      index++;
+      continue;
+    }
+    if (input[index] === "}") return null;
+    return null;
+  }
+  return null;
+}
+
+function skipJsonWhitespace(input: string, index: number): number {
+  while (index < input.length && /\s/.test(input[index] ?? "")) index++;
+  return index;
+}
+
+function findJsonStringEnd(input: string, start: number): number {
+  if (input[start] !== '"') return -1;
+  for (let index = start + 1; index < input.length; index++) {
+    const char = input[index];
+    if (char === "\\") {
+      index++;
+      continue;
+    }
+    if (char === '"') return index + 1;
+  }
+  return -1;
+}
+
+function findJsonValueEnd(input: string, start: number): number {
+  const first = input[start];
+  if (first === '"') return findJsonStringEnd(input, start);
+  if (first === "{" || first === "[") {
+    const stack = [first === "{" ? "}" : "]"];
+    for (let index = start + 1; index < input.length; index++) {
+      const char = input[index];
+      if (char === '"') {
+        index = findJsonStringEnd(input, index) - 1;
+        if (index < 0) return -1;
+        continue;
+      }
+      if (char === "{" || char === "[") {
+        stack.push(char === "{" ? "}" : "]");
+        continue;
+      }
+      if (char === "}" || char === "]") {
+        if (stack.pop() !== char) return -1;
+        if (stack.length === 0) return index + 1;
+      }
+    }
+    return -1;
+  }
+  let index = start;
+  while (index < input.length && !/[,\]}]/.test(input[index] ?? "")) index++;
+  return index;
+}
+
+function jsonTextContainsPrototypeKey(input: string): boolean {
+  const scanValue = (start: number): { end: number; found: boolean } | null => {
+    const index = skipJsonWhitespace(input, start);
+    const first = input[index];
+    if (first === "{") return scanObject(index);
+    if (first === "[") return scanArray(index);
+    const end = findJsonValueEnd(input, index);
+    return end < 0 ? null : { end, found: false };
+  };
+  const scanObject = (
+    start: number,
+  ): { end: number; found: boolean } | null => {
+    let index = skipJsonWhitespace(input, start + 1);
+    if (input[index] === "}") return { end: index + 1, found: false };
+    while (index < input.length) {
+      if (input[index] !== '"') return null;
+      const keyEnd = findJsonStringEnd(input, index);
+      if (keyEnd < 0) return null;
+      let key: string;
+      try {
+        key = JSON.parse(input.slice(index, keyEnd)) as string;
+      } catch {
+        return null;
+      }
+      if (PROTOTYPE_POLLUTION_BODY_KEYS.has(key)) {
+        return { end: keyEnd, found: true };
+      }
+      index = skipJsonWhitespace(input, keyEnd);
+      if (input[index] !== ":") return null;
+      const value = scanValue(index + 1);
+      if (!value) return null;
+      if (value.found) return value;
+      index = skipJsonWhitespace(input, value.end);
+      if (input[index] === "}") return { end: index + 1, found: false };
+      if (input[index] !== ",") return null;
+      index = skipJsonWhitespace(input, index + 1);
+    }
+    return null;
+  };
+  const scanArray = (start: number): { end: number; found: boolean } | null => {
+    let index = skipJsonWhitespace(input, start + 1);
+    if (input[index] === "]") return { end: index + 1, found: false };
+    while (index < input.length) {
+      const value = scanValue(index);
+      if (!value) return null;
+      if (value.found) return value;
+      index = skipJsonWhitespace(input, value.end);
+      if (input[index] === "]") return { end: index + 1, found: false };
+      if (input[index] !== ",") return null;
+      index = skipJsonWhitespace(input, index + 1);
+    }
+    return null;
+  };
+  return scanValue(0)?.found ?? false;
 }
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For gateway and Bedrock model IDs
@@ -2237,6 +2401,20 @@ function streamResponseWithinOperation(
               `[response-debug] experimental_repairToolCall FIRED for response ` +
                 `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
             );
+          }
+
+          const repairedHttpInput = repairHttpRequestPrototypeBodyToolCallInput(
+            toolCall.toolName,
+            toolCall.input,
+          );
+          if (repairedHttpInput) {
+            if (!silent) {
+              log.debug(
+                "Repaired http_request prototype-shaped body by sending it as a verbatim string",
+                { error: error.message || String(error) },
+              );
+            }
+            return { ...toolCall, input: repairedHttpInput };
           }
 
           // Fail closed for security-sensitive tools: never let repair invent or
