@@ -45,6 +45,9 @@ vi.mock("../specialized/whiteboxAttackSurface", () => ({
     summary: {},
   }),
 }));
+vi.mock("../specialized/reconWorker/agent", () => ({
+  ReconWorkerAgent: mocks.agent("recon-worker", undefined),
+}));
 vi.mock("../specialized/attackSurface/blackboxAgent", () => ({
   BlackboxAttackSurfaceAgent: mocks.agent("blackbox-attack-surface", {
     targets: [],
@@ -70,6 +73,11 @@ const specs = {
     objectives: ["test"],
   },
   code: { type: "code", codebasePath: "/fixture", objective: "test" },
+  "recon-worker": {
+    type: "recon-worker",
+    goal: "test",
+    target: "https://example.test",
+  },
   "whitebox-attack-surface": {
     type: "whitebox-attack-surface",
     codebasePath: "/fixture",

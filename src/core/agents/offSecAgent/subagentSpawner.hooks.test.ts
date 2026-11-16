@@ -3,9 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Captured constructor/fn inputs from the mocked child entrypoints.
 const mocks = vi.hoisted(() => ({
+  reconInput: undefined as Record<string, unknown> | undefined,
   authInput: undefined as Record<string, unknown> | undefined,
   judgeInput: undefined as unknown,
   judgeCtx: undefined as Record<string, unknown> | undefined,
+}));
+
+vi.mock("../specialized/reconWorker/agent", () => ({
+  ReconWorkerAgent: class {
+    constructor(input: Record<string, unknown>) {
+      mocks.reconInput = input;
+    }
+    async consume() {}
+  },
 }));
 
 // runAuthChild does: await import("../specialized/authenticationAgent/agent")
@@ -71,6 +81,16 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.authInput?.streamIdFactory).toBe(streamIdFactory);
     expect(mocks.authInput?.toolExecutionContext).toBe(toolExecutionContext);
     expect(mocks.authInput?.toolProtocol).toBe("direct");
+  });
+
+  it("forwards the parent tool protocol through runReconWorkerChild", async () => {
+    await inProcessSubagentSpawner.spawn({
+      spec: { type: "recon-worker", goal: "inspect controls" },
+      runtime,
+      parentBus: new AgentEventBus(),
+      subagentId: "recon-child",
+    });
+    expect(mocks.reconInput?.toolProtocol).toBe("direct");
   });
 
   it("forwards durability hooks through runJudgeChild", async () => {

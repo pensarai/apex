@@ -9,6 +9,11 @@ export interface ParsedTarget {
   port?: number;
 }
 
+export function withHttpScheme(target: string): string {
+  const value = target.trim();
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
 /**
  * Extract hostname and port from a target URL.
  * Handles various URL formats:
@@ -26,15 +31,8 @@ export function parseTargetUrl(target: string): ParsedTarget | null {
     return null;
   }
 
-  let urlString = target.trim();
-
-  // If no protocol, assume https
-  if (!urlString.match(/^https?:\/\//i)) {
-    urlString = `https://${urlString}`;
-  }
-
   try {
-    const url = new URL(urlString);
+    const url = new URL(withHttpScheme(target));
     const hostname = url.hostname;
 
     // Extract port if explicitly specified (not default 80/443)

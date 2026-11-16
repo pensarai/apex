@@ -71,6 +71,7 @@ vi.mock("./tools", () => ({
   FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
+  REPORT_ERROR_TOOL_NAME: "report_error",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
   WORKSPACE_TOOL_NAMES: [
     "list_workspace_domains",
