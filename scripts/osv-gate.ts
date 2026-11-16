@@ -124,23 +124,37 @@ const isBlocking = (f: Finding) =>
   f.malware || f.severity === "critical" || f.severity === "high";
 
 export function compareScans(base: OsvScan, head: OsvScan): GateResult {
-  // An advisory is the same one when any id or alias matches on that package:
-  // osv-scanner's group ids are only sorted, so the first id can change
-  // between scans when the duplicate records that apply change.
-  const baseAliases = new Map<string, Set<string>>();
-  for (const f of findingsFromScan(base)) {
-    const known = baseAliases.get(f.pkg) ?? new Set<string>();
-    for (const a of f.aliases) known.add(a);
-    baseAliases.set(f.pkg, known);
-  }
-  const inBase = (f: Finding) =>
-    f.aliases.some((a) => baseAliases.get(f.pkg)?.has(a));
+  // Two findings are the same advisory on the same package when any id or
+  // alias matches: osv-scanner's group ids are only sorted, so the first id can
+  // change between scans when the duplicate records that apply change.
+  const same = (a: Finding, b: Finding) =>
+    a.pkg === b.pkg && a.aliases.some((x) => b.aliases.includes(x));
+  const baseFindings = findingsFromScan(base);
   const headFindings = findingsFromScan(head);
-  const introduced = headFindings.filter((f) => !inBase(f));
+  const existing: Finding[] = [];
+  const introduced: Finding[] = [];
+  for (const h of headFindings) {
+    const baseVersions = new Set(
+      baseFindings.filter((b) => same(b, h)).map((b) => b.version),
+    );
+    if (baseVersions.has(h.version)) {
+      existing.push(h);
+      continue;
+    }
+    // A version that did not have this advisory at the base replaces one the
+    // PR removed, so a straight upgrade passes. Affected versions beyond the
+    // ones removed are introduced.
+    const headVersions = new Set(
+      headFindings.filter((x) => same(x, h)).map((x) => x.version),
+    );
+    const removed = [...baseVersions].filter((v) => !headVersions.has(v));
+    const added = [...headVersions].filter((v) => !baseVersions.has(v)).sort();
+    (added.indexOf(h.version) < removed.length ? existing : introduced).push(h);
+  }
   const basePackages = packageVersions(base);
   return {
     introduced,
-    existing: headFindings.filter(inBase),
+    existing,
     blocking: introduced.filter(isBlocking),
     warnings: introduced.filter(
       (f) => !isBlocking(f) && f.severity === "unscored",
@@ -156,8 +170,34 @@ export interface IgnoredVuln {
   reason?: unknown;
 }
 
-/** Every exception must name an advisory and say why it is accepted. */
-export function invalidExceptions(entries: IgnoredVuln[]): string[] {
+export interface PackageOverride {
+  name?: unknown;
+  ignore?: unknown;
+  vulnerability?: { ignore?: unknown };
+  reason?: unknown;
+}
+
+export interface OsvConfig {
+  IgnoredVulns?: IgnoredVuln[];
+  PackageOverrides?: PackageOverride[];
+}
+
+/**
+ * Every way osv-scanner.toml can hide a finding needs a reason: an ignored
+ * advisory must also name it, and a package override that ignores the package
+ * or its vulnerabilities is held to the same rule.
+ */
+export function invalidExceptions(config: OsvConfig): string[] {
+  const overrides = (config.PackageOverrides ?? []).flatMap((o, i) => {
+    const hides = o.ignore === true || o.vulnerability?.ignore === true;
+    if (!hides || (typeof o.reason === "string" && o.reason.trim())) return [];
+    const name = typeof o.name === "string" ? o.name : `override ${i + 1}`;
+    return [`${name} ignores vulnerabilities without a reason`];
+  });
+  return [...ignoredVulnProblems(config.IgnoredVulns ?? []), ...overrides];
+}
+
+function ignoredVulnProblems(entries: IgnoredVuln[]): string[] {
   return entries.flatMap((e, i) => {
     const problems: string[] = [];
     if (typeof e.id !== "string" || !e.id)
@@ -374,10 +414,9 @@ async function main(): Promise<void> {
   process.chdir(root);
 
   const config = resolve("osv-scanner.toml");
-  const parsed = Bun.TOML.parse(readFileSync(config, "utf8")) as {
-    IgnoredVulns?: IgnoredVuln[];
-  };
-  const problems = invalidExceptions(parsed.IgnoredVulns ?? []);
+  const problems = invalidExceptions(
+    Bun.TOML.parse(readFileSync(config, "utf8")) as OsvConfig,
+  );
   if (problems.length) {
     for (const p of problems)
       console.log(`::error file=osv-scanner.toml::Exception ${p}`);

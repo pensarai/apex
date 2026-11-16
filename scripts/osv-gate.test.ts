@@ -159,6 +159,29 @@ describe("compareScans", () => {
     ]);
   });
 
+  it("blocks a second affected version added beside one already there", () => {
+    const base = scanOf(pkg("qs", "1.0.0", [{ id: "GHSA-qs", score: "7.5" }]));
+    const head = scanOf(
+      pkg("qs", "1.0.0", [{ id: "GHSA-qs", score: "7.5" }]),
+      pkg("qs", "2.0.0", [{ id: "GHSA-qs", score: "7.5" }]),
+    );
+    const result = compareScans(base, head);
+    expect(result.blocking.map((f) => f.version)).toEqual(["2.0.0"]);
+    expect(result.existing.map((f) => f.version)).toEqual(["1.0.0"]);
+  });
+
+  it("lets an affected version replace one the PR removed", () => {
+    const base = scanOf(
+      pkg("qs", "1.0.0", [{ id: "GHSA-qs", score: "7.5" }]),
+      pkg("qs", "2.0.0", [{ id: "GHSA-qs", score: "7.5" }]),
+    );
+    const head = scanOf(
+      pkg("qs", "2.0.0", [{ id: "GHSA-qs", score: "7.5" }]),
+      pkg("qs", "3.0.0", [{ id: "GHSA-qs", score: "7.5" }]),
+    );
+    expect(compareScans(base, head).blocking).toEqual([]);
+  });
+
   it("handles a scan with no results", () => {
     expect(compareScans({ results: null }, { results: [] }).introduced).toEqual(
       [],
@@ -169,21 +192,41 @@ describe("compareScans", () => {
 describe("invalidExceptions", () => {
   it("accepts entries with an id and a reason", () => {
     expect(
-      invalidExceptions([{ id: "GHSA-1", reason: "dev server only" }]),
+      invalidExceptions({
+        IgnoredVulns: [{ id: "GHSA-1", reason: "dev server only" }],
+      }),
     ).toEqual([]);
   });
 
   it("rejects an entry without a reason or an id", () => {
     expect(
-      invalidExceptions([
-        { id: "GHSA-1" },
-        { id: "GHSA-2", reason: "  " },
-        { reason: "why" },
-      ]),
+      invalidExceptions({
+        IgnoredVulns: [
+          { id: "GHSA-1" },
+          { id: "GHSA-2", reason: "  " },
+          { reason: "why" },
+        ],
+      }),
     ).toEqual([
       "GHSA-1 has no reason",
       "GHSA-2 has no reason",
       "entry 3 has no id",
+    ]);
+  });
+
+  it("requires a reason on a package override that hides vulnerabilities", () => {
+    expect(
+      invalidExceptions({
+        PackageOverrides: [
+          { name: "a", ignore: true },
+          { name: "b", vulnerability: { ignore: true } },
+          { name: "c", vulnerability: { ignore: true }, reason: "vendored" },
+          { name: "d", license: { override: ["MIT"] } } as never,
+        ],
+      }),
+    ).toEqual([
+      "a ignores vulnerabilities without a reason",
+      "b ignores vulnerabilities without a reason",
     ]);
   });
 });
