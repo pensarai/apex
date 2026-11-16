@@ -119,7 +119,7 @@ A tag such as `@v4` can be repointed by whoever controls the action's repository
 - **Expressions never go inside a script.** Pass `${{ … }}` values to `run:` steps through `env:` and quote them (`"$VERSION"`). Default variables like `$GITHUB_EVENT_NAME` and `$GITHUB_SHA` are already in the environment.
 - **Checkouts set `persist-credentials: false`** unless a later step runs git against the remote. Prefer `gh api` or `gh release` for tags and releases, which need no saved credential.
 - **In-repo actions and workflows use the self-repository form**, `uses: $/.github/workflows/build.yml`, not `./`. An action that runs files from the checkout stays `./`, with an inline ignore saying why.
-- **CI workflows set a `concurrency` group** that cancels superseded PR runs. A group holds one running and one pending run and drops any older pending run, so `cancel-in-progress: false` is not a queue. A workflow where every event must run (a release, a publish, an event handler) keys its group on the event, such as `release-${{ github.sha }}`, so no run replaces another.
+- **CI workflows set a `concurrency` group** that cancels superseded PR runs. A workflow where every event must run (a release, a publish, an event handler) uses a shared group with `queue: max`, so runs go one at a time and none is dropped. Without `queue: max` a group keeps only one pending run and cancels the older one, so `cancel-in-progress: false` alone is not a queue.
 - **Never disable an audit or add an ignore to get a check green.** Each ignore in `.github/zizmor.yml` or inline `# zizmor: ignore[...]` comment says why the finding is safe. A new one needs the same, and a review. Otherwise fix the finding, or ask.
 
 ### Dependencies — exact versions
