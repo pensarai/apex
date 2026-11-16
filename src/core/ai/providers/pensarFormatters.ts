@@ -12,8 +12,7 @@ export function convertToBedrockFormat(
   modelId: string,
   options: LanguageModelV3CallOptions,
 ): Record<string, unknown> {
-  // GPT-5.x on Bedrock Mantle speaks the OpenAI Responses API, which has a
-  // different request shape than Anthropic Messages.
+  // Mantle GPT routes need Responses formatting rather than Anthropic Messages.
   if (isMantleResponsesModelId(modelId)) {
     return convertToResponsesFormat(modelId, options);
   }

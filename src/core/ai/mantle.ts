@@ -1,13 +1,4 @@
-/**
- * AWS Bedrock Mantle routing helpers (apex copy — apex is a standalone package
- * and cannot import from @console/ai).
- *
- * GPT-5.x on Bedrock is served ONLY through the Mantle endpoint's OpenAI
- * Responses API (Chat Completions / Converse / Invoke are not supported for
- * these models), on a distinct `/openai/v1` path, and is currently region-
- * locked to us-east-2. Routed model IDs carry a `mantle:` prefix so dispatch is
- * unambiguous vs standard Bedrock.
- */
+// The mantle: prefix distinguishes OpenAI Responses routes from Bedrock Converse.
 
 const MANTLE_PREFIX = "mantle:";
 
@@ -15,11 +6,18 @@ const MANTLE_GPT_5_5_MODEL_ID = "openai.gpt-5.5";
 
 export const MANTLE_GPT_5_5_ROUTED_ID = `${MANTLE_PREFIX}${MANTLE_GPT_5_5_MODEL_ID}`;
 
-/**
- * GPT 5.5 is GA only in us-east-2. Override with BEDROCK_MANTLE_REGION if AWS
- * widens availability; never fall back to the app's default AWS_REGION.
- */
+// Preserve the original GPT 5.5 default for callers building a URL directly.
 export const MANTLE_REGION = process.env.BEDROCK_MANTLE_REGION || "us-east-2";
+
+export function mantleRegion(modelId: string): string {
+  // GPT 6.1 Sol is available on Mantle in us-east-1; AWS_REGION is not model availability.
+  return (
+    process.env.BEDROCK_MANTLE_REGION ||
+    (stripMantlePrefix(modelId) === "openai.gpt-6.1-sol"
+      ? "us-east-1"
+      : "us-east-2")
+  );
+}
 
 export function stripMantlePrefix(modelId: string): string {
   return modelId.startsWith(MANTLE_PREFIX)
@@ -27,12 +25,10 @@ export function stripMantlePrefix(modelId: string): string {
     : modelId;
 }
 
-/**
- * Whether a (de-prefixed) Bedrock model ID must go through the Mantle OpenAI
- * Responses API. Scoped to the GPT-5.x family that is Responses-API-only.
- */
+/** Whether the gateway uses OpenAI Responses formatting for this Bedrock ID. */
 export function isMantleResponsesModelId(modelId: string): boolean {
-  return /^openai\.gpt-5/.test(stripMantlePrefix(modelId));
+  const native = stripMantlePrefix(modelId);
+  return /^openai\.gpt-5/.test(native) || native === "openai.gpt-6.1-sol";
 }
 
 /**

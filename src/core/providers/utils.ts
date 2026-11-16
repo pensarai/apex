@@ -102,7 +102,9 @@ function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
 
 export function getAvailableModels(config: Config): ModelInfo[] {
   const models = AVAILABLE_MODELS.filter((model) => {
-    return isProviderConfigured(model.provider as ProviderType, config);
+    const provider =
+      model.provider === "bedrock-mantle" ? "bedrock" : model.provider;
+    return isProviderConfigured(provider as ProviderType, config);
   });
 
   for (const [providerId, provider] of Object.entries(
