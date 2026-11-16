@@ -43,6 +43,83 @@ describe("desktop operator", () => {
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
   });
+  it("reports inline activity from root events and clears it after completion", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let input!: OffensiveSecurityAgentClientInput;
+    sdk.run.mockImplementation(
+      async (value: OffensiveSecurityAgentClientInput) => {
+        input = value;
+        await pending;
+        return {
+          session: value.session,
+          streamResult: { response: Promise.resolve({ messages: [] }) },
+        };
+      },
+    );
+    await host.start({ name: "Activity", prompt: "Hello" });
+    await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledOnce());
+    const activity = () => host.requests.operatorState().activity;
+    try {
+      const bus = input.eventBus;
+      const gate = input.approvalGate;
+      if (!bus || !gate) throw new Error("Missing operator wiring");
+      expect(activity()).toBe("waiting");
+      bus.emit("reasoning-start", { subagentId: "worker" });
+      expect(activity()).toBe("waiting");
+      bus.emit("reasoning-start", {});
+      expect(activity()).toBe("thinking");
+      bus.emit("reasoning-delta", { text: "private reasoning" });
+      expect(activity()).toBe("thinking");
+      expect(JSON.stringify(host.requests.operatorState())).not.toContain(
+        "private reasoning",
+      );
+      bus.emit("reasoning-end", {});
+      expect(activity()).toBe("waiting");
+      bus.emit("text-delta", { text: "Checking." });
+      expect(activity()).toBe("responding");
+      for (const toolCallId of ["one", "two"]) {
+        bus.emit("tool-call-start", { toolCallId, toolName: "http_request" });
+        bus.emit("tool-call-complete", {
+          toolCallId,
+          toolName: "http_request",
+          args: {},
+        });
+      }
+      expect(activity()).toBe("working");
+      bus.emit("tool-result", {
+        toolCallId: "one",
+        toolName: "http_request",
+        result: "Done",
+      });
+      expect(activity()).toBe("working");
+      bus.emit("tool-result", {
+        toolCallId: "two",
+        toolName: "http_request",
+        result: "Done",
+      });
+      expect(activity()).toBe("waiting");
+      const approval = gate.check("http_request", "approval", {});
+      try {
+        expect(activity()).toBeUndefined();
+      } finally {
+        for (const pending of gate.getPendingApprovals())
+          gate.approve(pending.id);
+        await approval;
+      }
+      expect(activity()).toBe("waiting");
+    } finally {
+      finish();
+      await vi.waitFor(() =>
+        expect(host.requests.operatorState().status).toBe("idle"),
+      );
+    }
+    expect(activity()).toBeUndefined();
+    input.eventBus?.emit("reasoning-start", {});
+    expect(activity()).toBeUndefined();
+  });
   it("checks resume IDs and unavailable models before creating or loading a session", async () => {
     await expect(
       host.requests.operatorResume({ id: "../keys" }),
@@ -225,6 +302,7 @@ describe("desktop operator", () => {
       expect(host.requests.operatorState().status).toBe("idle"),
     );
     expect(host.requests.operatorState().queue).toHaveLength(0);
+    expect(host.requests.operatorState().activity).toBeUndefined();
     expect(host.requests.operatorState().error).toBeUndefined();
     expect(sdk.run).toHaveBeenCalledTimes(1);
   });

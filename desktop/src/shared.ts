@@ -104,6 +104,7 @@ export type DesktopRPC = {
   webview: RPCSchema<{
     requests: Record<never, never>;
     messages: OperatorMessages & {
+      sessionCommand: { type: "new" | "close" };
       runView: { key: string; view?: RunDetail; error?: string };
       output: { bytes: string };
       exited: { code: number };

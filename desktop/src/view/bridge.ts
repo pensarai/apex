@@ -8,6 +8,10 @@ const rpc = Electroview.defineRPC<DesktopRPC>({
   maxRequestTime: 60_000,
   handlers: {
     messages: {
+      sessionCommand: (command) =>
+        window.dispatchEvent(
+          new CustomEvent("apex:session-command", { detail: command }),
+        ),
       operatorSnapshot: (snapshot) =>
         operatorEvents.dispatchEvent(
           new CustomEvent("snapshot", { detail: snapshot }),

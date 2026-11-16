@@ -61,8 +61,15 @@ export interface OperatorMessage {
   workflowData?: WorkflowData;
 }
 
+export type OperatorActivity =
+  | "waiting"
+  | "thinking"
+  | "responding"
+  | "working";
+
 export interface OperatorSnapshot {
   revision: number;
+  activity?: OperatorActivity;
   sessionId?: string;
   name?: string;
   target?: string;
@@ -117,7 +124,7 @@ export type OperatorAction =
   | { type: "headers"; command: string }
   | { type: "open-folder" };
 type Call<P, R> = { params: P; response: R };
-export type OperatorRequests = {
+export type OperatorSessionRequests = {
   operatorArguments: Call<{ command: string }, OperatorLaunch>;
   operatorWatch: Call<{ key: string }, OperatorSnapshot>;
   operatorUnwatch: Call<{ key: string }, void>;
@@ -133,4 +140,24 @@ export type OperatorRequests = {
     string
   >;
 };
-export type OperatorMessages = { operatorSnapshot: OperatorFrame };
+export interface OperatorTab {
+  tabId: string;
+  cwd: string;
+  snapshot: OperatorSnapshot;
+}
+export type OperatorRequests = {
+  [K in keyof OperatorSessionRequests]: Call<
+    { tabId: string } & (OperatorSessionRequests[K]["params"] extends void
+      ? object
+      : OperatorSessionRequests[K]["params"]),
+    OperatorSessionRequests[K]["response"]
+  >;
+} & {
+  operatorOpen: Call<{ sessionId?: string }, OperatorTab>;
+  operatorTabs: Call<void, OperatorTab[]>;
+  operatorClose: Call<{ tabId: string; stop?: boolean }, void>;
+  operatorSetDirectory: Call<{ tabId: string; cwd: string }, string>;
+};
+export type OperatorMessages = {
+  operatorSnapshot: { tabId: string; frame: OperatorFrame };
+};

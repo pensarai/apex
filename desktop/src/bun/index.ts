@@ -2,6 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import Electrobun, {
+  ApplicationMenu,
   BrowserView,
   BrowserWindow,
   PATHS,
@@ -14,8 +15,8 @@ import { hasAnyProviderConfigured } from "../../../src/core/providers";
 import { sessions } from "../../../src/core/session";
 import { createSkillsRegistry } from "../../../src/core/skills";
 import { splitCommand } from "../commands";
-import { createOperatorHost } from "../operator/host";
 import { toolRequests } from "../operator/tools";
+import { createOperatorWorkspace } from "../operator/workspace-host";
 import { createPentestRequests } from "../pentest/host";
 import { createSettingsHost } from "../settings/host";
 import type { DesktopRPC } from "../shared";
@@ -60,7 +61,7 @@ function validSize({ cols, rows }: { cols: number; rows: number }) {
   );
 }
 
-const operator = createOperatorHost({
+const operator = createOperatorWorkspace({
   cwd: () => cwd,
   requireAcceptance,
   emit: (snapshot) => rpc.send.operatorSnapshot(snapshot),
@@ -117,10 +118,8 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
       deleteSession: async ({ id }) => {
         requireAcceptance();
         const session = await sessions.get(sessionId(id));
-        if (operator.requests.operatorState().sessionId === id)
-          throw new Error(
-            "Switch to another operator session before deleting this one.",
-          );
+        if (operator.hasSession(id))
+          throw new Error("Close this session’s tab before deleting it.");
         await sessions.remove({ sessionId: id });
         try {
           await access(session.rootPath);
@@ -232,6 +231,53 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
       },
     },
   },
+});
+ApplicationMenu.setApplicationMenu([
+  {
+    label: "Apex",
+    submenu: [
+      { role: "about", label: "About Apex" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "showAll" },
+      { type: "separator" },
+      { role: "quit", label: "Quit Apex" },
+    ],
+  },
+  {
+    label: "File",
+    submenu: [
+      { label: "New session", action: "new-session", accelerator: "n" },
+      { label: "Close session", action: "close-session", accelerator: "w" },
+    ],
+  },
+  {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "selectAll" },
+    ],
+  },
+  {
+    label: "Window",
+    submenu: [
+      { role: "minimize" },
+      { role: "zoom" },
+      { role: "toggleFullScreen" },
+      { role: "bringAllToFront" },
+    ],
+  },
+]);
+ApplicationMenu.on("application-menu-clicked", (event) => {
+  const { action } = (event as { data: { action: string } }).data;
+  if (action === "new-session") rpc.send.sessionCommand({ type: "new" });
+  if (action === "close-session") rpc.send.sessionCommand({ type: "close" });
 });
 new BrowserWindow({
   title: "Apex",

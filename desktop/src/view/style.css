@@ -13,47 +13,58 @@ body {
   font: 14px / 1.55 var(--font-sans);
 }
 .shell {
-  display: grid;
-  grid-template-columns: 192px minmax(0, 1fr);
-  height: 100%;
-}
-.shell > aside {
-  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  padding: 24px 12px 12px;
-  min-width: 0;
+  height: 100%;
 }
-.brand {
+.app-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 20px;
-  font-weight: 650;
-  margin: 0 12px 32px;
+  gap: 12px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
 }
-.shell nav {
-  display: grid;
-  gap: 4px;
-}
-.shell nav button,
-.folder {
-  text-align: left;
-  padding: 8px 10px;
+.app-menu-trigger {
   color: var(--color-fg-2);
+}
+.app-menu-chevron,
+.app-location {
+  color: var(--color-fg-3);
+}
+.app-location {
+  border-left: 1px solid var(--color-border);
+  padding-left: 16px;
+  font-size: 13px;
+}
+.app-menu {
+  width: 240px;
+  padding: 4px;
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+.app-menu [role="menuitem"] {
+  min-height: 32px;
+  border-radius: 0;
   cursor: pointer;
 }
-.shell nav button[aria-current],
-.shell nav button:hover,
-.folder:hover {
-  background: var(--color-surface-2);
+.app-menu [role="menuitem"][data-highlighted] {
   color: var(--color-fg);
+  background: var(--color-surface-3);
 }
-.shell footer {
-  margin-top: auto;
-  border-top: 1px solid var(--color-border);
-  padding: 15px 8px 4px;
-  display: grid;
+.app-menu [data-slot="dropdown-menu-label"] {
+  font: 11px var(--font-mono);
+  color: var(--color-fg-3);
+  padding: 8px;
+}
+.menu-current {
+  margin-left: auto;
+  color: var(--color-fg-3);
 }
 small,
 .version,
@@ -65,15 +76,8 @@ dt,
   font: 12px / 1.5 var(--font-mono);
   color: var(--color-fg-3);
 }
-.folder {
-  padding: 6px 0;
-  overflow-wrap: anywhere;
-  font: 12px var(--font-code);
-}
-.version {
-  margin-top: 16px;
-}
 .shell > main {
+  flex: 1;
   min-height: 0;
   min-width: 0;
   display: flex;
@@ -227,9 +231,6 @@ pre {
   justify-items: start;
 }
 @media (max-width: 820px) {
-  .shell {
-    grid-template-columns: 144px minmax(0, 1fr);
-  }
   .split {
     grid-template-columns: minmax(180px, 1fr) minmax(0, 1.4fr);
   }
@@ -240,47 +241,6 @@ pre {
   }
 }
 @media (max-width: 620px) {
-  .shell {
-    display: flex;
-    flex-direction: column;
-  }
-  .shell > aside {
-    padding: 6px;
-    border-bottom: 1px solid var(--color-border);
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .brand {
-    margin: 0 8px;
-  }
-  .brand span,
-  .shell footer small,
-  .shell footer .version {
-    display: none;
-  }
-  .shell nav {
-    display: flex;
-    flex: 1;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-  .shell footer {
-    flex-direction: row;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    border: none;
-    padding: 4px;
-  }
-  .shell footer .folder {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .shell > main {
-    flex: 1;
-  }
   .split {
     display: block;
     overflow: auto;

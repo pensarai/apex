@@ -117,6 +117,7 @@ class OperatorHost {
   private modelOverride?: string;
   private globalModelAtStart?: string | null;
   private status: OperatorSnapshot["status"] = "idle";
+  private activity: OperatorSnapshot["activity"];
   private mode: OperatorMode = "manual";
   private error?: string;
   private plan: string | null = null;
@@ -157,6 +158,10 @@ class OperatorHost {
         this.status === "running" && this.gate.getPendingApprovals().length
           ? ("waiting" as const)
           : this.status,
+      activity:
+        this.status === "running" && !this.gate.getPendingApprovals().length
+          ? this.activity
+          : undefined,
       model: this.model,
       modelLoading: this.modelLoading,
       strike: !!s?.config?.operatorSettings?.strikeMode,
@@ -258,7 +263,11 @@ class OperatorHost {
       this.options.emit(frame);
     }, 60);
   };
+  private ensureOpen() {
+    if (this.disposed) throw new Error("This operator session is closed.");
+  }
   private reset(session: SessionInfo, mode: OperatorMode, model?: string) {
+    this.ensureOpen();
     this.session = session;
     this.mode = mode;
     this.gate.updateConfig({ requireApproval: mode === "manual" });
@@ -270,6 +279,7 @@ class OperatorHost {
     this.queue = [];
     this.questions = undefined;
     this.status = "idle";
+    this.activity = undefined;
     this.agents.setState(new Map());
     this.plan = readPlan(session.rootPath);
     this.approvedPlan = mode === "plan" ? null : this.plan;
@@ -293,7 +303,9 @@ class OperatorHost {
       throw new Error("Finish or cancel the current operator turn first.");
     this.changing = true;
     try {
-      return await operation();
+      const result = await operation();
+      this.ensureOpen();
+      return result;
     } finally {
       this.changing = false;
     }
@@ -318,6 +330,7 @@ class OperatorHost {
         throw new Error("Invalid operator mode.");
       const cwd = this.options.cwd();
       await this.skills.load({ projectRoot: cwd });
+      this.ensureOpen();
       const session = await sessions.create({
         name: input.name || (input.prompt ? undefined : "Operator"),
         targets: input.target ? [input.target] : [],
@@ -446,6 +459,7 @@ class OperatorHost {
     const client = createOffensiveSecurityAgentClient();
     this.client = client;
     this.status = "running";
+    this.activity = "waiting";
     this.error = undefined;
     this.turn = this.execute(session, client, prompt, label);
     this.publish();
@@ -503,6 +517,34 @@ class OperatorHost {
     const unbind = bindOperatorRunEvents(bus, {
       isCurrent: current,
       handlers: projections.handlers,
+    });
+    const activityEvents = [
+      ["reasoning-start", "thinking"],
+      ["reasoning-delta", "thinking"],
+      ["reasoning-end", "waiting"],
+      ["text-delta", "responding"],
+      ["tool-call-start", "responding"],
+      ["tool-call-complete", "working"],
+      ["tool-result", "waiting"],
+    ] as const;
+    const clearActivityListeners = activityEvents.map(([event, activity]) => {
+      const update = (payload: { subagentId?: string }) => {
+        if (!current() || payload.subagentId) return;
+        const next =
+          activity === "waiting" &&
+          this.messages.some(
+            (m) =>
+              m.role === "tool" &&
+              (m.status === "pending" || m.status === "streaming"),
+          )
+            ? "working"
+            : activity;
+        if (this.activity === next) return;
+        this.activity = next;
+        this.publish();
+      };
+      bus.on(event, update);
+      return () => bus.off(event, update);
     });
     const recordUsage = (
       inputTokens: number,
@@ -671,6 +713,7 @@ class OperatorHost {
       }
     } finally {
       unbind();
+      for (const clear of clearActivityListeners) clear();
       display.finish();
       if (this.status === "stopping") {
         this.history = recoverAbortedTranscript({
@@ -691,6 +734,7 @@ class OperatorHost {
       await trace.cleanupRun();
       this.plan = readPlan(session.rootPath);
       this.modelLoading = undefined;
+      this.activity = undefined;
       this.status = this.questions || this.reviewPlan ? "waiting" : "idle";
       this.client = undefined;
       this.turn = undefined;
@@ -1017,6 +1061,21 @@ class OperatorHost {
     this.gate.on("approval-needed", this.publish);
     this.gate.on("approval-resolved", this.publish);
     this.unsubscribeAgents = this.agents.subscribe(this.publish);
+  }
+  get sessionId() {
+    return this.session?.id;
+  }
+  get cwd() {
+    return this.workingDirectory || this.options.cwd();
+  }
+  async close(stop = false) {
+    if (this.changing || this.applyingAction)
+      throw new Error("Wait for the pending operator action before closing.");
+    if (!stop && (this.client || this.questions || this.reviewPlan))
+      throw new Error("This session is active. Stop it before closing.");
+    if (stop) await this.cancel();
+    await this.turn;
+    this.dispose();
   }
   dispose() {
     this.disposed = true;
