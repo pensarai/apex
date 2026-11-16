@@ -1,15 +1,23 @@
+import { PensarMark } from "@pensarai/design-system/logos";
 import { Button } from "@pensarai/design-system/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@pensarai/design-system/ui/dialog";
 import { Input } from "@pensarai/design-system/ui/input";
 import { Textarea } from "@pensarai/design-system/ui/textarea";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { splitCommand } from "../commands";
 import { runAppearanceCommand } from "../settings/appearance";
-import type { SettingsTab } from "../settings/contract";
-import { api, operatorEvents } from "../view/bridge";
+import type { SettingsSnapshot, SettingsTab } from "../settings/contract";
+import { api } from "../view/bridge";
+import type { OperatorClient } from "./client";
 import type {
   OperatorAction,
   OperatorLaunch,
-  OperatorMode,
   OperatorSnapshot,
 } from "./contract";
 import { applyFrame, type OperatorFrame } from "./live";
@@ -29,7 +37,14 @@ const panels: Panel[] = [
   "Help",
 ];
 interface Props {
-  initialSessionId?: string;
+  cwd?: string;
+  onChooseFolder?: () => Promise<void>;
+  client: OperatorClient;
+  initialSnapshot: OperatorSnapshot;
+  visible: boolean;
+  focused?: boolean;
+  onNewSession: (launch?: OperatorLaunch) => Promise<void>;
+  onSnapshot: (snapshot: OperatorSnapshot) => void;
   onSettings?: (tab?: SettingsTab) => void;
   onPentest?: (command: string) => Promise<void>;
   onSessions?: (id?: string) => void;
@@ -38,8 +53,15 @@ interface Props {
   onExit?: () => void;
 }
 
-export default function Operator({
-  initialSessionId,
+export default function OperatorSessionView({
+  cwd,
+  onChooseFolder,
+  client,
+  initialSnapshot,
+  visible,
+  focused: isFocused = visible,
+  onNewSession,
+  onSnapshot,
   onSettings,
   onPentest,
   onRuns,
@@ -47,9 +69,16 @@ export default function Operator({
   onSessions,
   onSkills,
 }: Props) {
-  const [state, setState] = useState<OperatorSnapshot>();
+  const [modelSettings, setModelSettings] =
+    useState<Pick<SettingsSnapshot, "models" | "selected">>();
+  const [state, setState] = useState(initialSnapshot);
   const [panel, setPanel] = useState<Panel>("Overview");
-  const [creating, create] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
+  const [draftMode, setDraftMode] =
+    useState<OperatorSnapshot["mode"]>("manual");
+  const mode = state?.sessionId ? state.mode : draftMode;
+  const ready = !!state;
   const [prefill, setPrefill] = useState<OperatorLaunch>();
   const [formKey, setFormKey] = useState(0);
   const [error, setError] = useState("");
@@ -60,18 +89,24 @@ export default function Operator({
   const [verbose, setVerbose] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  const latest = useRef<OperatorSnapshot>(undefined);
+  const page = useRef<HTMLDivElement>(null);
+  const latest = useRef(initialSnapshot);
+  const focused = useRef(isFocused);
+  focused.current = isFocused;
+  const reportSnapshot = useRef(onSnapshot);
+  reportSnapshot.current = onSnapshot;
   const apply = useCallback((next: OperatorSnapshot) => {
     if (!latest.current || next.revision >= latest.current.revision) {
       latest.current = next;
       setState(next);
+      reportSnapshot.current(next);
     }
   }, []);
   useEffect(() => {
     let active = true;
     const key = crypto.randomUUID();
     const refresh = () =>
-      api
+      client
         .operatorWatch({ key })
         .then((s) => {
           if (active) apply(s);
@@ -79,8 +114,7 @@ export default function Operator({
         .catch((e) => {
           if (active) setError(String(e));
         });
-    const receive = (e: Event) => {
-      const frame = (e as CustomEvent<OperatorFrame>).detail;
+    const receive = (frame: OperatorFrame) => {
       const current = latest.current;
       if (current && frame.state.revision <= current.revision) return;
       if (!current || current.revision < frame.baseRevision) {
@@ -89,23 +123,38 @@ export default function Operator({
       }
       apply(applyFrame(current, frame));
     };
-    operatorEvents.addEventListener("snapshot", receive);
+    const unsubscribe = client.subscribe(receive);
     setError("");
-    create(false);
-    void refresh()
-      .then(async () => {
-        if (active && initialSessionId)
-          apply(await api.operatorResume({ id: initialSessionId }));
-      })
+    void refresh();
+    return () => {
+      active = false;
+      unsubscribe();
+      void client.operatorUnwatch({ key }).catch(console.error);
+    };
+  }, [client, apply]);
+  useEffect(() => {
+    let active = true;
+    const update = (settings: SettingsSnapshot) => {
+      if (active)
+        setModelSettings({
+          models: settings.models,
+          selected: settings.selected,
+        });
+    };
+    const changed = (event: Event) =>
+      update((event as CustomEvent<SettingsSnapshot>).detail);
+    void api
+      .desktopSettings()
+      .then(update)
       .catch((e) => {
         if (active) setError(String(e));
       });
+    window.addEventListener("apex:settings", changed);
     return () => {
       active = false;
-      operatorEvents.removeEventListener("snapshot", receive);
-      void api.operatorUnwatch({ key }).catch(console.error);
+      window.removeEventListener("apex:settings", changed);
     };
-  }, [initialSessionId, apply]);
+  }, []);
   async function perform(fn: () => Promise<OperatorSnapshot>) {
     setBusy(true);
     setError("");
@@ -122,8 +171,41 @@ export default function Operator({
   function action(command: OperatorAction) {
     const sessionId = state?.sessionId;
     if (!sessionId) return Promise.resolve(false);
-    return perform(() => api.operatorAction({ sessionId, action: command }));
+    return perform(() => client.operatorAction({ sessionId, action: command }));
   }
+  async function newChat() {
+    await onNewSession();
+    setText("");
+  }
+  function openPanel(next: Panel) {
+    setPanel(next);
+    setInspecting(true);
+  }
+  const modeLocked =
+    busy || !!state?.questions || !!state?.reviewPlan || !!state?.lance;
+  function cycleMode() {
+    if (modeLocked) return;
+    const next =
+      mode === "manual" ? "auto" : mode === "auto" ? "plan" : "manual";
+    if (state?.sessionId) void action({ type: "mode", mode: next });
+    else setDraftMode(next);
+  }
+  useEffect(() => {
+    if (
+      isFocused &&
+      ready &&
+      !setupOpen &&
+      !document.activeElement?.matches('[role="tab"][aria-selected="true"]') &&
+      !page.current?.contains(document.activeElement)
+    )
+      input.current?.focus();
+  }, [isFocused, ready, setupOpen]);
+  useEffect(() => {
+    if (!isFocused) {
+      setSetupOpen(false);
+      setToolsOpen(false);
+    }
+  }, [isFocused]);
   const submit = async () => {
     const value = text.trim();
     if (!value || busy) return;
@@ -188,21 +270,19 @@ export default function Operator({
             await onRuns(value);
             break;
           case "new":
+            await newChat();
+            break;
           case "operator":
           case "threat-model":
           case "prompt-injection": {
-            if (active)
-              throw new Error(
-                "Finish or cancel the current turn before starting a new session.",
-              );
             setText("");
-            setPrefill(
-              cmd === "new"
-                ? undefined
-                : await api.operatorArguments({ command: value }),
-            );
+            if (cmd === "operator" && !args.length) {
+              await newChat();
+              break;
+            }
+            setPrefill(await client.operatorArguments({ command: value }));
             setFormKey((n) => n + 1);
-            create(true);
+            setSetupOpen(true);
             break;
           }
           case "resume":
@@ -236,18 +316,18 @@ export default function Operator({
             onSettings?.("Advanced");
             break;
           case "help":
-            setPanel("Help");
+            openPanel("Help");
             break;
           case "headers":
-            setPanel("Headers");
+            openPanel("Headers");
             if (!(await action({ type: "headers", command: value }))) return;
             break;
           case "plan":
-            setPanel("Plan");
+            openPanel("Plan");
             break;
           case "skills":
             if (onSkills) onSkills(args[0]);
-            else setPanel("Skills");
+            else openPanel("Skills");
             break;
           case "open-session":
             if (!(await action({ type: "open-folder" }))) return;
@@ -276,144 +356,71 @@ export default function Operator({
         setError(String(e));
         return;
       }
-    } else if (!state?.sessionId || creating) {
-      setError(
-        "Use / for workspace commands. Enter an objective in First message to start a session.",
-      );
-      return;
+    } else if (!state?.sessionId) {
+      if (
+        !(await perform(() =>
+          client.operatorStart({ prompt: value, mode: draftMode }),
+        ))
+      )
+        return;
     } else if (!(await action({ type: "send", text: value }))) return;
     setText("");
-    input.current?.focus();
+    if (focused.current) input.current?.focus();
   };
   const active = !!state && state.status !== "idle";
   const current =
     state?.subagents.find((a) => a.id === agentId) ?? state?.subagents.at(-1);
+  const modelId =
+    state?.modelLoading || state?.model || modelSettings?.selected;
+  const model = modelSettings?.models.find((item) => item.id === modelId);
   return (
-    <div className="op-page">
-      <header>
-        <div>
-          <h1>Operator</h1>
-          <p>
-            {state?.sessionId && !creating
-              ? state.name
-              : "Interactive security testing"}
-          </p>
-        </div>
-        <div className="actions">
-          {state?.sessionId && !creating && (
+    <div className="op-page" ref={page}>
+      {(state?.sessionId || inspecting) && (
+        <header>
+          <div>
+            <h1 className="op-session-title">
+              {state?.sessionId ? state.name || "Operator" : "New session"}
+            </h1>
+          </div>
+          <div className="actions">
             <Button
-              disabled={active || busy}
-              onClick={() => {
-                setPrefill(undefined);
-                setFormKey((n) => n + 1);
-                create(true);
-              }}
+              size="sm"
+              aria-pressed={inspecting}
+              onClick={() => setInspecting(!inspecting)}
             >
-              New session
+              {inspecting ? "Hide details" : "Details"}
             </Button>
-          )}
-          {onSettings && <Button onClick={() => onSettings()}>Settings</Button>}
-        </div>
-      </header>
+          </div>
+        </header>
+      )}
       {error && <p role="alert">{error}</p>}
       {!state ? (
         <p className="empty">
           {error ? "Unable to open operator." : "Opening operator…"}
         </p>
-      ) : !state.sessionId || creating ? (
-        <>
-          <form
-            className="op-launch-command"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submit();
-            }}
-          >
-            <Input
-              aria-label="Workspace command"
-              value={text}
-              placeholder="Workspace command, e.g. /skills"
-              onChange={(e) => setText(e.target.value)}
-            />
-            <Button type="submit" size="sm" disabled={busy || !text.trim()}>
-              Run command
-            </Button>
-          </form>
-          {panel === "Help" && (
-            <p className="op-launch-command">
-              Use /operator to configure a session, /pentest to prepare a test,
-              /resume to open session history, or /models and /providers to
-              configure inference.
-            </p>
-          )}
-          <OperatorSetup
-            key={formKey}
-            initial={prefill}
-            busy={busy}
-            cancel={state.sessionId ? () => create(false) : undefined}
-            start={async (options) => {
-              if (await perform(() => api.operatorStart(options))) {
-                create(false);
-                setText("");
-                selectAgent("");
-                setPanel("Overview");
-              }
-            }}
-          />
-        </>
       ) : (
         <>
-          <div className="op-toolbar">
-            <label>
-              Mode{" "}
-              <select
-                value={state.mode}
-                disabled={
-                  busy || !!state.questions || state.reviewPlan || state.lance
-                }
-                onChange={(e) =>
-                  void action({
-                    type: "mode",
-                    mode: e.target.value as OperatorMode,
-                  })
-                }
-              >
-                <option value="manual">Manual</option>
-                <option value="auto">Automatic</option>
-                <option value="plan">Plan</option>
-              </select>
-            </label>
-            <span>
-              {state.lance ? "Lance" : state.strike ? "Strike" : "Standard"}
-            </span>
-            <span className="op-status">
-              {state.approvals.length ? "Awaiting approval" : state.status}
-            </span>
-            <button type="button" onClick={() => onSettings?.("Models")}>
-              {state.modelLoading || state.model || "Model settings"}
-            </button>
-            <Button
-              size="xs"
-              onClick={() => setVerbose(!verbose)}
-              aria-pressed={verbose}
+          <div className={`op-body${inspecting ? " op-with-inspector" : ""}`}>
+            <div
+              className={`op-chat${state.sessionId ? "" : " op-chat-empty"}`}
             >
-              Verbose
-            </Button>
-            <ToolPicker
-              sessionId={state.sessionId}
-              disabled={active || state.strike || state.lance}
-              open={toolsOpen}
-              onOpenChange={setToolsOpen}
-            />
-          </div>
-          <div className="op-body">
-            <div className="op-chat">
-              <Transcript
-                key={state.sessionId}
-                messages={state.messages}
-                sessionId={state.sessionId}
-                verbose={verbose}
-              />
+              {state.sessionId ? (
+                <Transcript
+                  key={state.sessionId}
+                  screenshot={client.operatorScreenshot}
+                  visible={visible}
+                  messages={state.messages}
+                  sessionId={state.sessionId}
+                  activity={state.activity}
+                  modelLoading={state.modelLoading}
+                  verbose={verbose}
+                />
+              ) : (
+                <div className="op-welcome">
+                  <PensarMark size={80} fill="currentColor" />
+                  <h1>Apex</h1>
+                </div>
+              )}
               {state.error && <p role="alert">{state.error}</p>}
               <div className="op-decisions">
                 {state.approvals.map((a) => (
@@ -525,6 +532,14 @@ export default function Operator({
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
                     if (
+                      e.key === "Tab" &&
+                      e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      cycleMode();
+                    }
+                    if (
                       e.key === "Enter" &&
                       !e.shiftKey &&
                       !e.nativeEvent.isComposing
@@ -533,232 +548,386 @@ export default function Operator({
                       void submit();
                     }
                   }}
-                  placeholder="Message the operator, or enter /help"
+                  placeholder="Ask anything, /help for commands…"
                   rows={2}
                 />
-                <div className="actions">
-                  <Button
-                    variant="constructive"
-                    disabled={
-                      !text.trim() ||
-                      busy ||
-                      !!state.questions ||
-                      state.reviewPlan ||
-                      state.status === "stopping"
-                    }
-                    onClick={() => void submit()}
-                  >
-                    {active ? "Queue message" : "Send"}
-                  </Button>
-                  {active && (
-                    <>
-                      <Button
-                        disabled={busy || state.status === "stopping"}
-                        onClick={() => action({ type: "cancel" })}
-                      >
-                        Stop turn
-                      </Button>
-                      {state.status === "running" && (
-                        <Button
-                          disabled={busy}
-                          onClick={() => action({ type: "cancel-command" })}
-                        >
-                          Cancel command
-                        </Button>
+                <div className="op-compose-controls">
+                  <div className="op-mode-controls">
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="op-mode"
+                      disabled={modeLocked}
+                      aria-label={`Mode: ${mode}. Click or press Shift+Tab in the message input to cycle.`}
+                      title="Cycle mode (Shift+Tab in message input)"
+                      onClick={cycleMode}
+                    >
+                      {mode === "auto"
+                        ? "Automatic"
+                        : mode === "plan"
+                          ? "Plan"
+                          : "Manual"}
+                    </Button>
+                    <span className="op-shortcut">Shift+Tab</span>
+                    {state.sessionId && (
+                      <ToolPicker
+                        sessionId={state.sessionId}
+                        disabled={active || state.strike || state.lance}
+                        open={isFocused && toolsOpen}
+                        onOpenChange={setToolsOpen}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="op-model"
+                      onClick={() => onSettings?.("Models")}
+                    >
+                      {model?.provider && (
+                        <span className="op-model-provider">
+                          {model.provider} /{" "}
+                        </span>
                       )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-            <section className="op-inspector">
-              <label className="op-panel-select">
-                Inspect{" "}
-                <select
-                  value={panel}
-                  onChange={(e) => setPanel(e.target.value as Panel)}
-                >
-                  {panels.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </label>
-              {panel === "Overview" && (
-                <>
-                  <dl>
-                    <dt>Session</dt>
-                    <dd>{state.sessionId}</dd>
-                    <dt>Target</dt>
-                    <dd>{state.target || "Local workspace"}</dd>
-                    <dt>Tokens in / out</dt>
-                    <dd>
-                      {state.usage.input.toLocaleString()} /{" "}
-                      {state.usage.output.toLocaleString()}
-                    </dd>
-                    {state.usage.context !== undefined && (
+                      {model?.name || modelId || "Select model"}{" "}
+                      <span aria-hidden="true">⌄</span>
+                    </button>
+                    {state.sessionId && (state.lance || state.strike) && (
+                      <span>{state.lance ? "Lance" : "Strike"}</span>
+                    )}
+                    {active && (
+                      <span className="op-status">
+                        {state.approvals.length
+                          ? "Awaiting approval"
+                          : state.status}
+                      </span>
+                    )}
+                  </div>
+                  <div className="actions">
+                    <Button
+                      variant="constructive"
+                      size="icon-sm"
+                      aria-label={active ? "Queue message" : "Send message"}
+                      title={active ? "Queue message" : "Send message (Enter)"}
+                      disabled={
+                        !text.trim() ||
+                        busy ||
+                        !!state.questions ||
+                        state.reviewPlan ||
+                        state.status === "stopping"
+                      }
+                      onClick={() => void submit()}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 19V5m-6 6 6-6 6 6" />
+                      </svg>
+                    </Button>
+                    {active && (
                       <>
-                        <dt>Context</dt>
-                        <dd>
-                          {state.usage.context.toLocaleString()} /{" "}
-                          {state.usage.limit?.toLocaleString()}
-                        </dd>
+                        <Button
+                          disabled={busy || state.status === "stopping"}
+                          onClick={() => action({ type: "cancel" })}
+                        >
+                          Stop turn
+                        </Button>
+                        {state.status === "running" && (
+                          <Button
+                            disabled={busy}
+                            onClick={() => action({ type: "cancel-command" })}
+                          >
+                            Cancel command
+                          </Button>
+                        )}
                       </>
                     )}
-                  </dl>
-                  <Button
-                    size="sm"
-                    onClick={() => action({ type: "open-folder" })}
+                  </div>
+                </div>
+              </div>
+              {!state.sessionId && cwd && (
+                <div className="op-project">
+                  <button
+                    type="button"
+                    disabled={!onChooseFolder}
+                    onClick={() => void onChooseFolder?.()}
+                    title={cwd}
                   >
-                    Open session folder
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 7V5h6l2 2h10v12H3Z" />
+                    </svg>
+                    {cwd.split(/[\\/]/).filter(Boolean).at(-1) || cwd}
+                  </button>
+                  <span title={cwd}>{cwd}</span>
+                </div>
+              )}
+            </div>
+            {inspecting && (
+              <section className="op-inspector">
+                <div className="actions">
+                  <Button
+                    size="xs"
+                    onClick={() => setVerbose(!verbose)}
+                    aria-pressed={verbose}
+                  >
+                    Verbose
                   </Button>
-                  <h3>Subagents ({state.subagents.length})</h3>
-                  {state.subagents.map((a) => (
-                    <button
-                      className="op-agent"
-                      type="button"
-                      key={a.id}
-                      onClick={() => {
-                        selectAgent(a.id);
-                        setPanel("Subagents");
+                </div>
+                <label className="op-panel-select">
+                  Inspect{" "}
+                  <select
+                    value={panel}
+                    onChange={(e) => setPanel(e.target.value as Panel)}
+                  >
+                    {panels.map((p) => (
+                      <option key={p}>{p}</option>
+                    ))}
+                  </select>
+                </label>
+                {panel === "Overview" && (
+                  <>
+                    <dl>
+                      <dt>Session</dt>
+                      <dd>
+                        {state.sessionId ||
+                          "Created when you send your first message"}
+                      </dd>
+                      <dt>Target</dt>
+                      <dd>{state.target || "Local workspace"}</dd>
+                      <dt>Tokens in / out</dt>
+                      <dd>
+                        {state.usage.input.toLocaleString()} /{" "}
+                        {state.usage.output.toLocaleString()}
+                      </dd>
+                      {state.usage.context !== undefined && (
+                        <>
+                          <dt>Context</dt>
+                          <dd>
+                            {state.usage.context.toLocaleString()} /{" "}
+                            {state.usage.limit?.toLocaleString()}
+                          </dd>
+                        </>
+                      )}
+                    </dl>
+                    <Button
+                      size="sm"
+                      disabled={!state.sessionId}
+                      onClick={() => action({ type: "open-folder" })}
+                    >
+                      Open session folder
+                    </Button>
+                    <h3>Subagents ({state.subagents.length})</h3>
+                    {state.subagents.map((a) => (
+                      <button
+                        className="op-agent"
+                        type="button"
+                        key={a.id}
+                        onClick={() => {
+                          selectAgent(a.id);
+                          setPanel("Subagents");
+                        }}
+                      >
+                        {a.name}
+                        <small>{a.status}</small>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {panel === "Subagents" &&
+                  (current && state.sessionId ? (
+                    <>
+                      <label>
+                        Subagent
+                        <select
+                          value={current.id}
+                          onChange={(e) => selectAgent(e.target.value)}
+                        >
+                          {state.subagents.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.name} · {a.status}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {current.input != null && (
+                        <details>
+                          <summary>Objective</summary>
+                          <pre>{JSON.stringify(current.input, null, 2)}</pre>
+                        </details>
+                      )}
+                      <Transcript
+                        key={current.id}
+                        screenshot={client.operatorScreenshot}
+                        visible={visible}
+                        messages={current.messages}
+                        sessionId={state.sessionId}
+                        agentId={current.id}
+                        verbose={verbose}
+                      />
+                    </>
+                  ) : (
+                    <p>No subagents have started.</p>
+                  ))}
+                {panel === "Plan" && (
+                  <pre>
+                    {state.plan ||
+                      "Switch to Plan mode and describe the objective to draft a plan."}
+                  </pre>
+                )}
+                {panel === "Headers" && (
+                  <>
+                    <p>Request headers for this session.</p>
+                    {state.headers.map((h) => (
+                      <div key={h.name} className="op-header">
+                        <code>
+                          {h.name}: {h.displayValue}
+                        </code>
+                        <Button
+                          size="xs"
+                          disabled={busy}
+                          onClick={() =>
+                            action({
+                              type: "headers",
+                              command: `/headers remove ${h.name}`,
+                            })
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (
+                          await action({
+                            type: "headers",
+                            command: `/headers set ${header}`,
+                          })
+                        )
+                          setHeader("");
                       }}
                     >
-                      {a.name}
-                      <small>{a.status}</small>
-                    </button>
-                  ))}
-                </>
-              )}
-              {panel === "Subagents" &&
-                (current ? (
-                  <>
-                    <label>
-                      Subagent
-                      <select
-                        value={current.id}
-                        onChange={(e) => selectAgent(e.target.value)}
+                      <Input
+                        aria-label="Session header"
+                        type="password"
+                        placeholder="Name: value"
+                        value={header}
+                        onChange={(e) => setHeader(e.target.value)}
+                      />
+                      <Button
+                        size="sm"
+                        disabled={!state.sessionId || busy || !header.trim()}
+                        type="submit"
                       >
-                        {state.subagents.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name} · {a.status}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {current.input != null && (
-                      <details>
-                        <summary>Objective</summary>
-                        <pre>{JSON.stringify(current.input, null, 2)}</pre>
-                      </details>
-                    )}
-                    <Transcript
-                      key={current.id}
-                      messages={current.messages}
-                      sessionId={state.sessionId}
-                      agentId={current.id}
-                      verbose={verbose}
-                    />
+                        Set header
+                      </Button>
+                    </form>
                   </>
-                ) : (
-                  <p>No subagents have started.</p>
-                ))}
-              {panel === "Plan" && (
-                <pre>
-                  {state.plan ||
-                    "Switch to Plan mode and describe the objective to draft a plan."}
-                </pre>
-              )}
-              {panel === "Headers" && (
-                <>
-                  <p>Request headers for this session.</p>
-                  {state.headers.map((h) => (
-                    <div key={h.name} className="op-header">
-                      <code>
-                        {h.name}: {h.displayValue}
-                      </code>
+                )}
+                {panel === "Skills" &&
+                  state.skills.map((s) => (
+                    <div className="op-skill" key={s.slug}>
+                      <strong>{s.name}</strong>
+                      <p>{s.description}</p>
                       <Button
                         size="xs"
-                        disabled={busy}
-                        onClick={() =>
-                          action({
-                            type: "headers",
-                            command: `/headers remove ${h.name}`,
-                          })
-                        }
+                        disabled={!state.sessionId || busy || state.lance}
+                        onClick={() => action({ type: "skill", slug: s.slug })}
                       >
-                        Remove
+                        Run /{s.slug}
                       </Button>
                     </div>
                   ))}
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      if (
-                        await action({
-                          type: "headers",
-                          command: `/headers set ${header}`,
-                        })
-                      )
-                        setHeader("");
-                    }}
-                  >
-                    <Input
-                      aria-label="Session header"
-                      type="password"
-                      placeholder="Name: value"
-                      value={header}
-                      onChange={(e) => setHeader(e.target.value)}
-                    />
-                    <Button
-                      size="sm"
-                      disabled={busy || !header.trim()}
-                      type="submit"
-                    >
-                      Set header
-                    </Button>
-                  </form>
-                </>
-              )}
-              {panel === "Skills" &&
-                state.skills.map((s) => (
-                  <div className="op-skill" key={s.slug}>
-                    <strong>{s.name}</strong>
-                    <p>{s.description}</p>
-                    <Button
-                      size="xs"
-                      disabled={busy || state.lance}
-                      onClick={() => action({ type: "skill", slug: s.slug })}
-                    >
-                      Run /{s.slug}
-                    </Button>
-                  </div>
-                ))}
-              {panel === "Help" && (
-                <>
-                  <p>
-                    Enter sends a message. Shift+Enter adds a line. Messages
-                    sent during a turn enter the queue.
-                  </p>
-                  <dl>
-                    {[
-                      ["/models", "Model and effort"],
-                      ["/plan", "Current plan"],
-                      ["/tools", "Available tools"],
-                      ["/headers", "Session headers"],
-                      ["/skills", "Skill catalog"],
-                      ["/pentest", "Pentest wizard"],
-                      ["/resume", "Session history"],
-                      ["/open-session", "Open artifacts"],
-                    ].map(([name, label]) => (
-                      <div key={name}>
-                        <dt>{name}</dt>
-                        <dd>{label}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </>
-              )}
-            </section>
+                {panel === "Help" && (
+                  <>
+                    <p>
+                      Enter sends a message. Shift+Enter adds a line. Messages
+                      sent during a turn enter the queue. Shift+Tab in the
+                      message input cycles Manual, Automatic and Plan modes.
+                    </p>
+                    <dl>
+                      {[
+                        ["/new", "New conversation"],
+                        [
+                          "/operator --target <host>",
+                          "Configure a new session",
+                        ],
+                        ["/models", "Model and effort"],
+                        ["/plan", "Current plan"],
+                        ["/tools", "Available tools"],
+                        ["/headers", "Session headers"],
+                        ["/skills", "Skill catalog"],
+                        ["/pentest", "Pentest wizard"],
+                        ["/resume", "Session history"],
+                        ["/open-session", "Open artifacts"],
+                      ].map(([name, label]) => (
+                        <div key={name}>
+                          <dt>{name}</dt>
+                          <dd>{label}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </>
+                )}
+              </section>
+            )}
           </div>
+
+          {isFocused && setupOpen && (
+            <Dialog
+              open
+              onOpenChange={(open) => {
+                setSetupOpen(open);
+                if (!open) setPrefill(undefined);
+              }}
+            >
+              <DialogContent className="op-config-dialog">
+                <DialogHeader>
+                  <DialogTitle>Configure a new session</DialogTitle>
+                  <DialogDescription>
+                    Review the command options before starting.
+                  </DialogDescription>
+                </DialogHeader>
+                <OperatorSetup
+                  key={formKey}
+                  initial={prefill}
+                  busy={busy}
+                  cancel={() => {
+                    setSetupOpen(false);
+                    setPrefill(undefined);
+                  }}
+                  start={async (options) => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      if (state.sessionId) await onNewSession(options);
+                      else apply(await client.operatorStart(options));
+                      setSetupOpen(false);
+                      setPrefill(undefined);
+                      setText("");
+                      selectAgent("");
+                      setPanel("Overview");
+                    } catch (e) {
+                      setError(String(e));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
         </>
       )}
     </div>

@@ -12,7 +12,11 @@ GITHUB_PACKAGES_TOKEN="$(gh auth token)" bun install --cwd desktop --frozen-lock
 bun run desktop
 ```
 
-Choose the working directory in the sidebar. Open **Operator** to create an interactive session, **Pentest** to configure an autonomous engagement, or **Sessions** to resume one. **Settings** manages the same providers, model preferences and account as the TUI. New installations open provider settings after the responsible-use disclosure.
+The app opens directly to **Operator**. Send a message to start chatting, or change the working directory below the composer. The **Apex** menu (⌘K on macOS, Ctrl+K elsewhere) contains **Pentest**, **Sessions**, **Recorded runs**, **Terminal**, **Skills**, and **Settings**. **Settings** manages the same providers, model preferences and account as the TUI. New installations open provider settings after the responsible-use disclosure.
+
+Operator uses the selected working directory and saved model defaults. Enter sends a message, Shift+Enter adds a line, and Shift+Tab cycles Manual, Automatic and Plan modes. Use **New session**, ⌘N (Ctrl+N), or `/new` for a fresh tab, `/help` for commands, and **Details** to inspect the session.
+
+Drag tabs to reorder them, or drop a tab on the left or right of the conversation area to dock two sessions side by side. The **Arrange sessions** menu provides the same actions by keyboard. Drag the divider to resize the panes, use its arrow keys, or double-click to reset it. Each session keeps its draft, transcript, working directory, approvals and running turn when you switch tabs. Closing a running session asks you to stop it first; saved conversations remain available in **Sessions**. The tab layout lasts for the current app run.
 
 **Recorded runs** connects to the SDK’s local worker store. Detached workers survive closing the window. **Terminal** runs the bundled TUI in the selected directory.
 

@@ -1,29 +1,59 @@
 import { Button } from "@pensarai/design-system/ui/button";
-import { useEffect, useRef, useState } from "react";
-import WorkflowProgress from "../pentest/WorkflowProgress";
-import { api } from "../view/bridge";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LocalMarkdown } from "../view/LocalMarkdown";
-import type { OperatorMessage } from "./contract";
+import { ActivityIndicator } from "./ActivityIndicator";
+import type { OperatorClient } from "./client";
+import type { OperatorActivity, OperatorMessage } from "./contract";
+import { ToolMessage } from "./ToolMessage";
+import { groupTranscript } from "./tool-presentation";
 
 export function Transcript({
   messages,
+  screenshot: loadScreenshot,
+  visible,
   sessionId,
   agentId,
   verbose,
+  activity,
+  modelLoading,
 }: {
   messages: OperatorMessage[];
+  screenshot: OperatorClient["operatorScreenshot"];
+  visible: boolean;
   sessionId: string;
   agentId?: string;
   verbose: boolean;
+  activity?: OperatorActivity;
+  modelLoading?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const [screenshot, setScreenshot] = useState("");
   const [error, setError] = useState("");
+  const rows = useMemo(() => groupTranscript(messages), [messages]);
+  const showScreenshot = useCallback(
+    (message: OperatorMessage) => {
+      if (!message.toolCallId) return;
+      setError("");
+      void loadScreenshot({
+        sessionId,
+        toolCallId: message.toolCallId,
+        agentId,
+      })
+        .then(setScreenshot)
+        .catch((e) => setError(String(e)));
+    },
+    [loadScreenshot, sessionId, agentId],
+  );
   useEffect(() => {
-    if (messages.length && follow.current && box.current)
+    if (
+      visible &&
+      (messages.length || activity) &&
+      follow.current &&
+      box.current
+    )
       box.current.scrollTop = box.current.scrollHeight;
-  }, [messages]);
+  }, [messages, activity, visible]);
   return (
     <div
       className="op-transcript"
@@ -35,68 +65,46 @@ export function Transcript({
         follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
       }}
     >
-      {!messages.length && (
+      {!messages.length && !activity && (
         <p className="op-empty">Send an objective to begin the conversation.</p>
       )}
-      {messages.map((m, i) => (
-        <article
-          key={m.toolCallId ?? `${m.role}-${m.createdAt}-${i}`}
-          className={m.role === "tool" ? "op-tool" : "op-turn"}
-        >
-          {m.role === "tool" ? (
-            <>
-              <details key={String(verbose)} open={verbose || undefined}>
-                <summary>
-                  <span>{m.toolName}</span>
-                  <small>{m.status}</small>
-                </summary>
-                {m.args !== undefined && (
-                  <pre>{JSON.stringify(m.args, null, 2)}</pre>
-                )}
-                {m.logs?.length ? <pre>{m.logs.join("\n")}</pre> : null}
-                {m.result !== undefined && (
-                  <pre>
-                    {typeof m.result === "string"
-                      ? m.result
-                      : JSON.stringify(m.result, null, 2)}
-                  </pre>
-                )}
-              </details>
-              {m.workflowData && <WorkflowProgress data={m.workflowData} />}
-              {m.toolName === "browser_screenshot" &&
-                m.status === "completed" && (
-                  <Button
-                    size="xs"
-                    onClick={() => {
-                      if (!m.toolCallId) return;
-                      void api
-                        .operatorScreenshot({
-                          sessionId,
-                          toolCallId: m.toolCallId,
-                          agentId,
-                        })
-                        .then(setScreenshot)
-                        .catch((e) => setError(String(e)));
-                    }}
-                  >
-                    View screenshot
-                  </Button>
-                )}
-            </>
-          ) : (
-            <>
-              <small>{m.role}</small>
-              {m.role === "assistant" ? (
-                <LocalMarkdown text={m.content} />
-              ) : (
-                <div className="op-text">{m.content}</div>
-              )}
-            </>
-          )}
-        </article>
-      ))}
+      {rows.map((row) => {
+        if (row.kind === "tools")
+          return (
+            <ToolMessage
+              key={row.key}
+              items={row.items}
+              verbose={verbose}
+              onScreenshot={showScreenshot}
+            />
+          );
+        const message = row.message;
+        if (!message.content.trim()) return null;
+        return (
+          <article
+            key={row.key}
+            className={`op-turn op-turn-${message.role}`}
+            aria-label={
+              message.role === "user"
+                ? "You"
+                : message.role === "assistant"
+                  ? "Apex"
+                  : "System"
+            }
+          >
+            {message.role === "assistant" ? (
+              <LocalMarkdown text={message.content} />
+            ) : (
+              <div className="op-text">{message.content}</div>
+            )}
+          </article>
+        );
+      })}
+      {activity && (
+        <ActivityIndicator activity={activity} modelLoading={modelLoading} />
+      )}
       {error && <p role="alert">{error}</p>}
-      {screenshot && (
+      {visible && screenshot && (
         <dialog open className="op-image">
           <Button size="sm" onClick={() => setScreenshot("")}>
             Close screenshot

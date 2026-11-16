@@ -1,17 +1,33 @@
 import { PensarMark } from "@pensarai/design-system/logos";
 import { Button } from "@pensarai/design-system/ui/button";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@pensarai/design-system/ui/dropdown-menu";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import type { PentestInput } from "../pentest/contract";
 import { useDesktopAppearance } from "../settings/appearance";
 import type { SettingsTab } from "../settings/contract";
 import type { RunLocation } from "../shared";
 import { api } from "./bridge";
+import type { SessionWorkspaceHandle } from "./SessionWorkspace";
 import type { TerminalLaunch } from "./Terminal";
 import "./style.css";
 
 const Skills = lazy(() => import("./Skills"));
-const Operator = lazy(() => import("../operator/Operator"));
+const SessionWorkspace = lazy(() => import("./SessionWorkspace"));
 const Pentest = lazy(() => import("../pentest/Pentest"));
 const Settings = lazy(() => import("../settings/Settings"));
 const Sessions = lazy(() =>
@@ -32,13 +48,16 @@ const pages = [
 type Page = (typeof pages)[number];
 
 function App() {
-  const [page, navigate] = useState<Page>("Sessions");
+  const [page, navigate] = useState<Page>("Operator");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [skills, showSkills] = useState<{ slug?: string }>();
   const [runLocation, setRunLocation] = useState<RunLocation>({});
   const [pentestInitial, setPentestInitial] = useState<Partial<PentestInput>>();
   const [settings, setSettings] = useState<SettingsTab>();
   const openSettings = (tab: SettingsTab = "Providers") => setSettings(tab);
-  const [resumeId, setResumeId] = useState<string>();
+  const sessions = useRef<SessionWorkspaceHandle>(null);
+  const [tabBar, setTabBar] = useState<HTMLDivElement | null>(null);
+  const activateOperator = useCallback(() => navigate("Operator"), []);
   const [workspace, setWorkspace] =
     useState<Awaited<ReturnType<typeof api.workspace>>>();
   const [error, setError] = useState("");
@@ -56,78 +75,124 @@ function App() {
       .catch((e) => setError(String(e)));
   }, []);
   useEffect(load, [load]);
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k" &&
+        !event.isComposing
+      ) {
+        event.preventDefault();
+        setMenuOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, []);
+  const chooseFolder = async () => {
+    if (!workspace) return;
+    try {
+      const cwd = await api.chooseFolder();
+      setWorkspace({ ...workspace, cwd });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
   const exited = useCallback((message: string) => {
     setTerminal(undefined);
     setExitMessage(message);
   }, []);
   const resume = (id: string) => {
     setPentestInitial(undefined);
-    setResumeId(id);
-    navigate("Operator");
+    void sessions.current?.open(id).catch((e) => setError(String(e)));
   };
   const selectPage = (p: Page) => {
     setPentestInitial(undefined);
     setRunLocation({});
-    setResumeId(undefined);
     navigate(p);
   };
   return (
     <div className="shell">
-      <aside>
-        <div className="brand">
-          <PensarMark size={28} />
-          <span>Apex</span>
-        </div>
-        <nav aria-label="Workspace">
-          {pages.map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-current={p === page ? "page" : undefined}
-              disabled={!workspace?.accepted}
-              onClick={() => selectPage(p)}
-            >
-              {p}
-            </button>
-          ))}
-        </nav>
-        {workspace && (
-          <footer>
+      <div className="app-bar">
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              disabled={!workspace.accepted}
-              onClick={() => showSkills({})}
+              size="sm"
+              className="app-menu-trigger"
+              aria-label="Apex menu"
+              title="Apex menu (⌘K / Ctrl+K)"
+            >
+              <PensarMark size={18} fill="currentColor" />
+              <span>Apex</span>
+              <span className="app-menu-chevron" aria-hidden="true">
+                ⌄
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="app-menu">
+            <DropdownMenuItem
+              disabled={!workspace?.accepted}
+              onSelect={() =>
+                void sessions.current
+                  ?.newSession()
+                  .catch((e) => setError(String(e)))
+              }
+            >
+              New session
+              <span className="menu-current">
+                {navigator.platform.includes("Mac") ? "⌘N" : "Ctrl+N"}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Workspace</DropdownMenuLabel>
+            {pages.map((p) => (
+              <DropdownMenuItem
+                key={p}
+                disabled={!workspace?.accepted}
+                aria-current={page === p ? "page" : undefined}
+                onSelect={() => selectPage(p)}
+              >
+                {p}
+                {page === p && (
+                  <span className="menu-current" aria-hidden="true">
+                    •
+                  </span>
+                )}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={!workspace?.accepted}
+              onSelect={() => showSkills({})}
             >
               Skills
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={!workspace.accepted}
-              onClick={() => openSettings()}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!workspace?.accepted}
+              onSelect={() => openSettings()}
             >
               Settings
-            </Button>
-            <small>Working directory</small>
-            <button
-              type="button"
-              className="folder"
-              disabled={!workspace.accepted || !!terminal}
-              title={workspace.cwd}
-              onClick={async () => {
-                try {
-                  const cwd = await api.chooseFolder();
-                  setWorkspace({ ...workspace, cwd });
-                } catch (e) {
-                  setError(String(e));
-                }
-              }}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!workspace?.accepted || !!terminal}
+              onSelect={() => void chooseFolder()}
             >
-              {workspace.cwd} <span>⌄</span>
-            </button>
-            <span className="version">Apex {workspace.version}</span>
-          </footer>
-        )}
-      </aside>
+              Change working directory…
+            </DropdownMenuItem>
+            {workspace && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="app-menu-version">
+                  Apex {workspace.version}
+                </DropdownMenuLabel>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {page !== "Operator" && <span className="app-location">{page}</span>}
+        <div className="app-session-bar" ref={setTabBar} />
+      </div>
       <main>
         {error && (
           <div role="alert">
@@ -172,41 +237,51 @@ function App() {
           <Suspense
             fallback={<p className="empty">Opening {page.toLowerCase()}…</p>}
           >
-            {page === "Operator" && (
-              <Operator
-                initialSessionId={resumeId}
-                onSettings={openSettings}
-                onSkills={(slug) => showSkills({ slug })}
-                onPentest={async (command) => {
-                  const result = await api.pentestCommand({ command });
-                  if (result.kind === "started") resume(result.sessionId);
-                  else {
-                    setPentestInitial(result.initial);
-                    setResumeId(undefined);
-                    navigate("Pentest");
-                  }
-                }}
-                onSessions={(id) => (id ? resume(id) : selectPage("Sessions"))}
-                onRuns={async (command) => {
-                  const location = await api.openRunsCommand({ command });
-                  selectPage("Recorded runs");
-                  setRunLocation(location);
-                }}
-                onExit={() => api.quit().catch((e) => setError(String(e)))}
-              />
-            )}
+            <SessionWorkspace
+              ref={sessions}
+              active={page === "Operator"}
+              onActivate={activateOperator}
+              tabBar={tabBar}
+              canChooseFolder={!terminal}
+              onDirectoryChanged={(cwd) =>
+                setWorkspace((current) =>
+                  current ? { ...current, cwd } : current,
+                )
+              }
+              onSettings={openSettings}
+              onSkills={(slug) => showSkills({ slug })}
+              onPentest={async (command) => {
+                const result = await api.pentestCommand({ command });
+                if (result.kind === "started") resume(result.sessionId);
+                else {
+                  setPentestInitial(result.initial);
+                  navigate("Pentest");
+                }
+              }}
+              onSessions={(id) => (id ? resume(id) : selectPage("Sessions"))}
+              onRuns={async (command) => {
+                const location = await api.openRunsCommand({ command });
+                selectPage("Recorded runs");
+                setRunLocation(location);
+              }}
+              onExit={() => api.quit().catch((e) => setError(String(e)))}
+            />
             {page === "Pentest" && (
               <Pentest
                 initial={pentestInitial}
                 cwd={workspace.cwd}
                 onSettings={openSettings}
-                onStarted={() => selectPage("Operator")}
+                onStarted={resume}
               />
             )}
             {page === "Sessions" && (
               <Sessions
                 resume={resume}
-                startOperator={() => selectPage("Operator")}
+                startOperator={() =>
+                  void sessions.current
+                    ?.newSession()
+                    .catch((e) => setError(String(e)))
+                }
                 startPentest={() => selectPage("Pentest")}
               />
             )}

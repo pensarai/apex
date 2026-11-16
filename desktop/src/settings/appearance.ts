@@ -25,6 +25,9 @@ const tokens = {
   "fg-3": "textMuted",
   "fg-4": "textMuted",
   accent: "primary",
+  success: "success",
+  error: "error",
+  warning: "warning",
 } as const;
 
 export async function runAppearanceCommand(
@@ -149,6 +152,7 @@ export function useDesktopAppearance() {
         else root.style.setProperty(prop, theme[mode][key]);
       }
       root.style.colorScheme = mode;
+      root.dataset.theme = mode;
       root.classList.toggle("apex-transparent", settings.transparent);
       root.classList.toggle("apex-obfuscated", settings.obfuscate);
       setObfuscationEnabled(settings.obfuscate);
