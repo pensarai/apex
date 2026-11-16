@@ -22,14 +22,30 @@ body {
   align-items: center;
   gap: 12px;
   height: 48px;
+  user-select: none;
   flex-shrink: 0;
   padding: 0 12px;
   border-bottom: 1px solid var(--color-border);
 }
+.app-native-controls {
+  width: 64px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+.app-window-controls {
+  display: flex;
+  flex-shrink: 0;
+}
+.app-window-controls button {
+  width: 28px;
+  padding: 0;
+}
 .app-menu-trigger {
+  width: 32px;
+  padding: 0;
+  flex-shrink: 0;
   color: var(--color-fg-2);
 }
-.app-menu-chevron,
 .app-location {
   color: var(--color-fg-3);
 }
