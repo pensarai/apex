@@ -381,6 +381,97 @@ describe("seedFromBaseline", () => {
 });
 
 describe("update_record", () => {
+  it("replaces contradicted evidence without rewriting unrelated fields or history", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const ctx = makeCtx();
+      await baseline(ctx);
+      const before = loadTopology(ctx.session.rootPath).components.find(
+        (c) => c.name === "Shop API",
+      );
+      expect(before).toBeDefined();
+      if (!before) throw new Error("Missing baseline component");
+      const corrected = [
+        ...evidence,
+        {
+          source: "source",
+          detail: "Workflow reviewed: pull requests cannot publish",
+          ref: ".github/workflows/publish.yml",
+        },
+      ];
+      vi.advanceTimersByTime(1);
+      await run(updateRecord(ctx), {
+        kind: "component",
+        name: "Shop API",
+        changes: { trustAssumptions: ["Workflow not reviewed"] },
+        evidence: [{ source: "inferred", detail: "Workflow not reviewed" }],
+      });
+      const prior = readRecordFiles(ctx.session.rootPath).filter(
+        (r) => r.record.id === before.id,
+      );
+      vi.advanceTimersByTime(1);
+      const result = await run(updateRecord(ctx), {
+        kind: "component",
+        name: "Shop API",
+        changes: { trustAssumptions: ["Only the release branch can publish"] },
+        evidenceMode: "replace",
+        evidence: corrected,
+      });
+      expect(result).toMatchObject({
+        success: true,
+        changed: ["trustAssumptions", "evidence"],
+      });
+      const after = loadTopology(ctx.session.rootPath).components.find(
+        (c) => c.id === before.id,
+      );
+      expect(after).toBeDefined();
+      if (!after) throw new Error("Missing updated component");
+      expect(after.evidence).toEqual(corrected);
+      expect(after.trustAssumptions).toEqual([
+        "Only the release branch can publish",
+      ]);
+      expect(after.atStake).toBe(before.atStake);
+      expect(after.endpoints).toEqual(before.endpoints);
+      const versions = readRecordFiles(ctx.session.rootPath).filter(
+        (r) => r.record.id === before.id,
+      );
+      expect(versions.slice(0, -1)).toEqual(prior);
+      expect(versions).toHaveLength(prior.length + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows evidence-only correction while preserving the record fields", async () => {
+    const ctx = makeCtx();
+    await baseline(ctx);
+    const before = loadTopology(ctx.session.rootPath).components.find(
+      (c) => c.name === "Shop API",
+    );
+    expect(before).toBeDefined();
+    if (!before) throw new Error("Missing baseline component");
+    const corrected = [{ source: "source", detail: "Verified compose config" }];
+    expect(
+      await run(updateRecord(ctx), {
+        kind: "component",
+        name: "Shop API",
+        changes: {},
+        evidenceMode: "replace",
+        evidence: corrected,
+      }),
+    ).toMatchObject({ success: true, changed: ["evidence"] });
+    const after = loadTopology(ctx.session.rootPath).components.find(
+      (c) => c.id === before.id,
+    );
+    expect(after).toBeDefined();
+    if (!after) throw new Error("Missing updated component");
+    expect(after).toMatchObject({
+      ...before,
+      evidence: corrected,
+      recordedAt: after.recordedAt,
+    });
+  });
+
   it("changes only the given fields, keeps the rest verbatim, and appends the evidence", async () => {
     const ctx = makeCtx();
     await baseline(ctx);
