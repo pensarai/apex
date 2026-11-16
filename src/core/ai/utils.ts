@@ -393,19 +393,17 @@ export function getProviderModel(
         fetch: bedrockFetch as typeof globalThis.fetch,
       });
       providerModel = mantle.responses(stripMantlePrefix(model));
-      if (model === "mantle:openai.gpt-6.1-sol") {
-        // The SDK does not recognize the Bedrock-prefixed GPT 6.1 reasoning ID.
-        providerModel = wrapLanguageModel({
-          model: providerModel,
-          middleware: defaultSettingsMiddleware({
-            settings: {
-              providerOptions: {
-                openai: { forceReasoning: true, reasoningEffort: "medium" },
-              },
+      // The SDK does not recognize Bedrock-prefixed GPT reasoning IDs.
+      providerModel = wrapLanguageModel({
+        model: providerModel,
+        middleware: defaultSettingsMiddleware({
+          settings: {
+            providerOptions: {
+              openai: { forceReasoning: true, reasoningEffort: "medium" },
             },
-          }),
-        });
-      }
+          },
+        }),
+      });
       break;
     }
 

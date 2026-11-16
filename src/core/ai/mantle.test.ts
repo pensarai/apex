@@ -157,6 +157,27 @@ describe("GPT 6.1 Sol on Bedrock Mantle", () => {
     );
     expect(headers.get("x-amz-security-token")).toBe("fixture-session-token");
   });
+
+  it("preserves GPT 5.5 reasoning when exposing the existing Mantle route", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(new Uint8Array()),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const model = "mantle:openai.gpt-5.5";
+    await getProviderModel(model, { bedrock: { apiKey: "test-key" } }).doStream(
+      {
+        prompt: [],
+        providerOptions: buildModelReasoningOptions(model, "high"),
+      },
+    );
+    expect(
+      JSON.parse(String(fetchMock.mock.lastCall?.[1]?.body)),
+    ).toMatchObject({
+      model: "openai.gpt-5.5",
+      reasoning: { effort: "high" },
+    });
+  });
 });
 
 describe("apex mantle helpers", () => {
