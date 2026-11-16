@@ -9,12 +9,6 @@ rules:
       policies:
         "*": hash-pin
 
-  # CI workflows cancel superseded runs. auto-assign reacts to one PR event
-  # and must not cancel another.
-  concurrency-limits:
-    ignore:
-      - auto-assign.yml
-
   # These audits report existing findings. Each is switched back on as its
   # findings are fixed. Do not add to this list to get a check to pass.
   use-trusted-publishing:
