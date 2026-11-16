@@ -102,12 +102,99 @@
 .session-tab[data-focused="true"] .session-tab-close {
   opacity: 1;
 }
-.session-tab-status {
-  font: 12px var(--font-mono);
-  color: var(--color-fg);
+.session-indicators {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
-.session-tab-status[data-running="true"] {
-  color: var(--color-accent);
+.session-indicators:empty {
+  display: none;
+}
+.session-running {
+  width: 13px;
+  height: 13px;
+  color: var(--color-fg-3);
+}
+.session-unread {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+.session-input-badge {
+  padding: 4px 6px;
+  font-size: 9px;
+  text-transform: none;
+}
+.session-sidebar-shell {
+  top: 48px;
+  height: auto;
+  border-color: var(--color-border);
+}
+.app-body
+  > [data-slot="sidebar"][data-state="collapsed"]
+  [data-slot="sidebar-container"] {
+  visibility: hidden;
+}
+.session-sidebar-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  color: var(--color-fg-2);
+  background: var(--color-canvas);
+}
+.session-sidebar-header {
+  padding: 12px;
+}
+.session-sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 12px var(--font-mono);
+  color: var(--color-fg-3);
+}
+.session-sidebar-new {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.session-sidebar-host [data-slot="sidebar-group-label"] {
+  font: 11px var(--font-mono);
+  color: var(--color-fg-3);
+}
+.session-sidebar-row {
+  min-height: 36px;
+  gap: 8px;
+  border-radius: 0;
+  color: var(--color-fg-2);
+}
+.session-sidebar-row:hover,
+.session-sidebar-row[data-active="true"] {
+  color: var(--color-fg);
+  background: var(--color-surface-2);
+}
+.session-sidebar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.session-sidebar-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--color-fg-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-running {
+    animation: none;
+  }
+  [data-slot="sidebar-gap"],
+  .session-sidebar-shell {
+    transition: none;
+  }
 }
 .session-new {
   flex-shrink: 0;

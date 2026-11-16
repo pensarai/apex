@@ -104,6 +104,7 @@ const definitions: Record<string, ToolDefinition> = {
     kind: "agent",
     fields: ["target"],
   },
+  spawn_recon_agent: { name: "Run recon agents", kind: "agent" },
   spawn_coding_agent: { name: "Run coding agents", kind: "agent" },
   spawn_pentest_swarm: { name: "Run pentest swarm", kind: "agent" },
   spawn_pentest_agent: {

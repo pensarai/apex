@@ -4,6 +4,7 @@ import { Severity } from "@pensarai/design-system/ui/severity";
 import { Spinner } from "@pensarai/design-system/ui/spinner";
 import { Check, ChevronRight, ImageIcon, Layers, X } from "lucide-react";
 import {
+  type CSSProperties,
   memo,
   type ReactNode,
   useEffect,
@@ -13,6 +14,9 @@ import {
 } from "react";
 import WorkflowProgress from "../pentest/WorkflowProgress";
 import type { OperatorMessage } from "./contract";
+import { SubagentRows } from "./SubagentRows";
+import { streamFadeDuration } from "./stream-fade";
+import type { OperatorSubagent } from "./subagent-presentation";
 import { toolIcon } from "./tool-icons";
 import {
   asRecord,
@@ -313,6 +317,7 @@ function RailRow({
   open,
   panelId,
   onClick,
+  arrival,
 }: {
   icon: ReactNode;
   label: string;
@@ -323,11 +328,21 @@ function RailRow({
   open: boolean;
   panelId: string;
   onClick: () => void;
+  arrival?: number;
 }) {
+  const age = arrival ? performance.now() - arrival : streamFadeDuration;
+  const style: CSSProperties | undefined =
+    age < streamFadeDuration
+      ? {
+          animationDelay: `-${age}ms`,
+        }
+      : undefined;
   return (
     <button
       type="button"
       className="op-rail-row"
+      style={style}
+      data-arriving={age < streamFadeDuration}
       data-open={open}
       data-status={status}
       data-warning={warning}
@@ -362,8 +377,16 @@ export const ToolMessage = memo(
     items,
     verbose,
     onScreenshot,
+    subagents,
+    subagentsByTool,
+    onSelectSubagent,
+    arrivals,
   }: {
     items: OperatorMessage[];
+    subagents?: OperatorSubagent[];
+    subagentsByTool?: ReadonlyMap<string, OperatorSubagent[]>;
+    onSelectSubagent?: (id: string) => void;
+    arrivals?: ReadonlyMap<string | undefined, number>;
     verbose: boolean;
     onScreenshot: (message: OperatorMessage) => void;
   }) {
@@ -398,6 +421,9 @@ export const ToolMessage = memo(
       const Icon = toolIcon(message.toolName ?? "tool");
       const open = toolOpen(message);
       const panelId = `${id}-tool-${key}`;
+      const children = message.toolCallId
+        ? subagentsByTool?.get(message.toolCallId)
+        : undefined;
       return (
         <div
           className="op-rail-entry"
@@ -405,6 +431,7 @@ export const ToolMessage = memo(
           data-tool-id={message.toolCallId}
         >
           <RailRow
+            arrival={arrivals?.get(message.toolCallId)}
             icon={
               view.status === "running" || view.status === "pending" ? (
                 <Spinner
@@ -437,6 +464,15 @@ export const ToolMessage = memo(
               <ToolItem message={message} onScreenshot={onScreenshot} />
             </div>
           )}
+          {children?.length && subagents && onSelectSubagent ? (
+            <div className="op-tool-children">
+              <SubagentRows
+                agents={children}
+                allAgents={subagents}
+                onSelect={onSelectSubagent}
+              />
+            </div>
+          ) : null}
           {message.workflowData && (
             <div className="op-tool-workflow">
               <WorkflowProgress data={message.workflowData} />
@@ -486,6 +522,7 @@ export const ToolMessage = memo(
               data-family={segment.family}
             >
               <RailRow
+                arrival={arrivals?.get(segment.items[0].toolCallId)}
                 icon={
                   running && segment.family !== "repository" ? (
                     <Spinner
@@ -525,6 +562,10 @@ export const ToolMessage = memo(
     );
   },
   (previous, next) =>
+    previous.arrivals === next.arrivals &&
+    previous.subagents === next.subagents &&
+    previous.subagentsByTool === next.subagentsByTool &&
+    previous.onSelectSubagent === next.onSelectSubagent &&
     previous.verbose === next.verbose &&
     previous.onScreenshot === next.onScreenshot &&
     previous.items.length === next.items.length &&

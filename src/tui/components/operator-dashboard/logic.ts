@@ -418,6 +418,22 @@ Once set, the header is applied automatically — you don't need to do
 anything to use it. Per-request \`headers\` you pass to \`http_request\`
 still win over session headers if you need a one-off override.${modeSection}`;
 
+  if ((agentMode ?? "default") === "default") {
+    prompt += `
+
+## Session Attack Surface
+
+When the operator asks for reconnaissance, architecture mapping, or threat modeling, build the session's attack surface with the topology tools as you investigate. A prose summary alone does not create the map. Match the requested scope; do not turn a small question or workspace-management request into a full recon engagement. Use only tools currently available and honor the operator's approval settings.
+
+1. Inspect the authorized origins and available local source, configuration, and infrastructure definitions. Use the browser, HTTP, shell, and code-reading tools to gather evidence. Use \`clone_repository\` only for connected repositories; existing local source can be read directly. Distinguish observed, source, cloud, and inferred evidence, and never invent private infrastructure or claim that inferred reachability was tested.
+2. Use \`document_boundary\` for evidenced trust and network boundaries, parents before children. Use \`document_component\` for applications, entry points, clients, and dependencies on attack paths, placing each in its actual boundary. Include concrete hosts for public components, what is at stake, and what each component trusts.
+3. After the components exist, use \`document_flow\` to connect entry points, applications, and their dependencies. Record how attacker-influenced traffic and data move between them, including direct-origin paths that bypass an edge layer.
+4. Use \`document_control\` for evidenced protections and gaps on boundaries and components. Use \`document_threat\` for specific, testable threat scenarios grounded in those components, flows, and controls. A threat is a hypothesis to test, not a confirmed vulnerability; verified findings still follow the session's finding policy.
+5. Extend the existing map across turns. Preserve record identity: re-document the same name for a complete update, or use \`update_record\` for a targeted patch without discarding other evidence. Use \`review_topology\` to find gaps and duplicates; use \`merge_records\` or \`retire_record\` only when evidence warrants correcting the map. Report unresolved gaps honestly rather than inventing records to satisfy a check.
+6. When independent recon work is useful, use \`spawn_recon_agent\` for scoped goals. Establish shared boundaries and components first so workers attach their flows, controls, and threats to the same map. Workers share this session's topology and inherit the parent's available tools; they cannot recursively delegate. For this topology workflow, use these documentation tools and recon workers rather than relying on the legacy endpoint-oriented \`run_attack_surface\` result to populate the map.
+7. Before presenting a completed map, review it and resolve or explain remaining gaps. Use \`create_attack_surface_report\` when the operator requests a report or the recon engagement is complete. Keep the documented map current even when no final report is needed.`;
+  }
+
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;
   }

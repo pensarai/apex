@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@pensarai/design-system/ui/dropdown-menu";
+import { Sidebar, SidebarProvider } from "@pensarai/design-system/ui/sidebar";
 import { Minus, Square, X } from "lucide-react";
 import {
   lazy,
@@ -23,6 +24,7 @@ import { useDesktopAppearance } from "../settings/appearance";
 import type { SettingsTab } from "../settings/contract";
 import type { RunLocation } from "../shared";
 import { api } from "./bridge";
+import { SessionSidebarToggle } from "./SessionSidebar";
 import type { SessionWorkspaceHandle } from "./SessionWorkspace";
 import type { TerminalLaunch } from "./Terminal";
 import "./style.css";
@@ -58,6 +60,7 @@ function App() {
   const openSettings = (tab: SettingsTab = "Providers") => setSettings(tab);
   const sessions = useRef<SessionWorkspaceHandle>(null);
   const [tabBar, setTabBar] = useState<HTMLDivElement | null>(null);
+  const [sidebar, setSidebar] = useState<HTMLDivElement | null>(null);
   const activateOperator = useCallback(() => navigate("Operator"), []);
   const [workspace, setWorkspace] =
     useState<Awaited<ReturnType<typeof api.workspace>>>();
@@ -113,260 +116,280 @@ function App() {
     navigate(p);
   };
   return (
-    <div className="shell">
-      <div className="app-bar electrobun-webkit-app-region-drag">
-        {navigator.platform.includes("Mac") ? (
-          <div className="app-native-controls" aria-hidden="true" />
-        ) : (
-          <div className="app-window-controls electrobun-webkit-app-region-no-drag">
-            {(
-              [
-                { action: "close", label: "Close window", Icon: X },
-                { action: "minimize", label: "Minimize window", Icon: Minus },
-                {
-                  action: "toggle-maximize",
-                  label: "Maximize or restore window",
-                  Icon: Square,
-                },
-              ] as const
-            ).map(({ action, label, Icon }) => (
+    <SidebarProvider className="desktop-sidebar-provider">
+      <div className="shell">
+        <div className="app-bar electrobun-webkit-app-region-drag">
+          {navigator.platform.includes("Mac") ? (
+            <div className="app-native-controls" aria-hidden="true" />
+          ) : (
+            <div className="app-window-controls electrobun-webkit-app-region-no-drag">
+              {(
+                [
+                  { action: "close", label: "Close window", Icon: X },
+                  { action: "minimize", label: "Minimize window", Icon: Minus },
+                  {
+                    action: "toggle-maximize",
+                    label: "Maximize or restore window",
+                    Icon: Square,
+                  },
+                ] as const
+              ).map(({ action, label, Icon }) => (
+                <Button
+                  key={action}
+                  size="sm"
+                  variant="ghost"
+                  aria-label={label}
+                  title={label}
+                  onClick={() =>
+                    void api
+                      .windowAction({ action })
+                      .catch((e) => setError(String(e)))
+                  }
+                >
+                  <Icon size={14} aria-hidden="true" />
+                </Button>
+              ))}
+            </div>
+          )}
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
               <Button
-                key={action}
-                size="sm"
                 variant="ghost"
-                aria-label={label}
-                title={label}
-                onClick={() =>
-                  void api
-                    .windowAction({ action })
-                    .catch((e) => setError(String(e)))
-                }
+                size="sm"
+                className="app-menu-trigger electrobun-webkit-app-region-no-drag"
+                aria-label="Apex menu"
+                title="Apex menu (⌘K / Ctrl+K)"
               >
-                <Icon size={14} aria-hidden="true" />
+                <PensarMark size={18} fill="currentColor" />
               </Button>
-            ))}
-          </div>
-        )}
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="app-menu-trigger electrobun-webkit-app-region-no-drag"
-              aria-label="Apex menu"
-              title="Apex menu (⌘K / Ctrl+K)"
-            >
-              <PensarMark size={18} fill="currentColor" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="app-menu">
-            <DropdownMenuItem
-              disabled={!workspace?.accepted}
-              onSelect={() =>
-                void sessions.current
-                  ?.newSession()
-                  .catch((e) => setError(String(e)))
-              }
-            >
-              New session
-              <span className="menu-current">
-                {navigator.platform.includes("Mac") ? "⌘N" : "Ctrl+N"}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Workspace</DropdownMenuLabel>
-            {pages.map((p) => (
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="app-menu">
               <DropdownMenuItem
-                key={p}
                 disabled={!workspace?.accepted}
-                aria-current={page === p ? "page" : undefined}
-                onSelect={() => selectPage(p)}
-              >
-                {p}
-                {page === p && (
-                  <span className="menu-current" aria-hidden="true">
-                    •
-                  </span>
-                )}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={!workspace?.accepted}
-              onSelect={() => showSkills({})}
-            >
-              Skills
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!workspace?.accepted}
-              onSelect={() => openSettings()}
-            >
-              Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!workspace?.accepted || !!terminal}
-              onSelect={() => void chooseFolder()}
-            >
-              Change working directory…
-            </DropdownMenuItem>
-            {workspace && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className="app-menu-version">
-                  Apex {workspace.version}
-                </DropdownMenuLabel>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {page !== "Operator" && <span className="app-location">{page}</span>}
-        <div className="app-session-bar" ref={setTabBar} />
-      </div>
-      <main>
-        {error && (
-          <div role="alert">
-            {error}{" "}
-            <Button size="sm" onClick={load}>
-              Retry
-            </Button>
-          </div>
-        )}
-        {!workspace ? (
-          <p className="empty">Opening workspace…</p>
-        ) : !workspace.accepted ? (
-          <section className="disclosure">
-            <PensarMark size={40} />
-            <h1>Responsible use</h1>
-            <p>
-              Apex is for authorized security testing. You must have explicit
-              written permission to test the systems, networks, or applications
-              in scope.
-            </p>
-            <p>
-              By continuing, you agree to test only systems you own or have
-              permission to test, comply with applicable laws, avoid harm or
-              service disruption, and document and report findings responsibly.
-            </p>
-            <Button
-              variant="constructive"
-              onClick={async () => {
-                try {
-                  await api.accept();
-                  setWorkspace({ ...workspace, accepted: true });
-                  if (!workspace.hasProvider) setSettings("Providers");
-                } catch (e) {
-                  setError(String(e));
-                }
-              }}
-            >
-              Accept and continue
-            </Button>
-          </section>
-        ) : (
-          <Suspense
-            fallback={<p className="empty">Opening {page.toLowerCase()}…</p>}
-          >
-            <SessionWorkspace
-              ref={sessions}
-              active={page === "Operator"}
-              onActivate={activateOperator}
-              tabBar={tabBar}
-              canChooseFolder={!terminal}
-              onDirectoryChanged={(cwd) =>
-                setWorkspace((current) =>
-                  current ? { ...current, cwd } : current,
-                )
-              }
-              onSettings={openSettings}
-              onSkills={(slug) => showSkills({ slug })}
-              onPentest={async (command) => {
-                const result = await api.pentestCommand({ command });
-                if (result.kind === "started") resume(result.sessionId);
-                else {
-                  setPentestInitial(result.initial);
-                  navigate("Pentest");
-                }
-              }}
-              onSessions={(id) => (id ? resume(id) : selectPage("Sessions"))}
-              onRuns={async (command) => {
-                const location = await api.openRunsCommand({ command });
-                selectPage("Recorded runs");
-                setRunLocation(location);
-              }}
-              onExit={() => api.quit().catch((e) => setError(String(e)))}
-            />
-            {page === "Pentest" && (
-              <Pentest
-                initial={pentestInitial}
-                cwd={workspace.cwd}
-                onSettings={openSettings}
-                onStarted={resume}
-              />
-            )}
-            {page === "Sessions" && (
-              <Sessions
-                resume={resume}
-                startOperator={() =>
+                onSelect={() =>
                   void sessions.current
                     ?.newSession()
                     .catch((e) => setError(String(e)))
                 }
-                startPentest={() => selectPage("Pentest")}
+              >
+                New session
+                <span className="menu-current">
+                  {navigator.platform.includes("Mac") ? "⌘N" : "Ctrl+N"}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Workspace</DropdownMenuLabel>
+              {pages.map((p) => (
+                <DropdownMenuItem
+                  key={p}
+                  disabled={!workspace?.accepted}
+                  aria-current={page === p ? "page" : undefined}
+                  onSelect={() => selectPage(p)}
+                >
+                  {p}
+                  {page === p && (
+                    <span className="menu-current" aria-hidden="true">
+                      •
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!workspace?.accepted}
+                onSelect={() => showSkills({})}
+              >
+                Skills
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!workspace?.accepted}
+                onSelect={() => openSettings()}
+              >
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!workspace?.accepted || !!terminal}
+                onSelect={() => void chooseFolder()}
+              >
+                Change working directory…
+              </DropdownMenuItem>
+              {workspace && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="app-menu-version">
+                    Apex {workspace.version}
+                  </DropdownMenuLabel>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {workspace?.accepted && <SessionSidebarToggle />}
+          {page !== "Operator" && <span className="app-location">{page}</span>}
+          <div className="app-session-bar" ref={setTabBar} />
+        </div>
+        <div className="app-body">
+          {workspace?.accepted && (
+            <Sidebar className="session-sidebar-shell" aria-label="Sessions">
+              <div
+                id="session-sidebar"
+                className="session-sidebar-host"
+                ref={setSidebar}
               />
-            )}
-            {page === "Recorded runs" && (
-              <Runs cwd={workspace.cwd} location={runLocation} />
-            )}
-            {page === "Terminal" && (
-              <header>
-                <div>
-                  <h1>Terminal</h1>
-                  <p>Run the Apex TUI in the selected working directory.</p>
-                </div>
-                {!terminal && (
-                  <Button
-                    variant="constructive"
-                    onClick={() => {
-                      setExitMessage("");
-                      setTerminal({});
-                    }}
-                  >
-                    Start terminal
-                  </Button>
-                )}
-              </header>
-            )}
-            {terminal && (
-              <Terminal
-                launch={terminal}
-                visible={page === "Terminal"}
-                onExit={exited}
-              />
-            )}
-            {page === "Terminal" && !terminal && (
-              <div className="empty">
-                <h2>{exitMessage || "Terminal ready"}</h2>
-                <p>
-                  Use <code>/help</code> for the list of terminal commands.
-                </p>
+            </Sidebar>
+          )}
+          <main>
+            {error && (
+              <div role="alert">
+                {error}{" "}
+                <Button size="sm" onClick={load}>
+                  Retry
+                </Button>
               </div>
             )}
-            {skills && (
-              <Skills
-                initialSlug={skills.slug}
-                close={() => showSkills(undefined)}
-              />
+            {!workspace ? (
+              <p className="empty">Opening workspace…</p>
+            ) : !workspace.accepted ? (
+              <section className="disclosure">
+                <PensarMark size={40} />
+                <h1>Responsible use</h1>
+                <p>
+                  Apex is for authorized security testing. You must have
+                  explicit written permission to test the systems, networks, or
+                  applications in scope.
+                </p>
+                <p>
+                  By continuing, you agree to test only systems you own or have
+                  permission to test, comply with applicable laws, avoid harm or
+                  service disruption, and document and report findings
+                  responsibly.
+                </p>
+                <Button
+                  variant="constructive"
+                  onClick={async () => {
+                    try {
+                      await api.accept();
+                      setWorkspace({ ...workspace, accepted: true });
+                      if (!workspace.hasProvider) setSettings("Providers");
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  Accept and continue
+                </Button>
+              </section>
+            ) : (
+              <Suspense
+                fallback={
+                  <p className="empty">Opening {page.toLowerCase()}…</p>
+                }
+              >
+                <SessionWorkspace
+                  ref={sessions}
+                  active={page === "Operator"}
+                  onActivate={activateOperator}
+                  tabBar={tabBar}
+                  sidebar={sidebar}
+                  canChooseFolder={!terminal}
+                  onDirectoryChanged={(cwd) =>
+                    setWorkspace((current) =>
+                      current ? { ...current, cwd } : current,
+                    )
+                  }
+                  onSettings={openSettings}
+                  onSkills={(slug) => showSkills({ slug })}
+                  onPentest={async (command) => {
+                    const result = await api.pentestCommand({ command });
+                    if (result.kind === "started") resume(result.sessionId);
+                    else {
+                      setPentestInitial(result.initial);
+                      navigate("Pentest");
+                    }
+                  }}
+                  onSessions={(id) =>
+                    id ? resume(id) : selectPage("Sessions")
+                  }
+                  onRuns={async (command) => {
+                    const location = await api.openRunsCommand({ command });
+                    selectPage("Recorded runs");
+                    setRunLocation(location);
+                  }}
+                  onExit={() => api.quit().catch((e) => setError(String(e)))}
+                />
+                {page === "Pentest" && (
+                  <Pentest
+                    initial={pentestInitial}
+                    cwd={workspace.cwd}
+                    onSettings={openSettings}
+                    onStarted={resume}
+                  />
+                )}
+                {page === "Sessions" && (
+                  <Sessions
+                    resume={resume}
+                    startOperator={() =>
+                      void sessions.current
+                        ?.newSession()
+                        .catch((e) => setError(String(e)))
+                    }
+                    startPentest={() => selectPage("Pentest")}
+                  />
+                )}
+                {page === "Recorded runs" && (
+                  <Runs cwd={workspace.cwd} location={runLocation} />
+                )}
+                {page === "Terminal" && (
+                  <header>
+                    <div>
+                      <h1>Terminal</h1>
+                      <p>Run the Apex TUI in the selected working directory.</p>
+                    </div>
+                    {!terminal && (
+                      <Button
+                        variant="constructive"
+                        onClick={() => {
+                          setExitMessage("");
+                          setTerminal({});
+                        }}
+                      >
+                        Start terminal
+                      </Button>
+                    )}
+                  </header>
+                )}
+                {terminal && (
+                  <Terminal
+                    launch={terminal}
+                    visible={page === "Terminal"}
+                    onExit={exited}
+                  />
+                )}
+                {page === "Terminal" && !terminal && (
+                  <div className="empty">
+                    <h2>{exitMessage || "Terminal ready"}</h2>
+                    <p>
+                      Use <code>/help</code> for the list of terminal commands.
+                    </p>
+                  </div>
+                )}
+                {skills && (
+                  <Skills
+                    initialSlug={skills.slug}
+                    close={() => showSkills(undefined)}
+                  />
+                )}
+                {settings && (
+                  <Settings
+                    initialTab={settings}
+                    onClose={() => setSettings(undefined)}
+                  />
+                )}
+              </Suspense>
             )}
-            {settings && (
-              <Settings
-                initialTab={settings}
-                onClose={() => setSettings(undefined)}
-              />
-            )}
-          </Suspense>
-        )}
-      </main>
-    </div>
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 }
 const root = document.getElementById("root");

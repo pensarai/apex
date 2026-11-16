@@ -19,8 +19,11 @@ import type { CredentialManager } from "../../credentials";
 import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
+import { createLogger } from "../../logger/structured";
 import type { SessionInfo } from "../../session";
+import { saveSubagentLifecycle } from "../../session/persistence";
 import type { ToolBackends } from "../../tools/backends/types";
+import { scopedLogger } from "../../util/lazyLogger";
 import { runWithBoundedConcurrency } from "../../utils/concurrency";
 import {
   type BrowserSessionProvider,
@@ -45,6 +48,8 @@ import type {
   StreamIdFactory,
   SystemPentestScope,
 } from "./types";
+
+const log = scopedLogger(() => createLogger("subagent-spawner"));
 
 /** Registry key selecting which child agent {@link SubagentSpawner.spawn} builds. */
 export type SubagentType =
@@ -674,6 +679,30 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       ...(parentSessionId !== undefined ? { parentSessionId } : {}),
     };
 
+    const spawnedAt = new Date().toISOString();
+    const persistLifecycle = (status: "running" | "completed" | "failed") => {
+      const session = opts.runtime.session;
+      if (!session.rootPath) return;
+      try {
+        saveSubagentLifecycle(session, childId, {
+          displayName: opts.subagentName ?? childId,
+          input: opts.lifecycleInput,
+          parentToolCallId: opts.parentToolCallId,
+          status,
+          spawnedAt,
+          completedAt:
+            status === "running" ? undefined : new Date().toISOString(),
+        });
+      } catch (error) {
+        log.warn("Could not persist subagent lifecycle", {
+          childId,
+          status,
+          error: String(error),
+        });
+      }
+    };
+    persistLifecycle("running");
+
     opts.parentBus?.emit("subagent-spawn", {
       ...lifecycleBase,
       ...(opts.parentToolCallId !== undefined
@@ -725,9 +754,11 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       if (opts.drainGraceMs != null) {
         await drainBounded(handle.drained?.(), opts.drainGraceMs);
       }
+      const status = opts.resolveStatus?.(result) ?? "completed";
+      persistLifecycle(status);
       opts.parentBus?.emit("subagent-complete", {
         ...lifecycleBase,
-        status: opts.resolveStatus?.(result) ?? "completed",
+        status,
       });
       return result;
     } catch (error) {
@@ -737,6 +768,7 @@ class InProcessSubagentSpawner implements SubagentSpawner {
           await drainBounded(handle?.drained?.(), opts.drainGraceMs);
         }
       } finally {
+        persistLifecycle("failed");
         opts.parentBus?.emit("subagent-complete", {
           ...lifecycleBase,
           status: "failed",

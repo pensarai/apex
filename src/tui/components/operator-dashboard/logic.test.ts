@@ -732,6 +732,43 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).not.toContain("PLAN MODE");
   });
 
+  it.each([
+    undefined,
+    "default",
+  ] as const)("guides %s operator mode to persist evidence-backed session recon", (mode) => {
+    const prompt = buildOperatorSystemPrompt(target, state, mode);
+    expect(prompt).toContain("## Session Attack Surface");
+    for (const tool of [
+      "document_boundary",
+      "document_component",
+      "document_flow",
+      "document_control",
+      "document_threat",
+      "review_topology",
+      "update_record",
+      "spawn_recon_agent",
+      "create_attack_surface_report",
+    ])
+      expect(prompt).toContain(`\`${tool}\``);
+    expect(prompt).toContain("A prose summary alone does not create the map");
+    expect(prompt).toContain("observed, source, cloud, and inferred evidence");
+    expect(prompt).toContain(
+      "A threat is a hypothesis to test, not a confirmed vulnerability",
+    );
+    expect(prompt).toContain("honor the operator's approval settings");
+  });
+
+  it.each([
+    "plan",
+    "fast-strike",
+    "lance",
+  ] as const)("does not prescribe topology writes or recon workers in %s mode", (mode) => {
+    const prompt = buildOperatorSystemPrompt(target, state, mode);
+    expect(prompt).not.toContain("## Session Attack Surface");
+    expect(prompt).not.toContain("use `spawn_recon_agent`");
+    expect(prompt).not.toContain("use `document_flow`");
+  });
+
   it("includes the focused research loop in Strike Mode", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "fast-strike");
     expect(prompt).toContain("# Strike Mode");

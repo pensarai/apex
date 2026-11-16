@@ -12,6 +12,8 @@ export type OperatorClient = {
 
 export function createOperatorClient(tabId: string): OperatorClient {
   return {
+    operatorAttackSurface: (params) =>
+      api.operatorAttackSurface({ ...params, tabId }),
     operatorArguments: (params) => api.operatorArguments({ ...params, tabId }),
     operatorWatch: (params) => api.operatorWatch({ ...params, tabId }),
     operatorUnwatch: (params) => api.operatorUnwatch({ ...params, tabId }),

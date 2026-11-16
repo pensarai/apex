@@ -67,6 +67,11 @@ interface SavedSubagentData {
   systemPrompt?: string;
   /** Initial user prompt / task assignment (for training data export) */
   userPrompt?: string;
+  displayName?: string;
+  spawnedAt?: string;
+  completedAt?: string;
+  parentToolCallId?: string;
+  input?: unknown;
 }
 
 /**
@@ -105,6 +110,9 @@ export interface UISubagent {
   createdAt: Date;
   status: "pending" | "completed" | "failed" | "paused" | "canceled";
   resumeInfo?: ResumeInfo;
+  parentToolCallId?: string;
+  input?: unknown;
+  completedAt?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +213,41 @@ export function loadSubagentObjectiveResults(
   }
 }
 
+export interface SubagentLifecycle {
+  displayName: string;
+  input?: unknown;
+  parentToolCallId?: string;
+  spawnedAt: string;
+  completedAt?: string;
+  status: "running" | "completed" | "failed";
+}
+
+export function saveSubagentLifecycle(
+  session: SessionInfo,
+  id: string,
+  lifecycle: SubagentLifecycle,
+): void {
+  const directory = join(session.rootPath, SUBAGENTS_DIR);
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, `${id}.json`);
+  const previous = existsSync(path)
+    ? JSON.parse(readFileSync(path, "utf-8"))
+    : {};
+  writeFileSync(
+    path,
+    JSON.stringify(
+      {
+        ...previous,
+        agentName: id,
+        timestamp: lifecycle.completedAt ?? lifecycle.spawnedAt,
+        ...lifecycle,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 /** Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`. */
 export function saveSubagentData(
   session: SessionInfo,
@@ -227,7 +270,29 @@ export function saveSubagentData(
     }
   }
 
+  const snapshotPath = join(subagentsDir, `${data.agentName}.json`);
+  let lifecycle: Partial<SubagentLifecycle> = {};
+  if (existsSync(snapshotPath)) {
+    try {
+      const previous = JSON.parse(
+        readFileSync(snapshotPath, "utf-8"),
+      ) as SavedSubagentData;
+      lifecycle = {
+        displayName: previous.displayName,
+        input: previous.input,
+        parentToolCallId: previous.parentToolCallId,
+        spawnedAt: previous.spawnedAt,
+        completedAt: previous.completedAt,
+      };
+    } catch {
+      log.warn(
+        "Could not preserve subagent lifecycle from unreadable snapshot",
+        { agentName: data.agentName },
+      );
+    }
+  }
   const savedData: SavedSubagentData = {
+    ...lifecycle,
     agentName: data.agentName,
     timestamp: new Date().toISOString(),
     target: data.target,
@@ -648,6 +713,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
   // Swarm workers are keyed by opaque `ses_` ids that only get a generic
   // filename label; resolve the human name from the manifest instead.
   const manifestNameById = new Map<string, string>();
+  const manifestStatusById = new Map<string, "completed" | "failed">();
   {
     const manifestPath = join(rootPath, MANIFEST_FILE);
     if (existsSync(manifestPath)) {
@@ -655,8 +721,11 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         const manifest: AgentManifestEntry[] = JSON.parse(
           readFileSync(manifestPath, "utf-8"),
         );
-        for (const entry of manifest)
+        for (const entry of manifest) {
           manifestNameById.set(entry.id, entry.name);
+          if (entry.status === "completed" || entry.status === "failed")
+            manifestStatusById.set(entry.id, entry.status);
+        }
       } catch {
         // Malformed manifest — fall back to filename-derived labels.
       }
@@ -684,7 +753,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         ) as SavedSubagentData;
 
         const { agentType, name } = parseSubagentFilename(file);
-        const timestamp = new Date(data.timestamp);
+        const timestamp = new Date(data.spawnedAt ?? data.timestamp);
 
         // Read messages from base class step persistence (primary),
         // fall back to snapshot's messages field (old sessions)
@@ -704,9 +773,11 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           messages = convertMessagesToUI(data.messages ?? [], timestamp);
         }
 
-        let status: "pending" | "completed" | "failed" | "canceled" =
-          "completed";
+        let status: UISubagent["status"] = "completed";
         switch (data.status) {
+          case "running":
+            status = "paused";
+            break;
           case "canceled":
           case "failed":
           case "completed":
@@ -727,6 +798,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         subagents.push({
           id: data.agentName,
           name:
+            data.displayName ??
             manifestNameById.get(data.agentName) ??
             (data.agentName === "attack-surface-agent"
               ? "Attack Surface Discovery"
@@ -734,6 +806,11 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           type: agentType,
           target: data.target || "Unknown",
           messages,
+          parentToolCallId: data.parentToolCallId,
+          input: data.input,
+          completedAt: data.completedAt
+            ? new Date(data.completedAt)
+            : undefined,
           createdAt: timestamp,
           status,
         });
@@ -771,12 +848,14 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         agentNameIndex.set(entry, subagents.length);
         subagents.push({
           id: entry,
-          name: manifestNameById.get(entry) ?? name,
+          name:
+            manifestNameById.get(entry) ??
+            (entry.startsWith("ses_") ? entry : name),
           type: agentType,
           target: "Unknown",
           messages,
           createdAt: timestamp,
-          status: "completed",
+          status: manifestStatusById.get(entry) ?? "paused",
         });
       } catch {
         // Skip directories without a readable messages.json

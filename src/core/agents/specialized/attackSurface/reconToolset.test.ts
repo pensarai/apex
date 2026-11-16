@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../session";
+import { createToolsetState, toggleTool } from "../../../toolset";
 import { inProcessSubagentSpawner } from "../../offSecAgent/subagentSpawner";
-import { listToolRegistryNames } from "../../offSecAgent/tools";
+import {
+  ALL_TOOL_NAMES,
+  createToolsForNames,
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES,
+  listToolRegistryNames,
+  PLAN_MODE_TOOL_NAMES,
+} from "../../offSecAgent/tools";
 import type { ToolContext } from "../../offSecAgent/tools/types";
 import { reconWorkerDefinition } from "../reconWorker/agent";
 import { generalizedAttackSurfaceDefinition } from "./generalizedAgent";
@@ -52,6 +59,62 @@ describe("recon toolsets", () => {
     const names = listToolRegistryNames(ctx);
     expect(names).toContain("clone_repository");
     expect(names).toContain("spawn_recon_agent");
+  });
+});
+
+describe("operator reconnaissance access", () => {
+  const topologyTools = [
+    "document_boundary",
+    "document_component",
+    "document_flow",
+    "document_control",
+    "document_threat",
+    "review_topology",
+    "update_record",
+    "merge_records",
+    "retire_record",
+    "spawn_recon_agent",
+    "clone_repository",
+    "create_attack_surface_report",
+  ] as const;
+
+  it("constructs the documented recon tools from the default operator roster", () => {
+    const ctx = {
+      subagentSpawner: inProcessSubagentSpawner,
+      session: { id: "s", rootPath: "/tmp" } as SessionInfo,
+      agentCwd: "/tmp",
+    } as ToolContext;
+    const selected = topologyTools.filter((name) =>
+      ALL_TOOL_NAMES.includes(name),
+    );
+    expect(Object.keys(createToolsForNames(ctx, selected)).sort()).toEqual(
+      [...topologyTools].sort(),
+    );
+  });
+
+  it("does not enable topology mutation or delegation in plan or strike mode", () => {
+    for (const name of topologyTools) {
+      expect(PLAN_MODE_TOOL_NAMES).not.toContain(name);
+      expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).toContain(name);
+    }
+  });
+
+  it.each([
+    "web-pentest",
+    "recon-only",
+  ])("includes topology tools in the %s session preset while honoring explicit disable", (preset) => {
+    const state = createToolsetState(preset);
+    for (const name of topologyTools)
+      expect(state.enabledTools[name]).toBe(true);
+    const disabled = toggleTool(state, "spawn_recon_agent", false);
+    expect(disabled.enabledTools.spawn_recon_agent).toBe(false);
+    expect(disabled.enabledTools.document_flow).toBe(true);
+  });
+
+  it("keeps topology mapping out of the minimal preset", () => {
+    const state = createToolsetState("minimal");
+    for (const name of topologyTools)
+      expect(state.enabledTools[name]).toBe(false);
   });
 });
 

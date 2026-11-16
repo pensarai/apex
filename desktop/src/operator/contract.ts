@@ -1,3 +1,4 @@
+import type { LoadedTopology } from "../../../src/core/agents/offSecAgent/tools/topologyRecords";
 import type { WorkflowData } from "../../../src/core/workflows/pentest-progress";
 
 import type { OperatorFrame } from "./live";
@@ -85,6 +86,10 @@ export interface OperatorSnapshot {
     id: string;
     name: string;
     status: string;
+    parentToolCallId?: string;
+    modelLoading?: string;
+    spawnedAt?: string;
+    completedAt?: string;
     messages: OperatorMessage[];
     input: unknown;
   }[];
@@ -125,6 +130,7 @@ export type OperatorAction =
   | { type: "open-folder" };
 type Call<P, R> = { params: P; response: R };
 export type OperatorSessionRequests = {
+  operatorAttackSurface: Call<{ sessionId: string }, LoadedTopology>;
   operatorArguments: Call<{ command: string }, OperatorLaunch>;
   operatorWatch: Call<{ key: string }, OperatorSnapshot>;
   operatorUnwatch: Call<{ key: string }, void>;

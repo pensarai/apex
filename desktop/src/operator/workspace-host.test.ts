@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeRecordFiles } from "../../../src/core/agents/offSecAgent/tools/topologyRecords";
 import type { OffensiveSecurityAgentClientInput } from "../../../src/core/api";
 import { config } from "../../../src/core/config";
 import { sessions } from "../../../src/core/session";
@@ -50,6 +51,51 @@ describe("desktop session workspace", () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
+  });
+  it("keeps attack surfaces isolated between session tabs", async () => {
+    const first = await workspace.requests.operatorOpen({});
+    const second = await workspace.requests.operatorOpen({});
+    const one = await workspace.requests.operatorStart({
+      tabId: first.tabId,
+      name: "One",
+    });
+    const two = await workspace.requests.operatorStart({
+      tabId: second.tabId,
+      name: "Two",
+    });
+    const session = await sessions.get(one.sessionId);
+    writeRecordFiles(session.rootPath, [
+      {
+        kind: "boundary",
+        file: "boundary_one.json",
+        record: { id: "bnd_one", name: "First session only" },
+      },
+    ]);
+    expect(
+      workspace.requests.operatorAttackSurface({
+        tabId: first.tabId,
+        sessionId: one.sessionId,
+      }).boundaries,
+    ).toHaveLength(1);
+    expect(
+      workspace.requests.operatorAttackSurface({
+        tabId: second.tabId,
+        sessionId: two.sessionId,
+      }).boundaries,
+    ).toHaveLength(0);
+    expect(() =>
+      workspace.requests.operatorAttackSurface({
+        tabId: second.tabId,
+        sessionId: one.sessionId,
+      }),
+    ).toThrow("active session changed");
+    await workspace.requests.operatorClose({ tabId: first.tabId });
+    expect(() =>
+      workspace.requests.operatorAttackSurface({
+        tabId: first.tabId,
+        sessionId: one.sessionId,
+      }),
+    ).toThrow("no longer open");
   });
   it("keeps simultaneous streams, approvals, queues, and cancellation isolated", async () => {
     const clients: {

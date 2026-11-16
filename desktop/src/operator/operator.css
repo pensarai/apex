@@ -80,7 +80,6 @@
   margin-bottom: 8px;
 }
 .op-panel-select,
-.op-agent,
 .op-header,
 .op-queued {
   display: flex;
@@ -93,7 +92,6 @@
   border-bottom: 1px solid var(--color-border);
   padding-bottom: 12px;
 }
-.op-agent,
 .op-header,
 .op-skill {
   padding: 8px 0;
@@ -134,6 +132,18 @@
 .op-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+@keyframes op-stream-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.op-stream-arrival,
+.op-rail-row[data-arriving="true"] {
+  animation: op-stream-fade 160ms ease-out both;
 }
 .op-tool {
   margin: 6px 0;
@@ -380,6 +390,10 @@
   overflow: auto;
 }
 @media (prefers-reduced-motion: reduce) {
+  .op-stream-arrival,
+  .op-rail-row[data-arriving="true"] {
+    animation: none;
+  }
   .op-tool-status-icon {
     animation: none;
   }
@@ -453,7 +467,14 @@
 .op-page > header > .actions {
   flex-shrink: 0;
 }
-.op-chat > .op-transcript {
+.op-transcript-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.op-chat > .op-transcript-view {
   width: 100%;
   max-width: 928px;
   margin-inline: auto;
@@ -621,4 +642,148 @@
 }
 .op-activity canvas {
   flex-shrink: 0;
+}
+
+.op-session-content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.op-conversation-panel {
+  display: flex;
+  min-width: 0;
+}
+.op-surface-panel {
+  min-width: 0;
+}
+.op-surface-resize {
+  width: 5px;
+  cursor: col-resize;
+  background: var(--color-border);
+  touch-action: none;
+}
+.op-surface-resize:hover,
+.op-surface-resize:focus-visible,
+.op-surface-resize[data-separator="active"] {
+  background: var(--color-border-strong);
+}
+
+.op-tool-children {
+  margin: 6px 0 12px 21px;
+}
+.op-subagent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.op-subagent-row {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  color: var(--color-fg-2);
+  text-align: left;
+  cursor: pointer;
+}
+.op-subagent-row:hover {
+  background: var(--color-surface-3);
+}
+.op-subagent-row:focus-visible {
+  outline: 1px solid var(--color-fg);
+  outline-offset: -1px;
+}
+.op-subagent-icon,
+.op-subagent-arrow {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--color-fg-3);
+}
+.op-subagent-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.op-subagent-row[data-status="completed"] .op-subagent-icon {
+  color: var(--color-success);
+}
+.op-subagent-row[data-status="failed"] .op-subagent-icon {
+  color: var(--color-error);
+}
+.op-subagent-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.op-subagent-status {
+  flex-shrink: 0;
+  font: 10px var(--font-mono);
+  color: var(--color-fg-3);
+  text-transform: capitalize;
+}
+.op-unlinked-subagents {
+  margin: 12px 0;
+}
+.op-unlinked-subagents h3 {
+  font-size: 12px;
+  color: var(--color-fg-3);
+  margin-bottom: 8px;
+}
+
+.op-transcript-view[hidden] {
+  display: none;
+}
+.op-agent-context {
+  width: 100%;
+  max-width: 928px;
+  margin-inline: auto;
+  padding: 12px 24px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.op-agent-context [data-slot="breadcrumb-list"] {
+  color: var(--color-fg-3);
+  font-size: 13px;
+}
+.op-agent-context [data-slot="breadcrumb-page"] {
+  color: var(--color-fg);
+}
+.op-agent-context [data-slot="breadcrumb-item"] {
+  min-width: 0;
+}
+.op-agent-context button {
+  cursor: pointer;
+  text-align: left;
+}
+.op-agent-context button:hover {
+  color: var(--color-fg);
+}
+.op-agent-context button:focus-visible {
+  outline: 1px solid var(--color-fg);
+  outline-offset: 3px;
+}
+.op-agent-view-status {
+  display: block;
+  margin-top: 8px;
+  font: 10px var(--font-mono);
+  color: var(--color-fg-3);
+  text-transform: capitalize;
+}
+.op-agent-objective {
+  margin-top: 8px;
+  font-size: 12px;
+  max-height: 160px;
+  overflow: auto;
+}
+.op-agent-objective pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  margin-top: 8px;
 }

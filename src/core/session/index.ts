@@ -726,6 +726,9 @@ async function update(id: string, editor: (session: SessionInfo) => void) {
   return result;
 }
 
+// Listing needs local metadata, not validation against today's config schema.
+const SessionListMetadata = SessionInfoObject.omit({ config: true });
+
 export async function* list() {
   const sessionsDir = getSessionsDir();
   let entries: import("fs").Dirent[];
@@ -739,11 +742,12 @@ export async function* list() {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     try {
-      yield await Storage.read<SessionInfo>([
+      const raw = await Storage.read<unknown>([
         "sessions",
         entry.name,
         "session",
       ]);
+      if (SessionListMetadata.safeParse(raw).success) yield raw as SessionInfo;
     } catch {
       // Skip directories without a valid session.json
     }

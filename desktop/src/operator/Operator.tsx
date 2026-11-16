@@ -1,4 +1,12 @@
 import { PensarMark } from "@pensarai/design-system/logos";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@pensarai/design-system/ui/breadcrumb";
 import { Button } from "@pensarai/design-system/ui/button";
 import {
   Dialog,
@@ -8,12 +16,26 @@ import {
   DialogTitle,
 } from "@pensarai/design-system/ui/dialog";
 import { Input } from "@pensarai/design-system/ui/input";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@pensarai/design-system/ui/resizable";
 import { Textarea } from "@pensarai/design-system/ui/textarea";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Network } from "lucide-react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { splitCommand } from "../commands";
 import { runAppearanceCommand } from "../settings/appearance";
 import type { SettingsSnapshot, SettingsTab } from "../settings/contract";
 import { api } from "../view/bridge";
+import { AttackSurface } from "./AttackSurface";
 import type { OperatorClient } from "./client";
 import type {
   OperatorAction,
@@ -23,19 +45,14 @@ import type {
 import { applyFrame, type OperatorFrame } from "./live";
 import { Questions } from "./Questions";
 import { OperatorSetup } from "./Setup";
+import { subagentActivity, subagentLabel } from "./subagent-presentation";
+import { hasSurfaceToolCall, surfaceReveal } from "./surface-reveal";
 import { ToolPicker } from "./ToolPicker";
 import { Transcript } from "./Transcript";
 import "./operator.css";
 
-type Panel = "Overview" | "Subagents" | "Plan" | "Headers" | "Skills" | "Help";
-const panels: Panel[] = [
-  "Overview",
-  "Subagents",
-  "Plan",
-  "Headers",
-  "Skills",
-  "Help",
-];
+type Panel = "Overview" | "Plan" | "Headers" | "Skills" | "Help";
+const panels: Panel[] = ["Overview", "Plan", "Headers", "Skills", "Help"];
 interface Props {
   cwd?: string;
   onChooseFolder?: () => Promise<void>;
@@ -84,10 +101,23 @@ export default function OperatorSessionView({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
-  const [agentId, selectAgent] = useState("");
+  const [agentPath, setAgentPath] = useState<string[]>([]);
   const [header, setHeader] = useState("");
   const [verbose, setVerbose] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [surfaceOpen, setSurfaceOpen] = useState(false);
+  const surfaceActivity = hasSurfaceToolCall(state);
+  useEffect(() => {
+    if (
+      state.sessionId &&
+      surfaceActivity &&
+      surfaceReveal.claim(state.sessionId)
+    )
+      setSurfaceOpen(true);
+  }, [state.sessionId, surfaceActivity]);
+  const surfaceId = useId();
+  const surfaceWidth = useRef(50);
+  const surfaceTrigger = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const page = useRef<HTMLDivElement>(null);
   const latest = useRef(initialSnapshot);
@@ -195,11 +225,12 @@ export default function OperatorSessionView({
       isFocused &&
       ready &&
       !setupOpen &&
+      !surfaceOpen &&
       !document.activeElement?.matches('[role="tab"][aria-selected="true"]') &&
       !page.current?.contains(document.activeElement)
     )
       input.current?.focus();
-  }, [isFocused, ready, setupOpen]);
+  }, [isFocused, ready, setupOpen, surfaceOpen]);
   useEffect(() => {
     if (!isFocused) {
       setSetupOpen(false);
@@ -368,8 +399,19 @@ export default function OperatorSessionView({
     if (focused.current) input.current?.focus();
   };
   const active = !!state && state.status !== "idle";
-  const current =
-    state?.subagents.find((a) => a.id === agentId) ?? state?.subagents.at(-1);
+  const path = agentPath.flatMap((id) => {
+    const agent = state.subagents.find((entry) => entry.id === id);
+    return agent ? [agent] : [];
+  });
+  const current = path.at(-1);
+  const openSubagent = (id: string) => {
+    setAgentPath((previous) =>
+      previous.includes(id)
+        ? previous.slice(0, previous.indexOf(id) + 1)
+        : [...previous, id],
+    );
+    setInspecting(false);
+  };
   const modelId =
     state?.modelLoading || state?.model || modelSettings?.selected;
   const model = modelSettings?.models.find((item) => item.id === modelId);
@@ -383,6 +425,21 @@ export default function OperatorSessionView({
             </h1>
           </div>
           <div className="actions">
+            {state.sessionId && (
+              <Button
+                size="sm"
+                ref={surfaceTrigger}
+                aria-expanded={surfaceOpen}
+                aria-controls={surfaceOpen ? surfaceId : undefined}
+                onClick={() => {
+                  if (state.sessionId) surfaceReveal.markShown(state.sessionId);
+                  setSurfaceOpen((open) => !open);
+                }}
+              >
+                <Network size={14} aria-hidden="true" />
+                Attack surface
+              </Button>
+            )}
             <Button
               size="sm"
               aria-pressed={inspecting}
@@ -400,490 +457,597 @@ export default function OperatorSessionView({
         </p>
       ) : (
         <>
-          <div className={`op-body${inspecting ? " op-with-inspector" : ""}`}>
-            <div
-              className={`op-chat${state.sessionId ? "" : " op-chat-empty"}`}
+          <ResizablePanelGroup
+            orientation="horizontal"
+            className="op-session-content"
+            onLayoutChanged={(layout) => {
+              if (surfaceOpen && layout[surfaceId] !== undefined)
+                surfaceWidth.current = layout[surfaceId];
+            }}
+          >
+            <ResizablePanel
+              id={`${surfaceId}-conversation`}
+              minSize="25%"
+              defaultSize={`${100 - surfaceWidth.current}%`}
+              className="op-conversation-panel"
             >
-              {state.sessionId ? (
-                <Transcript
-                  key={state.sessionId}
-                  screenshot={client.operatorScreenshot}
-                  visible={visible}
-                  messages={state.messages}
-                  sessionId={state.sessionId}
-                  activity={state.activity}
-                  modelLoading={state.modelLoading}
-                  verbose={verbose}
-                />
-              ) : (
-                <div className="op-welcome">
-                  <PensarMark size={80} fill="currentColor" />
-                  <h1>Apex</h1>
-                </div>
-              )}
-              {state.error && <p role="alert">{state.error}</p>}
-              <div className="op-decisions">
-                {state.approvals.map((a) => (
-                  <section key={a.id} className="op-review">
-                    <h3>Approve {a.toolName}?</h3>
-                    {a.reasoning && <p>{a.reasoning}</p>}
-                    <pre>{JSON.stringify(a.args, null, 2)}</pre>
-                    <div className="actions">
-                      {(["approve", "deny", "auto"] as const).map(
-                        (decision) => (
-                          <Button
-                            key={decision}
-                            size="sm"
-                            disabled={busy}
-                            onClick={() =>
-                              action({ type: "approval", id: a.id, decision })
-                            }
-                          >
-                            {decision === "approve"
-                              ? "Approve"
-                              : decision === "deny"
-                                ? "Deny"
-                                : "Approve and switch to automatic"}
-                          </Button>
-                        ),
-                      )}
-                    </div>
-                  </section>
-                ))}
-                {state.questions && (
-                  <Questions
-                    key={state.questions.toolCallId}
-                    id={state.questions.toolCallId}
-                    questions={state.questions.questions}
-                    submit={action}
-                    disabled={busy || state.status !== "waiting"}
-                  />
-                )}
-                {state.reviewPlan && (
-                  <div className="op-review">
-                    <h3>Review the proposed plan</h3>
-                    <pre>{state.plan ?? "Reading plan…"}</pre>
-                    <div className="actions">
-                      <Button
-                        disabled={busy || state.status !== "waiting"}
-                        variant="constructive"
-                        onClick={() => action({ type: "plan", approve: true })}
-                      >
-                        Approve plan
-                      </Button>
-                      <Button
-                        disabled={busy || state.status !== "waiting"}
-                        onClick={() => action({ type: "plan", approve: false })}
-                      >
-                        Request changes
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="op-compose">
-                {state.queue.map((q) => (
-                  <div key={q.id} className="op-queued">
-                    <span>{q.text}</span>
-                    <Button
-                      size="xs"
-                      disabled={busy}
-                      onClick={() =>
-                        action({
-                          type: "queue",
-                          id: q.id,
-                          operation: "send-now",
-                        })
-                      }
-                    >
-                      Send now
-                    </Button>
-                    <Button
-                      size="xs"
-                      disabled={busy}
-                      onClick={async () => {
-                        if (
-                          await action({
-                            type: "queue",
-                            id: q.id,
-                            operation: "remove",
-                          })
-                        )
-                          setText(q.text);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="xs"
-                      disabled={busy}
-                      onClick={() =>
-                        action({ type: "queue", id: q.id, operation: "remove" })
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-                <Textarea
-                  ref={input}
-                  aria-label="Operator message"
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === "Tab" &&
-                      e.shiftKey &&
-                      !e.nativeEvent.isComposing
-                    ) {
-                      e.preventDefault();
-                      cycleMode();
-                    }
-                    if (
-                      e.key === "Enter" &&
-                      !e.shiftKey &&
-                      !e.nativeEvent.isComposing
-                    ) {
-                      e.preventDefault();
-                      void submit();
-                    }
-                  }}
-                  placeholder="Ask anything, /help for commands…"
-                  rows={2}
-                />
-                <div className="op-compose-controls">
-                  <div className="op-mode-controls">
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="op-mode"
-                      disabled={modeLocked}
-                      aria-label={`Mode: ${mode}. Click or press Shift+Tab in the message input to cycle.`}
-                      title="Cycle mode (Shift+Tab in message input)"
-                      onClick={cycleMode}
-                    >
-                      {mode === "auto"
-                        ? "Automatic"
-                        : mode === "plan"
-                          ? "Plan"
-                          : "Manual"}
-                    </Button>
-                    <span className="op-shortcut">Shift+Tab</span>
-                    {state.sessionId && (
-                      <ToolPicker
-                        sessionId={state.sessionId}
-                        disabled={active || state.strike || state.lance}
-                        open={isFocused && toolsOpen}
-                        onOpenChange={setToolsOpen}
-                      />
-                    )}
-                    <button
-                      type="button"
-                      className="op-model"
-                      onClick={() => onSettings?.("Models")}
-                    >
-                      {model?.provider && (
-                        <span className="op-model-provider">
-                          {model.provider} /{" "}
-                        </span>
-                      )}
-                      {model?.name || modelId || "Select model"}{" "}
-                      <span aria-hidden="true">⌄</span>
-                    </button>
-                    {state.sessionId && (state.lance || state.strike) && (
-                      <span>{state.lance ? "Lance" : "Strike"}</span>
-                    )}
-                    {active && (
-                      <span className="op-status">
-                        {state.approvals.length
-                          ? "Awaiting approval"
-                          : state.status}
-                      </span>
-                    )}
-                  </div>
-                  <div className="actions">
-                    <Button
-                      variant="constructive"
-                      size="icon-sm"
-                      aria-label={active ? "Queue message" : "Send message"}
-                      title={active ? "Queue message" : "Send message (Enter)"}
-                      disabled={
-                        !text.trim() ||
-                        busy ||
-                        !!state.questions ||
-                        state.reviewPlan ||
-                        state.status === "stopping"
-                      }
-                      onClick={() => void submit()}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 19V5m-6 6 6-6 6 6" />
-                      </svg>
-                    </Button>
-                    {active && (
-                      <>
-                        <Button
-                          disabled={busy || state.status === "stopping"}
-                          onClick={() => action({ type: "cancel" })}
-                        >
-                          Stop turn
-                        </Button>
-                        {state.status === "running" && (
-                          <Button
-                            disabled={busy}
-                            onClick={() => action({ type: "cancel-command" })}
-                          >
-                            Cancel command
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {!state.sessionId && cwd && (
-                <div className="op-project">
-                  <button
-                    type="button"
-                    disabled={!onChooseFolder}
-                    onClick={() => void onChooseFolder?.()}
-                    title={cwd}
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      aria-hidden="true"
-                    >
-                      <path d="M3 7V5h6l2 2h10v12H3Z" />
-                    </svg>
-                    {cwd.split(/[\\/]/).filter(Boolean).at(-1) || cwd}
-                  </button>
-                  <span title={cwd}>{cwd}</span>
-                </div>
-              )}
-            </div>
-            {inspecting && (
-              <section className="op-inspector">
-                <div className="actions">
-                  <Button
-                    size="xs"
-                    onClick={() => setVerbose(!verbose)}
-                    aria-pressed={verbose}
-                  >
-                    Verbose
-                  </Button>
-                </div>
-                <label className="op-panel-select">
-                  Inspect{" "}
-                  <select
-                    value={panel}
-                    onChange={(e) => setPanel(e.target.value as Panel)}
-                  >
-                    {panels.map((p) => (
-                      <option key={p}>{p}</option>
-                    ))}
-                  </select>
-                </label>
-                {panel === "Overview" && (
-                  <>
-                    <dl>
-                      <dt>Session</dt>
-                      <dd>
-                        {state.sessionId ||
-                          "Created when you send your first message"}
-                      </dd>
-                      <dt>Target</dt>
-                      <dd>{state.target || "Local workspace"}</dd>
-                      <dt>Tokens in / out</dt>
-                      <dd>
-                        {state.usage.input.toLocaleString()} /{" "}
-                        {state.usage.output.toLocaleString()}
-                      </dd>
-                      {state.usage.context !== undefined && (
-                        <>
-                          <dt>Context</dt>
-                          <dd>
-                            {state.usage.context.toLocaleString()} /{" "}
-                            {state.usage.limit?.toLocaleString()}
-                          </dd>
-                        </>
-                      )}
-                    </dl>
-                    <Button
-                      size="sm"
-                      disabled={!state.sessionId}
-                      onClick={() => action({ type: "open-folder" })}
-                    >
-                      Open session folder
-                    </Button>
-                    <h3>Subagents ({state.subagents.length})</h3>
-                    {state.subagents.map((a) => (
-                      <button
-                        className="op-agent"
-                        type="button"
-                        key={a.id}
-                        onClick={() => {
-                          selectAgent(a.id);
-                          setPanel("Subagents");
-                        }}
-                      >
-                        {a.name}
-                        <small>{a.status}</small>
-                      </button>
-                    ))}
-                  </>
-                )}
-                {panel === "Subagents" &&
-                  (current && state.sessionId ? (
-                    <>
-                      <label>
-                        Subagent
-                        <select
-                          value={current.id}
-                          onChange={(e) => selectAgent(e.target.value)}
-                        >
-                          {state.subagents.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name} · {a.status}
-                            </option>
+              <div
+                className={`op-body${inspecting ? " op-with-inspector" : ""}`}
+              >
+                <div
+                  className={`op-chat${state.sessionId ? "" : " op-chat-empty"}`}
+                >
+                  {current && (
+                    <div className="op-agent-context">
+                      <Breadcrumb aria-label="Conversation path">
+                        <BreadcrumbList>
+                          <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                              <button
+                                type="button"
+                                onClick={() => setAgentPath([])}
+                              >
+                                Operator
+                              </button>
+                            </BreadcrumbLink>
+                          </BreadcrumbItem>
+                          {path.map((agent, index) => (
+                            <Fragment key={agent.id}>
+                              <BreadcrumbSeparator />
+                              <BreadcrumbItem>
+                                {index === path.length - 1 ? (
+                                  <BreadcrumbPage>
+                                    {subagentLabel(
+                                      agent,
+                                      state.subagents.indexOf(agent),
+                                    )}
+                                  </BreadcrumbPage>
+                                ) : (
+                                  <BreadcrumbLink asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setAgentPath(
+                                          path
+                                            .slice(0, index + 1)
+                                            .map((entry) => entry.id),
+                                        )
+                                      }
+                                    >
+                                      {subagentLabel(
+                                        agent,
+                                        state.subagents.indexOf(agent),
+                                      )}
+                                    </button>
+                                  </BreadcrumbLink>
+                                )}
+                              </BreadcrumbItem>
+                            </Fragment>
                           ))}
-                        </select>
-                      </label>
+                        </BreadcrumbList>
+                      </Breadcrumb>
+                      <span className="op-agent-view-status">
+                        {current.status === "cancelled"
+                          ? "Interrupted"
+                          : current.status}{" "}
+                        · Read-only
+                      </span>
                       {current.input != null && (
-                        <details>
+                        <details className="op-agent-objective">
                           <summary>Objective</summary>
                           <pre>{JSON.stringify(current.input, null, 2)}</pre>
                         </details>
                       )}
-                      <Transcript
-                        key={current.id}
-                        screenshot={client.operatorScreenshot}
-                        visible={visible}
-                        messages={current.messages}
-                        sessionId={state.sessionId}
-                        agentId={current.id}
-                        verbose={verbose}
-                      />
-                    </>
-                  ) : (
-                    <p>No subagents have started.</p>
-                  ))}
-                {panel === "Plan" && (
-                  <pre>
-                    {state.plan ||
-                      "Switch to Plan mode and describe the objective to draft a plan."}
-                  </pre>
-                )}
-                {panel === "Headers" && (
-                  <>
-                    <p>Request headers for this session.</p>
-                    {state.headers.map((h) => (
-                      <div key={h.name} className="op-header">
-                        <code>
-                          {h.name}: {h.displayValue}
-                        </code>
-                        <Button
-                          size="xs"
-                          disabled={busy}
-                          onClick={() =>
-                            action({
-                              type: "headers",
-                              command: `/headers remove ${h.name}`,
-                            })
-                          }
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (
-                          await action({
-                            type: "headers",
-                            command: `/headers set ${header}`,
-                          })
-                        )
-                          setHeader("");
-                      }}
-                    >
-                      <Input
-                        aria-label="Session header"
-                        type="password"
-                        placeholder="Name: value"
-                        value={header}
-                        onChange={(e) => setHeader(e.target.value)}
-                      />
-                      <Button
-                        size="sm"
-                        disabled={!state.sessionId || busy || !header.trim()}
-                        type="submit"
-                      >
-                        Set header
-                      </Button>
-                    </form>
-                  </>
-                )}
-                {panel === "Skills" &&
-                  state.skills.map((s) => (
-                    <div className="op-skill" key={s.slug}>
-                      <strong>{s.name}</strong>
-                      <p>{s.description}</p>
-                      <Button
-                        size="xs"
-                        disabled={!state.sessionId || busy || state.lance}
-                        onClick={() => action({ type: "skill", slug: s.slug })}
-                      >
-                        Run /{s.slug}
-                      </Button>
                     </div>
-                  ))}
-                {panel === "Help" && (
-                  <>
-                    <p>
-                      Enter sends a message. Shift+Enter adds a line. Messages
-                      sent during a turn enter the queue. Shift+Tab in the
-                      message input cycles Manual, Automatic and Plan modes.
-                    </p>
-                    <dl>
-                      {[
-                        ["/new", "New conversation"],
-                        [
-                          "/operator --target <host>",
-                          "Configure a new session",
-                        ],
-                        ["/models", "Model and effort"],
-                        ["/plan", "Current plan"],
-                        ["/tools", "Available tools"],
-                        ["/headers", "Session headers"],
-                        ["/skills", "Skill catalog"],
-                        ["/pentest", "Pentest wizard"],
-                        ["/resume", "Session history"],
-                        ["/open-session", "Open artifacts"],
-                      ].map(([name, label]) => (
-                        <div key={name}>
-                          <dt>{name}</dt>
-                          <dd>{label}</dd>
+                  )}
+                  {state.sessionId ? (
+                    <>
+                      <div className="op-transcript-view" hidden={!!current}>
+                        <Transcript
+                          key={state.sessionId}
+                          screenshot={client.operatorScreenshot}
+                          visible={visible && !current}
+                          messages={state.messages}
+                          sessionId={state.sessionId}
+                          activity={state.activity}
+                          modelLoading={state.modelLoading}
+                          subagents={state.subagents}
+                          onSelectSubagent={openSubagent}
+                          verbose={verbose}
+                        />
+                      </div>
+                      {path.map((agent) => (
+                        <div
+                          className="op-transcript-view"
+                          key={agent.id}
+                          hidden={agent.id !== current?.id}
+                        >
+                          <Transcript
+                            screenshot={client.operatorScreenshot}
+                            visible={visible && agent.id === current?.id}
+                            messages={agent.messages}
+                            sessionId={state.sessionId ?? ""}
+                            agentId={agent.id}
+                            activity={subagentActivity(agent)}
+                            modelLoading={agent.modelLoading ?? undefined}
+                            subagents={state.subagents}
+                            onSelectSubagent={openSubagent}
+                            verbose={verbose}
+                          />
                         </div>
                       ))}
-                    </dl>
-                  </>
+                    </>
+                  ) : (
+                    <div className="op-welcome">
+                      <PensarMark size={80} fill="currentColor" />
+                      <h1>Apex</h1>
+                    </div>
+                  )}
+                  {state.error && <p role="alert">{state.error}</p>}
+                  <div className="op-decisions">
+                    {state.approvals.map((a) => (
+                      <section key={a.id} className="op-review">
+                        <h3>Approve {a.toolName}?</h3>
+                        {a.reasoning && <p>{a.reasoning}</p>}
+                        <pre>{JSON.stringify(a.args, null, 2)}</pre>
+                        <div className="actions">
+                          {(["approve", "deny", "auto"] as const).map(
+                            (decision) => (
+                              <Button
+                                key={decision}
+                                size="sm"
+                                disabled={busy}
+                                onClick={() =>
+                                  action({
+                                    type: "approval",
+                                    id: a.id,
+                                    decision,
+                                  })
+                                }
+                              >
+                                {decision === "approve"
+                                  ? "Approve"
+                                  : decision === "deny"
+                                    ? "Deny"
+                                    : "Approve and switch to automatic"}
+                              </Button>
+                            ),
+                          )}
+                        </div>
+                      </section>
+                    ))}
+                    {state.questions && (
+                      <Questions
+                        key={state.questions.toolCallId}
+                        id={state.questions.toolCallId}
+                        questions={state.questions.questions}
+                        submit={action}
+                        disabled={busy || state.status !== "waiting"}
+                      />
+                    )}
+                    {state.reviewPlan && (
+                      <div className="op-review">
+                        <h3>Review the proposed plan</h3>
+                        <pre>{state.plan ?? "Reading plan…"}</pre>
+                        <div className="actions">
+                          <Button
+                            disabled={busy || state.status !== "waiting"}
+                            variant="constructive"
+                            onClick={() =>
+                              action({ type: "plan", approve: true })
+                            }
+                          >
+                            Approve plan
+                          </Button>
+                          <Button
+                            disabled={busy || state.status !== "waiting"}
+                            onClick={() =>
+                              action({ type: "plan", approve: false })
+                            }
+                          >
+                            Request changes
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {!current && (
+                    <div className="op-compose">
+                      {state.queue.map((q) => (
+                        <div key={q.id} className="op-queued">
+                          <span>{q.text}</span>
+                          <Button
+                            size="xs"
+                            disabled={busy}
+                            onClick={() =>
+                              action({
+                                type: "queue",
+                                id: q.id,
+                                operation: "send-now",
+                              })
+                            }
+                          >
+                            Send now
+                          </Button>
+                          <Button
+                            size="xs"
+                            disabled={busy}
+                            onClick={async () => {
+                              if (
+                                await action({
+                                  type: "queue",
+                                  id: q.id,
+                                  operation: "remove",
+                                })
+                              )
+                                setText(q.text);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="xs"
+                            disabled={busy}
+                            onClick={() =>
+                              action({
+                                type: "queue",
+                                id: q.id,
+                                operation: "remove",
+                              })
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                      <Textarea
+                        ref={input}
+                        aria-label="Operator message"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === "Tab" &&
+                            e.shiftKey &&
+                            !e.nativeEvent.isComposing
+                          ) {
+                            e.preventDefault();
+                            cycleMode();
+                          }
+                          if (
+                            e.key === "Enter" &&
+                            !e.shiftKey &&
+                            !e.nativeEvent.isComposing
+                          ) {
+                            e.preventDefault();
+                            void submit();
+                          }
+                        }}
+                        placeholder="Ask anything, /help for commands…"
+                        rows={2}
+                      />
+                      <div className="op-compose-controls">
+                        <div className="op-mode-controls">
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            className="op-mode"
+                            disabled={modeLocked}
+                            aria-label={`Mode: ${mode}. Click or press Shift+Tab in the message input to cycle.`}
+                            title="Cycle mode (Shift+Tab in message input)"
+                            onClick={cycleMode}
+                          >
+                            {mode === "auto"
+                              ? "Automatic"
+                              : mode === "plan"
+                                ? "Plan"
+                                : "Manual"}
+                          </Button>
+                          <span className="op-shortcut">Shift+Tab</span>
+                          {state.sessionId && (
+                            <ToolPicker
+                              sessionId={state.sessionId}
+                              disabled={active || state.strike || state.lance}
+                              open={isFocused && toolsOpen}
+                              onOpenChange={setToolsOpen}
+                            />
+                          )}
+                          <button
+                            type="button"
+                            className="op-model"
+                            onClick={() => onSettings?.("Models")}
+                          >
+                            {model?.provider && (
+                              <span className="op-model-provider">
+                                {model.provider} /{" "}
+                              </span>
+                            )}
+                            {model?.name || modelId || "Select model"}{" "}
+                            <span aria-hidden="true">⌄</span>
+                          </button>
+                          {state.sessionId && (state.lance || state.strike) && (
+                            <span>{state.lance ? "Lance" : "Strike"}</span>
+                          )}
+                          {active && (
+                            <span className="op-status">
+                              {state.approvals.length
+                                ? "Awaiting approval"
+                                : state.status}
+                            </span>
+                          )}
+                        </div>
+                        <div className="actions">
+                          <Button
+                            variant="constructive"
+                            size="icon-sm"
+                            aria-label={
+                              active ? "Queue message" : "Send message"
+                            }
+                            title={
+                              active ? "Queue message" : "Send message (Enter)"
+                            }
+                            disabled={
+                              !text.trim() ||
+                              busy ||
+                              !!state.questions ||
+                              state.reviewPlan ||
+                              state.status === "stopping"
+                            }
+                            onClick={() => void submit()}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              aria-hidden="true"
+                            >
+                              <path d="M12 19V5m-6 6 6-6 6 6" />
+                            </svg>
+                          </Button>
+                          {active && (
+                            <>
+                              <Button
+                                disabled={busy || state.status === "stopping"}
+                                onClick={() => action({ type: "cancel" })}
+                              >
+                                Stop turn
+                              </Button>
+                              {state.status === "running" && (
+                                <Button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    action({ type: "cancel-command" })
+                                  }
+                                >
+                                  Cancel command
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!state.sessionId && cwd && (
+                    <div className="op-project">
+                      <button
+                        type="button"
+                        disabled={!onChooseFolder}
+                        onClick={() => void onChooseFolder?.()}
+                        title={cwd}
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 7V5h6l2 2h10v12H3Z" />
+                        </svg>
+                        {cwd.split(/[\\/]/).filter(Boolean).at(-1) || cwd}
+                      </button>
+                      <span title={cwd}>{cwd}</span>
+                    </div>
+                  )}
+                </div>
+                {inspecting && (
+                  <section className="op-inspector">
+                    <div className="actions">
+                      <Button
+                        size="xs"
+                        onClick={() => setVerbose(!verbose)}
+                        aria-pressed={verbose}
+                      >
+                        Verbose
+                      </Button>
+                    </div>
+                    <label className="op-panel-select">
+                      Inspect{" "}
+                      <select
+                        value={panel}
+                        onChange={(e) => setPanel(e.target.value as Panel)}
+                      >
+                        {panels.map((p) => (
+                          <option key={p}>{p}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {panel === "Overview" && (
+                      <>
+                        <dl>
+                          <dt>Session</dt>
+                          <dd>
+                            {state.sessionId ||
+                              "Created when you send your first message"}
+                          </dd>
+                          <dt>Target</dt>
+                          <dd>{state.target || "Local workspace"}</dd>
+                          <dt>Tokens in / out</dt>
+                          <dd>
+                            {state.usage.input.toLocaleString()} /{" "}
+                            {state.usage.output.toLocaleString()}
+                          </dd>
+                          {state.usage.context !== undefined && (
+                            <>
+                              <dt>Context</dt>
+                              <dd>
+                                {state.usage.context.toLocaleString()} /{" "}
+                                {state.usage.limit?.toLocaleString()}
+                              </dd>
+                            </>
+                          )}
+                        </dl>
+                        <Button
+                          size="sm"
+                          disabled={!state.sessionId}
+                          onClick={() => action({ type: "open-folder" })}
+                        >
+                          Open session folder
+                        </Button>
+                      </>
+                    )}
+                    {panel === "Plan" && (
+                      <pre>
+                        {state.plan ||
+                          "Switch to Plan mode and describe the objective to draft a plan."}
+                      </pre>
+                    )}
+                    {panel === "Headers" && (
+                      <>
+                        <p>Request headers for this session.</p>
+                        {state.headers.map((h) => (
+                          <div key={h.name} className="op-header">
+                            <code>
+                              {h.name}: {h.displayValue}
+                            </code>
+                            <Button
+                              size="xs"
+                              disabled={busy}
+                              onClick={() =>
+                                action({
+                                  type: "headers",
+                                  command: `/headers remove ${h.name}`,
+                                })
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (
+                              await action({
+                                type: "headers",
+                                command: `/headers set ${header}`,
+                              })
+                            )
+                              setHeader("");
+                          }}
+                        >
+                          <Input
+                            aria-label="Session header"
+                            type="password"
+                            placeholder="Name: value"
+                            value={header}
+                            onChange={(e) => setHeader(e.target.value)}
+                          />
+                          <Button
+                            size="sm"
+                            disabled={
+                              !state.sessionId || busy || !header.trim()
+                            }
+                            type="submit"
+                          >
+                            Set header
+                          </Button>
+                        </form>
+                      </>
+                    )}
+                    {panel === "Skills" &&
+                      state.skills.map((s) => (
+                        <div className="op-skill" key={s.slug}>
+                          <strong>{s.name}</strong>
+                          <p>{s.description}</p>
+                          <Button
+                            size="xs"
+                            disabled={!state.sessionId || busy || state.lance}
+                            onClick={() =>
+                              action({ type: "skill", slug: s.slug })
+                            }
+                          >
+                            Run /{s.slug}
+                          </Button>
+                        </div>
+                      ))}
+                    {panel === "Help" && (
+                      <>
+                        <p>
+                          Enter sends a message. Shift+Enter adds a line.
+                          Messages sent during a turn enter the queue. Shift+Tab
+                          in the message input cycles Manual, Automatic and Plan
+                          modes.
+                        </p>
+                        <dl>
+                          {[
+                            ["/new", "New conversation"],
+                            [
+                              "/operator --target <host>",
+                              "Configure a new session",
+                            ],
+                            ["/models", "Model and effort"],
+                            ["/plan", "Current plan"],
+                            ["/tools", "Available tools"],
+                            ["/headers", "Session headers"],
+                            ["/skills", "Skill catalog"],
+                            ["/pentest", "Pentest wizard"],
+                            ["/resume", "Session history"],
+                            ["/open-session", "Open artifacts"],
+                          ].map(([name, label]) => (
+                            <div key={name}>
+                              <dt>{name}</dt>
+                              <dd>{label}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </>
+                    )}
+                  </section>
                 )}
-              </section>
+              </div>
+            </ResizablePanel>
+            {surfaceOpen && state.sessionId && (
+              <>
+                <ResizableHandle
+                  className="op-surface-resize"
+                  aria-label="Resize attack surface sidebar"
+                />
+                <ResizablePanel
+                  id={surfaceId}
+                  defaultSize={`${surfaceWidth.current}%`}
+                  minSize="30%"
+                  maxSize="75%"
+                  className="op-surface-panel"
+                >
+                  <AttackSurface
+                    key={state.sessionId}
+                    client={client}
+                    sessionId={state.sessionId}
+                    active={visible}
+                    onClose={() => {
+                      setSurfaceOpen(false);
+                      surfaceTrigger.current?.focus();
+                    }}
+                  />
+                </ResizablePanel>
+              </>
             )}
-          </div>
-
+          </ResizablePanelGroup>
           {isFocused && setupOpen && (
             <Dialog
               open
@@ -916,7 +1080,7 @@ export default function OperatorSessionView({
                       setSetupOpen(false);
                       setPrefill(undefined);
                       setText("");
-                      selectAgent("");
+                      setAgentPath([]);
                       setPanel("Overview");
                     } catch (e) {
                       setError(String(e));

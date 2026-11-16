@@ -1,0 +1,88 @@
+.session-topology-graph {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.session-topology-canvas {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.session-topology-graph .react-flow {
+  background: var(--color-canvas-zero);
+  --xy-controls-button-background-color: var(--color-surface);
+  --xy-controls-button-background-color-hover: var(--color-surface-3);
+  --xy-controls-button-color: var(--color-fg-3);
+  --xy-controls-button-color-hover: var(--color-fg);
+  --xy-controls-button-border-color: var(--color-border);
+}
+.session-topology-graph .react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.session-topology-graph .react-flow__node {
+  font-size: 12px;
+  cursor: default;
+}
+.session-topology-graph .react-flow__node:focus-visible {
+  outline: 1px solid var(--color-fg);
+  outline-offset: 3px;
+}
+.session-topology-graph .react-flow__edge-path {
+  transition: opacity 120ms ease-out;
+}
+.session-topology-graph .react-flow__controls {
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+.session-topology-graph .react-flow__controls-button {
+  border-radius: 0;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  fill: var(--color-fg-3);
+}
+.session-topology-graph .react-flow__controls-button:hover {
+  background: var(--color-surface-3);
+  fill: var(--color-fg);
+}
+.session-topology-graph .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--color-fg);
+}
+.session-topology-graph .react-flow__node > button {
+  text-align: left;
+}
+.session-topology-graph .react-flow__node-boundary > button {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+.session-topology-graph .react-flow__node > button:focus-visible {
+  outline: 1px solid var(--color-fg);
+  outline-offset: 3px;
+}
+.session-topology-evidence {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-3);
+  font-size: 12px;
+  pointer-events: none;
+}

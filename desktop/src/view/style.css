@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@pensarai/design-system/globals.css";
+@source "../";
 
 html,
 body,
@@ -13,6 +14,7 @@ body {
   font: 14px / 1.55 var(--font-sans);
 }
 .shell {
+  width: 100%;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -92,7 +94,17 @@ dt,
   font: 12px / 1.5 var(--font-mono);
   color: var(--color-fg-3);
 }
-.shell > main {
+.desktop-sidebar-provider {
+  min-height: 0;
+  height: 100%;
+}
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.app-body > main {
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -135,6 +147,12 @@ p {
 }
 .toolbar input {
   max-width: 400px;
+}
+.sessions-toolbar {
+  flex-wrap: wrap;
+}
+.sessions-toolbar input {
+  flex: 1 1 240px;
 }
 .split {
   min-height: 0;
