@@ -913,11 +913,14 @@ describe("createRunEventProjections", () => {
     s.bus.emit("subagent-spawn", {
       subagentId: "pentest-agent-1",
       name: "A1",
-      input: {},
+      input: { goal: "Map the API" },
+      parentToolCallId: "call-spawn",
     });
     expect(s.subagents.spawnSession).toHaveBeenCalledWith(
       "pentest-agent-1",
       "A1",
+      { goal: "Map the API" },
+      "call-spawn",
     );
     const spawned = s.workflowUpdaters.at(-1)?.(initialWorkflowData());
     expect(spawned?.pentesting.subagents["pentest-agent-1"]).toMatchObject({
@@ -928,6 +931,8 @@ describe("createRunEventProjections", () => {
     s.bus.emit("subagent-spawn", { subagentId: "discovery-agent", input: {} });
     expect(s.subagents.spawnSession).toHaveBeenCalledWith(
       "discovery-agent",
+      undefined,
+      {},
       undefined,
     );
     expect(s.workflowUpdaters).toHaveLength(3);

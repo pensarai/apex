@@ -25,6 +25,7 @@ import {
   type SessionInfo,
   type SwarmTarget,
   saveSubagentData,
+  saveSubagentLifecycle,
   writeAgentManifest,
 } from "./persistence";
 
@@ -493,6 +494,102 @@ describe("loadSubagents manifest merge", () => {
 // ---------------------------------------------------------------------------
 
 describe("loadSubagents directory-only discovery", () => {
+  it.each([
+    "completed",
+    "failed",
+    "running",
+  ] as const)("restores a messages-only worker's explicit %s manifest status", (status) => {
+    const session = makeSession();
+    const childDir = join(tmpDir, "subagents", "ses_child");
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(
+      join(childDir, "messages.json"),
+      JSON.stringify([{ role: "assistant", content: "Worker output" }]),
+    );
+    writeAgentManifest(session, [
+      {
+        id: "ses_child",
+        name: "API worker",
+        target: "https://example.test",
+        objective: "Test API",
+        vulnerabilityClass: "general",
+        status,
+        spawnedAt: "2026-11-16T17:00:00Z",
+      },
+    ]);
+    expect(loadSubagents(tmpDir)[0]).toMatchObject({
+      id: "ses_child",
+      name: "API worker",
+      status: status === "running" ? "paused" : status,
+    });
+  });
+  it.each([
+    "completed",
+    "failed",
+    "running",
+  ] as const)("restores exact child identity and %s lifecycle from its saved snapshot", (status) => {
+    const session = makeSession();
+    const childDir = join(tmpDir, "subagents", "ses_child");
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(
+      join(childDir, "messages.json"),
+      JSON.stringify([{ role: "assistant", content: "Working" }]),
+    );
+    saveSubagentLifecycle(session, "ses_child", {
+      displayName: "API recon",
+      parentToolCallId: "call-recon",
+      input: { goal: "Map the API" },
+      status,
+      spawnedAt: "2026-11-16T17:00:00Z",
+      completedAt: status === "running" ? undefined : "2026-11-16T17:01:00Z",
+    });
+    expect(loadSubagents(tmpDir)[0]).toMatchObject({
+      id: "ses_child",
+      name: "API recon",
+      parentToolCallId: "call-recon",
+      input: { goal: "Map the API" },
+      status: status === "running" ? "paused" : status,
+      createdAt: new Date("2026-11-16T17:00:00Z"),
+    });
+  });
+  it("preserves lifecycle links through ordinary snapshots and preserves outputs through lifecycle completion", () => {
+    const session = makeSession();
+    const lifecycle = {
+      displayName: "API recon",
+      parentToolCallId: "call-recon",
+      input: { goal: "Map API" },
+      spawnedAt: "2026-11-16T17:00:00Z",
+      status: "running" as const,
+    };
+    saveSubagentLifecycle(session, "ses_child", lifecycle);
+    saveSubagentData(session, {
+      agentName: "ses_child",
+      target: "https://example.test",
+      status: "completed",
+      findingsCount: 2,
+      messages: [{ role: "assistant", content: "Done" }],
+    });
+    expect(loadSubagents(tmpDir)[0]).toMatchObject({
+      name: "API recon",
+      parentToolCallId: "call-recon",
+      input: { goal: "Map API" },
+      status: "completed",
+    });
+    saveSubagentLifecycle(session, "ses_child", {
+      ...lifecycle,
+      status: "completed",
+      completedAt: "2026-11-16T17:01:00Z",
+    });
+    const saved = JSON.parse(
+      readFileSync(join(tmpDir, "subagents", "ses_child.json"), "utf-8"),
+    );
+    expect(saved).toMatchObject({
+      findingsCount: 2,
+      target: "https://example.test",
+      messages: [{ role: "assistant", content: "Done" }],
+      parentToolCallId: "call-recon",
+    });
+  });
   it("discovers threat-model agents from messages.json directories", () => {
     const subagentsDir = join(tmpDir, "subagents");
     const tmDir = join(subagentsDir, "threat-model-myapp-_api_users");
@@ -513,7 +610,7 @@ describe("loadSubagents directory-only discovery", () => {
     expect(loaded[0].id).toBe("threat-model-myapp-_api_users");
     expect(loaded[0].type).toBe("pentest");
     expect(loaded[0].name).toContain("Threat Model");
-    expect(loaded[0].status).toBe("completed");
+    expect(loaded[0].status).toBe("paused");
     expect(loaded[0].messages.length).toBeGreaterThan(0);
   });
 
@@ -607,7 +704,7 @@ describe("loadSubagents directory-only discovery", () => {
     expect(loaded[0].id).toBe(childSessionId);
     expect(loaded[0].id.startsWith("ses_")).toBe(true);
     expect(loaded[0].type).toBe("pentest");
-    expect(loaded[0].name).toBe("Pentest Worker");
+    expect(loaded[0].name).toBe(childSessionId);
     expect(loaded[0].messages.length).toBeGreaterThan(0);
   });
 

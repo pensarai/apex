@@ -8,6 +8,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../src/core/agents/offSecAgent";
+import { loadTopology } from "../../../src/core/agents/offSecAgent/tools/topologyRecords";
 import { buildAuthConfig, normalizeStepUsage } from "../../../src/core/ai";
 import { createOffensiveSecurityAgentClient } from "../../../src/core/api";
 import { getSavedReasoning } from "../../../src/core/cli/reasoning";
@@ -209,6 +210,10 @@ class OperatorHost {
         id: a.id,
         name: a.name,
         status: a.status,
+        parentToolCallId: a.parentToolCallId,
+        modelLoading: a.modelLoading ?? undefined,
+        spawnedAt: a.spawnedAt.toISOString(),
+        completedAt: a.completedAt?.toISOString(),
         input: a.input,
         messages: a.messages.map(wireMessage),
       })),
@@ -254,6 +259,10 @@ class OperatorHost {
           id: a.id,
           name: a.name,
           status: a.status,
+          parentToolCallId: a.parentToolCallId,
+          modelLoading: a.modelLoading ?? undefined,
+          spawnedAt: a.spawnedAt.toISOString(),
+          completedAt: a.completedAt?.toISOString(),
           input: a.input,
           transcript: this.patch(a.id, a.messages),
         })),
@@ -1026,6 +1035,12 @@ class OperatorHost {
     return `data:image/png;base64,${(await readFile(file)).toString("base64")}`;
   }
   requests = {
+    operatorAttackSurface: ({ sessionId }: { sessionId: string }) => {
+      this.options.requireAcceptance();
+      if (!this.session || this.session.id !== sessionId)
+        throw new Error("The active session changed.");
+      return loadTopology(this.session.rootPath);
+    },
     operatorArguments: ({ command }: { command: string }) =>
       operatorArguments(command, this.options.cwd()),
     operatorState: () => this.snapshot(),

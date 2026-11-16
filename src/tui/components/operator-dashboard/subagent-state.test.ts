@@ -49,6 +49,20 @@ function makeSession(
 }
 
 describe("SubagentStore counts", () => {
+  it("retains the exact spawn tool identity and task input", () => {
+    const store = createSubagentStore();
+    const helpers = createSubagentSessionHelpers(store.setState);
+    helpers.spawnSession(
+      "child",
+      "Recon",
+      { goal: "Map the API" },
+      "call-recon",
+    );
+    expect(store.getSnapshot().get("child")).toMatchObject({
+      parentToolCallId: "call-recon",
+      input: { goal: "Map the API" },
+    });
+  });
   it.each([
     "completed",
     "failed",

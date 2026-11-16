@@ -55,6 +55,7 @@ const byName: Record<string, LucideIcon> = {
   response: CircleCheck,
   spawn_workspace_agent: GitBranch,
   run_attack_surface: GitBranch,
+  spawn_recon_agent: GitBranch,
   spawn_coding_agent: GitBranch,
   spawn_pentest_swarm: GitBranch,
   spawn_pentest_agent: GitBranch,

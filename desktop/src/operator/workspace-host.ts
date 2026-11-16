@@ -205,6 +205,8 @@ export function createOperatorWorkspace(options: Options) {
       const entry = entryFor(tabId);
       return track(entry, () => entry.host.requests.operatorAction(input));
     },
+    operatorAttackSurface: ({ tabId, ...input }) =>
+      entryFor(tabId).host.requests.operatorAttackSurface(input),
     operatorScreenshot: ({ tabId, ...input }) =>
       entryFor(tabId).host.requests.operatorScreenshot(input),
   } satisfies Handlers;

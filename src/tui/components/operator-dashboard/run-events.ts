@@ -336,7 +336,12 @@ export interface SubagentEventSink {
     args?: Record<string, unknown>,
   ): void;
   updateToolResult(id: string, toolCallId: string, result: unknown): void;
-  spawnSession(id: string, name?: string, input?: unknown): void;
+  spawnSession(
+    id: string,
+    name?: string,
+    input?: unknown,
+    parentToolCallId?: string,
+  ): void;
   completeSession(id: string, status: "completed" | "failed"): void;
 }
 
@@ -471,10 +476,16 @@ export function createRunEventProjections(deps: RunEventProjectionDeps): {
         // doesn't leave the questions form stuck over a failed conversation.
         deps.questions.onCleared();
       },
-      onSubagentSpawn: ({ subagentId, name, workflowPhase }) => {
+      onSubagentSpawn: ({
+        subagentId,
+        name,
+        input,
+        parentToolCallId,
+        workflowPhase,
+      }) => {
         // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
         if (subagentId.startsWith("app:")) return;
-        subagents.spawnSession(subagentId, name);
+        subagents.spawnSession(subagentId, name, input, parentToolCallId);
         if (!isPentestAgent(subagentId, workflowPhase)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
         updateWorkflowData((wd) =>

@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 let constructorError: Error | undefined;
@@ -74,6 +77,97 @@ afterEach(() => {
 });
 
 describe("inProcessSubagentSpawner", () => {
+  it.each([
+    false,
+    true,
+  ])("persists the spawn relationship and final lifecycle (failure=%s)", async (fails) => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-subagent-lifecycle-"));
+    const session = { id: "ses_parent", rootPath } as SessionInfo;
+    drain = createDrain();
+    drain.resolve();
+    if (fails) constructorError = new Error("Worker failed");
+    const parentBus = new AgentEventBus();
+    parentBus.on("subagent-spawn", () => {
+      expect(
+        JSON.parse(
+          readFileSync(join(rootPath, "subagents", "ses_child.json"), "utf-8"),
+        ),
+      ).toMatchObject({
+        status: "running",
+        parentToolCallId: "call-spawn",
+      });
+    });
+    try {
+      const promise = inProcessSubagentSpawner.spawn({
+        spec: {
+          type: "pentest",
+          target: "https://example.test",
+          objectives: ["Map API"],
+        },
+        runtime: { session, model: "test-model" as AIModel },
+        parentBus,
+        subagentId: "ses_child",
+        subagentName: "API recon",
+        parentToolCallId: "call-spawn",
+        lifecycleInput: { goal: "Map API" },
+      });
+      if (fails) await expect(promise).rejects.toThrow("Worker failed");
+      else await promise;
+      expect(
+        JSON.parse(
+          readFileSync(join(rootPath, "subagents", "ses_child.json"), "utf-8"),
+        ),
+      ).toMatchObject({
+        agentName: "ses_child",
+        displayName: "API recon",
+        parentToolCallId: "call-spawn",
+        input: { goal: "Map API" },
+        status: fails ? "failed" : "completed",
+        completedAt: expect.any(String),
+      });
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+  it.each([
+    false,
+    true,
+  ])("preserves completion and the original result when lifecycle writes fail (failure=%s)", async (fails) => {
+    const rootPath = mkdtempSync(
+      join(tmpdir(), "apex-subagent-write-failure-"),
+    );
+    const original = new Error("Worker failed");
+    drain = createDrain();
+    drain.resolve();
+    if (fails) constructorError = original;
+    const parentBus = new AgentEventBus();
+    const completions: string[] = [];
+    parentBus.on("subagent-spawn", () => {
+      rmSync(join(rootPath, "subagents"), { recursive: true });
+      writeFileSync(join(rootPath, "subagents"), "blocks lifecycle writes");
+    });
+    parentBus.on("subagent-complete", ({ status }) => completions.push(status));
+    try {
+      const promise = inProcessSubagentSpawner.spawn({
+        spec: {
+          type: "pentest",
+          target: "https://example.test",
+          objectives: ["Map API"],
+        },
+        runtime: {
+          session: { id: "ses_parent", rootPath } as SessionInfo,
+          model: "test-model" as AIModel,
+        },
+        parentBus,
+        subagentId: "ses_child",
+      });
+      if (fails) await expect(promise).rejects.toBe(original);
+      else await expect(promise).resolves.toMatchObject({ findings: [] });
+      expect(completions).toEqual([fails ? "failed" : "completed"]);
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
   it("attributes child model calls to the exact parent tool invocation", async () => {
     drain = createDrain();
     drain.resolve();

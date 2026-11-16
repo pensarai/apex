@@ -34,7 +34,14 @@ import type {
 } from "../operator/contract";
 import Operator from "../operator/Operator";
 import { api } from "./bridge";
+import { SessionSidebar } from "./SessionSidebar";
+import { SessionStatus } from "./SessionStatus";
 import { type SessionLayout, sessionLayout } from "./session-layout";
+import {
+  latestSessionReply,
+  needsSessionInput,
+  sessionUnread,
+} from "./session-status";
 import "./session-workspace.css";
 
 export interface SessionWorkspaceHandle {
@@ -50,6 +57,7 @@ type Props = Callbacks & {
   active: boolean;
   onActivate: () => void;
   tabBar: HTMLElement | null;
+  sidebar: HTMLElement | null;
   canChooseFolder: boolean;
   onDirectoryChanged: (cwd: string) => void;
 };
@@ -57,6 +65,7 @@ type Tab = OperatorTab & {
   client: OperatorClient;
   title: string;
   attention: boolean;
+  unread: boolean;
 };
 
 function title(snapshot: OperatorSnapshot) {
@@ -67,13 +76,6 @@ function title(snapshot: OperatorSnapshot) {
       ?.content.trim()
       .slice(0, 64) ||
     "New session"
-  );
-}
-function needsAttention(snapshot: OperatorSnapshot) {
-  return !!(
-    snapshot.approvals.length ||
-    snapshot.questions ||
-    snapshot.reviewPlan
   );
 }
 
@@ -139,6 +141,7 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
       active,
       onActivate,
       tabBar,
+      sidebar,
       canChooseFolder,
       onDirectoryChanged,
       ...callbacks
@@ -148,6 +151,9 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
     const [tabs, setTabs] = useState<Tab[]>([]);
     const [layout, dispatch] = useReducer(sessionLayout, { order: [] });
     const [ready, setReady] = useState(false);
+    const [windowFocused, setWindowFocused] = useState(() =>
+      document.hasFocus(),
+    );
     const [retry, setRetry] = useState(0);
     const [error, setError] = useState("");
     const [dragging, setDragging] = useState<string>();
@@ -162,9 +168,41 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
     const dragOrigin = useRef<SessionLayout>(undefined);
     const initialization = useRef<Promise<OperatorTab[]>>(undefined);
     const tabsRef = useRef(tabs);
+    const replies = useRef(new Map<string, string>());
     tabsRef.current = tabs;
+    const reading = useRef<string | undefined>(undefined);
+    reading.current = active && windowFocused ? layout.focused : undefined;
+    useEffect(() => {
+      const focus = () =>
+        setWindowFocused(
+          document.hasFocus() && document.visibilityState === "visible",
+        );
+      window.addEventListener("focus", focus);
+      window.addEventListener("blur", focus);
+      document.addEventListener("visibilitychange", focus);
+      return () => {
+        window.removeEventListener("focus", focus);
+        window.removeEventListener("blur", focus);
+        document.removeEventListener("visibilitychange", focus);
+      };
+    }, []);
+    useEffect(() => {
+      if (!active || !windowFocused || !layout.focused) return;
+      setTabs((current) =>
+        current.some((tab) => tab.tabId === layout.focused && tab.unread)
+          ? current.map((tab) =>
+              tab.tabId === layout.focused ? { ...tab, unread: false } : tab,
+            )
+          : current,
+      );
+    }, [active, windowFocused, layout.focused]);
 
     const register = useCallback((descriptor: OperatorTab) => {
+      if (!replies.current.has(descriptor.tabId))
+        replies.current.set(
+          descriptor.tabId,
+          latestSessionReply(descriptor.snapshot),
+        );
       setTabs((current) =>
         current.some((tab) => tab.tabId === descriptor.tabId)
           ? current
@@ -174,7 +212,8 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
                 ...descriptor,
                 client: createOperatorClient(descriptor.tabId),
                 title: title(descriptor.snapshot),
-                attention: needsAttention(descriptor.snapshot),
+                attention: needsSessionInput(descriptor.snapshot),
+                unread: false,
               },
             ],
       );
@@ -203,21 +242,31 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
     }, [register, retry]);
 
     const update = useCallback((id: string, snapshot: OperatorSnapshot) => {
+      const reply = latestSessionReply(snapshot);
+      const previousReply = replies.current.get(id) ?? reply;
+      replies.current.set(id, reply);
       setTabs((current) => {
         const tab = current.find((item) => item.tabId === id);
         if (!tab) return current;
         const nextTitle = title(snapshot);
-        const attention = needsAttention(snapshot);
+        const attention = needsSessionInput(snapshot);
+        const unread = sessionUnread(
+          previousReply,
+          reply,
+          tab.unread,
+          reading.current === id,
+        );
         if (
           tab.title === nextTitle &&
           tab.attention === attention &&
+          tab.unread === unread &&
           tab.snapshot.status === snapshot.status &&
           tab.snapshot.sessionId === snapshot.sessionId
         )
           return current;
         return current.map((item) =>
           item === tab
-            ? { ...tab, title: nextTitle, attention, snapshot }
+            ? { ...tab, title: nextTitle, attention, snapshot, unread }
             : item,
         );
       });
@@ -259,6 +308,7 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
       setError("");
       try {
         await api.operatorClose({ tabId: id, stop });
+        replies.current.delete(id);
         setTabs((current) => current.filter((item) => item.tabId !== id));
         dispatch({ type: "close", id });
         setClosing(undefined);
@@ -367,13 +417,6 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
           {layout.order.map((id) => {
             const tab = tabs.find((item) => item.tabId === id);
             if (!tab) return null;
-            const status = tab.attention
-              ? "Needs attention"
-              : tab.snapshot.status === "running"
-                ? "Running"
-                : tab.snapshot.status === "stopping"
-                  ? "Stopping"
-                  : "";
             return (
               <div
                 key={id}
@@ -429,18 +472,11 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
                   className="session-tab-trigger"
                   onClick={onActivate}
                 >
-                  {status && (
-                    <span
-                      className="session-tab-status"
-                      data-running={
-                        tab.snapshot.status === "running" && !tab.attention
-                      }
-                      aria-label={status}
-                      title={status}
-                    >
-                      {tab.attention ? "!" : "•"}
-                    </span>
-                  )}
+                  <SessionStatus
+                    attention={tab.attention}
+                    running={tab.snapshot.status !== "idle"}
+                    unread={tab.unread}
+                  />
                   <span className="session-tab-title">{tab.title}</span>
                 </TabsTrigger>
                 <Button
@@ -538,6 +574,36 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
         hidden={!active}
       >
         {tabBar && createPortal(tabStrip, tabBar)}
+        {sidebar &&
+          createPortal(
+            <SessionSidebar
+              tabs={layout.order.flatMap((id) => {
+                const tab = tabs.find((item) => item.tabId === id);
+                return tab
+                  ? [
+                      {
+                        tabId: tab.tabId,
+                        sessionId: tab.snapshot.sessionId,
+                        title: tab.title,
+                        attention: tab.attention,
+                        running: tab.snapshot.status !== "idle",
+                        unread: tab.unread,
+                      },
+                    ]
+                  : [];
+              })}
+              selected={active ? layout.focused : undefined}
+              ready={ready}
+              onSelect={(id) => {
+                select(id);
+                onActivate();
+              }}
+              onOpen={open}
+              onNew={newSession}
+              onHistory={() => callbacks.onSessions?.()}
+            />,
+            sidebar,
+          )}
         {error && !closing && (
           <div role="alert">
             {error}

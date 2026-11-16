@@ -181,6 +181,10 @@
   },
   "overrides": [
     {
+      "includes": ["desktop/src/view/style.css"],
+      "css": { "parser": { "tailwindDirectives": true } }
+    },
+    {
       "includes": ["package.json"],
       "assist": {
         "actions": {

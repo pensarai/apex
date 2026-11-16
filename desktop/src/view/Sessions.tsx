@@ -198,19 +198,7 @@ export function Sessions({
   const selected = visible.find((row) => row.id === id) ?? visible[0];
   return (
     <>
-      <header>
-        <div>
-          <h1>Sessions</h1>
-          <p>Local engagements and their reports.</p>
-        </div>
-        <div className="actions">
-          <Button onClick={startPentest}>New pentest</Button>
-          <Button variant="constructive" onClick={startOperator}>
-            Open operator
-          </Button>
-        </div>
-      </header>
-      <div className="toolbar">
+      <div className="toolbar sessions-toolbar">
         <Input
           aria-label="Filter sessions"
           placeholder="Filter by name, target or session ID"
@@ -222,6 +210,12 @@ export function Sessions({
         />
         <Button size="sm" onClick={reload} disabled={loading}>
           Refresh
+        </Button>
+        <Button size="sm" onClick={startPentest}>
+          New pentest
+        </Button>
+        <Button size="sm" variant="constructive" onClick={startOperator}>
+          Open operator
         </Button>
       </div>
       {error && <p role="alert">{error}</p>}

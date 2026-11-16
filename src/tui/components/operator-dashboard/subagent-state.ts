@@ -65,8 +65,9 @@ export function loadSubagentSessionsFromDisk(
       name: sub.name,
       status,
       spawnedAt: sub.createdAt,
-      completedAt,
-      input: { target: sub.target },
+      completedAt: sub.completedAt ?? completedAt,
+      parentToolCallId: sub.parentToolCallId,
+      input: sub.input ?? { target: sub.target },
       messages,
     });
   }
@@ -193,7 +194,12 @@ export function createSubagentSessionHelpers(setState: SetState) {
   // never leaks into `args`. Keyed by toolCallId; cleared on finalization.
   const toolArgsDeltaBuffers = new Map<string, { accumulated: string }>();
 
-  const spawnSession = (id: string, name?: string, input?: unknown) => {
+  const spawnSession = (
+    id: string,
+    name?: string,
+    input?: unknown,
+    parentToolCallId?: string,
+  ) => {
     setState((prev) => {
       const next = new Map(prev);
       next.set(id, {
@@ -202,6 +208,7 @@ export function createSubagentSessionHelpers(setState: SetState) {
         status: "running",
         spawnedAt: new Date(),
         input: input ?? null,
+        parentToolCallId,
         messages: [],
       });
       return next;

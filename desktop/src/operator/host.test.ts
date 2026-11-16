@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeRecordFiles } from "../../../src/core/agents/offSecAgent/tools/topologyRecords";
 import type { OffensiveSecurityAgentClientInput } from "../../../src/core/api";
 import { config } from "../../../src/core/config";
 import { planFilePath } from "../../../src/core/plan";
@@ -42,6 +43,96 @@ describe("desktop operator", () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
+  });
+  it("reads the session attack surface from persisted records, including updates and retirements", async () => {
+    const { sessionId } = await host.start({ name: "Recon" });
+    const session = await sessions.get(sessionId);
+    expect(host.requests.operatorAttackSurface({ sessionId })).toEqual({
+      boundaries: [],
+      components: [],
+      flows: [],
+      controls: [],
+      threats: [],
+      retired: [],
+    });
+    writeRecordFiles(session.rootPath, [
+      {
+        kind: "boundary",
+        file: "boundary_1.json",
+        record: {
+          id: "bnd_root",
+          name: "Production",
+          recordedAt: "2026-11-01T00:00:00Z",
+        },
+      },
+      {
+        kind: "component",
+        file: "component_1.json",
+        record: {
+          id: "cmp_api",
+          name: "API",
+          boundaryId: "bnd_root",
+          recordedAt: "2026-11-01T00:00:00Z",
+        },
+      },
+      {
+        kind: "flow",
+        file: "flow_1.json",
+        record: {
+          id: "flw_one",
+          fromId: "cmp_api",
+          to: "External service",
+          label: "HTTPS",
+          recordedAt: "2026-11-01T00:00:00Z",
+        },
+      },
+    ]);
+    expect(
+      host.requests.operatorAttackSurface({ sessionId }).components[0],
+    ).toMatchObject({ name: "API", boundary: "Production" });
+    writeRecordFiles(session.rootPath, [
+      {
+        kind: "component",
+        file: "component_2.json",
+        record: {
+          id: "cmp_api",
+          name: "Public API",
+          boundaryId: "bnd_root",
+          recordedAt: "2026-11-02T00:00:00Z",
+        },
+      },
+      {
+        kind: "boundary",
+        file: "boundary_2.json",
+        record: {
+          id: "bnd_root",
+          name: "Production",
+          status: "retired",
+          recordedAt: "2026-11-02T00:00:00Z",
+        },
+      },
+    ]);
+    const topology = host.requests.operatorAttackSurface({ sessionId });
+    expect(topology.components).toHaveLength(1);
+    expect(topology.flows[0].from).toBe("Public API");
+    expect(topology.boundaries).toEqual([]);
+    expect(topology.retired[0]).toMatchObject({
+      kind: "boundary",
+      record: { id: "bnd_root" },
+    });
+    expect(() =>
+      host.requests.operatorAttackSurface({ sessionId: "another-session" }),
+    ).toThrow("active session changed");
+    host.dispose();
+    host = createOperatorHost({
+      cwd: () => dir,
+      requireAcceptance() {},
+      emit() {},
+    });
+    await host.resume({ id: sessionId });
+    expect(host.requests.operatorAttackSurface({ sessionId })).toEqual(
+      topology,
+    );
   });
   it("reports inline activity from root events and clears it after completion", async () => {
     let finish!: () => void;
@@ -305,6 +396,82 @@ describe("desktop operator", () => {
     expect(host.requests.operatorState().activity).toBeUndefined();
     expect(host.requests.operatorState().error).toBeUndefined();
     expect(sdk.run).toHaveBeenCalledTimes(1);
+  });
+  it("carries child spawn identity and loading through snapshots and stream frames", async () => {
+    const emit = vi.fn();
+    const viewer = createOperatorHost({
+      cwd: () => dir,
+      requireAcceptance() {},
+      emit,
+    });
+    let finish = () => {};
+    const wait = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    sdk.run.mockImplementation(
+      async (input: OffensiveSecurityAgentClientInput) => {
+        input.eventBus?.emit("subagent-spawn", {
+          subagentId: "child",
+          name: "API recon",
+          input: { goal: "Map API" },
+          parentToolCallId: "call-recon",
+        });
+        input.eventBus?.emit("model-loading", {
+          subagentId: "child",
+          model: "fixture",
+          status: "loading",
+          elapsedMs: 0,
+        });
+        await wait;
+        input.eventBus?.emit("subagent-complete", {
+          subagentId: "child",
+          status: "completed",
+        });
+        return {
+          session: input.session,
+          streamResult: { response: { messages: [] } },
+        };
+      },
+    );
+    try {
+      const { sessionId } = await viewer.start({ name: "Recon" });
+      viewer.requests.operatorWatch({ key: "view" });
+      await viewer.requests.operatorAction({
+        sessionId,
+        action: { type: "send", text: "Inspect" },
+      });
+      await vi.waitFor(() =>
+        expect(viewer.requests.operatorState().subagents).toHaveLength(1),
+      );
+      const expected = {
+        id: "child",
+        name: "API recon",
+        parentToolCallId: "call-recon",
+        input: { goal: "Map API" },
+        modelLoading: "fixture",
+        spawnedAt: expect.any(String),
+      };
+      expect(viewer.requests.operatorState().subagents[0]).toMatchObject(
+        expected,
+      );
+      await vi.waitFor(() =>
+        expect(emit.mock.lastCall?.[0].subagents[0]).toMatchObject(expected),
+      );
+      finish();
+      await vi.waitFor(() =>
+        expect(viewer.requests.operatorState().status).toBe("idle"),
+      );
+      expect(viewer.requests.operatorState().subagents[0]).toMatchObject({
+        status: "completed",
+        completedAt: expect.any(String),
+      });
+      expect(
+        viewer.requests.operatorState().subagents[0].modelLoading,
+      ).toBeUndefined();
+    } finally {
+      finish();
+      viewer.dispose();
+    }
   });
   it("streams only changed transcript suffixes while subscribed and catches up after reattachment", async () => {
     const emit = vi.fn();
