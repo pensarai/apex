@@ -1,0 +1,9 @@
+# Accepted advisories for scripts/osv-gate.ts and osv-scanner.
+#
+# Each entry names one advisory and says why it is accepted. The gate fails
+# on an entry without a reason. `ignoreUntil` is optional.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-01
+# reason = "Only reachable through the dev server, which never runs in production."
