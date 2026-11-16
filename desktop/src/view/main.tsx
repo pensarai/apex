@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@pensarai/design-system/ui/dropdown-menu";
+import { Minus, Square, X } from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -113,21 +114,49 @@ function App() {
   };
   return (
     <div className="shell">
-      <div className="app-bar">
+      <div className="app-bar electrobun-webkit-app-region-drag">
+        {navigator.platform.includes("Mac") ? (
+          <div className="app-native-controls" aria-hidden="true" />
+        ) : (
+          <div className="app-window-controls electrobun-webkit-app-region-no-drag">
+            {(
+              [
+                { action: "close", label: "Close window", Icon: X },
+                { action: "minimize", label: "Minimize window", Icon: Minus },
+                {
+                  action: "toggle-maximize",
+                  label: "Maximize or restore window",
+                  Icon: Square,
+                },
+              ] as const
+            ).map(({ action, label, Icon }) => (
+              <Button
+                key={action}
+                size="sm"
+                variant="ghost"
+                aria-label={label}
+                title={label}
+                onClick={() =>
+                  void api
+                    .windowAction({ action })
+                    .catch((e) => setError(String(e)))
+                }
+              >
+                <Icon size={14} aria-hidden="true" />
+              </Button>
+            ))}
+          </div>
+        )}
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className="app-menu-trigger"
+              className="app-menu-trigger electrobun-webkit-app-region-no-drag"
               aria-label="Apex menu"
               title="Apex menu (⌘K / Ctrl+K)"
             >
               <PensarMark size={18} fill="currentColor" />
-              <span>Apex</span>
-              <span className="app-menu-chevron" aria-hidden="true">
-                ⌄
-              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="app-menu">

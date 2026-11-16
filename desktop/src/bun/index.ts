@@ -87,6 +87,20 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
       ...operator.requests,
       ...pentest,
       ...settings.requests,
+      windowAction: ({ action }): void => {
+        switch (action) {
+          case "close":
+            mainWindow.close();
+            break;
+          case "minimize":
+            mainWindow.minimize();
+            break;
+          case "toggle-maximize":
+            if (mainWindow.isMaximized()) mainWindow.unmaximize();
+            else mainWindow.maximize();
+            break;
+        }
+      },
       workspace: async () => {
         const current = await config.get();
         accepted = current.responsibleUseAccepted;
@@ -279,14 +293,17 @@ ApplicationMenu.on("application-menu-clicked", (event) => {
   if (action === "new-session") rpc.send.sessionCommand({ type: "new" });
   if (action === "close-session") rpc.send.sessionCommand({ type: "close" });
 });
-new BrowserWindow({
+const mainWindow = new BrowserWindow({
   title: "Apex",
+  titleBarStyle: "hiddenInset",
   transparent: true,
   frame: { x: 100, y: 80, width: 1220, height: 800 },
   url,
   rpc,
   navigationRules: JSON.stringify(["^*", url]),
 });
+// Center the native 14px controls in the 48px app bar; reserve their width in style.css.
+if (process.platform === "darwin") mainWindow.setWindowButtonPosition(12, 17);
 function dispose() {
   operator.dispose();
   settings.dispose();

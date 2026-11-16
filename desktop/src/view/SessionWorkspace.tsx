@@ -360,7 +360,7 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
     const tabStrip = (
       <>
         <TabsList
-          className="session-tabs"
+          className="session-tabs electrobun-webkit-app-region-no-drag"
           variant="line"
           aria-label="Open sessions"
         >
@@ -461,7 +461,7 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
         <Button
           variant="ghost"
           size="sm"
-          className="session-new"
+          className="session-new electrobun-webkit-app-region-no-drag"
           aria-label="New session"
           title={`New session (${shortcut}N)`}
           disabled={!ready}
@@ -474,6 +474,7 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
             <Button
               variant="ghost"
               size="sm"
+              className="electrobun-webkit-app-region-no-drag"
               aria-label="Arrange sessions"
               title="Arrange sessions"
               disabled={!layout.focused}

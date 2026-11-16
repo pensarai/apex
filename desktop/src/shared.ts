@@ -59,6 +59,10 @@ export type DesktopRPC = {
     requests: OperatorRequests &
       SettingsRequests &
       PentestRequests & {
+        windowAction: Call<
+          { action: "close" | "minimize" | "toggle-maximize" },
+          void
+        >;
         workspace: Call<
           void,
           {
