@@ -35,7 +35,10 @@ interface OsvVulnerability {
   id: string;
   aliases?: string[];
   summary?: string;
-  affected?: { ranges?: { events?: Record<string, string>[] }[] }[];
+  affected?: {
+    package?: { name?: string; ecosystem?: string };
+    ranges?: { events?: Record<string, string>[] }[];
+  }[];
 }
 
 interface OsvPackage {
@@ -102,11 +105,22 @@ export function findingsFromScan(scan: OsvScan): Finding[] {
         version: p.package.version,
         ...severityOf(group.max_severity),
         malware: ids.some((i) => i.startsWith("MAL-")),
-        fixAvailable: (vuln?.affected ?? []).some((a) =>
-          (a.ranges ?? []).some((r) =>
-            (r.events ?? []).some((e) => "fixed" in e),
+        // An advisory can cover several packages; only this package's entries say whether it has a fix.
+        // Every record in the group is the same advisory; any of them may list
+        // the fix, but only for this package's entries.
+        fixAvailable: group.ids
+          .flatMap((gid) => vulns.get(gid)?.affected ?? [])
+          .filter(
+            (a) =>
+              a.package?.name === p.package.name &&
+              (!a.package.ecosystem ||
+                a.package.ecosystem === p.package.ecosystem),
+          )
+          .some((a) =>
+            (a.ranges ?? []).some((r) =>
+              (r.events ?? []).some((e) => "fixed" in e),
+            ),
           ),
-        ),
         summary: vuln?.summary ?? "",
       });
     }
@@ -165,22 +179,107 @@ export function compareScans(base: OsvScan, head: OsvScan): GateResult {
   };
 }
 
-export interface IgnoredVuln {
-  id?: unknown;
-  reason?: unknown;
-}
-
-export interface PackageOverride {
-  name?: unknown;
-  ignore?: unknown;
-  vulnerability?: { ignore?: unknown };
-  reason?: unknown;
-}
+type ConfigEntry = Record<string, string | boolean>;
 
 export interface OsvConfig {
-  IgnoredVulns?: IgnoredVuln[];
-  PackageOverrides?: PackageOverride[];
+  IgnoredVulns: ConfigEntry[];
+  PackageOverrides: ConfigEntry[];
 }
+
+/** The line without its comment; a `#` inside a quoted string is kept. */
+function stripComment(line: string): string {
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (quote === '"' && c === "\\") i++;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === "#") return line.slice(0, i);
+  }
+  return line;
+}
+
+function parseValue(raw: string, where: string): string | boolean {
+  if (raw.startsWith('"')) {
+    const m = /^"((?:[^"\\]|\\.)*)"$/.exec(raw);
+    if (!m) throw new Error(`${where}: cannot read the string ${raw}`);
+    return JSON.parse(`"${m[1]}"`) as string;
+  }
+  if (raw.startsWith("'")) {
+    const m = /^'([^']*)'$/.exec(raw);
+    if (!m) throw new Error(`${where}: cannot read the string ${raw}`);
+    return m[1] ?? "";
+  }
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  // Dates, numbers and one-line arrays are kept as text.
+  return raw;
+}
+
+/**
+ * The tables of osv-scanner.toml that can hide a finding. The file is held to
+ * an allowlist so the gate reads it exactly as osv-scanner does: comments,
+ * [[IgnoredVulns]] and [[PackageOverrides]] tables, and one-line `key = value`
+ * entries inside them, with table and key names matched case-insensitively.
+ * Anything else (a top-level key, another table, an inline table, a
+ * multi-line value, a line it cannot read) is an error, never skipped, so an
+ * exception cannot slip past the reason check.
+ */
+export function parseOsvConfig(toml: string): OsvConfig {
+  const config: OsvConfig = { IgnoredVulns: [], PackageOverrides: [] };
+  let current: ConfigEntry | null = null;
+  toml.split("\n").forEach((raw, n) => {
+    const line = stripComment(raw).trim();
+    if (!line) return;
+    const where = `osv-scanner.toml line ${n + 1}`;
+    const header = /^\[\[\s*([A-Za-z]+)\s*\]\]$/.exec(line);
+    if (header) {
+      const name = header[1] ?? "";
+      const table = (Object.keys(config) as (keyof OsvConfig)[]).find(
+        (t) => t.toLowerCase() === name.toLowerCase(),
+      );
+      if (!table)
+        throw new Error(`${where}: the gate does not check [[${name}]] tables`);
+      current = {};
+      config[table].push(current);
+      return;
+    }
+    if (line.startsWith("["))
+      throw new Error(
+        `${where}: the gate cannot check "${line}"; use [[IgnoredVulns]] or [[PackageOverrides]] with one-line keys`,
+      );
+    const kv = /^([A-Za-z][\w.-]*)\s*=\s*(.+)$/.exec(line);
+    if (!kv) throw new Error(`${where}: cannot read "${line}"`);
+    const key = kv[1] ?? "";
+    const value = kv[2] ?? "";
+    if (value.startsWith('"""') || value.startsWith("'''"))
+      throw new Error(`${where}: the gate cannot check multi-line strings`);
+    // A top-level key can hold the same exceptions as an array of inline
+    // tables (IgnoredVulns = [{ ... }]), so none is allowed.
+    if (!current)
+      throw new Error(
+        `${where}: the gate allows no top-level settings; put exceptions in [[IgnoredVulns]] or [[PackageOverrides]] tables`,
+      );
+    // An inline table can spell an ignore many ways ({ "ignore" = true }, ...);
+    // dotted keys can only spell it one way, which the gate checks exactly.
+    if (value.startsWith("{"))
+      throw new Error(
+        `${where}: write dotted keys (vulnerability.ignore = true), not inline tables`,
+      );
+    current[key.toLowerCase()] = parseValue(value, where);
+  });
+  return config;
+}
+
+/** A package override hides findings when any of its keys ignores the package or its vulnerabilities. */
+function overrideHides(override: ConfigEntry): boolean {
+  // license.ignore only skips license checks; vulnerabilities are still reported.
+  return override.ignore === true || override["vulnerability.ignore"] === true;
+}
+
+const hasReason = (entry: ConfigEntry) =>
+  typeof entry.reason === "string" && entry.reason.trim() !== "";
 
 /**
  * Every way osv-scanner.toml can hide a finding needs a reason: an ignored
@@ -188,26 +287,24 @@ export interface OsvConfig {
  * or its vulnerabilities is held to the same rule.
  */
 export function invalidExceptions(config: OsvConfig): string[] {
-  const overrides = (config.PackageOverrides ?? []).flatMap((o, i) => {
-    const hides = o.ignore === true || o.vulnerability?.ignore === true;
-    if (!hides || (typeof o.reason === "string" && o.reason.trim())) return [];
-    const name = typeof o.name === "string" ? o.name : `override ${i + 1}`;
-    return [`${name} ignores vulnerabilities without a reason`];
-  });
-  return [...ignoredVulnProblems(config.IgnoredVulns ?? []), ...overrides];
-}
-
-function ignoredVulnProblems(entries: IgnoredVuln[]): string[] {
-  return entries.flatMap((e, i) => {
+  const ignored = config.IgnoredVulns.flatMap((e, i) => {
     const problems: string[] = [];
     if (typeof e.id !== "string" || !e.id)
       problems.push(`entry ${i + 1} has no id`);
-    if (typeof e.reason !== "string" || !e.reason.trim())
+    if (!hasReason(e))
       problems.push(
         `${typeof e.id === "string" ? e.id : `entry ${i + 1}`} has no reason`,
       );
     return problems;
   });
+  const overrides = config.PackageOverrides.flatMap((o, i) =>
+    overrideHides(o) && !hasReason(o)
+      ? [
+          `${typeof o.name === "string" ? o.name : `override ${i + 1}`} ignores vulnerabilities without a reason`,
+        ]
+      : [],
+  );
+  return [...ignored, ...overrides];
 }
 
 const SEVERITY_ORDER: Severity[] = [
@@ -414,9 +511,16 @@ async function main(): Promise<void> {
   process.chdir(root);
 
   const config = resolve("osv-scanner.toml");
-  const problems = invalidExceptions(
-    Bun.TOML.parse(readFileSync(config, "utf8")) as OsvConfig,
-  );
+  let problems: string[];
+  try {
+    problems = invalidExceptions(parseOsvConfig(readFileSync(config, "utf8")));
+  } catch (err) {
+    // A config the gate cannot read is a failed gate, reported where it points.
+    console.log(
+      `::error file=osv-scanner.toml::${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(1);
+  }
   if (problems.length) {
     for (const p of problems)
       console.log(`::error file=osv-scanner.toml::Exception ${p}`);
