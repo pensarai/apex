@@ -465,7 +465,9 @@ function scan(lockfile: string, config?: string): OsvScan {
   const args = [
     "scan",
     "source",
-    "--offline-vulnerabilities",
+    // Full offline mode: only the advisory database download below touches the
+    // network; no other scanner feature can send the dependency list anywhere.
+    "--offline",
     "--download-offline-databases",
     "--all-packages",
     "--format",
