@@ -4,10 +4,10 @@ on:
   pull_request:
     types: [opened, ready_for_review]
 
-# One run per PR at a time; each event still runs, none is cancelled.
+# One run per PR at a time; `queue: max` keeps every pending event.
 concurrency:
   group: auto-assign-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  queue: max
 
 permissions: {}
 

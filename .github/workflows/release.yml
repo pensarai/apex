@@ -5,10 +5,11 @@ on:
     branches:
       - release
 
-# Two pushes releasing at once would race on the same version.
+# Releases run one at a time, in order. `queue: max` keeps every pending run;
+# the default keeps only one and would drop a release before it publishes.
 concurrency:
   group: release
-  cancel-in-progress: false
+  queue: max
 
 permissions: {}
 
