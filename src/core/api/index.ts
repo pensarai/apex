@@ -211,15 +211,19 @@ export {
 } from "./recordedRun";
 export type {
   SiemAlertEvidence,
+  SiemCodeChange,
+  SiemCodePatchDraft,
   SiemLogEvent,
   SiemLogSearch,
   SiemLogSearchQuery,
   SiemLogSearchResult,
+  SiemRepositories,
   SiemTriageAgentInput,
   SiemTriageResult,
 } from "./siemTriage";
 export {
   runSiemTriageAgent,
+  SiemCodeChangeSchema,
   SiemTriageResultSchema,
   SiemTriageSeveritySchema,
   SiemTriageVerdictSchema,
