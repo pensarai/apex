@@ -142,6 +142,7 @@ export type HeadersOp =
 export type CommandAction =
   | { type: "show-models" }
   | { type: "show-plan" }
+  | { type: "credentials" }
   | { type: "open-session" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "headers"; op: HeadersOp }
@@ -206,6 +207,8 @@ export function routeCommand(
   if (commandLower === "skills") {
     return { type: "execute-command", command };
   }
+
+  if (commandLower === "credentials") return { type: "credentials" };
 
   if (commandLower === "headers" || commandLower.startsWith("headers ")) {
     const rest = stripped.slice("headers".length);
@@ -331,6 +334,7 @@ export function buildOperatorSystemPrompt(
     requireApproval?: boolean;
     sandboxMode?: boolean;
     skillsCatalog?: string;
+    credentialContext?: string;
     activeSkillInstructions?: Array<{ name: string; instructions: string }>;
     planFilePath?: string;
     existingPlanContent?: string | null;
@@ -417,6 +421,8 @@ message to you):
 Once set, the header is applied automatically — you don't need to do
 anything to use it. Per-request \`headers\` you pass to \`http_request\`
 still win over session headers if you need a one-off override.${modeSection}`;
+
+  if (opts?.credentialContext) prompt += `\n\n${opts.credentialContext}`;
 
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;
