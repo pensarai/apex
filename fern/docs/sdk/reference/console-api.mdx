@@ -1,6 +1,6 @@
 ---
 title: "Console API"
-description: "Read and manage Pensar Console pentests, issues, fixes, logs, apps, endpoints, knowledge, and domains from TypeScript"
+description: "Read and manage Pensar Console pentests, issues, incidents, fixes, logs, apps, endpoints, knowledge, and domains from TypeScript"
 ---
 
 The Console API functions are typed wrappers around the Pensar Console REST API. They're what the `pensar issues`, `pensar pentests`, `pensar apps`, and related CLI commands call.
@@ -46,6 +46,22 @@ import { dispatchPentest, listIssues, updateIssue } from "@pensar/apex/core/api"
 <ParamField path="updateIssue(issueId, data)" type="{ status?: 'open' | 'closed' | 'false-positive' | 'in-review'; closedDisposition?: 'resolved' | 'duplicate' | 'wont-fix' | 'out-of-scope' | 'risk-accepted'; duplicateOf?: string; closedReason?: string; closedComments?: string; userFlaggedFalsePositive?: boolean; userFlaggedFalsePositiveReason?: string }">
   `duplicateOf` (the UUID or label of the original) is only sent with the `duplicate` disposition. The accepted dispositions are exported as `CLOSED_DISPOSITIONS`.
 </ParamField>
+
+## Incidents
+
+API keys need `incidents:read`. All list functions return `nextCursor`; pass it
+unchanged as `cursor` to continue.
+
+| Function                                       | Returns                      | Description                                                  |
+| ---------------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| `listIncidents(opts?)`                         | `IncidentPage`               | Grouped alerts; all verdicts by default                      |
+| `listIncidentEvents(opts?)`                    | `IncidentEventPage`          | Individual events; optional `groupOf` incident id            |
+| `getIncident(incidentId)`                      | `IncidentDetail`             | Raw payload, triage results, recommendations, and timestamps |
+| `listIncidentLogs(incidentId, opts?)`          | `IncidentLogPage`            | Paginated execution parts for the current triage run         |
+| `getIncidentLogAttachment(incidentId, partId)` | `{ downloadUrl, expiresIn }` | Full overflow output; URL expires after 60 seconds           |
+
+List filters are `verdict`, `status`, `triageStatus`, `limit`, and `cursor`.
+Logs accept `limit` and `cursor`. See [`pensar incidents`](/apex/cli-commands/pensar-incidents).
 
 ## Fixes
 

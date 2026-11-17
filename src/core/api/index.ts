@@ -124,6 +124,21 @@ export { createDomain, listDomains } from "./domains";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {
+  IncidentDetail,
+  IncidentEventPage,
+  IncidentListOptions,
+  IncidentLogPage,
+  IncidentPage,
+  IncidentSummary,
+} from "./incidents";
+export {
+  getIncident,
+  getIncidentLogAttachment,
+  listIncidentEvents,
+  listIncidentLogs,
+  listIncidents,
+} from "./incidents";
+export type {
   AgentLogEntry,
   ClosedDisposition,
   CommentAuthor,

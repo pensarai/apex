@@ -273,6 +273,7 @@ Usage:
   pensar pentests                     List and manage pentests
   pensar agent-runs                   Record and inspect local agent runs
   pensar targets                      List pentest targets and view their agent logs
+  pensar incidents                    Read alerts, raw events, and triage logs
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
   pensar knowledge                    Read and edit the workspace knowledge base
@@ -922,6 +923,9 @@ try {
   } else if (command === "targets") {
     process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
     await import("./cli/targets");
+  } else if (command === "incidents") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/incidents");
   } else if (command === "issues") {
     process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
     await import("./cli/issues");
