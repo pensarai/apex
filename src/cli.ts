@@ -767,6 +767,9 @@ ${sep}\n`);
           reportHerdrState("working");
           await runOffensiveSecurityAgent({
             prompt: currentPrompt,
+            findingPolicy: hasFlag("--external-findings")
+              ? "external"
+              : pensarConfig.findingPolicy,
             ...(systemPrompt ? { system: systemPrompt } : {}),
             model,
             reasoning,
