@@ -17,7 +17,7 @@ describe("cacheBreakpointFor", () => {
     "global.anthropic.claude-opus-4-6-v1",
     "global.anthropic.claude-opus-4-8",
     "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "anthropic.claude-sonnet-4-6-v1",
+    "anthropic.claude-sonnet-4-6",
   ])("uses the bedrock cachePoint namespace for %s", (model) => {
     expect(cacheBreakpointFor(model)).toEqual(BEDROCK_BREAKPOINT);
   });
