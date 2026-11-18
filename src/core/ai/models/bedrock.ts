@@ -47,7 +47,7 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
-    id: "anthropic.claude-sonnet-4-6-v1",
+    id: "anthropic.claude-sonnet-4-6",
     name: "Claude Sonnet 4.6 (Bedrock)",
     provider: "bedrock",
     contextLength: 200000,
@@ -329,7 +329,7 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
-    id: "us.anthropic.claude-sonnet-4-6-v1",
+    id: "us.anthropic.claude-sonnet-4-6",
     name: "Claude Sonnet 4.6 (US)",
     provider: "bedrock",
     contextLength: 200000,
@@ -520,7 +520,7 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
-    id: "global.anthropic.claude-sonnet-4-6-v1",
+    id: "global.anthropic.claude-sonnet-4-6",
     name: "Claude Sonnet 4.6 (Global)",
     provider: "bedrock",
     contextLength: 200000,
