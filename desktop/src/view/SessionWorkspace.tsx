@@ -281,7 +281,7 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
     );
     const newSession = useCallback(
       async (launch?: OperatorLaunch) => {
-        const tab = await api.operatorOpen({});
+        const tab = await api.operatorOpen({ reuseEmpty: !launch });
         register(tab);
         onActivate();
         if (launch)
@@ -600,7 +600,6 @@ export default forwardRef<SessionWorkspaceHandle, Props>(
               }}
               onOpen={open}
               onNew={newSession}
-              onHistory={() => callbacks.onSessions?.()}
             />,
             sidebar,
           )}

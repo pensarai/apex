@@ -22,7 +22,7 @@ import {
   ResizablePanelGroup,
 } from "@pensarai/design-system/ui/resizable";
 import { Textarea } from "@pensarai/design-system/ui/textarea";
-import { Network } from "lucide-react";
+import { ArrowUp, Network, Square } from "lucide-react";
 import {
   Fragment,
   useCallback,
@@ -43,12 +43,14 @@ import type {
   OperatorSnapshot,
 } from "./contract";
 import { applyFrame, type OperatorFrame } from "./live";
+import { ModelPicker } from "./ModelPicker";
 import { Questions } from "./Questions";
 import { OperatorSetup } from "./Setup";
 import { subagentActivity, subagentLabel } from "./subagent-presentation";
 import { hasSurfaceToolCall, surfaceReveal } from "./surface-reveal";
 import { ToolPicker } from "./ToolPicker";
 import { Transcript } from "./Transcript";
+import { runningCommandId } from "./turn-controls";
 import "./operator.css";
 
 type Panel = "Overview" | "Plan" | "Headers" | "Skills" | "Help";
@@ -105,6 +107,7 @@ export default function OperatorSessionView({
   const [header, setHeader] = useState("");
   const [verbose, setVerbose] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const [surfaceOpen, setSurfaceOpen] = useState(false);
   const surfaceActivity = hasSurfaceToolCall(state);
   useEffect(() => {
@@ -235,6 +238,7 @@ export default function OperatorSessionView({
     if (!isFocused) {
       setSetupOpen(false);
       setToolsOpen(false);
+      setModelsOpen(false);
     }
   }, [isFocused]);
   const submit = async () => {
@@ -324,6 +328,8 @@ export default function OperatorSessionView({
             setToolsOpen(true);
             break;
           case "models":
+            setModelsOpen(true);
+            break;
           case "effort":
             onSettings?.("Models");
             break;
@@ -412,9 +418,8 @@ export default function OperatorSessionView({
     );
     setInspecting(false);
   };
-  const modelId =
-    state?.modelLoading || state?.model || modelSettings?.selected;
-  const model = modelSettings?.models.find((item) => item.id === modelId);
+  const cancelCommandId =
+    state.status === "running" ? runningCommandId(state.messages) : undefined;
   return (
     <div className="op-page" ref={page}>
       {(state?.sessionId || inspecting) && (
@@ -553,6 +558,11 @@ export default function OperatorSessionView({
                           modelLoading={state.modelLoading}
                           subagents={state.subagents}
                           onSelectSubagent={openSubagent}
+                          cancelCommandId={cancelCommandId}
+                          commandBusy={busy}
+                          onCancelCommand={(toolCallId) =>
+                            void action({ type: "cancel-command", toolCallId })
+                          }
                           verbose={verbose}
                         />
                       </div>
@@ -723,7 +733,11 @@ export default function OperatorSessionView({
                             void submit();
                           }
                         }}
-                        placeholder="Ask anything, /help for commands…"
+                        placeholder={
+                          active
+                            ? "Write a follow-up, Enter to queue…"
+                            : "Ask anything, /help for commands…"
+                        }
                         rows={2}
                       />
                       <div className="op-compose-controls">
@@ -752,19 +766,24 @@ export default function OperatorSessionView({
                               onOpenChange={setToolsOpen}
                             />
                           )}
-                          <button
-                            type="button"
-                            className="op-model"
-                            onClick={() => onSettings?.("Models")}
-                          >
-                            {model?.provider && (
-                              <span className="op-model-provider">
-                                {model.provider} /{" "}
-                              </span>
-                            )}
-                            {model?.name || modelId || "Select model"}{" "}
-                            <span aria-hidden="true">⌄</span>
-                          </button>
+                          <ModelPicker
+                            models={modelSettings?.models}
+                            selected={modelSettings?.selected}
+                            current={state.modelLoading || state.model}
+                            active={active}
+                            open={isFocused && modelsOpen}
+                            onOpenChange={setModelsOpen}
+                            onSettings={() => onSettings?.("Providers")}
+                            onSelectModel={async (id) => {
+                              if (state.sessionId)
+                                apply(
+                                  await client.operatorAction({
+                                    sessionId: state.sessionId,
+                                    action: { type: "model", id },
+                                  }),
+                                );
+                            }}
+                          />
                           {state.sessionId && (state.lance || state.strike) && (
                             <span>{state.lance ? "Lance" : "Strike"}</span>
                           )}
@@ -778,53 +797,36 @@ export default function OperatorSessionView({
                         </div>
                         <div className="actions">
                           <Button
-                            variant="constructive"
+                            variant={active ? "default" : "constructive"}
                             size="icon-sm"
-                            aria-label={
-                              active ? "Queue message" : "Send message"
-                            }
+                            aria-label={active ? "Stop turn" : "Send message"}
                             title={
-                              active ? "Queue message" : "Send message (Enter)"
+                              active ? "Stop turn" : "Send message (Enter)"
                             }
                             disabled={
-                              !text.trim() ||
                               busy ||
-                              !!state.questions ||
-                              state.reviewPlan ||
-                              state.status === "stopping"
+                              state.status === "stopping" ||
+                              (!active &&
+                                (!text.trim() ||
+                                  !!state.questions ||
+                                  state.reviewPlan))
                             }
-                            onClick={() => void submit()}
+                            onClick={() =>
+                              active
+                                ? void action({ type: "cancel" })
+                                : void submit()
+                            }
                           >
-                            <svg
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              aria-hidden="true"
-                            >
-                              <path d="M12 19V5m-6 6 6-6 6 6" />
-                            </svg>
+                            {active ? (
+                              <Square
+                                size={14}
+                                fill="currentColor"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <ArrowUp size={16} aria-hidden="true" />
+                            )}
                           </Button>
-                          {active && (
-                            <>
-                              <Button
-                                disabled={busy || state.status === "stopping"}
-                                onClick={() => action({ type: "cancel" })}
-                              >
-                                Stop turn
-                              </Button>
-                              {state.status === "running" && (
-                                <Button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    action({ type: "cancel-command" })
-                                  }
-                                >
-                                  Cancel command
-                                </Button>
-                              )}
-                            </>
-                          )}
                         </div>
                       </div>
                     </div>

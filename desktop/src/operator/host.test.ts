@@ -211,6 +211,118 @@ describe("desktop operator", () => {
     input.eventBus?.emit("reasoning-start", {});
     expect(activity()).toBeUndefined();
   });
+  it("cancels only the command named by the clicked row, rejecting stale rows", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let input!: OffensiveSecurityAgentClientInput;
+    const cancel = vi.fn(() => true);
+    sdk.run.mockImplementation(
+      async (value: OffensiveSecurityAgentClientInput) => {
+        input = value;
+        if (value.commandCancelHandle)
+          value.commandCancelHandle.cancel = cancel;
+        await pending;
+        return {
+          session: value.session,
+          streamResult: { response: Promise.resolve({ messages: [] }) },
+        };
+      },
+    );
+    const { sessionId } = await host.start({
+      name: "Cancel command",
+      prompt: "Run a command",
+    });
+    await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledOnce());
+    const start = (toolCallId: string) =>
+      input.eventBus?.emit("tool-call-complete", {
+        toolCallId,
+        toolName: "execute_command",
+        args: { command: "sleep 30" },
+      });
+    const cancelRow = (toolCallId: string) =>
+      host.requests.operatorAction({
+        sessionId,
+        action: { type: "cancel-command", toolCallId },
+      });
+    try {
+      start("first");
+      await cancelRow("first");
+      expect(cancel).toHaveBeenCalledOnce();
+      input.eventBus?.emit("tool-result", {
+        toolCallId: "first",
+        toolName: "execute_command",
+        result: "Cancelled",
+      });
+      start("second");
+      await expect(cancelRow("first")).rejects.toThrow("no longer running");
+      expect(cancel).toHaveBeenCalledOnce();
+      await cancelRow("second");
+      expect(cancel).toHaveBeenCalledTimes(2);
+      expect(sdk.abort).not.toHaveBeenCalled();
+    } finally {
+      finish();
+      await vi.waitFor(() =>
+        expect(host.requests.operatorState().status).toBe("idle"),
+      );
+    }
+  });
+  it("applies a selected model to the next turn while preserving the running turn's model", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    sdk.run.mockImplementation(
+      async (value: OffensiveSecurityAgentClientInput) => {
+        await pending;
+        return {
+          session: value.session,
+          streamResult: { response: Promise.resolve({ messages: [] }) },
+        };
+      },
+    );
+    const { sessionId } = await host.start({
+      name: "Model switch",
+      model: "fixture",
+      prompt: "First turn",
+    });
+    await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledOnce());
+    try {
+      vi.mocked(config.get).mockResolvedValue({
+        responsibleUseAccepted: true,
+        localModelUrl: "http://127.0.0.1",
+        localModelName: "next-model",
+        selectedModelId: "next-model",
+      });
+      const selected = await host.requests.operatorAction({
+        sessionId,
+        action: { type: "model", id: "next-model" },
+      });
+      expect(selected.model).toBe("fixture");
+      expect(selected.status).toBe("running");
+      await expect(
+        host.requests.operatorAction({
+          sessionId,
+          action: { type: "model", id: "unavailable" },
+        }),
+      ).rejects.toThrow("unavailable");
+    } finally {
+      finish();
+      await vi.waitFor(() =>
+        expect(host.requests.operatorState().status).toBe("idle"),
+      );
+    }
+    await host.requests.operatorAction({
+      sessionId,
+      action: { type: "send", text: "Next turn" },
+    });
+    await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledTimes(2));
+    expect(sdk.run.mock.calls[1][0].model).toBe("next-model");
+    await vi.waitFor(() =>
+      expect(host.requests.operatorState().status).toBe("idle"),
+    );
+  });
   it("checks resume IDs and unavailable models before creating or loading a session", async () => {
     await expect(
       host.requests.operatorResume({ id: "../keys" }),

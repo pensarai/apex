@@ -16,8 +16,8 @@ describe("stream arrival fades", () => {
       { start: 12, end: 19, time: 200 },
     ]);
     expect(
-      advanceStream(next, "Existing new tokens!", 400, true).arrivals,
-    ).toEqual([{ start: 19, end: 20, time: 400 }]);
+      advanceStream(next, "Existing new tokens!", 500, true).arrivals,
+    ).toEqual([{ start: 19, end: 20, time: 500 }]);
   });
 
   it("does not replay history, replacements, or hidden updates", () => {

@@ -1,4 +1,4 @@
-export const streamFadeDuration = 160;
+export const streamFadeDuration = 260;
 
 export type Arrival = { start: number; end: number; time: number };
 export type StreamArrival = { text: string; arrivals: Arrival[] };

@@ -84,6 +84,7 @@ import type {
 } from "./contract";
 import type { OperatorFrame } from "./live";
 import { selectedTools } from "./tools";
+import { runningCommandId } from "./turn-controls";
 
 function wireMessage(m: DisplayMessage): OperatorMessage {
   return {
@@ -887,8 +888,22 @@ class OperatorHost {
         await this.cancel();
         break;
       case "cancel-command":
+        if (
+          this.status !== "running" ||
+          this.gate.getPendingApprovals().length ||
+          runningCommandId(this.messages) !== action.toolCallId
+        )
+          throw new Error("This command is no longer running.");
         if (!this.command.cancel()) throw new Error("No command is running.");
         break;
+      case "model": {
+        const cfg = await config.get();
+        const model = this.resolveModel(cfg, action.id);
+        this.modelOverride = model;
+        this.globalModelAtStart = cfg.selectedModelId;
+        if (!this.client) this.model = model;
+        break;
+      }
       case "queue": {
         const i = this.queue.findIndex((q) => q.id === action.id);
         if (i === -1) throw new Error("The queued message already ran.");

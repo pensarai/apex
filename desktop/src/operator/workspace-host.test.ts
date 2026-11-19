@@ -52,6 +52,36 @@ describe("desktop session workspace", () => {
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
   });
+  it("reuses an empty tab across repeated and concurrent new-session requests", async () => {
+    const first = await workspace.requests.operatorOpen({});
+    const repeated = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        workspace.requests.operatorOpen({ reuseEmpty: true }),
+      ),
+    );
+    expect(repeated.every((tab) => tab.tabId === first.tabId)).toBe(true);
+    expect(await workspace.requests.operatorTabs()).toHaveLength(1);
+    await workspace.requests.operatorStart({
+      tabId: first.tabId,
+      name: "Started",
+    });
+    const next = await workspace.requests.operatorOpen({ reuseEmpty: true });
+    expect(next.tabId).not.toBe(first.tabId);
+    expect(
+      (await workspace.requests.operatorOpen({ reuseEmpty: true })).tabId,
+    ).toBe(next.tabId);
+    expect(await workspace.requests.operatorTabs()).toHaveLength(2);
+  });
+  it("does not reuse an empty tab while it is starting a session", async () => {
+    const first = await workspace.requests.operatorOpen({});
+    const starting = workspace.requests.operatorStart({
+      tabId: first.tabId,
+      name: "Starting",
+    });
+    const next = await workspace.requests.operatorOpen({ reuseEmpty: true });
+    expect(next.tabId).not.toBe(first.tabId);
+    await starting;
+  });
   it("keeps attack surfaces isolated between session tabs", async () => {
     const first = await workspace.requests.operatorOpen({});
     const second = await workspace.requests.operatorOpen({});
