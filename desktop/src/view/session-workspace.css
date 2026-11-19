@@ -131,11 +131,43 @@
   top: 48px;
   height: auto;
   border-color: var(--color-border);
+  transition-property: left, right;
 }
-.app-body
-  > [data-slot="sidebar"][data-state="collapsed"]
+.session-sidebar-frame
+  [data-slot="sidebar"][data-state="collapsed"]
   [data-slot="sidebar-container"] {
   visibility: hidden;
+}
+.session-sidebar-frame {
+  position: relative;
+  flex-shrink: 0;
+}
+.session-sidebar-frame[data-expanded="false"] {
+  width: 32px;
+  border-right: 1px solid var(--color-border);
+}
+.session-sidebar-frame [data-slot="sidebar-gap"] {
+  transition: none;
+}
+.session-sidebar-reopen {
+  position: absolute;
+  top: 8px;
+  left: 2px;
+}
+.session-sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  z-index: 20;
+  cursor: col-resize;
+  touch-action: none;
+  outline-offset: -2px;
+}
+.session-sidebar-resize:hover,
+.session-sidebar-resize:focus-visible {
+  background: var(--color-border-strong);
 }
 .session-sidebar-host {
   display: flex;
@@ -146,7 +178,7 @@
   background: var(--color-canvas);
 }
 .session-sidebar-header {
-  padding: 12px;
+  padding: 8px;
 }
 .session-sidebar-heading {
   display: flex;
@@ -154,6 +186,22 @@
   justify-content: space-between;
   font: 12px var(--font-mono);
   color: var(--color-fg-3);
+}
+.session-sidebar-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.session-sidebar-list {
+  gap: 2px;
+  padding-bottom: 24px;
+  mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
+}
+.session-sidebar-list [data-slot="sidebar-group"] {
+  padding: 4px;
+}
+.session-sidebar-list [data-slot="sidebar-menu"] {
+  gap: 0;
 }
 .session-sidebar-new {
   justify-content: flex-start;
@@ -164,8 +212,10 @@
   color: var(--color-fg-3);
 }
 .session-sidebar-row {
-  min-height: 36px;
-  gap: 8px;
+  height: 28px;
+  min-height: 28px;
+  padding: 3px 6px;
+  gap: 6px;
   border-radius: 0;
   color: var(--color-fg-2);
 }
@@ -191,7 +241,6 @@
   .session-running {
     animation: none;
   }
-  [data-slot="sidebar-gap"],
   .session-sidebar-shell {
     transition: none;
   }

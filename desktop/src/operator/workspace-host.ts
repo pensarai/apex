@@ -115,9 +115,26 @@ export function createOperatorWorkspace(options: Options) {
       entry.claimedSession = undefined;
     }
   }
-  function open({ sessionId }: { sessionId?: string }) {
+  function open({
+    sessionId,
+    reuseEmpty,
+  }: {
+    sessionId?: string;
+    reuseEmpty?: boolean;
+  }) {
     ensureOpen();
-    if (!sessionId) return Promise.resolve(describe(allocate()));
+    if (!sessionId) {
+      const empty =
+        reuseEmpty &&
+        [...entries.values()].find(
+          (entry) =>
+            !entry.closing &&
+            !entry.initializing &&
+            !entry.host.sessionId &&
+            !entry.pending.size,
+        );
+      return Promise.resolve(describe(empty || allocate()));
+    }
     const pending = opening.get(sessionId);
     if (pending) return pending;
     const existing = owner(sessionId);

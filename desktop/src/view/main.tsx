@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@pensarai/design-system/ui/dropdown-menu";
-import { Sidebar, SidebarProvider } from "@pensarai/design-system/ui/sidebar";
+import { SidebarProvider } from "@pensarai/design-system/ui/sidebar";
 import { Minus, Square, X } from "lucide-react";
 import {
   lazy,
@@ -24,7 +24,7 @@ import { useDesktopAppearance } from "../settings/appearance";
 import type { SettingsTab } from "../settings/contract";
 import type { RunLocation } from "../shared";
 import { api } from "./bridge";
-import { SessionSidebarToggle } from "./SessionSidebar";
+import { SessionSidebarFrame } from "./SessionSidebar";
 import type { SessionWorkspaceHandle } from "./SessionWorkspace";
 import type { TerminalLaunch } from "./Terminal";
 import "./style.css";
@@ -223,20 +223,11 @@ function App() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          {workspace?.accepted && <SessionSidebarToggle />}
           {page !== "Operator" && <span className="app-location">{page}</span>}
           <div className="app-session-bar" ref={setTabBar} />
         </div>
         <div className="app-body">
-          {workspace?.accepted && (
-            <Sidebar className="session-sidebar-shell" aria-label="Sessions">
-              <div
-                id="session-sidebar"
-                className="session-sidebar-host"
-                ref={setSidebar}
-              />
-            </Sidebar>
-          )}
+          {workspace?.accepted && <SessionSidebarFrame onMount={setSidebar} />}
           <main>
             {error && (
               <div role="alert">

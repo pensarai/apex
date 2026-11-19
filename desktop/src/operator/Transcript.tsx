@@ -10,6 +10,7 @@ import {
 import { ActivityIndicator } from "./ActivityIndicator";
 import type { OperatorClient } from "./client";
 import type { OperatorActivity, OperatorMessage } from "./contract";
+import { MessageCopy } from "./MessageCopy";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { SubagentRows } from "./SubagentRows";
 import { groupSubagents, type OperatorSubagent } from "./subagent-presentation";
@@ -29,6 +30,9 @@ export function Transcript({
   modelLoading,
   subagents = noSubagents,
   onSelectSubagent,
+  cancelCommandId,
+  onCancelCommand,
+  commandBusy,
 }: {
   messages: OperatorMessage[];
   screenshot: OperatorClient["operatorScreenshot"];
@@ -40,6 +44,9 @@ export function Transcript({
   modelLoading?: string;
   subagents?: OperatorSubagent[];
   onSelectSubagent?: (id: string) => void;
+  cancelCommandId?: string;
+  onCancelCommand?: (id: string) => void;
+  commandBusy?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -127,6 +134,9 @@ export function Transcript({
               subagentsByTool={children.byTool}
               onSelectSubagent={onSelectSubagent}
               arrivals={toolArrivals}
+              cancelCommandId={cancelCommandId}
+              onCancelCommand={onCancelCommand}
+              commandBusy={commandBusy}
             />
           );
         const message = row.message;
@@ -152,6 +162,7 @@ export function Transcript({
             ) : (
               <div className="op-text">{message.content}</div>
             )}
+            <MessageCopy text={message.content} />
           </article>
         );
       })}

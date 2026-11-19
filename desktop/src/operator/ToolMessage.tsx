@@ -381,12 +381,18 @@ export const ToolMessage = memo(
     subagentsByTool,
     onSelectSubagent,
     arrivals,
+    cancelCommandId,
+    onCancelCommand,
+    commandBusy,
   }: {
     items: OperatorMessage[];
     subagents?: OperatorSubagent[];
     subagentsByTool?: ReadonlyMap<string, OperatorSubagent[]>;
     onSelectSubagent?: (id: string) => void;
     arrivals?: ReadonlyMap<string | undefined, number>;
+    cancelCommandId?: string;
+    onCancelCommand?: (id: string) => void;
+    commandBusy?: boolean;
     verbose: boolean;
     onScreenshot: (message: OperatorMessage) => void;
   }) {
@@ -415,6 +421,18 @@ export const ToolMessage = memo(
         (message.toolName === "browser_screenshot" &&
           message.status === "completed" &&
           Boolean(message.toolCallId)));
+    const cancelButton = (toolCallId?: string) =>
+      toolCallId && toolCallId === cancelCommandId && onCancelCommand ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          className="op-command-cancel"
+          disabled={commandBusy}
+          onClick={() => onCancelCommand(toolCallId)}
+        >
+          <X size={12} aria-hidden="true" /> Cancel command
+        </Button>
+      ) : null;
     const renderTool = (message: OperatorMessage) => {
       const key = messageKey(message);
       const view = describeTool(message);
@@ -430,28 +448,31 @@ export const ToolMessage = memo(
           key={key}
           data-tool-id={message.toolCallId}
         >
-          <RailRow
-            arrival={arrivals?.get(message.toolCallId)}
-            icon={
-              view.status === "running" || view.status === "pending" ? (
-                <Spinner
-                  className="op-tool-status-icon"
-                  role={undefined}
-                  aria-label={undefined}
-                />
-              ) : (
-                <Icon />
-              )
-            }
-            label={view.headline}
-            status={view.status}
-            open={open}
-            panelId={panelId}
-            meta={view.status === "error" ? "Failed" : undefined}
-            onClick={() =>
-              setOpenTools((current) => ({ ...current, [key]: !open }))
-            }
-          />
+          <div className="op-tool-row">
+            <RailRow
+              arrival={arrivals?.get(message.toolCallId)}
+              icon={
+                view.status === "running" || view.status === "pending" ? (
+                  <Spinner
+                    className="op-tool-status-icon"
+                    role={undefined}
+                    aria-label={undefined}
+                  />
+                ) : (
+                  <Icon />
+                )
+              }
+              label={view.headline}
+              status={view.status}
+              open={open}
+              panelId={panelId}
+              meta={view.status === "error" ? "Failed" : undefined}
+              onClick={() =>
+                setOpenTools((current) => ({ ...current, [key]: !open }))
+              }
+            />
+            {cancelButton(message.toolCallId)}
+          </div>
           {open && (
             <div className="op-tool-panel" id={panelId}>
               <div className="op-tool-panel-kind">
@@ -521,34 +542,41 @@ export const ToolMessage = memo(
               key={key}
               data-family={segment.family}
             >
-              <RailRow
-                arrival={arrivals?.get(segment.items[0].toolCallId)}
-                icon={
-                  running && segment.family !== "repository" ? (
-                    <Spinner
-                      className="op-tool-status-icon"
-                      role={undefined}
-                      aria-label={undefined}
-                    />
-                  ) : (
-                    <Icon />
-                  )
-                }
-                label={toolGroupLabel(segment.family, segment.items.length)}
-                object={
-                  segment.family === "repository"
-                    ? toolGroupDetail(segment.items)
-                    : undefined
-                }
-                meta={meta}
-                status={status}
-                warning={failures > 0}
-                open={open}
-                panelId={panelId}
-                onClick={() =>
-                  setOpenGroups((current) => ({ ...current, [key]: !open }))
-                }
-              />
+              <div className="op-tool-row">
+                <RailRow
+                  arrival={arrivals?.get(segment.items[0].toolCallId)}
+                  icon={
+                    running && segment.family !== "repository" ? (
+                      <Spinner
+                        className="op-tool-status-icon"
+                        role={undefined}
+                        aria-label={undefined}
+                      />
+                    ) : (
+                      <Icon />
+                    )
+                  }
+                  label={toolGroupLabel(segment.family, segment.items.length)}
+                  object={
+                    segment.family === "repository"
+                      ? toolGroupDetail(segment.items)
+                      : undefined
+                  }
+                  meta={meta}
+                  status={status}
+                  warning={failures > 0}
+                  open={open}
+                  panelId={panelId}
+                  onClick={() =>
+                    setOpenGroups((current) => ({ ...current, [key]: !open }))
+                  }
+                />
+                {!open &&
+                  segment.items.some(
+                    (item) => item.toolCallId === cancelCommandId,
+                  ) &&
+                  cancelButton(cancelCommandId)}
+              </div>
               {open && (
                 <div className="op-tool-rail op-rail-nested" id={panelId}>
                   <RailLine />
@@ -562,6 +590,9 @@ export const ToolMessage = memo(
     );
   },
   (previous, next) =>
+    previous.cancelCommandId === next.cancelCommandId &&
+    previous.onCancelCommand === next.onCancelCommand &&
+    previous.commandBusy === next.commandBusy &&
     previous.arrivals === next.arrivals &&
     previous.subagents === next.subagents &&
     previous.subagentsByTool === next.subagentsByTool &&

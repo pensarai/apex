@@ -112,8 +112,10 @@ export type OperatorAction =
   | { type: "send"; text: string }
   | { type: "skill"; slug: string; autopilot?: boolean; arguments?: string[] }
   | { type: "mode"; mode: OperatorMode }
+  | { type: "model"; id: string }
   | { type: "approval"; id: string; decision: "approve" | "deny" | "auto" }
-  | { type: "cancel" | "cancel-command" }
+  | { type: "cancel" }
+  | { type: "cancel-command"; toolCallId: string }
   | { type: "queue"; id: string; operation: "remove" | "send-now" }
   | {
       type: "answer";
@@ -159,7 +161,7 @@ export type OperatorRequests = {
     OperatorSessionRequests[K]["response"]
   >;
 } & {
-  operatorOpen: Call<{ sessionId?: string }, OperatorTab>;
+  operatorOpen: Call<{ sessionId?: string; reuseEmpty?: boolean }, OperatorTab>;
   operatorTabs: Call<void, OperatorTab[]>;
   operatorClose: Call<{ tabId: string; stop?: boolean }, void>;
   operatorSetDirectory: Call<{ tabId: string; cwd: string }, string>;
