@@ -20,6 +20,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   errorLog: vi.fn(),
+  warnLog: vi.fn(),
   codeAgentInputs: [] as Array<Record<string, unknown>>,
   consumeImpl: null as
     | ((input: Record<string, unknown>) => Promise<unknown>)
@@ -33,6 +34,7 @@ vi.mock("../logger/structured", async (importOriginal) => {
     createLogger: (...args: Parameters<typeof actual.createLogger>) => {
       const logger = actual.createLogger(...args);
       logger.error = mocks.errorLog;
+      logger.warn = mocks.warnLog;
       return logger;
     },
   };
@@ -659,6 +661,121 @@ it("reads more than 500 endpoint artifacts through bounded owned-backend pages",
     new Set(result.apps[0].apiEndpoints.map((endpoint) => endpoint.path)).size,
   ).toBe(513);
   expect(run).toHaveBeenCalledTimes(9);
+});
+
+describe("incremental recon with unusable artifacts", () => {
+  const metadata = {
+    name: "API",
+    type: "api" as const,
+    framework: "Express",
+    description: "app",
+    location: "api",
+  };
+  const endpoint = (name: string) => ({
+    method: "GET",
+    path: `/${name}`,
+    file: `${name}.ts`,
+    description: name,
+    authRequired: true,
+    pentestObjectives: ["keep"],
+  });
+  const previousEndpoints = ["good", "malformed", "unreadable"].map(endpoint);
+  const existingResult = {
+    repoType: "single-app",
+    packageManager: "bun",
+    apps: [{ ...metadata, pages: [], apiEndpoints: previousEndpoints }],
+    summary: {
+      totalApps: 1,
+      totalPages: 0,
+      totalApiEndpoints: 3,
+      totalPentestObjectives: 3,
+    },
+  };
+
+  async function setup(appJson: string) {
+    const { LocalBackends } = await import("../tools/backends/local");
+    const { endpointAssetFileName } = await import(
+      "../agents/offSecAgent/tools/endpointAssetFileName"
+    );
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const ownedRoot = join(rootPath, "sandbox");
+    const assetsPath = join(ownedRoot, "assets");
+    mkdirSync(join(assetsPath, "api"), { recursive: true });
+    writeFileSync(join(assetsPath, "api", "app.json"), appJson);
+    const names = Object.fromEntries(
+      previousEndpoints.map((ep) => [
+        ep.path.slice(1),
+        endpointAssetFileName("API", ep.path, "2026-01-01T00-00-00-000Z"),
+      ]),
+    );
+    writeFileSync(
+      join(assetsPath, "api", names.good),
+      JSON.stringify({ ...endpoint("good"), routePath: "/good" }),
+    );
+    writeFileSync(
+      join(assetsPath, "api", names.malformed),
+      JSON.stringify({ method: 5, routePath: "/malformed" }),
+    );
+    writeFileSync(
+      join(assetsPath, "api", names.unreadable),
+      JSON.stringify({ ...endpoint("unreadable"), routePath: "/unreadable" }),
+    );
+    const backends = LocalBackends({
+      session,
+      agentCwd: ownedRoot,
+      fileWorkspaceRoot: ownedRoot,
+      subagentSpawner: codeSpawner,
+    });
+    const readRaw = backends.fs.readRaw.bind(backends.fs);
+    vi.spyOn(backends.fs, "readRaw").mockImplementation(async (path) =>
+      path.endsWith(names.unreadable)
+        ? ({ success: false, error: "backend exploded" } as never)
+        : readRaw(path),
+    );
+    mocks.consumeImpl = async () => ({ changedApps: [] });
+    const run = () =>
+      runWhiteboxAttackSurfaceWorkflow({
+        codebasePath: ownedRoot,
+        model: {} as AIModel,
+        session,
+        hooks: { backends },
+        incremental: {
+          assetsPath,
+          diffPath: join(ownedRoot, "diff"),
+          existingResult,
+        },
+      });
+    return { run, names };
+  }
+
+  it("keeps the previous record for a malformed and an unreadable endpoint artifact and warns with both files", async () => {
+    const { run, names } = await setup(JSON.stringify(metadata));
+    const result = await run();
+    expect(result.apps[0].apiEndpoints.map((ep) => ep.path).sort()).toEqual([
+      "/good",
+      "/malformed",
+      "/unreadable",
+    ]);
+    expect(
+      result.apps[0].apiEndpoints.find((ep) => ep.path === "/malformed"),
+    ).toEqual(previousEndpoints[1]);
+    expect(
+      result.apps[0].apiEndpoints.find((ep) => ep.path === "/unreadable"),
+    ).toEqual(previousEndpoints[2]);
+    const warnings = mocks.warnLog.mock.calls.map(([message]) => message);
+    expect(warnings).toHaveLength(2);
+    expect(
+      warnings.find((message) => message.includes(names.malformed)),
+    ).toMatch(/method/);
+    expect(
+      warnings.find((message) => message.includes(names.unreadable)),
+    ).toContain("backend exploded");
+  });
+
+  it("fails the run and names the file when app.json is malformed", async () => {
+    const { run } = await setup(JSON.stringify({ name: 5 }));
+    await expect(run()).rejects.toThrow(/Invalid recon artifact: .*app\.json/);
+  });
 });
 
 it.each([

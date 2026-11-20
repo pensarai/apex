@@ -1637,6 +1637,39 @@ const IncrementalReconResultSchema = z.object({
   summary: z.string().describe("Brief summary of what changed"),
 });
 
+const EndpointArtifactSchema = z
+  .object({
+    method: z.union([z.string(), z.array(z.string())]),
+    routePath: z.string(),
+  })
+  .passthrough();
+
+function errorDetail(error: unknown): string {
+  if (error instanceof z.ZodError)
+    return error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("; ");
+  return error instanceof Error ? error.message : String(error);
+}
+
+// Artifact names embed a hash of app name + route path; an unreadable file
+// cannot be mapped any other way. ponytail: matches the untagged name's hash only.
+function previousEndpointsForArtifact(
+  previousApp: App | undefined,
+  file: string,
+): { pages: Endpoint[]; apiEndpoints: Endpoint[] } {
+  const matches = (ep: Endpoint) => {
+    const hash = endpointAssetFileName(previousApp?.name ?? "", ep.path).match(
+      /_([0-9a-f]{8})\.json$/,
+    )?.[1];
+    return !!hash && file.includes(`_${hash}`);
+  };
+  return {
+    pages: previousApp?.pages.filter(matches) ?? [],
+    apiEndpoints: previousApp?.apiEndpoints.filter(matches) ?? [],
+  };
+}
+
 async function readIncrementalReconAssets(
   backends: ToolBackends,
   assetsPath: string,
@@ -1691,8 +1724,25 @@ async function readIncrementalReconAssets(
   const read = async (path: string): Promise<unknown> => {
     abortSignal?.throwIfAborted();
     const result = await fs.readRaw(path);
-    if (!result.success) throw new Error(`Recon artifact read failed: ${path}`);
-    return JSON.parse(result.content);
+    if (!result.success)
+      throw new Error(
+        `Recon artifact read failed: ${path}: ${result.error || "no error detail"}`,
+      );
+    try {
+      return JSON.parse(result.content);
+    } catch (error) {
+      throw new Error(
+        `Recon artifact is not valid JSON: ${path}: ${errorDetail(error)}`,
+      );
+    }
+  };
+  const parse = <T>(path: string, schema: z.ZodType<T>, raw: unknown): T => {
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success)
+      throw new Error(
+        `Invalid recon artifact: ${path}: ${errorDetail(parsed.error)}`,
+      );
+    return parsed.data;
   };
   const apps: App[] = [];
   for (const directory of await list(assetsPath)) {
@@ -1704,7 +1754,8 @@ async function readIncrementalReconAssets(
     )
       throw new Error("Invalid recon artifact directory");
     const appPath = join(assetsPath, directory);
-    const metadata = AppInfoSchema.parse(await read(join(appPath, "app.json")));
+    const appJsonPath = join(appPath, "app.json");
+    const metadata = parse(appJsonPath, AppInfoSchema, await read(appJsonPath));
     const previousApp = existing.apps.find((app) => app.name === metadata.name);
     const app: App = {
       ...previousApp,
@@ -1716,17 +1767,28 @@ async function readIncrementalReconAssets(
       if (file === "app.json" || !file.endsWith(".json")) continue;
       if (file.includes("/") || file === "..")
         throw new Error("Invalid recon artifact filename");
-      const raw = await read(join(appPath, file));
-      const record = z
-        .object({
-          method: z.union([z.string(), z.array(z.string())]),
-          routePath: z.string(),
-        })
-        .passthrough()
-        .parse(raw) as DocumentedEndpointRecord;
-      const endpoint = assetRecordToEndpoint(record);
-      if (!endpoint)
-        throw new Error(`Invalid recon endpoint artifact: ${file}`);
+      const filePath = join(appPath, file);
+      let record: DocumentedEndpointRecord;
+      let endpoint: ReturnType<typeof assetRecordToEndpoint>;
+      try {
+        record = parse(
+          filePath,
+          EndpointArtifactSchema,
+          await read(filePath),
+        ) as DocumentedEndpointRecord;
+        endpoint = assetRecordToEndpoint(record);
+        if (!endpoint)
+          throw new Error(`Invalid recon endpoint artifact: ${filePath}`);
+      } catch (error) {
+        abortSignal?.throwIfAborted();
+        const kept = previousEndpointsForArtifact(previousApp, file);
+        log.warn(
+          `Incremental recon: keeping ${kept.pages.length + kept.apiEndpoints.length} previous endpoint record(s) for unusable artifact: ${errorDetail(error)}`,
+        );
+        app.pages.push(...kept.pages);
+        app.apiEndpoints.push(...kept.apiEndpoints);
+        continue;
+      }
       const previous =
         previousApp &&
         [...previousApp.pages, ...previousApp.apiEndpoints].find(
