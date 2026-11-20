@@ -569,7 +569,6 @@ async function summarizeConversation(
       model,
       providerOptions: summaryProviderOptions,
       system: cacheBreakpoint ? undefined : opts.system,
-      allowSystemInMessages: true,
       messages: cacheBreakpoint
         ? withCachedLastMessage(history, cacheBreakpoint)
         : history,

@@ -2143,7 +2143,6 @@ function streamResponseWithinOperation(
       allowSystemInMessages: true,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
-      allowSystemInMessages: true,
       stopWhen: spanningPriorSteps(stopWhen, priorSteps),
       toolChoice,
       tools: effectiveTools,
