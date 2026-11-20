@@ -355,3 +355,133 @@ describe("webSearch Exa BYOK", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
+
+describe("webSearch Keenable BYOK", () => {
+  beforeEach(() => {
+    vi.spyOn(config, "get").mockResolvedValue({
+      responsibleUseAccepted: true,
+      keenableAPIKey: "keenable-key",
+    });
+  });
+
+  async function search() {
+    return (await webSearch(makeCtx()).execute?.(
+      {
+        query: "security advisory",
+        toolCallDescription: "Search for an advisory",
+      },
+      { messages: [], toolCallId: "tc_keenable" },
+    )) as WebSearchResponse;
+  }
+
+  it("searches directly and returns URL-bound fetch capabilities", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        Response.json({
+          results: [
+            {
+              title: "Advisory",
+              url: "https://research.example/advisory",
+              snippet: "Affected versions",
+            },
+            { url: "file:///etc/passwd" },
+          ],
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await search();
+
+    expect(result).toEqual({
+      success: true,
+      results: [
+        {
+          title: "Advisory",
+          url: "https://research.example/advisory",
+          snippet: "Affected versions",
+          fetchToken: expect.any(String),
+        },
+      ],
+    });
+    expect(
+      verifyLocalResearchFetchToken(
+        result.results[0].fetchToken,
+        "https://research.example/advisory",
+      ),
+    ).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://api.keenable.ai/v1/search",
+    );
+    const request = fetchMock.mock.calls[0][1];
+    expect(request).toMatchObject({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "keenable-key",
+        "X-Keenable-Title": "Pensar Apex",
+      },
+      signal: expect.any(AbortSignal),
+    });
+    expect(JSON.parse(request?.body as string)).toEqual({
+      query: "security advisory",
+      max_results: 10,
+    });
+  });
+
+  it("keeps Brave and Exa ahead of Keenable", async () => {
+    vi.mocked(config.get).mockResolvedValue({
+      responsibleUseAccepted: true,
+      exaAPIKey: "exa-key",
+      keenableAPIKey: "keenable-key",
+    });
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        Response.json({ results: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await search();
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.exa.ai/search");
+  });
+
+  it.each([
+    [401, "authentication failed"],
+    [429, "rate limit exceeded"],
+    [500, "Keenable search failed: 500"],
+  ])("reports HTTP %i without exposing the body or switching providers", async (status, message) => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("private upstream body: keenable-key", { status }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await search();
+
+    expect(result).toMatchObject({
+      success: false,
+      results: [],
+      error: expect.stringContaining(message),
+    });
+    expect(result.error).not.toContain("keenable-key");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    {},
+    { results: null },
+    { results: [{ url: 123 }] },
+  ])("rejects a malformed Keenable response: %j", async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(body)),
+    );
+
+    expect(await search()).toEqual({
+      success: false,
+      results: [],
+      error: "Keenable search returned an invalid response.",
+    });
+  });
+});

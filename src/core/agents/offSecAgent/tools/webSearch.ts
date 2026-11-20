@@ -39,6 +39,7 @@ export interface WebSearchResponse {
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
+const KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search";
 
 const exaSearchResponseSchema = z.object({
   results: z.array(
@@ -46,6 +47,16 @@ const exaSearchResponseSchema = z.object({
       title: z.string().nullish(),
       url: z.string(),
       highlights: z.array(z.string()).nullish(),
+    }),
+  ),
+});
+
+const keenableSearchResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      title: z.string().nullish(),
+      url: z.string(),
+      snippet: z.string().nullish(),
     }),
   ),
 });
@@ -183,6 +194,66 @@ async function exaSearch(
   return { success: true, results };
 }
 
+async function keenableSearch(
+  query: string,
+  apiKey: string,
+  abortSignal?: AbortSignal,
+): Promise<WebSearchResponse> {
+  const timeout = AbortSignal.timeout(30_000);
+  // biome-ignore lint/style/noRestrictedGlobals: Keenable Search is infrastructure, not a pentest target.
+  const response = await fetch(KEENABLE_SEARCH_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey,
+      "X-Keenable-Title": "Pensar Apex",
+    },
+    body: JSON.stringify({ query, max_results: 10 }),
+    signal: abortSignal ? AbortSignal.any([abortSignal, timeout]) : timeout,
+  });
+
+  if (!response.ok) {
+    const errors: Record<number, string> = {
+      401: "Keenable API authentication failed. Check your KEENABLE_API_KEY or keenableAPIKey.",
+      429: "Keenable API rate limit exceeded. Please wait before searching again.",
+    };
+    return {
+      success: false,
+      results: [],
+      error:
+        errors[response.status] ??
+        `Keenable search failed: ${response.status} ${response.statusText}.`,
+    };
+  }
+
+  const data = keenableSearchResponseSchema.safeParse(
+    await response.json().catch(() => null),
+  );
+  if (!data.success) {
+    return {
+      success: false,
+      results: [],
+      error: "Keenable search returned an invalid response.",
+    };
+  }
+
+  const results = data.data.results.flatMap((result) => {
+    try {
+      return [
+        {
+          title: result.title ?? "",
+          url: result.url,
+          snippet: result.snippet ?? "",
+          fetchToken: createLocalResearchFetchToken(result.url),
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+  return { success: true, results };
+}
+
 export async function postPensarWebSearch(
   body: unknown,
   signal?: AbortSignal,
@@ -217,7 +288,7 @@ export async function postPensarWebSearch(
     return {
       ok: false,
       error:
-        "Web search requires a Pensar account, Brave API key, or Exa API key. Sign in or configure BRAVE_API_KEY or EXA_API_KEY.",
+        "Web search requires a Pensar account, Brave API key, Exa API key, or Keenable API key. Sign in or configure BRAVE_API_KEY, EXA_API_KEY, or KEENABLE_API_KEY.",
     };
   }
 
@@ -271,7 +342,7 @@ USAGE GUIDANCE:
 - Find documentation for tools, APIs, and security testing techniques
 - Look up default credentials, common misconfigurations, and hardening guides
 
-IMPORTANT: This tool requires a Pensar account, Brave API key, or Exa API key. Every successful result carries a short-lived fetch capability for safe follow-up reads.
+IMPORTANT: This tool requires a Pensar account, Brave API key, Exa API key, or Keenable API key. Every successful result carries a short-lived fetch capability for safe follow-up reads.
 
 COMMON SEARCH PATTERNS:
 - "CVE-2024-XXXX exploit" — Find details about specific CVEs
@@ -290,6 +361,13 @@ COMMON SEARCH PATTERNS:
           return await exaSearch(
             query,
             cfg.exaAPIKey,
+            abortSignal ?? ctx.abortSignal,
+          );
+        }
+        if (cfg.keenableAPIKey) {
+          return await keenableSearch(
+            query,
+            cfg.keenableAPIKey,
             abortSignal ?? ctx.abortSignal,
           );
         }
