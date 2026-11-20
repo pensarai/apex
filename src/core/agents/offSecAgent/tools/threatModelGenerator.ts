@@ -141,13 +141,15 @@ const ThreatModelResultSchema = z.object({
       "Comprehensive threat model (aim for 800-2000 words) grounded in the business logic. " +
         "Use markdown headings. Cover: " +
         "(1) Attacker profiles — 2-4 realistic attackers with motivation, skill, position, and goal. " +
-        "(2) Attack vectors — enumerate thoroughly (typically 8-15 for a non-trivial endpoint). " +
+        "(2) Attack vectors — enumerate thoroughly (typically 8-15 for a non-trivial endpoint; " +
+        "on an agent surface, one vector per grounded abuse class is enough). " +
         "Each vector must reference a concrete entry point from the business logic (including implicit framework-provided entry points), the invariant it " +
         "would break, the mechanism, the observable signal of success, an attacker profile, " +
         "likelihood, and impact. Cite file:line. " +
         "(3) Risk assessment — worst-case impact and vector prioritization. " +
         "Do not include generic OWASP filler ungrounded in evidence you actually read. " +
         "On an agent surface the web OWASP Top 10 is filler: model agent red-team failures instead. " +
+        "A thin authenticated proxy in front of an agent is still an agent surface. " +
         SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
@@ -250,9 +252,10 @@ const ThreatModelResultSchema = z.object({
         "deterministically. Every objective must trace back to an attack vector named in the threat " +
         "model. Include every p0 objective; fill remaining slots with p1 (breadth over payload " +
         "variants); include p2 only if slots remain. Do not emit placeholder one-liners like " +
-        "'Test for SQL injection'. On an agent surface, do not emit web OWASP Top 10 objectives. " +
-        "If you have fewer than 10 meaningful tests, revisit the threat " +
-        "model — you probably under-enumerated vectors.",
+        "'Test for SQL injection'. On an agent surface, do not emit web OWASP Top 10 objectives, " +
+        "and do not invent proxy-level UUID, CSRF, or method checks to fill the list. " +
+        "Fewer than 10 is correct when the harness only grounds fewer abuse classes. " +
+        "On any other surface, fewer than 10 meaningful tests means you under-enumerated vectors.",
     ),
 });
 
@@ -520,7 +523,9 @@ This is a **recall checklist, not a license to invent.** Skip role classes that 
 
 #### Agent surfaces
 
-If this endpoint is an AI agent, an agent harness, a tool-using model, a multi-agent step, or the API those use (chat, run, tool call, memory, retrieval), it is an **agent surface**. That role is primary. The web OWASP Top 10 — injection, XSS, CSRF, broken access control as a generic checklist, security misconfiguration, vulnerable components — does not apply. Do not emit those categories to fill the vector list, and do not spend Part 4's objectives on them.
+If this endpoint is an AI agent, an agent harness, a tool-using model, a multi-agent step, or the API those use (chat, run, tool call, memory, retrieval), it is an **agent surface**. A thin proxy counts: a handler that only authenticates and forwards a message, attachment, session, stream, or turn to an agent service is still an agent surface. That role is primary. Reading the proxy is not the analysis — follow the call into the service that assembles the prompt, selects tools, and writes memory, and model that. The web OWASP Top 10 — injection, XSS, CSRF, broken access control as a generic checklist, security misconfiguration, vulnerable components — does not apply, and neither do the proxy's UUID parsing, method checks, or framework debug pages. Do not emit those to fill the vector list, and do not spend Part 4's objectives on them. Cross-user and cross-tenant access still count when what leaks is a prompt, a tool result, memory, or another user's turn.
+
+Skip Step 1b on an agent surface unless the agent renders or executes that framework surface.
 
 Model the agent the way an agent red team would. Ground every vector in the harness you actually read: the instruction hierarchy, the tools and the credentials they run with, memory and retrieval, and what the model is allowed to do. Include the person talking to the agent, and untrusted content the agent reads, as attacker profiles when those exist.
 
@@ -622,9 +627,9 @@ Emit 10-12 test objectives. Each is a falsifiable hypothesis a pentest agent can
 - Fill remaining slots with \`p1\` objectives covering distinct vectors — prefer breadth across vectors over multiple payload variants of the same vector.
 - Only include \`p2\` objectives if slots remain after p0 and p1 coverage.
 - If a high-priority vector has multiple meaningful payload variants (e.g. time-based vs. error-based SQLi), pick the variant most likely to succeed given what you read in the code, and leave the others for future runs.
-- On an agent surface, spend the 10-12 objectives on the agent abuse classes you grounded in Part 2. Do not fill leftover slots with web OWASP variants.
+- On an agent surface, emit one objective per abuse class you grounded in Part 2. Fewer than 10 is correct when the harness only grounds fewer classes. Do not invent proxy-level web tests (UUID parsing, CSRF, method checks, framework debug pages) to fill the quota.
 
-Prune aggressively toward this budget, but do not drop below 10 — if you have fewer than 10 meaningful tests, you probably under-enumerated Part 2's attack vectors; go back and expand them.
+Prune aggressively toward this budget, but do not drop below 10 — if you have fewer than 10 meaningful tests, you probably under-enumerated Part 2's attack vectors; go back and expand them. An agent surface is the exception: stop at the grounded abuse classes.
 
 ### Required fields per objective
 

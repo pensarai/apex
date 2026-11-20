@@ -16,8 +16,11 @@ describe("buildThreatModelPrompt", () => {
     expect(prompt).toContain("**Tool misuse / confused deputy**");
     expect(prompt).toContain("**Memory poisoning**");
     expect(prompt).toContain('Do not emit "test for SQL injection"');
+    expect(prompt).toContain("A thin proxy counts");
+    expect(prompt).toContain("Reading the proxy is not the analysis");
+    expect(prompt).toContain("Fewer than 10 is correct");
     expect(prompt).toContain(
-      "spend the 10-12 objectives on the agent abuse classes",
+      "Skip Step 1b on an agent surface unless the agent renders or executes that framework surface.",
     );
   });
 });
