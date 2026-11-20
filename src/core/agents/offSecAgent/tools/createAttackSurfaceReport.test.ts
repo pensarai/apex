@@ -30,7 +30,11 @@ function makeCtx(): ToolContext {
 async function run(t: Tool, input: Record<string, unknown>) {
   return (await t.execute?.(
     { toolCallDescription: "test", ...input },
-    { toolCallId: "tc", messages: [] },
+    {
+      context: {},
+      toolCallId: "tc",
+      messages: [],
+    },
   )) as Record<string, unknown>;
 }
 

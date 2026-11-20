@@ -295,12 +295,16 @@ export function filterWorkspaceToolsForRun(
 export class OffensiveSecurityAgent<TResult = void> {
   private codeModeRuntime?: CodeModeRuntime;
   /** The real SDK stream result — created exactly once, with backend-probed facts via {@link streamReady} or settled-or-unknown facts via the sync escape hatch. */
-  private _streamResult: StreamTextResult<ToolSet, never> | null = null;
+  private _streamResult: StreamTextResult<
+    ToolSet,
+    Record<string, unknown>,
+    never
+  > | null = null;
 
   /** Composes the final system prompt, writes the trace init record, and calls `streamResponse`. Invoked at most once; both creation paths guard on `_streamResult`. */
   private readonly createStream: (
     facts: RuntimeExecutionFacts | null,
-  ) => StreamTextResult<ToolSet, never>;
+  ) => StreamTextResult<ToolSet, Record<string, unknown>, never>;
 
   /** Lazy runtime probe, then `createStream`; memoized by {@link streamInit}. */
   private readonly initializeStreamOnce: () => Promise<void>;
@@ -320,7 +324,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   public readonly eventBus: AgentEventBus;
 
   private readonly resolveResult?: (
-    streamResult: StreamTextResult<ToolSet, never>,
+    streamResult: StreamTextResult<ToolSet, Record<string, unknown>, never>,
     validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
@@ -815,10 +819,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       ]) {
         const definition = tools[name];
         if (definition) {
-          tools[name] = {
-            ...definition,
-            description: `${DEFAULT_V2_DELEGATION_GUIDANCE}\n\nThe following workflow instructions apply only after choosing delegation:\n${definition.description ?? ""}`,
-          };
+          const description = definition.description;
+          const prefix = `${DEFAULT_V2_DELEGATION_GUIDANCE}\n\nThe following workflow instructions apply only after choosing delegation:\n`;
+          Object.assign(definition, {
+            description:
+              typeof description === "function"
+                ? (options: Parameters<typeof description>[0]) =>
+                    prefix + description(options)
+                : prefix + (description ?? ""),
+          });
         }
       }
     }
@@ -1294,7 +1303,11 @@ export class OffensiveSecurityAgent<TResult = void> {
    * Guarded so a cold access racing an in-flight probe never creates a
    * second model stream.
    */
-  get streamResult(): StreamTextResult<ToolSet, never> {
+  get streamResult(): StreamTextResult<
+    ToolSet,
+    Record<string, unknown>,
+    never
+  > {
     if (this._streamResult === null) {
       if (this.usesOllama) {
         throw new Error(

@@ -7,7 +7,11 @@ import { detectAuthScheme } from "./detectAuthScheme";
 import { probeAuthEndpoints } from "./probeAuthEndpoints";
 import type { ToolContext } from "./types";
 
-const options = { toolCallId: "test", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "test",
+  messages: [],
+};
 const unauthorized: HttpResponse = {
   success: false,
   status: 401,

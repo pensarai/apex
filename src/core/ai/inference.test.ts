@@ -200,7 +200,7 @@ describe("Inference.net provider", () => {
     expect(await run.text).toBe("DONE");
     expect(execute).toHaveBeenCalledOnce();
     const history = JSON.parse(
-      JSON.stringify((await run.response).messages),
+      JSON.stringify(await run.responseMessages),
     ) as ModelMessage[];
     const resumed = streamResponse({
       model: modelId,

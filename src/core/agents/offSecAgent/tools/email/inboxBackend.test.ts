@@ -9,7 +9,11 @@ import { emailListMessages } from "./listMessages";
 import { emailMarkRead } from "./markRead";
 import { emailSearchMessages } from "./searchMessages";
 
-const executeOpts = { toolCallId: "call_1", messages: [] };
+const executeOpts = {
+  context: {},
+  toolCallId: "call_1",
+  messages: [],
+};
 
 const INBOX: EmailInboxConfig = {
   provider: "pensar-managed",

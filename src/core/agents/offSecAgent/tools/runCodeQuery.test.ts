@@ -66,7 +66,12 @@ describe("runCodeQuery routes analyzers through the injected command backend", (
         queries: [{ pattern: "TODO" }],
         timeoutSeconds: 10,
       },
-      { toolCallId: "tc", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as {
       success: boolean;
       data: { results: Array<{ matchCount: number }> };

@@ -1,12 +1,12 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { LanguageModelV3, LanguageModelV4 } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
 import { getClaudeCapabilities, getMaxOutputTokens } from "../models";
 
 export function createAnthropicModel(
   modelId: string,
   apiKey?: string,
-): LanguageModelV3 {
+): LanguageModelV3 | LanguageModelV4 {
   const capabilities = getClaudeCapabilities(modelId);
   if (!capabilities) return createAnthropic({ apiKey }).chat(modelId);
 

@@ -1,4 +1,4 @@
-import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
+import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { generateText, jsonSchema, tool } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -247,7 +247,7 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
   const credentials = openrouter
     ? { openRouterAPIKey: "test-router-key" }
     : { concentrateAPIKey: "sk-cn-test" };
-  const options = (): LanguageModelV3CallOptions => ({
+  const options = (): LanguageModelV4CallOptions => ({
     prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
     maxOutputTokens: getMaxOutputTokens(id),
     tools: [

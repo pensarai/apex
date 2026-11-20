@@ -27,7 +27,7 @@ type ExecutionOptions = {
   toolCallId: string;
   messages: ModelMessage[];
   abortSignal?: AbortSignal;
-  experimental_context?: unknown;
+  context?: Record<string, unknown>;
 };
 
 function serializeCellResult(result: CodeCellResult): string {
@@ -47,7 +47,7 @@ function executeCode(
         parentToolCallId: options.toolCallId,
         messages: options.messages,
         abortSignal: options.abortSignal,
-        experimental_context: options.experimental_context,
+        context: options.context,
       },
       yieldTimeMs,
     )
@@ -107,7 +107,6 @@ export function createCodeModeTools(
 
   const nativeExec = {
     ...openai.tools.customTool({
-      name: "exec",
       description: EXEC_DESCRIPTION,
       format: { type: "text" },
     }),

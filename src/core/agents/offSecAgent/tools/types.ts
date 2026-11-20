@@ -1,6 +1,6 @@
 import type {
+  GenerateTextOnStepEndCallback,
   LanguageModelMiddleware,
-  StreamTextOnStepFinishCallback,
   ToolSet,
 } from "ai";
 import type {
@@ -101,7 +101,7 @@ export type ToolContext = {
   eventBus?: AgentEventBus;
 
   /** Usage callbacks forwarded to sub-agents spawned by tools. */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: GenerateTextOnStepEndCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /**

@@ -297,7 +297,11 @@ describe("custom inference", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     if (reasoning === "default") expect(body).not.toHaveProperty("reasoning");
-    else expect(body.reasoning).toEqual({ effort: reasoning });
+    else
+      expect(body.reasoning).toEqual({
+        effort: reasoning,
+        summary: "detailed",
+      });
     expect(body).not.toHaveProperty("forceReasoning");
   });
 
@@ -576,7 +580,7 @@ describe("custom inference", () => {
       }),
     );
     const history = JSON.parse(
-      JSON.stringify((await run.response).messages),
+      JSON.stringify(await run.responseMessages),
     ) as ModelMessage[];
     const resumed = await streamResponse({
       model: modelId,

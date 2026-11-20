@@ -28,7 +28,11 @@ function fixture(
         tasks: [{ name: "review", goal: "Review auth controls", target }],
         toolCallDescription: "Review auth controls",
       },
-      { toolCallId: "call", messages: [] },
+      {
+        context: {},
+        toolCallId: "call",
+        messages: [],
+      },
     );
   return { run, spawnBatch };
 }

@@ -37,7 +37,11 @@ type Result = { success: boolean; [key: string]: unknown };
 type Factory = (ctx: ToolContext) => {
   execute: (
     input: Record<string, unknown>,
-    options: { toolCallId: string; messages: [] },
+    options: {
+      context: Record<string, unknown>;
+      toolCallId: string;
+      messages: [];
+    },
   ) => Promise<Result>;
 };
 const factories = new Map<ToolName, Factory>();
@@ -89,7 +93,11 @@ async function withFixture<T>(
       const start = performance.now();
       const result = await factory(ctx).execute(
         { ...input, toolCallDescription: "Synthetic coding fixture" },
-        { toolCallId: `benchmark-${calls.length}`, messages: [] },
+        {
+          context: {},
+          toolCallId: `benchmark-${calls.length}`,
+          messages: [],
+        },
       );
       calls.push({
         name,

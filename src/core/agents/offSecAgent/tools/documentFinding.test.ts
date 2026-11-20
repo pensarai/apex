@@ -202,6 +202,7 @@ describe("documentVulnerability judge handling", () => {
           `-d '{"amount":99999999,"funding_source":"ach"}'`,
       },
       {
+        context: {},
         toolCallId: "test",
         messages: [],
       },
@@ -227,6 +228,7 @@ describe("documentVulnerability judge handling", () => {
           'import requests\nrequests.get("https://outside.example.net/admin")',
       },
       {
+        context: {},
         toolCallId: "test",
         messages: [],
       },
@@ -251,7 +253,7 @@ describe("documentVulnerability judge handling", () => {
         pocContent:
           'import requests\nrequests.post("https://example.com/hooks", json={"url": "http://169.254.169.254/"})',
       },
-      { toolCallId: "test", messages: [] },
+      { context: {}, toolCallId: "test", messages: [] },
     )) as DocumentToolResult & { message?: string };
 
     expect(result.success).toBe(false);
@@ -297,7 +299,7 @@ describe("documentVulnerability judge handling", () => {
             },
           ],
         },
-        { toolCallId: "test", messages: [] },
+        { context: {}, toolCallId: "test", messages: [] },
       )) as DocumentToolResult;
 
       expect(result.success).toBe(true);
@@ -333,7 +335,7 @@ describe("documentVulnerability judge handling", () => {
           },
         ],
       },
-      { toolCallId: "test", messages: [] },
+      { context: {}, toolCallId: "test", messages: [] },
     )) as DocumentToolResult & { message?: string };
 
     expect(result.success).toBe(false);
@@ -349,6 +351,7 @@ describe("documentVulnerability judge handling", () => {
     const tool = documentVulnerability(makeToolContext(rootPath));
     const { pocContent: _, ...input } = makeDocumentInput();
     const result = (await tool.execute?.(input, {
+      context: {},
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -374,6 +377,7 @@ describe("documentVulnerability judge handling", () => {
     const ctx = makeToolContext(rootPath);
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -391,7 +395,11 @@ describe("documentVulnerability judge handling", () => {
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(
       { ...makeDocumentInput(), endpoint: "http://127.0.0.1:9000/metrics" },
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     )) as DocumentToolResult & { error?: string };
 
     expect(result.success).toBe(false);
@@ -428,6 +436,7 @@ describe("documentVulnerability judge handling", () => {
     const ctx = makeToolContext(rootPath);
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -455,6 +464,7 @@ describe("documentVulnerability judge handling", () => {
         pocDescription: "Safe description\nexit 42",
       },
       {
+        context: {},
         toolCallId: "test",
         messages: [],
       },
@@ -507,6 +517,7 @@ describe("documentVulnerability credential provenance", () => {
     const ctx = makeToolContext(rootPath);
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -533,7 +544,11 @@ describe("documentVulnerability credential provenance", () => {
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(
       { ...makeDocumentInput(), credentialIds: [id] },
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     )) as DocumentToolResult;
 
     expect(result.success).toBe(true);
@@ -557,7 +572,11 @@ describe("documentVulnerability credential provenance", () => {
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(
       { ...makeDocumentInput(), credentialIds: ["cred-missing"] },
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     )) as DocumentToolResult & { error?: string };
 
     expect(result.success).toBe(false);
@@ -605,6 +624,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     };
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -644,12 +664,17 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     };
     const tool = documentVulnerability(ctx);
     await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "t1",
       messages: [],
     });
     await tool.execute?.(
       { ...makeDocumentInput(), title: "Second Finding" },
-      { toolCallId: "t2", messages: [] },
+      {
+        context: {},
+        toolCallId: "t2",
+        messages: [],
+      },
     );
 
     expect(spawns).toHaveLength(2);
@@ -665,6 +690,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     const ctx = { ...makeToolContext(rootPath), eventBus: parentBus };
     const tool = documentVulnerability(ctx);
     await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     });
@@ -700,6 +726,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     };
     const tool = documentVulnerability(ctx);
     await tool.execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     });
@@ -1032,7 +1059,11 @@ describe("documentVulnerability CVSS fallback", () => {
     const ctx = makeToolContext(rootPath);
     const result = (await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     )) as DocumentToolResult;
 
     expect(result.success).toBe(true);
@@ -1059,7 +1090,11 @@ describe("documentVulnerability CVSS fallback", () => {
 
     await documentVulnerability(makeToolContext(rootPath)).execute?.(
       makeDocumentInput(),
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     );
 
     expect(mockedScoreFindingWithCVSS).toHaveBeenCalledTimes(1);
@@ -1068,6 +1103,7 @@ describe("documentVulnerability CVSS fallback", () => {
   it("marks the finding scored when the scorer succeeds", async () => {
     const ctx = makeToolContext(rootPath);
     await documentVulnerability(ctx).execute?.(makeDocumentInput(), {
+      context: {},
       toolCallId: "test",
       messages: [],
     });
@@ -1110,7 +1146,11 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
             title: `Finding ${i}`,
             pocName: `concurrent_${i}`,
           },
-          { toolCallId: `finding-${i}`, messages: [] },
+          {
+            context: {},
+            toolCallId: `finding-${i}`,
+            messages: [],
+          },
         ),
       ),
     );
@@ -1161,7 +1201,11 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
     const hostExecute = vi.spyOn(ctx.commandShell!, "execute");
     const result = await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     );
     expect(result).toMatchObject({ success: outcome === "accepted" });
     if (outcome === "rejected")
@@ -1227,7 +1271,11 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
     };
     const result = await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "remote", messages: [] },
+      {
+        context: {},
+        toolCallId: "remote",
+        messages: [],
+      },
     );
     expect(result).toMatchObject({ success: true });
     expect(writes).toContain(`${artifactsRoot}/pocs/poc_admin_data.sh`);
@@ -1251,7 +1299,11 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
 
     const result = (await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     )) as DocumentToolResult;
 
     expect(result.success).toBe(true);
@@ -1295,7 +1347,11 @@ describe("documentVulnerability writes through ctx.backends.fs", () => {
 
     const result = (await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "test", messages: [] },
+      {
+        context: {},
+        toolCallId: "test",
+        messages: [],
+      },
     )) as DocumentToolResult & { error?: string };
 
     expect(result.success).toBe(false);
@@ -1376,6 +1432,7 @@ describe("documentVulnerability native syntax checks", () => {
     input.pocContent = 'if [ -n x ]; then\n  echo "unclosed"\n';
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "syntax",
       messages: [],
     })) as DocumentToolResult & {
@@ -1410,7 +1467,11 @@ describe("documentVulnerability native syntax checks", () => {
 
     const result = (await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "syntax-ok", messages: [] },
+      {
+        context: {},
+        toolCallId: "syntax-ok",
+        messages: [],
+      },
     )) as DocumentToolResult;
 
     expect(result).toMatchObject({ success: true });
@@ -1460,6 +1521,7 @@ describe("documentVulnerability native syntax checks", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "js",
       messages: [],
     })) as DocumentToolResult;
@@ -1487,7 +1549,11 @@ describe("documentVulnerability native syntax checks", () => {
 
     const result = (await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "unchecked", messages: [] },
+      {
+        context: {},
+        toolCallId: "unchecked",
+        messages: [],
+      },
     )) as DocumentToolResult;
 
     expect(result).toMatchObject({ success: true });
@@ -1517,7 +1583,11 @@ describe("documentVulnerability native syntax checks", () => {
 
     const result = (await documentVulnerability(ctx).execute?.(
       makeDocumentInput(),
-      { toolCallId: "env", messages: [] },
+      {
+        context: {},
+        toolCallId: "env",
+        messages: [],
+      },
     )) as DocumentToolResult;
 
     expect(result).toMatchObject({ success: true });
@@ -1542,6 +1612,7 @@ describe("documentVulnerability native syntax checks", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "py",
       messages: [],
     })) as DocumentToolResult & {
@@ -1578,6 +1649,7 @@ describe("documentVulnerability native syntax checks", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "gen",
       messages: [],
     })) as DocumentToolResult & {
@@ -1644,6 +1716,7 @@ describe("documentVulnerability native syntax checks", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "gen-ok",
       messages: [],
     })) as DocumentToolResult & {
@@ -1684,6 +1757,7 @@ describe("documentVulnerability native syntax checks", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "gen-missing",
       messages: [],
     })) as DocumentToolResult & {
@@ -1716,6 +1790,7 @@ describe("documentVulnerability native syntax checks", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "escape",
       messages: [],
     })) as DocumentToolResult & { message?: string };
@@ -1762,7 +1837,11 @@ describe("documentVulnerability local retained PoC checks (confined helper works
     try {
       const result = (await documentVulnerability(ctx).execute?.(
         makeDocumentInput(),
-        { toolCallId: "local-ok", messages: [] },
+        {
+          context: {},
+          toolCallId: "local-ok",
+          messages: [],
+        },
       )) as DocumentToolResult & { syntaxCheck?: ScriptSyntaxResult };
 
       expect(result).toMatchObject({ success: true });
@@ -1790,6 +1869,7 @@ describe("documentVulnerability local retained PoC checks (confined helper works
     input.pocContent = 'if [ -n x ]; then\n  echo "unclosed"\n';
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "local-bad",
       messages: [],
     })) as DocumentToolResult & {
@@ -1817,6 +1897,7 @@ describe("documentVulnerability local retained PoC checks (confined helper works
     const argv = vi.spyOn(PerCommandShell.prototype, "executeArgv");
     try {
       const result = (await documentVulnerability(ctx).execute?.(input, {
+        context: {},
         toolCallId: "local-big",
         messages: [],
       })) as DocumentToolResult & { syntaxCheck?: ScriptSyntaxResult };
@@ -1854,6 +1935,7 @@ describe("documentVulnerability local retained PoC checks (confined helper works
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "local-gen",
       messages: [],
     })) as DocumentToolResult & {
@@ -1933,6 +2015,7 @@ describe("documentVulnerability injected Windows backend declarations", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "win",
       messages: [],
     })) as DocumentToolResult & {
@@ -1970,6 +2053,7 @@ describe("documentVulnerability injected Windows backend declarations", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "win-escape",
       messages: [],
     })) as DocumentToolResult & { message?: string };
@@ -1997,6 +2081,7 @@ describe("documentVulnerability injected Windows backend declarations", () => {
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "win-cwd",
       messages: [],
     })) as DocumentToolResult & {
@@ -2031,7 +2116,11 @@ describe("documentVulnerability injected Windows backend declarations", () => {
     };
     const positiveResult = (await documentVulnerability(ctx).execute?.(
       positive,
-      { toolCallId: "win-dot", messages: [] },
+      {
+        context: {},
+        toolCallId: "win-dot",
+        messages: [],
+      },
     )) as DocumentToolResult;
     expect(positiveResult).toMatchObject({ success: true });
     expect(readRaw).toHaveBeenCalledWith("C:\\repo\\..hidden.js");
@@ -2043,6 +2132,7 @@ describe("documentVulnerability injected Windows backend declarations", () => {
       ],
     };
     const escapeResult = (await documentVulnerability(ctx).execute?.(escaping, {
+      context: {},
       toolCallId: "win-escape",
       messages: [],
     })) as DocumentToolResult & { message?: string };
@@ -2096,6 +2186,7 @@ describe("documentVulnerability declared artifact resolution (execution cwd vs f
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "cwd-ok",
       messages: [],
     })) as DocumentToolResult & {
@@ -2134,6 +2225,7 @@ describe("documentVulnerability declared artifact resolution (execution cwd vs f
     const argv = vi.spyOn(PerCommandShell.prototype, "executeArgv");
     try {
       const result = (await documentVulnerability(ctx).execute?.(input, {
+        context: {},
         toolCallId: "cwd-escape",
         messages: [],
       })) as DocumentToolResult & {
@@ -2177,6 +2269,7 @@ describe("documentVulnerability declared artifact resolution (execution cwd vs f
     };
 
     const result = (await documentVulnerability(ctx).execute?.(input, {
+      context: {},
       toolCallId: "dots",
       messages: [],
     })) as DocumentToolResult & {
@@ -2206,6 +2299,7 @@ describe("documentVulnerability declared artifact resolution (execution cwd vs f
       ],
     };
     const escapeResult = (await documentVulnerability(ctx).execute?.(escaping, {
+      context: {},
       toolCallId: "dots-escape",
       messages: [],
     })) as DocumentToolResult & { message?: string };

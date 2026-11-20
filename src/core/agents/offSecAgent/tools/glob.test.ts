@@ -86,6 +86,7 @@ async function runGlob(
   input: { pattern: string; path?: string; toolCallDescription: string },
 ): Promise<GlobResult> {
   return (await globFiles(ctx).execute?.(input, {
+    context: {},
     toolCallId: "tc_test",
     messages: [],
     abortSignal: ctx.abortSignal,

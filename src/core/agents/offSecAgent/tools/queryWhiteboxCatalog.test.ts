@@ -46,7 +46,11 @@ function invoke(
 ): Promise<unknown> {
   return queryWhiteboxCatalog(makeCtx(sessionId, rootPath)).execute?.(
     { query: "auth", limit: 3, toolCallDescription: "fixture" },
-    { toolCallId: "tc_test", messages: [] },
+    {
+      context: {},
+      toolCallId: "tc_test",
+      messages: [],
+    },
   ) as Promise<unknown>;
 }
 

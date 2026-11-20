@@ -10,7 +10,11 @@ import { getPage } from "./getPage";
 import { httpRequest } from "./httpRequest";
 import type { ToolContext } from "./types";
 
-const options = { toolCallId: "test", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "test",
+  messages: [],
+};
 const roots: string[] = [];
 function context(): ToolContext {
   const root = mkdtempSync(join(tmpdir(), "http-backends-"));

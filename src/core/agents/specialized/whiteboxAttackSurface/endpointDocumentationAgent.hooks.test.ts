@@ -24,7 +24,11 @@ vi.mock("../../../ai", async (importOriginal) => {
         yield { type: "start-step" };
         for await (const output of opts.tools.read_file.execute(
           { path: "/repo/handler.ts", toolCallDescription: "Read handler" },
-          { toolCallId: "child-read", messages: [] },
+          {
+            context: {},
+            toolCallId: "child-read",
+            messages: [],
+          },
         )) {
           yield { type: "tool-result", output };
         }
@@ -35,7 +39,11 @@ vi.mock("../../../ai", async (importOriginal) => {
               summary: "Documented GET /hello",
             },
           },
-          { toolCallId: "child-response", messages: [] },
+          {
+            context: {},
+            toolCallId: "child-response",
+            messages: [],
+          },
         )) {
           yield { type: "tool-result", output };
         }
