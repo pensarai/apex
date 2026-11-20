@@ -253,7 +253,7 @@ describe("documentVulnerability judge handling", () => {
         pocContent:
           'import requests\nrequests.post("https://example.com/hooks", json={"url": "http://169.254.169.254/"})',
       },
-      { toolCallId: "test", messages: [] },
+      { context: {}, toolCallId: "test", messages: [] },
     )) as DocumentToolResult & { message?: string };
 
     expect(result.success).toBe(false);
@@ -299,7 +299,7 @@ describe("documentVulnerability judge handling", () => {
             },
           ],
         },
-        { toolCallId: "test", messages: [] },
+        { context: {}, toolCallId: "test", messages: [] },
       )) as DocumentToolResult;
 
       expect(result.success).toBe(true);
@@ -335,7 +335,7 @@ describe("documentVulnerability judge handling", () => {
           },
         ],
       },
-      { toolCallId: "test", messages: [] },
+      { context: {}, toolCallId: "test", messages: [] },
     )) as DocumentToolResult & { message?: string };
 
     expect(result.success).toBe(false);
@@ -351,6 +351,7 @@ describe("documentVulnerability judge handling", () => {
     const tool = documentVulnerability(makeToolContext(rootPath));
     const { pocContent: _, ...input } = makeDocumentInput();
     const result = (await tool.execute?.(input, {
+      context: {},
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
