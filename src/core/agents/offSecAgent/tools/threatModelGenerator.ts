@@ -147,6 +147,7 @@ const ThreatModelResultSchema = z.object({
         "likelihood, and impact. Cite file:line. " +
         "(3) Risk assessment — worst-case impact and vector prioritization. " +
         "Do not include generic OWASP filler ungrounded in evidence you actually read. " +
+        "On an agent surface the web OWASP Top 10 is filler: model agent red-team failures instead. " +
         SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
@@ -249,7 +250,8 @@ const ThreatModelResultSchema = z.object({
         "deterministically. Every objective must trace back to an attack vector named in the threat " +
         "model. Include every p0 objective; fill remaining slots with p1 (breadth over payload " +
         "variants); include p2 only if slots remain. Do not emit placeholder one-liners like " +
-        "'Test for SQL injection'. If you have fewer than 10 meaningful tests, revisit the threat " +
+        "'Test for SQL injection'. On an agent surface, do not emit web OWASP Top 10 objectives. " +
+        "If you have fewer than 10 meaningful tests, revisit the threat " +
         "model — you probably under-enumerated vectors.",
     ),
 });
@@ -266,7 +268,7 @@ const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Analysis Agent. For a si
   3. a quantitative **risk score** (0-10),
   4. an **adversarial test plan** — falsifiable hypotheses a pentest agent can execute deterministically.
 
-You read the source code before you reason. Every claim in your analysis must be grounded in evidence you actually read — code where available (cite file:line), or the endpoint description and upstream artifacts (route table, OpenAPI spec, README) when the handler source is unreachable. In the latter case, follow the source-unavailable mode rules in the prompt body: cite the grounding source, tag the claim \`[unverified: source unavailable]\`, and cap pentest objective priority at \`p1\`. Generic OWASP/security filler that isn't tied to a specific input, transformation, line, or upstream artifact is not acceptable.
+You read the source code before you reason. Every claim in your analysis must be grounded in evidence you actually read — code where available (cite file:line), or the endpoint description and upstream artifacts (route table, OpenAPI spec, README) when the handler source is unreachable. In the latter case, follow the source-unavailable mode rules in the prompt body: cite the grounding source, tag the claim \`[unverified: source unavailable]\`, and cap pentest objective priority at \`p1\`. Generic OWASP/security filler that isn't tied to a specific input, transformation, line, or upstream artifact is not acceptable. When the endpoint is an AI agent, agent harness, or tool-using model, the threat model is an agent red-team model — the web OWASP Top 10 does not apply.
 
 Work the four parts in order. Do not skip ahead. The business logic is the anchor for the threat model; the threat model is the anchor for the test plan. Threats that do not reference the business logic are ungrounded. Tests that do not reference a threat are ungrounded.
 
@@ -406,7 +408,7 @@ export async function generateThreatModelForEndpoint(
 // Prompt construction
 // ---------------------------------------------------------------------------
 
-function buildThreatModelPrompt(
+export function buildThreatModelPrompt(
   input: GenerateThreatModelInput,
   projectThreatModel?: string,
 ): string {
@@ -507,7 +509,7 @@ Before enumerating, name the 1–3 **functional roles** this endpoint plays (fro
 | **Money movement / billing** (payments, refunds, credits, subscription changes) | Double-spend race, idempotency-key replay or omission, currency or unit confusion, client-trusted totals or prices, refund-to-other-method abuse, treating a webhook as the source of truth |
 | **Webhook receiver / external callback** | Signature stripping or partial-signature accept, signature timing oracle, replay without a \`Date\` or nonce window, SSRF via callback or follow-up URL, accept-on-malformed |
 | **File / media processing** (upload, parse, transform) | Zip / decompression bombs, polyglot files, parser RCE in image / PDF / XML / archive libs, MIME spoofing across downstream handlers, path traversal in stored filenames, content-disposition or cross-site download abuse |
-| **AI / LLM interaction** (model prompt, tool call, retrieval — directly in this handler or via a downstream service it proxies user content to) | Direct prompt injection, indirect prompt injection via attachments / retrieved docs / tool output / cross-user data, system-prompt or context leakage, jailbreak or policy bypass, tool / function-call hijacking, unsafe handling of model output (passed to \`exec\` / \`eval\`, rendered as HTML or markdown, used to build SQL or shell, returned across tenants) |
+| **Agent / LLM interaction** (agent harness, chat run, tool call, memory, retrieval — in this handler or via a service it proxies user content to) | Agent red-team classes in the Agent surfaces section. Not the web OWASP Top 10. |
 | **Search / query** (full-text, structured filters, GraphQL) | ReDoS, NoSQL operator injection, query-language eval, mass-assignment via filter or sort params, pagination boundary disclosure |
 | **Outbound messaging** (email, SMS, push) | Header injection (CRLF in subject / to / from), open-relay abuse, IDN or homoglyph spoofing, recipient enumeration, attachment-based delivery abuse |
 | **Admin / privileged operation** (bulk delete, role change, impersonation, audit) | Audit-log bypass, dangerous defaults on bulk operations, UI-only gating not enforced server-side, impersonation token misuse, takeover via support or "act-as" surfaces |
@@ -515,6 +517,29 @@ Before enumerating, name the 1–3 **functional roles** this endpoint plays (fro
 | **Public content / static** | Cache pollution, response-splitting or header injection, scraping or amplification, parameter-based information disclosure |
 
 This is a **recall checklist, not a license to invent.** Skip role classes that have no anchor in this endpoint's code. Endpoint-specific vectors that don't fall under a listed role are welcome — mark them "endpoint-specific". Endpoint descriptions that name a role (e.g. "AI assistant", "payment intent", "webhook receiver", "password reset") are a strong signal to classify the corresponding role; if the handler source is unreachable, classify the role anyway and proceed under **source-unavailable mode** (defined in the reading-the-code section) — vectors still emit, but they're tagged \`[unverified: source unavailable]\` and capped at \`p1\` in Part 4.
+
+#### Agent surfaces
+
+If this endpoint is an AI agent, an agent harness, a tool-using model, a multi-agent step, or the API those use (chat, run, tool call, memory, retrieval), it is an **agent surface**. That role is primary. The web OWASP Top 10 — injection, XSS, CSRF, broken access control as a generic checklist, security misconfiguration, vulnerable components — does not apply. Do not emit those categories to fill the vector list, and do not spend Part 4's objectives on them.
+
+Model the agent the way an agent red team would. Ground every vector in the harness you actually read: the instruction hierarchy, the tools and the credentials they run with, memory and retrieval, and what the model is allowed to do. Include the person talking to the agent, and untrusted content the agent reads, as attacker profiles when those exist.
+
+| Agent abuse class | What to look for |
+|---|---|
+| **Goal hijack** | User content that overrides the system prompt or the operator's task |
+| **Indirect prompt injection** | Untrusted content the agent reads — tool results, retrieved documents, email, web pages, tickets, another user's data — that it then follows as instructions |
+| **Tool misuse / confused deputy** | A tool that acts with the agent's credentials, broader than the calling user's authority, so the agent does something the user could not do themselves |
+| **Excessive agency** | A tool that spends money, sends messages, changes permissions, deletes, or exfiltrates without a check that this user's turn authorized that action |
+| **Cross-user context** | Memory, retrieval, conversation history, or another user's system prompt reachable through this agent |
+| **Memory poisoning** | A write that survives the turn and changes a later turn |
+| **Agent-to-agent trust** | A downstream agent treats an upstream agent's output as instructions rather than data |
+| **Unsafe output handling** | Model output that is executed, rendered as HTML, or interpolated into SQL, shell, or HTTP |
+| **Secret leakage** | System prompt, tool schemas, API keys, or hidden reasoning returned to the caller |
+| **Unbounded consumption** | Tool loops or token spend with no budget |
+
+Skip classes with no anchor in this endpoint. A tool that builds a query can still have a real injection bug — name it only when you read that tool doing it, and frame it as the agent's tool, not as a standalone web finding.
+
+Pentest objectives on an agent surface are executable against the agent: send a message, plant content the agent will read, invoke or observe a tool, and state the observable that proves the guardrail failed (a tool ran, a secret came back, another user's data came back, an instruction persisted). Do not emit "test for SQL injection" or "test for XSS" as objectives here.
 
 #### Step 1b — recall framework-derived surface
 
@@ -545,7 +570,7 @@ Each vector must:
 - Tie back to at least one attacker profile: "A [Profile Name] could …".
 - Note **likelihood** (unlikely / possible / likely / near-certain) based on what you actually read — not OWASP base rates.
 - Note **impact** (low / medium / high / critical).
-- Reference the **role class** from Step 1 (e.g. "AI / LLM: indirect prompt injection") or label "endpoint-specific".
+- Reference the **role class** from Step 1 (e.g. "Agent: indirect prompt injection") or label "endpoint-specific". On an agent surface, the role class is an agent abuse class, not a web OWASP category.
 
 Be exhaustive rather than selective. It is fine — and expected — to include vectors rated \`likelihood: unlikely\` if they are technically realizable against this endpoint. Pruning happens in Part 4 via priority, not here. If two vectors differ only in payload variant (e.g. time-based vs. error-based SQLi on the same input), list them as separate vectors — they have different test procedures and success signals.
 
@@ -597,6 +622,7 @@ Emit 10-12 test objectives. Each is a falsifiable hypothesis a pentest agent can
 - Fill remaining slots with \`p1\` objectives covering distinct vectors — prefer breadth across vectors over multiple payload variants of the same vector.
 - Only include \`p2\` objectives if slots remain after p0 and p1 coverage.
 - If a high-priority vector has multiple meaningful payload variants (e.g. time-based vs. error-based SQLi), pick the variant most likely to succeed given what you read in the code, and leave the others for future runs.
+- On an agent surface, spend the 10-12 objectives on the agent abuse classes you grounded in Part 2. Do not fill leftover slots with web OWASP variants.
 
 Prune aggressively toward this budget, but do not drop below 10 — if you have fewer than 10 meaningful tests, you probably under-enumerated Part 2's attack vectors; go back and expand them.
 

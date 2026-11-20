@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createLogger } from "../../../logger/structured";
 import { planFilePath } from "../../../plan";
 import { scopedLogger } from "../../../util/lazyLogger";
+import { PLAN_TESTING_METHODOLOGY } from "../../specialized/pentest/planPrompt";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("write_plan"));
@@ -38,7 +39,7 @@ Required plan sections:
 - **Reconnaissance Findings** — tech stack, endpoints, auth mechanisms discovered
 - **Attack Surface Map** — entry points ranked by exposure
 - **Prioritized Attack Vectors** — ordered by impact, with endpoint, vuln class, rationale, test approach per vector
-- **Testing Methodology** — concrete techniques/payloads per vector (OWASP categories)
+- **Testing Methodology** — ${PLAN_TESTING_METHODOLOGY}
 - **Estimated Action Tiers** — anticipated T1-T5 action counts so the operator can make an informed approval`,
     inputSchema: writePlanInputSchema,
     execute: async ({ content }): Promise<WritePlanResult> => {
