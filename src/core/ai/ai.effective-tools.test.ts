@@ -696,6 +696,83 @@ describe("effective toolset advertisement and execution", () => {
 // ---------------------------------------------------------------------------
 
 describe("effective toolset reuse across recovery", () => {
+  it("presents a v2 result batch once before persistence and the next model request", async () => {
+    const root = mkdtempSync(join(tmpdir(), "apex-presented-stream-"));
+    const prompts: LanguageModelV3Prompt[] = [];
+    const checkpoints: ModelMessage[][] = [];
+    const prepared: ModelMessage[][] = [];
+    state.model = new MockLanguageModelV3({
+      doStream: async (options) => {
+        prompts.push(options.prompt);
+        const chunks =
+          prompts.length === 1
+            ? [
+                { type: "stream-start", warnings: [] },
+                ...Array.from({ length: 12 }, (_, i) => ({
+                  type: "tool-call",
+                  toolCallId: `read-${i}`,
+                  toolName: "read_file",
+                  input: "{}",
+                })),
+                {
+                  type: "finish",
+                  finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                  usage,
+                },
+              ]
+            : textStepChunks();
+        return {
+          stream: simulateReadableStream({
+            chunks: chunks as LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    try {
+      const parts = await drain(
+        streamResponse({
+          model: MODEL,
+          prompt: "Follow the parser hint",
+          preserveHistory: true,
+          sessionPath: root,
+          tools: {
+            read_file: {
+              inputSchema: z.object({}),
+              execute: async () => "source evidence\n".repeat(1500),
+            },
+          },
+          stopWhen: stepCountIs(3),
+          silent: true,
+          contextRecorder: {
+            checkpoint: async ({ messages }) => {
+              checkpoints.push(structuredClone(messages));
+            },
+            flush: async () => {},
+            latest: () => checkpoints.at(-1),
+          },
+          onContextPrepared: ({ messages }) => {
+            prepared.push(structuredClone(messages));
+          },
+        }),
+      );
+      expect(parts.filter((part) => part.type === "error")).toEqual([]);
+      expect(prompts).toHaveLength(2);
+      const toolMessages = prompts[1].filter(
+        (message) => message.role === "tool",
+      );
+      expect(toolMessages.flatMap((message) => message.content)).toHaveLength(
+        12,
+      );
+      expect(JSON.stringify(toolMessages)).toContain("tool-output:");
+      expect(JSON.stringify(toolMessages).length).toBeLessThan(40_000);
+      expect(checkpoints).toContainEqual(prepared[1]);
+      expect(JSON.stringify(checkpoints.at(-1)).length).toBeLessThan(45_000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      state.model = null;
+    }
+  });
+
   it("passes one effective map reference to the initial and reactive fits", async () => {
     const fixture = catalogFixture();
     const between = Math.floor((fixture.fullBudget + fixture.activeBudget) / 2);

@@ -21,11 +21,11 @@ export function readSkill(ctx: ToolContext) {
 
       try {
         const { name: skillName, content } =
-          await ctx.skillsRegistry.readSkillContent(name);
+          await ctx.skillsRegistry.readSkillContent(name, ctx.mode);
         return { success: true, name: skillName, content };
       } catch {
         const available = ctx.skillsRegistry
-          .list()
+          .list(ctx.mode)
           .map((e) => e.slug)
           .join(", ");
         return {
