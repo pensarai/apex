@@ -1148,6 +1148,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const researchInput = researchContext?.prepare(
         baseWithFacts + workspaceSection,
       );
+      if (researchContext) input.steering?.attach(researchContext);
       return streamResponse({
         prompt: continuation
           ? `${input.prompt}\n\n${continuation}`
@@ -1181,6 +1182,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         languageModelMiddleware: input.languageModelMiddleware,
         usageRecorder: input.usageRecorder,
         contextRecorder: input.contextRecorder,
+        steering: researchContext ? input.steering : undefined,
         inferenceRecorder: input.inferenceRecorder,
         onContextPrepared: (context) => {
           preparedContextRef.current = {
