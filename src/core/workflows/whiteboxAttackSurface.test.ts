@@ -745,7 +745,7 @@ describe("incremental recon with unusable artifacts", () => {
           existingResult,
         },
       });
-    return { run, names };
+    return { run, names, assetsPath };
   }
 
   it("keeps the previous record for a malformed and an unreadable endpoint artifact and warns with both files", async () => {
@@ -770,6 +770,27 @@ describe("incremental recon with unusable artifacts", () => {
     expect(
       warnings.find((message) => message.includes(names.unreadable)),
     ).toContain("backend exploded");
+  });
+
+  it("does not duplicate an endpoint when a tagged sibling artifact is unusable", async () => {
+    const { run, assetsPath } = await setup(JSON.stringify(metadata));
+    const { endpointAssetFileName } = await import(
+      "../agents/offSecAgent/tools/endpointAssetFileName"
+    );
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      join(
+        assetsPath,
+        "api",
+        endpointAssetFileName("API", "/good", "second-tag"),
+      ),
+      "{",
+    );
+    const result = await run();
+    expect(
+      result.apps[0].apiEndpoints.filter((ep) => ep.path === "/good"),
+    ).toHaveLength(1);
+    expect(result.apps[0].apiEndpoints).toHaveLength(3);
   });
 
   it("fails the run and names the file when app.json is malformed", async () => {

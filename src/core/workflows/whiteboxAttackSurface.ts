@@ -1763,6 +1763,8 @@ async function readIncrementalReconAssets(
       pages: [],
       apiEndpoints: [],
     };
+    const keptPages: Endpoint[] = [];
+    const keptApiEndpoints: Endpoint[] = [];
     for (const file of await list(appPath)) {
       if (file === "app.json" || !file.endsWith(".json")) continue;
       if (file.includes("/") || file === "..")
@@ -1785,8 +1787,8 @@ async function readIncrementalReconAssets(
         log.warn(
           `Incremental recon: keeping ${kept.pages.length + kept.apiEndpoints.length} previous endpoint record(s) for unusable artifact: ${errorDetail(error)}`,
         );
-        app.pages.push(...kept.pages);
-        app.apiEndpoints.push(...kept.apiEndpoints);
+        keptPages.push(...kept.pages);
+        keptApiEndpoints.push(...kept.apiEndpoints);
         continue;
       }
       const previous =
@@ -1808,6 +1810,16 @@ async function readIncrementalReconAssets(
       };
       (isPageEndpoint(record) ? app.pages : app.apiEndpoints).push(restored);
     }
+    // Tagged artifacts can share a route; a good file's record wins over a kept one.
+    const identity = (ep: Endpoint) => `${ep.method} ${ep.path} ${ep.file}`;
+    const seen = new Set([...app.pages, ...app.apiEndpoints].map(identity));
+    const fresh = (ep: Endpoint) => {
+      if (seen.has(identity(ep))) return false;
+      seen.add(identity(ep));
+      return true;
+    };
+    app.pages.push(...keptPages.filter(fresh));
+    app.apiEndpoints.push(...keptApiEndpoints.filter(fresh));
     apps.push(app);
   }
   return {
