@@ -2,7 +2,12 @@ import type {
   LanguageModelV3StreamPart,
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
-import { simulateReadableStream, stepCountIs } from "ai";
+import {
+  APICallError,
+  RetryError,
+  simulateReadableStream,
+  stepCountIs,
+} from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -105,6 +110,75 @@ const rateLimitCounts = (retries: ModelRetryDecision[]) =>
 
 beforeEach(() => {
   state.model = undefined;
+});
+
+function apiError(statusCode: number) {
+  return new APICallError({
+    message: "Bedrock is unable to process your request.",
+    url: "https://example.test",
+    requestBodyValues: {},
+    statusCode,
+    isRetryable: false,
+  });
+}
+
+function retryErrorOf(statusCode: number) {
+  const last = apiError(statusCode);
+  return new RetryError({
+    message: "Failed after 4 attempts.",
+    reason: "maxRetriesExceeded",
+    errors: [last],
+  });
+}
+
+describe("rate-limit detection of SDK errors", () => {
+  it.each([
+    ["a bare 503 APICallError", () => apiError(503)],
+    ["a RetryError wrapping a 503", () => retryErrorOf(503)],
+  ])("retries %s", async (_name, makeError) => {
+    const { recorder, retries } = recordingRetries();
+    const doStream = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw makeError();
+      })
+      .mockImplementationOnce(async () => textStream("Recovered"));
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+
+    await drain(
+      streamResponse({
+        prompt: "p",
+        model: MODEL,
+        silent: true,
+        inferenceRecorder: recorder,
+      }),
+    );
+
+    expect(doStream).toHaveBeenCalledTimes(2);
+    expect(rateLimitCounts(retries)).toEqual([[1, 1000]]);
+  });
+
+  it("does not retry a RetryError wrapping a 400", async () => {
+    const { recorder, retries } = recordingRetries();
+    const doStream = vi.fn(async () => {
+      throw retryErrorOf(400);
+    });
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+
+    await expect(
+      drain(
+        streamResponse({
+          prompt: "p",
+          model: MODEL,
+          silent: true,
+          inferenceRecorder: recorder,
+        }),
+      ),
+    ).rejects.toThrow("Failed after 4 attempts.");
+
+    expect(doStream).toHaveBeenCalledTimes(1);
+    expect(rateLimitCounts(retries)).toEqual([]);
+  });
 });
 
 describe("stream recovery is one logical stream", () => {

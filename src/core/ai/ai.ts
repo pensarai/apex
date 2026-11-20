@@ -4,11 +4,13 @@ import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import {
+  APICallError,
   generateText,
   type LanguageModel,
   type LanguageModelMiddleware,
   type ModelMessage,
   Output,
+  RetryError,
   type StepResult,
   type StopCondition,
   type StreamTextOnFinishCallback,
@@ -366,6 +368,17 @@ export function getContextWindow(
 }
 
 function checkIfRateLimitError(error: unknown): boolean {
+  if (
+    APICallError.isInstance(error) &&
+    [429, 503, 529].includes(error.statusCode ?? 0)
+  ) {
+    return true;
+  }
+  // SDK RetryError (AI_RetryError) hides the cause behind lastError/errors
+  if (RetryError.isInstance(error)) {
+    return [error.lastError, ...error.errors].some(checkIfRateLimitError);
+  }
+
   const errObj =
     typeof error === "object" && error !== null
       ? (error as Record<string, unknown>)
