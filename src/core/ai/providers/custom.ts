@@ -18,6 +18,8 @@ export function createCustomModel(
       throw new Error("Responses custom providers require apiKeyEnv.");
     if (provider.requestBody)
       throw new Error("requestBody is only supported for Chat Completions.");
+    if (provider.includeUsage !== undefined)
+      throw new Error("includeUsage is only supported for Chat Completions.");
     const responsesModel = createOpenAI({
       name: `custom-${providerId}`,
       baseURL: provider.baseUrl,
@@ -55,6 +57,7 @@ export function createCustomModel(
     throw new Error("reasoningEffort requires the Responses API.");
   return createOpenAICompatible({
     name: `custom-${providerId}`,
+    includeUsage: provider.includeUsage,
     baseURL: provider.baseUrl,
     apiKey: resolveCustomApiKey(provider),
     headers: provider.headers,
