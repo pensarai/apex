@@ -52,6 +52,13 @@ model identity, streaming, response format, and output limits; those fields cann
 be overridden here. The endpoint must support streaming and function calling.
 Structured generation uses JSON mode with Apex validating the returned schema.
 
+For endpoints that require an explicit request for streamed token counts, set
+`includeUsage: true` on the provider. Apex sends
+`stream_options: { include_usage: true }` on streaming Chat Completions requests
+and preserves the returned input, output, and cached-input usage. Omitted or
+`false` leaves the request unchanged for endpoints that do not support this
+option. This setting does not apply to the Responses API or non-streaming calls.
+
 The compatible SDK returns GLM reasoning content on subsequent tool turns.
 Persisted message histories retain it on resume. Normal context compaction still
 replaces old history with a summary; preserved thinking does not disable compaction.
