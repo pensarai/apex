@@ -98,6 +98,7 @@ const OperatorSettingsObject = z.object({
   /** Run the top-level operator as a focused solo researcher without orchestration tools. */
   strikeMode: z.boolean().optional(),
   lanceMode: z.boolean().optional(),
+  defaultV2Mode: z.boolean().optional(),
   lanceBudget: lanceBudgetSchema.optional(),
   findingPolicy: z.enum(["native", "external"]).optional(),
 });
@@ -1049,6 +1050,9 @@ export async function updateOperatorSettings(
     }
     if (settings.lanceMode !== undefined) {
       session.config.operatorSettings.lanceMode = settings.lanceMode;
+    }
+    if (settings.defaultV2Mode !== undefined) {
+      session.config.operatorSettings.defaultV2Mode = settings.defaultV2Mode;
     }
     if (settings.strikeMode !== undefined) {
       session.config.operatorSettings.strikeMode = settings.strikeMode;

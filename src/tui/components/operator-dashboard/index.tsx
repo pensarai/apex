@@ -163,6 +163,7 @@ export default function OperatorDashboard({
     operatorMode?: OperatorMode;
     strikeMode?: boolean;
     lanceMode?: boolean;
+    defaultV2Mode?: boolean;
     lanceBudget?: LanceBudget;
     findingPolicy?: FindingPolicy;
     sandbox?: boolean;
@@ -215,6 +216,11 @@ export default function OperatorDashboard({
       ? false
       : (initialConfig?.lanceMode ?? config.data.lanceMode ?? false),
   );
+  const [defaultV2Mode, setDefaultV2Mode] = useState(
+    sessionId
+      ? false
+      : (initialConfig?.defaultV2Mode ?? config.data.defaultV2Mode ?? false),
+  );
   const initialStrikeModeRef = useRef(
     resolveOperatorStrikeMode({
       resuming: !!sessionId,
@@ -228,6 +234,7 @@ export default function OperatorDashboard({
       resuming: !!sessionId,
       strikeMode: initialStrikeModeRef.current,
       lanceMode,
+      defaultV2Mode,
       routeOverride: initialConfig?.findingPolicy,
       persistedDefault: config.data.findingPolicy,
     }),
@@ -402,6 +409,7 @@ export default function OperatorDashboard({
     operatorMode,
     strikeMode,
     lanceMode,
+    defaultV2Mode,
   );
   const activeFindingPolicy = resolveActiveFindingPolicy(
     agentMode,
@@ -505,6 +513,7 @@ export default function OperatorDashboard({
             existsSync(join(s.rootPath, "lance-result.json")) ||
               (s.config?.operatorSettings?.lanceMode ?? false),
           );
+          setDefaultV2Mode(s.config?.operatorSettings?.defaultV2Mode ?? false);
           setSessionCwd(s.rootPath);
           const resumedStrikeMode = resolveOperatorStrikeMode({
             resuming: true,
@@ -516,6 +525,7 @@ export default function OperatorDashboard({
               resuming: true,
               strikeMode: resumedStrikeMode,
               lanceMode: s.config?.operatorSettings?.lanceMode,
+              defaultV2Mode: s.config?.operatorSettings?.defaultV2Mode,
               savedSessionValue: s.config?.operatorSettings?.findingPolicy,
             }),
           );
@@ -1039,6 +1049,7 @@ export default function OperatorDashboard({
               enableSuggestions: true,
               strikeMode,
               lanceMode,
+              defaultV2Mode,
               lanceBudget,
               findingPolicy,
             },
@@ -1192,6 +1203,7 @@ export default function OperatorDashboard({
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
       lanceMode,
+      defaultV2Mode,
       lanceBudget,
       findingPolicy,
       activeFindingPolicy,
@@ -2052,6 +2064,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
           {lanceMode ? (
             <text fg={colors.warning}>LANCE</text>
+          ) : defaultV2Mode ? (
+            <text fg={colors.warning}>DEFAULT V2</text>
           ) : (
             strikeMode && <text fg={colors.warning}>STRIKE</text>
           )}
