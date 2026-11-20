@@ -577,13 +577,6 @@ Analyze every layer — edge, account, VPC, subnet, application, datastore, cred
   });
 }
 
-/** Third-party services the system relies on but cannot be attacked through directly. */
-const UNTHREATENED_KINDS = new Set([
-  "saas",
-  "identity-provider",
-  "llm-provider",
-]);
-
 export const THREAT_CATEGORIES = [
   "spoofing",
   "tampering",
@@ -760,6 +753,8 @@ export function updateRecord(ctx: ToolContext) {
   return tool({
     description: `Change specific fields of a documented boundary, component, control, or threat, leaving every other field exactly as it is. In an update run this is how a record changes: pass only what the change affects (e.g. a component's exposure and endpoints, a control's gaps), with evidence for the change.
 
+Evidence appends by default. To correct obsolete or contradicted evidence, use evidenceMode="replace" and supply the complete current evidence set, retaining valid references. Earlier record versions remain in history. Evidence-only replacement may use changes={}. Check related fields and records for the same outdated claim.
+
 Do not use it to restate a record in new words, and do not touch a record whose facts did not change. Rename with document_* and renameFrom; remove with retire_record.`,
     inputSchema: z.object({
       kind: z.enum(["boundary", "component", "control", "threat"]),
@@ -802,6 +797,12 @@ Do not use it to restate a record in new words, and do not touch a record whose 
           verification: z.string().optional(),
         })
         .describe("Only the fields that changed, with their new values."),
+      evidenceMode: z
+        .enum(["append", "replace"])
+        .optional()
+        .describe(
+          "Defaults to append. Replace corrects outdated evidence: supply the complete current evidence set, including still-valid references.",
+        ),
       evidence: evidenceSchema,
       toolCallDescription,
     }),
@@ -837,11 +838,12 @@ Do not use it to restate a record in new words, and do not touch a record whose 
         Object.entries(input.changes).filter(([, v]) => v !== undefined),
       ) as Record<string, unknown>;
       const fields = Object.keys(changes);
-      if (!fields.length)
+      if (!fields.length && input.evidenceMode !== "replace")
         return {
           success: false,
           error: "no_changes",
-          message: "Pass at least one changed field.",
+          message:
+            "Pass at least one changed field, or replace outdated evidence with evidenceMode='replace'.",
         };
       const invalid = fields.filter((f) => !UPDATABLE[input.kind].includes(f));
       if (invalid.length)
@@ -954,8 +956,12 @@ Do not use it to restate a record in new words, and do not touch a record whose 
         ...record,
         ...changes,
         ...resolved,
-        evidence: [...prior, ...input.evidence],
+        evidence:
+          input.evidenceMode === "replace"
+            ? input.evidence
+            : [...prior, ...input.evidence],
       });
+      if (input.evidenceMode === "replace") fields.push("evidence");
       return {
         success: true,
         kind: input.kind,
@@ -1379,14 +1385,11 @@ export function reviewTopologyRecords(ctx: ToolContext): TopologyIssue[] {
   }
   const threatened = new Set(topology.threats.map((t) => lower(t.component)));
   for (const c of components)
-    if (
-      !UNTHREATENED_KINDS.has(String(c.kind)) &&
-      !threatened.has(lower(c.name))
-    )
+    if (!threatened.has(lower(c.name)))
       issues.push({
         check: "no-threats",
         subject: String(c.name),
-        fix: "Threat-model it with document_threat: work through each STRIDE category against its trust assumptions, its controls' gaps, and its flows.",
+        fix: "Review relevant STRIDE categories, customer integration trust, controls and flows. Document supported conditional scenarios or explain evidence-backed absence; missing evidence is an analysis limitation. Never invent threats to satisfy a count.",
       });
   const has = (v: unknown) => typeof v === "string" && v.trim().length > 0;
   for (const t of topology.threats) {

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
       async consume() {
         return result;
       }
+      async abortAndDrain() {}
     };
   return { received, agent };
 });
@@ -48,6 +49,11 @@ vi.mock("../specialized/whiteboxAttackSurface", () => ({
 vi.mock("../specialized/reconWorker/agent", () => ({
   ReconWorkerAgent: mocks.agent("recon-worker", undefined),
 }));
+vi.mock("../specialized/attackSurface/generalizedAgent", () => ({
+  GeneralizedAttackSurfaceAgent: mocks.agent("completion-audit", {
+    completionAudit: { assessments: [] },
+  }),
+}));
 vi.mock("../specialized/attackSurface/blackboxAgent", () => ({
   BlackboxAttackSurfaceAgent: mocks.agent("blackbox-attack-surface", {
     targets: [],
@@ -67,6 +73,11 @@ vi.mock("../specialized/findingJudge", () => ({
 }));
 
 const specs = {
+  "completion-audit": {
+    type: "completion-audit",
+    target: "https://example.test",
+    prompt: "Audit fixture",
+  },
   pentest: {
     type: "pentest",
     target: "https://example.test",

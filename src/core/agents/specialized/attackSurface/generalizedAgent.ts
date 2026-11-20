@@ -7,12 +7,27 @@ import type { SpecializedAgentInput } from "../../offSecAgent";
 import { describeDocumentedTopology } from "../../offSecAgent/tools/documentTopology";
 import type { TopologyChangeSet } from "../../offSecAgent/tools/topologyRecords";
 import {
+  COMPLETION_AUDIT_SYSTEM,
+  type CompletionAudit,
+  completionAuditSchema,
+  packetAuditSchema,
+} from "./completionAudit";
+import {
   buildCredentialsBlock,
   buildGeneralizedAttackSurfacePrompt,
   GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
 } from "./generalizedPrompts";
+import {
+  type ReconCompletionOptions,
+  runAuditedRecon,
+} from "./reconCompletion";
 import { GENERALIZED_ATTACK_SURFACE_TOOLS } from "./reconToolset";
-import { finishUpdate, type ReconUpdate, startUpdate } from "./reconUpdate";
+import {
+  buildUpdateBrief,
+  finishUpdate,
+  type ReconUpdate,
+  startUpdate,
+} from "./reconUpdate";
 import {
   type AttackSurfaceAnalysisResults,
   loadAttackSurfaceResults,
@@ -35,6 +50,11 @@ export interface GeneralizedAttackSurfaceAgentInput
    * documented, so this pass continues instead of starting over.
    */
   continuation?: string;
+  harness?: "general";
+  completion?: ReconCompletionOptions;
+  auditPrompt?: string;
+  auditRequirementIds?: string[];
+  stepLimit?: number;
   /** Re-map from an earlier run's map instead of from scratch. */
   update?: ReconUpdate;
   /** Set by {@link runGeneralizedReconToReport}: the update section of the prompt. */
@@ -52,6 +72,7 @@ export interface GeneralizedAttackSurfaceResult {
   changesPath?: string;
   /** Update runs the agent did not need to run for, and why. */
   skipped?: string;
+  completionAudit?: CompletionAudit;
 }
 
 interface GeneralizedState {
@@ -77,19 +98,31 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
     }
     return { target: opts.target, subagentFolder };
   },
-  system: () => GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
+  system: (opts) =>
+    opts.auditPrompt
+      ? COMPLETION_AUDIT_SYSTEM
+      : GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
+  responseSchema: (opts) =>
+    opts.auditPrompt
+      ? opts.auditRequirementIds
+        ? packetAuditSchema(opts.auditRequirementIds)
+        : completionAuditSchema
+      : undefined,
   activeTools: (opts) => {
+    if (opts.auditPrompt)
+      return ["read_file", "list_files", "grep", "glob", "response"];
     if (!opts.excludeTools?.length)
       return [...GENERALIZED_ATTACK_SURFACE_TOOLS];
     const excluded = new Set(opts.excludeTools);
     return GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t));
   },
-  stopWhen: () => [
+  stopWhen: (opts) => [
     hasToolCall("create_attack_surface_report"),
-    stepCountIs(10_000),
+    stepCountIs(opts.stepLimit ?? 10_000),
   ],
   target: (_opts, state) => state.target,
   prompt: (opts, state) =>
+    opts.auditPrompt ??
     buildGeneralizedAttackSurfacePrompt(
       [...new Set([state.target, ...opts.session.targets])],
       opts.session.config?.connectedRepositories ?? [],
@@ -103,7 +136,7 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
         opts.session.config?.authenticationInstructions,
       ),
     ),
-  resolveResult: (opts) => {
+  resolveResult: (opts, _state, _stream, validatedResponse) => {
     const resultsPath = join(
       opts.session.rootPath,
       "attack-surface-results.json",
@@ -119,7 +152,15 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
         // Report may not have been written yet.
       }
     }
-    return { results, targets, resultsPath, assetsPath };
+    return {
+      results,
+      targets,
+      resultsPath,
+      assetsPath,
+      ...(opts.auditPrompt
+        ? { completionAudit: completionAuditSchema.parse(validatedResponse) }
+        : {}),
+    };
   },
 });
 
@@ -147,13 +188,14 @@ export async function runGeneralizedReconToReport(
   input: GeneralizedAttackSurfaceAgentInput,
   createAgent: (input: GeneralizedAttackSurfaceAgentInput) => {
     consume(): Promise<GeneralizedAttackSurfaceResult>;
+    abortAndDrain?(): Promise<void>;
   } = (i) => new GeneralizedAttackSurfaceAgent(i),
 ): Promise<GeneralizedAttackSurfaceResult> {
   const root = input.session.rootPath;
   let first = input;
   if (input.update) {
     const start = startUpdate(input.update, root);
-    if (start.skip)
+    if (start.skip && !input.completion)
       return {
         results: null,
         targets: [],
@@ -162,7 +204,19 @@ export async function runGeneralizedReconToReport(
         skipped: start.skip,
         ...finishUpdate(input.update, root, input.session.id),
       };
-    first = { ...input, updateBrief: start.brief };
+    first = {
+      ...input,
+      updateBrief: start.skip
+        ? buildUpdateBrief(input.update, root)
+        : start.brief,
+    };
+  }
+  if (input.completion) {
+    await input.completion.restore?.();
+    const audited = await runAuditedRecon(first, createAgent);
+    return input.update
+      ? { ...audited, ...finishUpdate(input.update, root, input.session.id) }
+      : audited;
   }
   let result = await createAgent(first).consume();
   for (
@@ -193,3 +247,5 @@ export class GeneralizedAttackSurfaceAgent extends AgentRuntime<
     super(generalizedAttackSurfaceDefinition, opts);
   }
 }
+
+export { assertCompletionAudit } from "./completionAudit";
