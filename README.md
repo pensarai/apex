@@ -172,6 +172,17 @@ either search key, Apex uses the existing Pensar web-search gateway, which
 requires Pensar authentication. Exa errors are returned directly without
 switching providers.
 
+A Keenable API key works the same way:
+
+```bash
+export KEENABLE_API_KEY=your-keenable-api-key
+pensar
+```
+
+or save it as `keenableAPIKey` in `~/.pensar/config.json`. Order is Brave, then
+Exa, then Keenable, then the Pensar gateway; the first configured key wins.
+Keenable errors are also returned directly without switching providers.
+
 ### Logging
 
 Apex routes diagnostic/operational logging through a centralized structured logger
