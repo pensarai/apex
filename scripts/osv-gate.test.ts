@@ -5,6 +5,7 @@ import {
   invalidExceptions,
   lookupLicenses,
   type OsvScan,
+  parseOsvConfig,
   renderSummary,
   severityOf,
 } from "./osv-gate";
@@ -23,6 +24,7 @@ const pkg = (name: string, version: string, advisories: Advisory[] = []) => ({
     summary: `${a.id} summary`,
     affected: [
       {
+        package: { name, ecosystem: "npm" },
         ranges: [
           {
             events: (a.fixed === false
@@ -182,6 +184,35 @@ describe("compareScans", () => {
     expect(compareScans(base, head).blocking).toEqual([]);
   });
 
+  it("reads the fix from the reported package only", () => {
+    const a = pkg("a", "1.0.0", [
+      { id: "GHSA-multi", score: "8", fixed: false },
+    ]);
+    a.vulnerabilities[0]?.affected.push({
+      package: { name: "other", ecosystem: "npm" },
+      ranges: [{ events: [{ introduced: "0" }, { fixed: "2.0.0" }] }],
+    });
+    expect(findingsFromScan(scanOf(a))[0]?.fixAvailable).toBe(false);
+  });
+
+  it("finds a fix listed on any record in the advisory group", () => {
+    const a = pkg("a", "1.0.0", [
+      { id: "CVE-2026-9", score: "8", fixed: false },
+    ]);
+    a.groups[0]?.ids.push("GHSA-9");
+    a.vulnerabilities.push({
+      id: "GHSA-9",
+      summary: "",
+      affected: [
+        {
+          package: { name: "a", ecosystem: "npm" },
+          ranges: [{ events: [{ introduced: "0" }, { fixed: "1.0.1" }] }],
+        },
+      ],
+    });
+    expect(findingsFromScan(scanOf(a))[0]?.fixAvailable).toBe(true);
+  });
+
   it("handles a scan with no results", () => {
     expect(compareScans({ results: null }, { results: [] }).introduced).toEqual(
       [],
@@ -189,45 +220,105 @@ describe("compareScans", () => {
   });
 });
 
-describe("invalidExceptions", () => {
-  it("accepts entries with an id and a reason", () => {
-    expect(
-      invalidExceptions({
-        IgnoredVulns: [{ id: "GHSA-1", reason: "dev server only" }],
-      }),
-    ).toEqual([]);
-  });
-
-  it("rejects an entry without a reason or an id", () => {
-    expect(
-      invalidExceptions({
-        IgnoredVulns: [
-          { id: "GHSA-1" },
-          { id: "GHSA-2", reason: "  " },
-          { reason: "why" },
-        ],
-      }),
-    ).toEqual([
-      "GHSA-1 has no reason",
-      "GHSA-2 has no reason",
-      "entry 3 has no id",
+describe("parseOsvConfig and invalidExceptions", () => {
+  it("reads entries, trailing comments, spaced headers and a # inside a string", () => {
+    const toml = [
+      "# header comment",
+      "[[IgnoredVulns]] # temporary",
+      'id = "GHSA-1" # trailing comment',
+      "ignoreUntil = 2027-01-01",
+      'reason = "dev server only, \\"quoted\\" #not-a-comment"',
+      "",
+      "[[ IgnoredVulns ]]",
+      "id = 'GHSA-2'",
+    ].join("\n");
+    const config = parseOsvConfig(toml);
+    expect(config.IgnoredVulns).toEqual([
+      {
+        id: "GHSA-1",
+        ignoreuntil: "2027-01-01",
+        reason: 'dev server only, "quoted" #not-a-comment',
+      },
+      { id: "GHSA-2" },
     ]);
+    expect(invalidExceptions(config)).toEqual(["GHSA-2 has no reason"]);
   });
 
-  it("requires a reason on a package override that hides vulnerabilities", () => {
-    expect(
-      invalidExceptions({
-        PackageOverrides: [
-          { name: "a", ignore: true },
-          { name: "b", vulnerability: { ignore: true } },
-          { name: "c", vulnerability: { ignore: true }, reason: "vendored" },
-          { name: "d", license: { override: ["MIT"] } } as never,
-        ],
-      }),
-    ).toEqual([
+  it("reads a commented-out example as no entries", () => {
+    expect(parseOsvConfig('# [[IgnoredVulns]]\n# id = "GHSA-x"\n')).toEqual({
+      IgnoredVulns: [],
+      PackageOverrides: [],
+    });
+  });
+
+  it("requires a reason on every package override that hides vulnerabilities", () => {
+    const toml = [
+      "[[PackageOverrides]]",
+      'name = "a"',
+      "ignore = true",
+      "[[PackageOverrides]]",
+      'name = "b"',
+      "vulnerability.ignore = true",
+      "[[PackageOverrides]]",
+      'name = "d"',
+      "vulnerability.ignore = true",
+      'reason = "vendored and patched"',
+      "[[PackageOverrides]]",
+      'name = "e"',
+      'license.override = ["MIT"]',
+      "[[PackageOverrides]]",
+      'name = "f"',
+      "license.ignore = true",
+    ].join("\n");
+    expect(invalidExceptions(parseOsvConfig(toml))).toEqual([
       "a ignores vulnerabilities without a reason",
       "b ignores vulnerabilities without a reason",
     ]);
+  });
+
+  it("matches table and key names case-insensitively, as osv-scanner does", () => {
+    const toml = [
+      "[[ignoredvulns]]",
+      'ID = "GHSA-1"',
+      "[[PACKAGEOVERRIDES]]",
+      'Name = "a"',
+      "Ignore = true",
+      "[[PackageOverrides]]",
+      'name = "b"',
+      "Vulnerability.IGNORE = true",
+      'Reason = "patched in our fork"',
+    ].join("\n");
+    expect(invalidExceptions(parseOsvConfig(toml))).toEqual([
+      "GHSA-1 has no reason",
+      "a ignores vulnerabilities without a reason",
+    ]);
+  });
+
+  it.each([
+    ['[[Unknown]]\nid = "x"', /does not check \[\[Unknown\]\]/],
+    ["[PackageOverrides.vulnerability]\nignore = true", /cannot check/],
+    ['[[IgnoredVulns]]\nreason = """\nwhy\n"""', /multi-line/],
+    ["[[IgnoredVulns]]\nid = \n", /cannot read/],
+    ['[[IgnoredVulns]]\nid = "unterminated\n', /cannot read the string/],
+    [
+      '[[PackageOverrides]]\nname = "x"\nvulnerability = { ignore = true }',
+      /dotted keys/,
+    ],
+    [
+      '[[PackageOverrides]]\nname = "x"\nvulnerability = { "ignore" = true }',
+      /dotted keys/,
+    ],
+    ['[[IgnoredVulns]]\nid = { value = "GHSA-1" }', /dotted keys/],
+    ['[[PackageOverrides]]\n"vulnerability".ignore = true', /cannot read/],
+    ['[[PackageOverrides]]\nvulnerability."ignore" = true', /cannot read/],
+    ['IgnoredVulns = [{ id = "GHSA-1" }]', /no top-level settings/],
+    [
+      'PackageOverrides = [{ name = "x", ignore = true }]',
+      /no top-level settings/,
+    ],
+    ['GoVersionOverride = "1.22"', /no top-level settings/],
+  ])("fails closed on %j", (toml, error) => {
+    expect(() => parseOsvConfig(toml)).toThrow(error);
   });
 });
 
