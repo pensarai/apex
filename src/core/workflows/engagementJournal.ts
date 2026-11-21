@@ -28,6 +28,7 @@ export interface EngagementJournalEvent {
 
 const MATERIAL_KINDS = new Set<EngagementEventKind>([
   "mail",
+  "board",
   "help",
   "finding",
   "blocked",

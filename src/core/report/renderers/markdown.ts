@@ -17,6 +17,46 @@ export function renderMarkdown(report: PentestReport): string {
     "",
   ];
 
+  if (report.assessment) {
+    const assessment = report.assessment;
+    header.push(
+      "## Assessment coverage",
+      "",
+      `**Outcome:** ${assessment.status}`,
+      "",
+      assessment.summary,
+      "",
+    );
+    if (assessment.deadlineAt)
+      header.push(`**Deadline:** ${assessment.deadlineAt}`, "");
+    for (const cell of assessment.coverage)
+      header.push(
+        `- **${cell.status}** — ${cell.targetId} / ${cell.objectiveId}: ${cell.summary}${cell.evidence ? ` — Evidence: ${cell.evidence}` : ""}`,
+      );
+    for (const obligation of assessment.obligations)
+      header.push(
+        `- **${obligation.status} ${obligation.kind} ${obligation.id}** — ${obligation.description}: ${obligation.evidence || "No accepted evidence"}`,
+      );
+    for (const chain of assessment.chains)
+      header.push(
+        `- **${chain.status} chain ${chain.id}** — ${chain.hypothesis}: ${chain.evidence || "Unresolved"}`,
+      );
+    for (const excluded of assessment.exclusions)
+      header.push(`- **Excluded ${excluded.targetId}** — ${excluded.reason}`);
+    header.push("", "## Landed results", "");
+    for (const landed of assessment.landed)
+      header.push(
+        `- **${landed.missionId}, attempt ${landed.attempt}** — ${landed.result.summary}. Lead review: ${landed.review}`,
+      );
+    if (!assessment.landed.length)
+      header.push("No results accepted by the lead.");
+    for (const mission of assessment.unfinishedMissions)
+      header.push(
+        `- **Unfinished ${mission.id} (${mission.status})** — ${mission.error ?? mission.result?.summary ?? "No landed result"}`,
+      );
+    header.push("");
+  }
+
   if (findings.length === 0) {
     return [
       ...header,

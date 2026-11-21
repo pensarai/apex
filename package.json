@@ -295,6 +295,11 @@
       "import": "./build/lib/core/tools/backends/index.js",
       "types": "./build/lib/core/tools/backends/index.d.ts"
     },
+    "./workflows/engagement": {
+      "default": "./build/lib/core/workflows/engagement.js",
+      "import": "./build/lib/core/workflows/engagement.js",
+      "types": "./build/lib/core/workflows/engagement.d.ts"
+    },
     "./workflows/pentest": {
       "default": "./build/lib/core/workflows/pentest.js",
       "import": "./build/lib/core/workflows/pentest.js",

@@ -49,6 +49,7 @@ function plan(
 ): EngagementPlan {
   return {
     version: 1,
+    coverageObligations: [],
     status: "ready",
     contractHash: engagementManifestHash(targets),
     decisions,
@@ -72,12 +73,14 @@ describe("engagement planning contract", () => {
             { targetId: "a", objectiveId: "y" },
           ],
           dependsOn: [],
+          obligationIds: [],
         },
         {
           id: "m2",
           purpose: "Upload",
           assignments: [{ targetId: "b", objectiveId: "z" }],
           dependsOn: ["m1"],
+          obligationIds: [],
         },
       ],
     );
@@ -111,6 +114,7 @@ describe("engagement planning contract", () => {
         { targetId: "a", objectiveId: "y" },
       ],
       dependsOn: [],
+      obligationIds: [],
     };
     const firstPair = { targetId: "a", objectiveId: "x" };
     expect(() =>
@@ -161,6 +165,7 @@ describe("engagement planning contract", () => {
             purpose: "Other",
             assignments: [{ targetId: "b", objectiveId: "z" }],
             dependsOn: ["m1"],
+            obligationIds: [],
           },
         ]),
         targets,
@@ -175,6 +180,7 @@ describe("engagement planning contract", () => {
           purpose: "Other",
           assignments: [{ targetId: "b", objectiveId: "z" }],
           dependsOn: ["m1"],
+          obligationIds: [],
         },
       ],
     );
@@ -222,6 +228,7 @@ describe("engagement planning contract", () => {
             { targetId: "b", objectiveId: "z" },
           ],
           dependsOn: [],
+          obligationIds: [],
         },
       ],
     );

@@ -107,6 +107,33 @@ function tools(input: Record<string, unknown>): ToolSet {
   return input.extraTools as ToolSet;
 }
 
+async function finishLead(input: Record<string, unknown>, summary = "done") {
+  const state = (await tools(input).read_engagement_state?.execute?.(
+    { offset: 0, limit: 50 },
+    {} as never,
+  )) as { missions: Array<{ id: string; status: string; attempt: number }> };
+  for (const mission of [...state.missions].reverse()) {
+    if (mission.status === "submitted")
+      await tools(input).accept_engagement_result?.execute?.(
+        {
+          missionId: mission.id,
+          attempt: mission.attempt,
+          review: "Evidence inspected; no further validation needed",
+        },
+        {} as never,
+      );
+  }
+  const latest = (await tools(input).read_engagement_state?.execute?.(
+    { offset: 0, limit: 50 },
+    {} as never,
+  )) as { reviewedRevision: string };
+  return {
+    summary,
+    coverageComplete: true,
+    reviewedRevision: latest.reviewedRevision,
+  };
+}
+
 describe("code-mode engagement lead", () => {
   it("lets the lead page in-scope context but rejects excluded and unknown targets", async () => {
     const { rootPath, workflow, plan } = setup();
@@ -145,7 +172,7 @@ describe("code-mode engagement lead", () => {
           read?.({ targetId: "missing", offset: 0, limit: 12 }, {} as never),
         ).rejects.toThrow("outside the engagement scope");
         leadReads += 1;
-        return { summary: "done", coverageComplete: true };
+        return finishLead(input);
       }
       return {
         summary: "tested",
@@ -220,7 +247,7 @@ describe("code-mode engagement lead", () => {
             {} as never,
           );
         }
-        return { summary: "all covered", coverageComplete: true };
+        return finishLead(input, "all covered");
       }
       workers.push(id);
       const targetId = id === workers[0] ? "a" : "b";
@@ -346,7 +373,7 @@ describe("code-mode engagement lead", () => {
             {} as never,
           );
         }
-        return { summary: "done", coverageComplete: true };
+        return finishLead(input);
       }
       attempts += 1;
       expect(input.grpc).toEqual(grpcCandidates[0]?.grpc);
@@ -412,7 +439,11 @@ describe("code-mode engagement lead", () => {
             {} as never,
           );
         }
-        return { summary: "resolved", coverageComplete: true };
+        await tools(input).cancel_engagement_mission?.execute?.(
+          { missionId: "upload", reason: "Failed prerequisite" },
+          {} as never,
+        );
+        return finishLead(input, "resolved");
       }
       workerTurns += 1;
       throw new Error("unrecoverable auth failure");
@@ -476,7 +507,7 @@ describe("code-mode engagement lead", () => {
       if (input.subagentId === "engagement-lead") {
         await new Promise((resolve) => setTimeout(resolve, 1));
         expect(input.onStepFinish).toBe(hookStep);
-        return { summary: "done", coverageComplete: true };
+        return finishLead(input);
       }
       expect(input.onStepFinish).toBe(hookStep);
       return {
@@ -632,7 +663,7 @@ describe("code-mode engagement lead", () => {
           {} as never,
         )) as { missions: Array<{ status: string; workerId: string }> };
         const mission = state.missions[0];
-        if (!followed && mission?.status === "completed") {
+        if (!followed && mission?.status === "submitted") {
           followed = true;
           await tools(input).follow_up_engagement_worker?.execute?.(
             { workerId: mission.workerId, text: "Confirm the finding" },
@@ -640,7 +671,7 @@ describe("code-mode engagement lead", () => {
           );
           return { summary: "following up", coverageComplete: false };
         }
-        return { summary: "done", coverageComplete: true };
+        return finishLead(input);
       }
       workerTurns += 1;
       return {
@@ -667,5 +698,178 @@ describe("code-mode engagement lead", () => {
     expect(result.reportedFindings).toEqual([
       "Auth bypass with cross-user access",
     ]);
+  });
+});
+
+describe("engagement completion barriers", () => {
+  it("queues follow-ups behind other workers at the configured cap", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.missions[1].dependsOn = [];
+    let running = 0;
+    let peak = 0;
+    let followed = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const state = (await tools(input).read_engagement_state?.execute?.(
+          { offset: 0, limit: 20 },
+          {} as never,
+        )) as { missions: Array<{ status: string; workerId: string }> };
+        if (
+          !followed &&
+          state.missions[0].status === "submitted" &&
+          state.missions[1].status === "running"
+        ) {
+          followed = true;
+          await tools(input).follow_up_engagement_worker?.execute?.(
+            { workerId: state.missions[0].workerId, text: "Validate chain" },
+            {} as never,
+          );
+          expect(running).toBe(1);
+          release();
+        }
+        return finishLead(input);
+      }
+      const first = String(input.prompt).startsWith("Mission auth:");
+      running++;
+      peak = Math.max(peak, running);
+      if (!first) await gate;
+      running--;
+      return {
+        summary: "done",
+        coverage: [
+          {
+            targetId: first ? "a" : "b",
+            objectiveId: first ? "auth" : "upload",
+            status: "tested",
+            summary: "checked",
+            evidence: "HTTP access-denied response",
+          },
+        ],
+        reportedFindings: [],
+      };
+    };
+    await runEngagementLead({
+      workflow,
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+      concurrency: 1,
+    });
+    expect(followed).toBe(true);
+    expect(peak).toBe(1);
+  });
+
+  it("rejects a completion decision when material evidence arrives after review", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.missions[1].dependsOn = [];
+    let turns = 0;
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        turns++;
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const result = await finishLead(input);
+        if (turns === 1) {
+          await tools(input).post_engagement_board?.execute?.(
+            { text: "A new cross-service observation requires review" },
+            {} as never,
+          );
+        }
+        return result;
+      }
+      const first = String(input.prompt).startsWith("Mission auth:");
+      return {
+        summary: "tested",
+        coverage: [
+          {
+            targetId: first ? "a" : "b",
+            objectiveId: first ? "auth" : "upload",
+            status: "tested",
+            summary: "checked",
+            evidence: "HTTP request/response evidence",
+          },
+        ],
+        reportedFindings: [],
+      };
+    };
+    await runEngagementLead({
+      workflow,
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+    });
+    expect(turns).toBe(2);
+  });
+
+  it("stops at the user deadline with submitted results unlanded and preserves the deadline on resume", async () => {
+    const { rootPath, workflow, plan } = setup();
+    plan.missions[1].dependsOn = [];
+    let workerCalls = 0;
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        const signal = input.abortSignal as AbortSignal;
+        await new Promise<void>((_, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else
+            signal.addEventListener("abort", () => reject(signal.reason), {
+              once: true,
+            });
+        });
+      }
+      workerCalls++;
+      const first = String(input.prompt).startsWith("Mission auth:");
+      return {
+        summary: "Requires lead review",
+        coverage: [
+          {
+            targetId: first ? "a" : "b",
+            objectiveId: first ? "auth" : "upload",
+            status: "tested",
+            summary: "checked",
+            evidence: "HTTP request/response evidence",
+          },
+        ],
+        reportedFindings: [],
+      };
+    };
+    const deadlineAt = new Date(Date.now() + 50).toISOString();
+    const result = await runEngagementLead({
+      workflow: { ...workflow, deadlineAt },
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+    });
+    expect(result.assessment.status).toBe("deadline");
+    expect(result.assessment.landed).toEqual([]);
+    expect(
+      result.assessment.coverage.every((cell) => cell.status === "unresolved"),
+    ).toBe(true);
+    expect(result.assessment.unfinishedMissions).toHaveLength(2);
+    expect(result.assessment.unfinishedMissions[0].result?.summary).toBe(
+      "Requires lead review",
+    );
+    const resumed = await runEngagementLead({
+      workflow: {
+        ...workflow,
+        deadlineAt: new Date(Date.now() + 10000).toISOString(),
+      },
+      candidates,
+      findingsRegistry: {} as FindingsRegistry,
+    });
+    expect(resumed.assessment.deadlineAt).toBe(deadlineAt);
+    expect(workerCalls).toBe(2);
   });
 });

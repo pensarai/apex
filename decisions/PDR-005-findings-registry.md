@@ -19,7 +19,7 @@ All agents write findings to a shared registry in `src/core/findings/` in real t
 ## Alternatives considered
 
 - **Each agent returns a result set at the end** — rejected. No real-time visibility, deduplication requires a merge step with complex conflict resolution, and agents finishing at different times means the report can't be generated until the last agent finishes.
-- **Agent-to-agent communication** — rejected. Overly complex; agents would need awareness of each other and a coordination protocol, which is hard to reason about and debug.
+- **Agent-to-agent communication as the findings store** — rejected. Findings still require a canonical registry. [PDR-016](./PDR-016-adaptive-engagements.md) adds a separate coordination board for observations, task handoffs, and chain hypotheses.
 
 ## Consequences
 

@@ -4,6 +4,12 @@ import { dirname, join } from "node:path";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { SwarmTarget } from "../session/persistence";
+import {
+  type CoverageObligation,
+  CoverageObligationSchema,
+  pairKey,
+  validateCoverageObligations,
+} from "./engagementState";
 
 const Id = z.string().min(1).max(120);
 const Pair = z.object({ targetId: Id, objectiveId: Id });
@@ -18,12 +24,14 @@ export const EngagementPlanSchema = z.object({
       reason: z.string().min(1),
     }),
   ),
+  coverageObligations: z.array(CoverageObligationSchema).default([]),
   missions: z.array(
     z.object({
       id: Id,
       purpose: z.string().min(1),
       assignments: z.array(Pair).min(1).max(100),
       dependsOn: z.array(Id).default([]),
+      obligationIds: z.array(Id).default([]),
     }),
   ),
 });
@@ -147,11 +155,13 @@ export async function targetsFromProvider(
 export function validateEngagementPlan(
   input: unknown,
   candidates: readonly EngagementTarget[],
+  contractHash = engagementManifestHash(candidates),
+  requiredObligations: CoverageObligation[] = [],
 ): EngagementPlan {
   const plan = EngagementPlanSchema.parse(input);
   if (plan.status !== "ready")
     throw new Error("Only a ready plan can be sealed");
-  if (plan.contractHash !== engagementManifestHash(candidates))
+  if (plan.contractHash !== contractHash)
     throw new Error("Plan contract hash does not match candidates");
   if (
     new Set(candidates.map((candidate) => candidate.id)).size !==
@@ -172,12 +182,35 @@ export function validateEngagementPlan(
     if (!decisions.has(target.id))
       throw new Error(`Unclassified candidate: ${target.id}`);
   }
+  validateCoverageObligations(
+    plan.coverageObligations,
+    new Set(
+      plan.decisions
+        .filter((item) => item.scope === "in")
+        .map((item) => item.targetId),
+    ),
+  );
+  for (const obligation of requiredObligations) {
+    const actual = plan.coverageObligations.find(
+      (item) => item.id === obligation.id,
+    );
+    if (
+      JSON.stringify(actual) !==
+      JSON.stringify(CoverageObligationSchema.parse(obligation))
+    )
+      throw new Error(
+        `Missing or changed required coverage obligation: ${obligation.id}`,
+      );
+  }
   const missionIds = new Set<string>();
   const assigned = new Set<string>();
   for (const mission of plan.missions) {
     if (missionIds.has(mission.id))
       throw new Error(`Duplicate mission ID: ${mission.id}`);
     missionIds.add(mission.id);
+    for (const id of mission.obligationIds)
+      if (!plan.coverageObligations.some((item) => item.id === id))
+        throw new Error(`Unknown mission obligation: ${id}`);
     for (const pair of mission.assignments) {
       const target = known.get(pair.targetId);
       if (!target)
@@ -214,6 +247,20 @@ export function validateEngagementPlan(
       if (!assigned.has(key)) throw new Error(`Missing assignment: ${key}`);
     }
   }
+  for (const obligation of plan.coverageObligations) {
+    for (const targetId of obligation.targetIds) {
+      if (
+        !plan.missions.some(
+          (mission) =>
+            mission.obligationIds.includes(obligation.id) &&
+            mission.assignments.some((pair) => pair.targetId === targetId),
+        )
+      )
+        throw new Error(
+          `Missing mission coverage for obligation ${obligation.id} on ${targetId}`,
+        );
+    }
+  }
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const missions = new Map(
@@ -233,14 +280,19 @@ export function validateEngagementPlan(
   return plan;
 }
 
-export function pairKey(pair: EngagementPair): string {
-  return `${pair.targetId}\u0000${pair.objectiveId}`;
-}
+export { pairKey } from "./engagementState";
 
 export function engagementManifestHash(
   candidates: readonly EngagementTarget[],
+  context?: unknown,
 ): string {
-  return createHash("sha256").update(JSON.stringify(candidates)).digest("hex");
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        context === undefined ? candidates : { candidates, context },
+      ),
+    )
+    .digest("hex");
 }
 
 export function writeJsonAtomic(path: string, value: unknown): void {
@@ -255,6 +307,8 @@ export function createEngagementPlanningTools(options: {
   candidates: EngagementTarget[];
   provider?: EngagementContextProvider;
   onContextRead?: () => void;
+  contractHash?: string;
+  requiredObligations?: CoverageObligation[];
 }): ToolSet {
   const ids = new Set(options.candidates.map((candidate) => candidate.id));
   const path = join(options.sessionRoot, ENGAGEMENT_PLAN_PATH);
@@ -300,7 +354,12 @@ export function createEngagementPlanningTools(options: {
       execute: async ({ plan }) => {
         if (plan.status !== "ready")
           throw new Error("Planner can only write a ready plan");
-        validateEngagementPlan(plan, options.candidates);
+        validateEngagementPlan(
+          plan,
+          options.candidates,
+          options.contractHash,
+          options.requiredObligations,
+        );
         writeJsonAtomic(path, plan);
         return { path: ENGAGEMENT_PLAN_PATH, status: "ready" };
       },
@@ -311,11 +370,15 @@ export function createEngagementPlanningTools(options: {
 export function sealEngagementPlan(
   sessionRoot: string,
   candidates: EngagementTarget[],
+  contractHash?: string,
+  requiredObligations?: CoverageObligation[],
 ): EngagementPlan {
   const path = join(sessionRoot, ENGAGEMENT_PLAN_PATH);
   const plan = validateEngagementPlan(
     JSON.parse(readFileSync(path, "utf8")),
     candidates,
+    contractHash,
+    requiredObligations,
   );
   const sealed: EngagementPlan = { ...plan, status: "sealed" };
   writeJsonAtomic(path, sealed);

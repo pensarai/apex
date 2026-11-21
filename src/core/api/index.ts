@@ -64,6 +64,10 @@ export type {
   EngagementTarget,
 } from "../workflows/engagementPlan";
 export type {
+  CoverageObligation,
+  EngagementAssessment,
+} from "../workflows/engagementState";
+export type {
   PentestWorkflowInput,
   PentestWorkflowResult,
 } from "../workflows/pentest";

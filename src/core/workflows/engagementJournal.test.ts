@@ -76,7 +76,7 @@ describe("engagement journal", () => {
       text: "done",
       missionId: "m1",
     });
-    expect(events).toEqual(["help", "completed"]);
+    expect(events).toEqual(["board", "help", "completed"]);
     const path = roots[0];
     if (!path) throw new Error("Test journal root is missing");
     expect(new EngagementJournal(path).board().entries[0]?.text).toBe(

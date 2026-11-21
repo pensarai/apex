@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AttackPathSchema } from "../../lib/attack-path/types";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
+import { EngagementAssessmentSchema } from "../workflows/engagementState";
 
 export const PentestReportFindingSchema = z.object({
   title: z.string(),
@@ -40,6 +41,7 @@ export const PentestReportSchema = z.object({
     }),
   }),
   findings: z.array(PentestReportFindingSchema),
+  assessment: EngagementAssessmentSchema.optional(),
 });
 
 export const REPORT_VERSION = "1.0";
