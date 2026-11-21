@@ -1685,18 +1685,19 @@ function streamResponseWithinOperation(
     // already includes the base (messagesContainer.current) — committing
     // them would duplicate the prefix.
     if (
-      contextRecorder &&
+      (contextRecorder || opts.getPendingMessages) &&
       step.response.id !== "summarization" &&
       step.response.id !== "tool-repair"
     ) {
       if (!recorderBase) {
         throw new Error("context recorder active without a committed base");
       }
-      await contextRecorder.checkpoint({
-        messages: [
-          ...recorderBase,
-          ...step.response.messages.slice(responseMessageLength),
-        ],
+      messagesContainer.current = [
+        ...recorderBase,
+        ...step.response.messages.slice(responseMessageLength),
+      ];
+      await contextRecorder?.checkpoint({
+        messages: messagesContainer.current,
         system: effectiveSystem ?? null,
       });
     }
@@ -2115,7 +2116,9 @@ function streamResponseWithinOperation(
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
         let stepMessages = projectFailedToolCalls(
-          step.messages,
+          opts.getPendingMessages && recorderBase
+            ? messagesContainer.current
+            : step.messages,
           step.steps.flatMap((previous) => previous.toolCalls),
         );
         const pendingMessages = await opts.getPendingMessages?.();
@@ -2125,6 +2128,8 @@ function streamResponseWithinOperation(
             ...pendingMessages,
           ]);
         }
+        // The SDK reconstructs later steps from its original input, omitting injected mail.
+        messagesContainer.current = stepMessages;
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
@@ -2171,8 +2176,8 @@ function streamResponseWithinOperation(
             throw new InStreamCompactionRequired(fitted);
           }
         }
+        recorderBase = structuredClone(stepMessages);
         if (contextRecorder) {
-          recorderBase = structuredClone(stepMessages);
           // Full logical context each turn — accepted step outputs must
           // survive into every later commit, and system is explicit (when
           // cached into messages, effectiveSystem is undefined → null).
