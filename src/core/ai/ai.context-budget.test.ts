@@ -34,7 +34,10 @@ const usage = {
   outputTokens: { total: 5, text: 5, reasoning: undefined },
 };
 
-it("runs a 64K custom model with real tool schemas and compacts subsequent output without a futile summary", async () => {
+it.each([
+  "messages",
+  "prompt",
+] as const)("runs a 64K custom model from %s with real tool schemas and compacts subsequent output without a futile summary", async (input) => {
   const root = mkdtempSync(join(tmpdir(), "apex-context-budget-"));
   try {
     const tools: ToolSet = {
@@ -99,11 +102,12 @@ it("runs a 64K custom model with real tool schemas and compacts subsequent outpu
     });
     const response = streamResponse({
       model: "custom:fixture:small",
-      prompt: "",
+      prompt: input === "prompt" ? "Inspect the fixture. ".repeat(200) : "",
       harness: "general",
-      messages: [
-        { role: "user", content: "Inspect the fixture. ".repeat(200) },
-      ],
+      messages:
+        input === "messages"
+          ? [{ role: "user", content: "Inspect the fixture. ".repeat(200) }]
+          : undefined,
       system,
       tools,
       authConfig,
@@ -136,4 +140,40 @@ it("runs a 64K custom model with real tool schemas and compacts subsequent outpu
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+it("preserves the output minimum required by budget-based thinking", async () => {
+  const calls: LanguageModelV3CallOptions[] = [];
+  state.model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      calls.push(options);
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ],
+        }),
+      };
+    },
+  });
+  const result = streamResponse({
+    model: "claude-sonnet-4-20250514",
+    prompt: "",
+    messages: [{ role: "user", content: "Hi" }],
+    enableThinking: true,
+    system: "s".repeat((200_000 - 1_000 - 10_000 - 3_000) * 4),
+    silent: true,
+  });
+  for await (const _part of result.fullStream) {
+    /* Drain the provider stream. */
+  }
+  expect(calls).toHaveLength(1);
+  expect(calls[0].maxOutputTokens).toBe(2048);
+  expect(calls[0].providerOptions?.anthropic).toMatchObject({
+    thinking: { type: "enabled", budgetTokens: 1024 },
+  });
 });

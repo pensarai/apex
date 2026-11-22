@@ -703,8 +703,8 @@ function streamOutputTokenLimit(opts: StreamResponseOpts): number {
     opts.authConfig?.hoonifyModels,
     opts.authConfig?.ollama,
   );
-  // Only conversation calls enter the shared history fitter.
-  if (!opts.messages?.length) return configured;
+  // Conversation calls and multi-step tool calls enter the shared history fitter.
+  if (!opts.messages?.length && !opts.tools) return configured;
   const contextWindow = getContextWindow(
     opts.model,
     opts.authConfig?.customProviders,
@@ -721,8 +721,25 @@ function streamOutputTokenLimit(opts: StreamResponseOpts): number {
   const usable = contextWindow - overhead - systemTokens - 10_000;
   // An already overfull fixed prompt still uses the existing recovery path.
   if (usable < 2) return configured;
-  // Reserve conversation space after fixed overhead, rather than half the raw window.
-  return Math.min(configured, Math.floor(usable / 2));
+  const capability = getReasoningCapabilities(
+    opts.model,
+    opts.authConfig?.customProviders,
+  );
+  const setting = resolveReasoningSetting(opts.model, {
+    ...opts,
+    customProviders: opts.authConfig?.customProviders,
+  });
+  const minimum =
+    capability.thinking === "budget" &&
+    capability.transport !== "google" &&
+    setting !== undefined &&
+    setting !== "disabled" &&
+    setting !== "none" &&
+    !(setting === "default" && capability.defaultEnabled === false)
+      ? 2048
+      : 1;
+  // Reserve conversation space after fixed overhead, preserving provider thinking minima.
+  return Math.min(configured, Math.max(minimum, Math.floor(usable / 2)));
 }
 
 function shouldSummarizeBeforeFitting(
