@@ -177,3 +177,34 @@ it("preserves the output minimum required by budget-based thinking", async () =>
     thinking: { type: "enabled", budgetTokens: 1024 },
   });
 });
+
+it("preserves prompt-only output when no tools are active", async () => {
+  const calls: LanguageModelV3CallOptions[] = [];
+  state.model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      calls.push(options);
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ],
+        }),
+      };
+    },
+  });
+  const response = streamResponse({
+    model: "claude-sonnet-4-20250514",
+    prompt: "Hi",
+    tools: {},
+    system: "s".repeat(600_000),
+    silent: true,
+  });
+  for await (const _part of response.fullStream) {
+    /* Drain the provider stream. */
+  }
+  expect(calls[0].maxOutputTokens).toBe(64_000);
+});

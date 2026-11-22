@@ -704,7 +704,8 @@ function streamOutputTokenLimit(opts: StreamResponseOpts): number {
     opts.authConfig?.ollama,
   );
   // Conversation calls and multi-step tool calls enter the shared history fitter.
-  if (!opts.messages?.length && !opts.tools) return configured;
+  if (!opts.messages?.length && !Object.keys(opts.tools ?? {}).length)
+    return configured;
   const contextWindow = getContextWindow(
     opts.model,
     opts.authConfig?.customProviders,
