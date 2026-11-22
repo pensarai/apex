@@ -20,6 +20,7 @@ describe("engagement journal", () => {
     const first = journal();
     const path = roots[0];
     if (!path) throw new Error("Test journal root is missing");
+    expect(first.hasUnacknowledged("worker")).toBe(false);
     const a = first.append({
       kind: "mail",
       from: "lead",
@@ -38,6 +39,7 @@ describe("engagement journal", () => {
       expect.stringContaining("first"),
       expect.stringContaining("second"),
     ]);
+    expect(first.hasUnacknowledged("worker")).toBe(true);
     const restarted = new EngagementJournal(path);
     expect(restarted.pending("worker")).toEqual([]);
     const replay = restarted.resumeMessages("worker", []);
@@ -46,6 +48,7 @@ describe("engagement journal", () => {
       expect.stringContaining(b.id),
     ]);
     expect(restarted.resumeMessages("worker", replay)).toEqual(replay);
+    expect(restarted.hasUnacknowledged("worker")).toBe(false);
     expect(
       new EngagementJournal(path).resumeMessages("worker", [
         { role: "user", content: "recent window" },
@@ -77,6 +80,10 @@ describe("engagement journal", () => {
       missionId: "m1",
     });
     expect(events).toEqual(["board", "help", "completed"]);
+    expect(first.recentMaterial(2).map((event) => event.kind)).toEqual([
+      "help",
+      "completed",
+    ]);
     const path = roots[0];
     if (!path) throw new Error("Test journal root is missing");
     expect(new EngagementJournal(path).board().entries[0]?.text).toBe(

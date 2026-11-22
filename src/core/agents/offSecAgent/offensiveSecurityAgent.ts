@@ -1159,7 +1159,11 @@ export class OffensiveSecurityAgent<TResult = void> {
             legacyMessages(event.response.messages);
           const snapshot = persistedMessages(canonical);
           this.writer.setLatest(snapshot);
-          if (input.onMessagesPersisted) {
+          if (
+            input.onMessagesPersisted &&
+            (input.shouldPersistMessages?.() ?? true)
+          ) {
+            this.writer.cancelTimer();
             await this.writer.enqueueWrite(snapshot);
             await input.onMessagesPersisted(snapshot);
           } else {

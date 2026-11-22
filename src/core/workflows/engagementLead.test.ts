@@ -28,13 +28,16 @@ vi.mock("../agents/offSecAgent", () => ({
   },
 }));
 
+import { EngagementJournal } from "./engagementJournal";
 import { runEngagementLead } from "./engagementLead";
 import {
   ENGAGEMENT_PLAN_PATH,
   type EngagementTarget,
   engagementManifestHash,
+  sealEngagementPlan,
   writeJsonAtomic,
 } from "./engagementPlan";
+import { createEngagementState } from "./engagementState";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -135,6 +138,111 @@ async function finishLead(input: Record<string, unknown>, summary = "done") {
 }
 
 describe("code-mode engagement lead", () => {
+  it("restores journaled progress after a crash without accepting stale attempts", async () => {
+    const { rootPath, workflow, plan } = setup();
+    writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+    const sealed = sealEngagementPlan(rootPath, candidates);
+    const state = createEngagementState(sealed);
+    const mission = state.missions[0];
+    mission.status = "running";
+    mission.attempt = 2;
+    mission.progress = "Old checkpoint";
+    writeJsonAtomic(
+      join(rootPath, "coordination", "engagement-state.json"),
+      state,
+    );
+    const journal = new EngagementJournal(rootPath);
+    const event = {
+      kind: "progress" as const,
+      from: mission.workerId,
+      missionId: mission.id,
+      attempt: 2,
+      text: "Latest journaled progress",
+    };
+    journal.append(event);
+    journal.append({ ...event, attempt: 1, text: "Late old attempt" });
+    journal.append({
+      ...event,
+      from: "reassigned-worker",
+      text: "Wrong worker",
+    });
+    fake.consume = async (input) => {
+      expect(input.subagentId).toBe("engagement-lead");
+      const page = await tools(input).read_engagement_state?.execute?.(
+        { offset: 0, limit: 1 },
+        {} as never,
+      );
+      expect(page).toMatchObject({
+        missions: [
+          {
+            id: "auth",
+            status: "failed",
+            progress: "Latest journaled progress",
+          },
+        ],
+      });
+      throw new Error("Review observed restored state");
+    };
+    await expect(
+      runEngagementLead({
+        workflow,
+        candidates,
+        findingsRegistry: {} as FindingsRegistry,
+      }),
+    ).rejects.toThrow("Review observed restored state");
+  });
+
+  it("persists routine progress in the journal without rewriting the full state", async () => {
+    const { rootPath, workflow, plan } = setup();
+    let release!: () => void;
+    const progressed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fake.consume = async (input) => {
+      if (input.subagentId === "engagement-planner") {
+        writeJsonAtomic(join(rootPath, ENGAGEMENT_PLAN_PATH), plan);
+        return { summary: "planned", planComplete: true };
+      }
+      if (input.subagentId === "engagement-lead") {
+        await progressed;
+        throw new Error("Stop after progress");
+      }
+      const path = join(rootPath, "coordination", "engagement-state.json");
+      const before = readFileSync(path, "utf8");
+      await tools(input).update_engagement_progress?.execute?.(
+        { text: "First boundary checked" },
+        {} as never,
+      );
+      await tools(input).update_engagement_progress?.execute?.(
+        { text: "Second boundary checked" },
+        {} as never,
+      );
+      expect(readFileSync(path, "utf8")).toBe(before);
+      expect(
+        new EngagementJournal(rootPath)
+          .read()
+          .filter((event) => event.kind === "progress")
+          .map((event) => event.text),
+      ).toEqual(["First boundary checked", "Second boundary checked"]);
+      release();
+      throw new Error("Worker stopped");
+    };
+    await expect(
+      runEngagementLead({
+        workflow,
+        candidates,
+        findingsRegistry: {} as FindingsRegistry,
+      }),
+    ).rejects.toThrow("Stop after progress");
+    const saved = JSON.parse(
+      readFileSync(
+        join(rootPath, "coordination", "engagement-state.json"),
+        "utf8",
+      ),
+    );
+    expect(saved.missions[0].progress).toBe("Second boundary checked");
+  });
+
   it("lets the lead page in-scope context but rejects excluded and unknown targets", async () => {
     const { rootPath, workflow, plan } = setup();
     plan.decisions[1] = { targetId: "b", scope: "out", reason: "Narrow scope" };

@@ -127,6 +127,31 @@ describe("adaptive engagement coordination", () => {
     expect(options.schedule).toHaveBeenCalledTimes(2);
   });
 
+  it("journals progress before requesting a noncritical state checkpoint", async () => {
+    const { state, tools, options } = setup();
+    await execute(tools, "create_engagement_mission", definition("parent"));
+    state.missions[0].status = "running";
+    state.missions[0].attempt = 2;
+    const save = vi.fn(() => {
+      expect(options.journal.read().at(-1)).toMatchObject({
+        kind: "progress",
+        missionId: "parent",
+        attempt: 2,
+      });
+    });
+    const worker = createCoordinationTools({
+      ...options,
+      save,
+      parentId: "parent",
+      attempt: 2,
+    });
+    await execute(worker, "update_engagement_progress", {
+      text: "Checked first boundary",
+    });
+    expect(save).toHaveBeenCalledWith("progress");
+    expect(state.missions[0].progress).toBe("Checked first boundary");
+  });
+
   it("requires lead acceptance of the current attempt and retains immutable landed history on reassignment", async () => {
     const { state, tools } = setup();
     await execute(tools, "create_engagement_mission", definition("mission"));
@@ -146,6 +171,13 @@ describe("adaptive engagement coordination", () => {
     });
     expect(state.coverage).toHaveLength(1);
     expect(state.landed).toHaveLength(1);
+    expect(state.missions[0].result).toBeUndefined();
+    const detail = await execute(tools, "read_engagement_tasks", {
+      offset: 0,
+      limit: 1,
+      missionId: "mission",
+    });
+    expect(detail).toMatchObject({ landed: [landed], totalLanded: 1 });
     expect(
       await execute(tools, "accept_engagement_result", {
         missionId: "mission",
@@ -188,6 +220,18 @@ describe("adaptive engagement coordination", () => {
       missionId: "first",
       attempt: 1,
       review: "Reviewed token evidence",
+    });
+    const details = await execute(tools, "read_engagement_tasks", {
+      offset: 0,
+      limit: 1,
+      obligationId: "tenant",
+      chainId: "pivot",
+    });
+    expect(details).toMatchObject({
+      missions: [],
+      obligation: { verification: "Cross-tenant requests must be denied" },
+      chain: { prerequisites: ["Token observed in response"] },
+      totalLanded: 1,
     });
     const firstIds = state.landed.map((item) => item.id);
     await expect(

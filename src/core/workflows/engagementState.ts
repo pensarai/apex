@@ -225,24 +225,20 @@ export function isEngagementTerminal(
   plan: EngagementPlan,
   state: EngagementState,
 ): boolean {
+  const covered = new Set(state.coverage.map(pairKey));
+  const resolved = new Set(
+    state.obligationResults.map((result) => result.obligationId),
+  );
   return (
-    engagementPairs(plan, state).every((pair) =>
-      state.coverage.some((cell) => pairKey(cell) === pairKey(pair)),
-    ) &&
-    state.obligations.every((obligation) =>
-      state.obligationResults.some(
-        (result) => result.obligationId === obligation.id,
-      ),
-    ) &&
+    engagementPairs(plan, state).every((pair) => covered.has(pairKey(pair))) &&
+    state.obligations.every((obligation) => resolved.has(obligation.id)) &&
     state.chains.every((chain) => chain.status !== "open") &&
     state.missions.every(
       (mission) =>
         mission.status === "completed" ||
         mission.status === "cancelled" ||
         (mission.status === "failed" &&
-          mission.assignments.every((pair) =>
-            state.coverage.some((cell) => pairKey(cell) === pairKey(pair)),
-          )),
+          mission.assignments.every((pair) => covered.has(pairKey(pair)))),
     )
   );
 }
@@ -275,4 +271,58 @@ export function submitEngagementResult(
 
 export function pairKey(pair: EngagementPair): string {
   return `${pair.targetId}\u0000${pair.objectiveId}`;
+}
+
+export function engagementStatePage(
+  plan: EngagementPlan,
+  state: EngagementState,
+  offset = 0,
+  limit = 20,
+) {
+  const pairs = engagementPairs(plan, state);
+  const covered = new Set(state.coverage.map(pairKey));
+  const open = pairs.filter((pair) => !covered.has(pairKey(pair)));
+  const results = new Map(
+    state.obligationResults.map((result) => [result.obligationId, result]),
+  );
+  const next = (total: number) =>
+    offset + limit < total ? offset + limit : null;
+  return {
+    missions: state.missions.slice(offset, offset + limit).map((mission) => ({
+      id: mission.id,
+      parentId: mission.parentId,
+      workerId: mission.workerId,
+      attempt: mission.attempt,
+      status: mission.status,
+      purpose: mission.purpose.slice(0, 240),
+      progress: mission.progress?.slice(0, 240),
+    })),
+    totalMissions: state.missions.length,
+    nextMissionOffset: next(state.missions.length),
+    completedPairs: covered.size,
+    totalPairs: pairs.length,
+    openPairs: open
+      .slice(offset, offset + limit)
+      .map(({ targetId, objectiveId }) => ({ targetId, objectiveId })),
+    nextOffset: next(open.length),
+    obligations: state.obligations
+      .slice(offset, offset + limit)
+      .map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        description: item.description.slice(0, 240),
+        status: results.get(item.id)?.status ?? "unresolved",
+      })),
+    totalObligations: state.obligations.length,
+    resolvedObligations: results.size,
+    nextObligationOffset: next(state.obligations.length),
+    chains: state.chains.slice(offset, offset + limit).map((chain) => ({
+      id: chain.id,
+      status: chain.status,
+      hypothesis: chain.hypothesis.slice(0, 240),
+    })),
+    totalChains: state.chains.length,
+    openChains: state.chains.filter((chain) => chain.status === "open").length,
+    nextChainOffset: next(state.chains.length),
+  };
 }

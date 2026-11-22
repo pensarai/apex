@@ -163,6 +163,8 @@ export interface AgentHooks {
   nestedTools?: string[];
   onCodeCellComplete?: (result: CodeCellResult) => void;
   getPendingMessages?: () => Promise<ModelMessage[]>;
+  /** Gate the immediate transcript flush; callers without a gate flush every step. */
+  shouldPersistMessages?: () => boolean;
   /** Called only after the step transcript is durable. */
   onMessagesPersisted?: (messages: ModelMessage[]) => Promise<void> | void;
 

@@ -22,6 +22,7 @@ export interface EngagementJournalEvent {
   from: string;
   to?: string;
   missionId?: string;
+  attempt?: number;
   text?: string;
   deliveredIds?: string[];
 }
@@ -84,6 +85,26 @@ export class EngagementJournal {
       entries: entries.slice(offset, offset + limit),
       nextOffset: offset + limit < entries.length ? offset + limit : null,
     };
+  }
+
+  recentMaterial(limit: number): EngagementJournalEvent[] {
+    const entries: EngagementJournalEvent[] = [];
+    for (
+      let i = this.events.length - 1;
+      i >= 0 && entries.length < limit;
+      i--
+    ) {
+      const event = this.events[i];
+      if (event && MATERIAL_KINDS.has(event.kind)) entries.push(event);
+    }
+    return entries.reverse();
+  }
+
+  hasUnacknowledged(recipient: string): boolean {
+    const acknowledged = this.acknowledgedIds(recipient);
+    return [...this.deliveredIds(recipient)].some(
+      (id) => !acknowledged.has(id),
+    );
   }
 
   private deliveredIds(recipient: string): Set<string> {

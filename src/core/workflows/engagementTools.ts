@@ -31,7 +31,7 @@ export function createCoordinationTools(options: {
   state: EngagementState;
   targets: EngagementTarget[];
   allowed: Set<string>;
-  save(): void;
+  save(change?: "progress"): void;
   schedule(): void;
   cancel(id: string): Promise<void>;
   journal: Pick<EngagementJournal, "append">;
@@ -202,18 +202,48 @@ export function createCoordinationTools(options: {
   const common: ToolSet = {
     read_engagement_tasks: tool({
       description:
-        "Read the shared mission/subtask list and lead-accepted landed ledger.",
+        "Read full mission/subtask and landed evidence pages. Select a missionId, obligationId or chainId to inspect its details and evidence.",
       inputSchema: z.object({
         offset: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(50).default(20),
+        missionId: Id.optional(),
+        obligationId: Id.optional(),
+        chainId: Id.optional(),
       }),
-      execute: async ({ offset, limit }) =>
-        structuredClone({
-          missions: state.missions.slice(offset, offset + limit),
-          landed: state.landed.slice(offset, offset + limit),
-          totalMissions: state.missions.length,
-          totalLanded: state.landed.length,
-        }),
+      execute: async ({ offset, limit, missionId, obligationId, chainId }) => {
+        const missions = missionId
+          ? [mission(missionId)]
+          : obligationId || chainId
+            ? []
+            : state.missions;
+        const landed =
+          missionId || obligationId || chainId
+            ? state.landed.filter(
+                (entry) =>
+                  (!missionId || entry.missionId === missionId) &&
+                  (!obligationId ||
+                    entry.obligationIds.includes(obligationId)) &&
+                  (!chainId || entry.chainIds.includes(chainId)),
+              )
+            : state.landed;
+        return structuredClone({
+          missions: missions.slice(offset, offset + limit),
+          landed: landed.slice(offset, offset + limit),
+          totalMissions: missions.length,
+          totalLanded: landed.length,
+          obligation: obligationId
+            ? state.obligations.find((item) => item.id === obligationId)
+            : undefined,
+          obligationResult: obligationId
+            ? state.obligationResults.find(
+                (item) => item.obligationId === obligationId,
+              )
+            : undefined,
+          chain: chainId
+            ? state.chains.find((item) => item.id === chainId)
+            : undefined,
+        });
+      },
     }),
     propose_engagement_chain: tool({
       description:
@@ -241,14 +271,15 @@ export function createCoordinationTools(options: {
         inputSchema: z.object({ text: Text }),
         execute: async ({ text }) => {
           assertWorkerActive();
-          mission(parentId).progress = text;
-          save();
           journal.append({
             kind: "progress",
             from: sender,
             missionId: parentId,
+            attempt: mission(parentId).attempt,
             text,
           });
+          mission(parentId).progress = text;
+          save("progress");
           return { accepted: true };
         },
       }),
@@ -347,6 +378,7 @@ export function createCoordinationTools(options: {
           ]),
         ];
         record.status = "completed";
+        record.result = undefined;
         save();
         schedule();
         return structuredClone(landed);

@@ -2176,7 +2176,8 @@ function streamResponseWithinOperation(
             throw new InStreamCompactionRequired(fitted);
           }
         }
-        recorderBase = structuredClone(stepMessages);
+        if (contextRecorder || opts.getPendingMessages)
+          recorderBase = structuredClone(stepMessages);
         if (contextRecorder) {
           // Full logical context each turn — accepted step outputs must
           // survive into every later commit, and system is explicit (when
