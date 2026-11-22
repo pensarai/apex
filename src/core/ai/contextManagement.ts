@@ -7,7 +7,7 @@
  */
 
 import { join } from "node:path";
-import type { ModelMessage, ToolSet } from "ai";
+import { asSchema, type ModelMessage, type ToolSet } from "ai";
 import { persistToolOutput } from "../agents/offSecAgent/tools/toolOutput";
 import type { AgentHarness } from "./ai";
 import {
@@ -378,7 +378,9 @@ export function estimateToolsOverheadTokens(tools?: ToolSet): number {
     if (typeof t.description === "string") chars += t.description.length;
     if (t.inputSchema) {
       try {
-        chars += JSON.stringify(t.inputSchema).length;
+        const schema = asSchema(tool.inputSchema).jsonSchema;
+        if ("then" in schema) throw new Error("Schema is asynchronous");
+        chars += JSON.stringify(schema).length;
       } catch {
         // Cyclic / non-serialisable — never zero.
         chars += 500;
