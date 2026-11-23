@@ -2814,7 +2814,7 @@ export function resumeMessagesWithPinned(
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
       opts.authConfig?.ollama,
-    ) - streamOutputTokenLimit(opts);
+    ) - streamOutputTokenLimit({ ...opts, messages });
   const fits = (history: ModelMessage[]) =>
     estimateMessageTokens(history) + overhead <= budget;
   if (latestUser && !fits([resumePrompt, latestUser]))

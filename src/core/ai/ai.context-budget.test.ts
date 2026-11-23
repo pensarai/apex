@@ -10,6 +10,7 @@ import { MockLanguageModelV3 } from "ai/test";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createAllTools } from "../agents/offSecAgent/tools";
+import type { StreamResponseOpts } from "./ai";
 
 const state = vi.hoisted(() => ({
   model: undefined as MockLanguageModelV3 | undefined,
@@ -18,7 +19,7 @@ vi.mock("./utils", async () => ({
   ...(await vi.importActual<typeof import("./utils")>("./utils")),
   getProviderModel: () => state.model,
 }));
-const { streamResponse } = await import("./ai");
+const { resumeMessagesWithPinned, streamResponse } = await import("./ai");
 const { estimateMessageTokens, estimateToolsOverheadTokens, estimateTokens } =
   await import("./contextManagement");
 const authConfig = {
@@ -140,6 +141,51 @@ it.each([
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+it.each([
+  undefined,
+  {},
+])("budgets a prompt-only replay using the resumed history with tools=%j", async (tools) => {
+  const calls: LanguageModelV3CallOptions[] = [];
+  state.model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      calls.push(options);
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            },
+          ],
+        }),
+      };
+    },
+  });
+  const opts: StreamResponseOpts = {
+    model: "custom:fixture:small",
+    prompt: "Original task",
+    tools,
+    authConfig,
+    silent: true,
+  };
+  const latestUser = { role: "user" as const, content: "u".repeat(100_000) };
+  const messages = resumeMessagesWithPinned(
+    "Continue the task.",
+    { latestUser, pinned: [] },
+    opts,
+    1,
+  );
+  expect(messages?.[1]).toEqual(latestUser);
+  const response = streamResponse({ ...opts, messages });
+  for await (const _part of response.fullStream) {
+    /* Drain the provider stream. */
+  }
+  expect(calls).toHaveLength(1);
+  expect(calls[0].maxOutputTokens).toBe(27_268);
+  expect(JSON.stringify(calls[0].prompt)).toContain(latestUser.content);
 });
 
 it("preserves the output minimum required by budget-based thinking", async () => {
