@@ -1,0 +1,86 @@
+.op-issues {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
+  gap: 12px;
+  background: var(--color-canvas);
+}
+.op-issues-header,
+.op-issues-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.op-issues-header {
+  justify-content: space-between;
+}
+.op-issues-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.op-issues-header h2 span {
+  margin-left: 6px;
+  color: var(--color-fg-3);
+  font: 11px var(--font-mono);
+}
+.op-issues-toolbar input {
+  min-width: 0;
+  flex: 1;
+}
+.op-issues-list {
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+.op-issues-status {
+  color: var(--color-fg-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.op-issue-trigger {
+  padding: 12px 4px;
+  border-radius: 0;
+  align-items: flex-start;
+}
+.op-issue-trigger:hover {
+  text-decoration: none;
+  background: var(--color-surface);
+}
+.op-issue-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+}
+.op-issue-title {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.op-issue-endpoint {
+  color: var(--color-fg-3);
+  font: 11px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.op-issue-detail {
+  padding: 0 4px 16px;
+  overflow-wrap: anywhere;
+}
+.op-issue-detail section + section {
+  margin-top: 16px;
+}
+.op-issue-detail h3 {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.op-issue-detail [data-slot="markdown"] {
+  font-size: 13px;
+}

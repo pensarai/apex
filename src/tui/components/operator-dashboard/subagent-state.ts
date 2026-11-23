@@ -39,8 +39,9 @@ export interface SubagentSession {
  */
 export function loadSubagentSessionsFromDisk(
   rootPath: string,
+  includeReasoning = false,
 ): Map<string, SubagentSession> {
-  const uiSubagents = loadSubagents(rootPath);
+  const uiSubagents = loadSubagents(rootPath, includeReasoning);
   const map = new Map<string, SubagentSession>();
 
   for (const sub of uiSubagents) {

@@ -186,7 +186,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   };
 }
 
-export async function get(): Promise<Config> {
+export async function getStored(): Promise<Partial<Config>> {
   const folder = path.join(os.homedir(), ".pensar");
   const file = path.join(folder, "config.json");
   const exists = await fs
@@ -194,10 +194,13 @@ export async function get(): Promise<Config> {
     .then(() => true)
     .catch(() => false);
   if (!exists) await init();
-  const parsedConfig = exists
+  return exists
     ? JSON.parse(await fs.readFile(file, "utf8"))
-    : DEFAULT_CONFIG;
-  const loaded = applyEnvFallbacks(parsedConfig);
+    : { ...DEFAULT_CONFIG };
+}
+
+export async function get(): Promise<Config> {
+  const loaded = applyEnvFallbacks(await getStored());
   if (loaded.hoonifyAPIKey?.trim()) {
     try {
       loaded.hoonifyModels = await loadHoonifyModels(loaded.hoonifyAPIKey);

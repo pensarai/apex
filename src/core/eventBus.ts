@@ -7,6 +7,22 @@ export type PendingModelLoad = Pick<
   "model" | "firstTokenStartedAt"
 >;
 
+export type BackgroundJobState = {
+  jobId: string;
+  command: string;
+  toolName?: "document_vulnerability";
+  success?: boolean;
+  verdict?: "accepted" | "rejected" | "duplicate";
+  status: "running" | "completed";
+  startedAt: number;
+  finishedAt?: number;
+  stdout: string;
+  stderr: string;
+  exitCode?: number;
+  error?: string;
+  subagentId?: string;
+};
+
 /**
  * Typed event map for the agent event bus.
  *
@@ -167,6 +183,7 @@ export type AgentEventMap = {
     messageId?: string;
     partId?: string;
   };
+  "background-job": BackgroundJobState;
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
   "trace-record": {
@@ -212,6 +229,7 @@ const CHILD_BUS_FORWARD_POLICY: {
   "subagent-complete": "forward",
   "step-finish": "forward",
   "context-compacted": "forward",
+  "background-job": "forward",
   "command-output": "forward",
   error: "forward",
   "trace-record": "forward",

@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { discoverOllama } from "../ollama";
-import { get, init, update } from "./config";
+import { get, getStored, init, update } from "./config";
 
 vi.mock("../ollama", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../ollama")>()),
@@ -36,6 +36,17 @@ afterEach(() => {
 });
 
 describe("provider environment fallbacks", () => {
+  it("distinguishes saved OpenAI credentials from environment fallback without persisting environment values", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "fixture-env-key");
+    expect((await getStored()).openAiAPIKey).toBeUndefined();
+    expect((await get()).openAiAPIKey).toBe("fixture-env-key");
+    await update({ openAiAPIKey: "fixture-saved-key" });
+    expect((await getStored()).openAiAPIKey).toBe("fixture-saved-key");
+    expect((await get()).openAiAPIKey).toBe("fixture-saved-key");
+    await update({ openAiAPIKey: null });
+    expect((await getStored()).openAiAPIKey).toBeNull();
+    expect((await get()).openAiAPIKey).toBe("fixture-env-key");
+  });
   it("loads Ollama at startup without persisting discovery or changing a manual local endpoint", async () => {
     const ollama = {
       baseURL: "http://127.0.0.1:11434",

@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import type { Message } from "../../core/messages/types";
+import type { DisplayReasoning } from "../../core/session/persistence";
 import type {
   SubagentLogEntry,
   WorkflowData,
@@ -49,6 +50,7 @@ export type ToolStatus = "streaming" | "pending" | "completed" | "error";
  * Use isToolMessage() type guard for safe narrowing to tool messages.
  */
 export type DisplayMessage = {
+  reasoning?: DisplayReasoning;
   role: "user" | "assistant" | "system" | "tool";
   content: string | unknown[];
   createdAt: Date;

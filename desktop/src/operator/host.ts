@@ -5,6 +5,7 @@ import { DEFAULT_LANCE_BUDGET } from "../../../src/core/agents/lanceBudget";
 import {
   ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
+  type CommandCancelHandle,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../src/core/agents/offSecAgent";
@@ -14,7 +15,10 @@ import { createOffensiveSecurityAgentClient } from "../../../src/core/api";
 import { getSavedReasoning } from "../../../src/core/cli/reasoning";
 import { config } from "../../../src/core/config";
 import { CredentialManager } from "../../../src/core/credentials";
-import { AgentEventBus } from "../../../src/core/eventBus";
+import {
+  AgentEventBus,
+  type BackgroundJobState,
+} from "../../../src/core/eventBus";
 import {
   formatParseError,
   parseHeaderLine,
@@ -83,6 +87,7 @@ import type {
   OperatorSnapshot,
 } from "./contract";
 import type { OperatorFrame } from "./live";
+import { bindReasoningEvents, finishReasoning } from "./reasoning-events";
 import { selectedTools } from "./tools";
 import { runningCommandId } from "./turn-controls";
 
@@ -114,7 +119,8 @@ class OperatorHost {
   );
   private readonly skills = createSkillsRegistry();
   private readonly gate = new ApprovalGate({ requireApproval: true });
-  private readonly command = { cancel: () => false };
+  private readonly processes = new Map<string, BackgroundJobState>();
+  private readonly command: CommandCancelHandle = { cancel: () => false };
   private model?: string;
   private modelOverride?: string;
   private globalModelAtStart?: string | null;
@@ -152,6 +158,7 @@ class OperatorHost {
     const s = this.session;
     return {
       revision: ++this.revision,
+      processes: [...this.processes.values()],
       sessionId: s?.id,
       name: s?.name,
       target: s?.targets[0],
@@ -286,6 +293,7 @@ class OperatorHost {
     this.error = undefined;
     this.history = [];
     this.messages = [];
+    this.processes.clear();
     this.queue = [];
     this.questions = undefined;
     this.status = "idle";
@@ -455,9 +463,11 @@ class OperatorHost {
         this.history = normalizeMessages(
           sessions.getResumeMessages(state.messages),
         );
-        this.messages = convertModelMessagesToUI(state.messages);
+        this.messages = convertModelMessagesToUI(state.messages, true);
       }
-      this.agents.setState(loadSubagentSessionsFromDisk(session.rootPath));
+      this.agents.setState(
+        loadSubagentSessionsFromDisk(session.rootPath, true),
+      );
       this.publish();
       return this.snapshot();
     });
@@ -468,6 +478,8 @@ class OperatorHost {
       throw new Error("The operator cannot start another turn now.");
     const client = createOffensiveSecurityAgentClient();
     this.client = client;
+    this.processes.clear();
+    this.command.cancelBackground = undefined;
     this.status = "running";
     this.activity = "waiting";
     this.error = undefined;
@@ -524,6 +536,40 @@ class OperatorHost {
     const bus = new AgentEventBus();
     const current = () =>
       this.client === client && !this.disposed && this.status !== "stopping";
+    const processChanged = (process: BackgroundJobState) => {
+      if (this.client !== client || this.disposed) return;
+      if (this.processes.size >= 32 && !this.processes.has(process.jobId)) {
+        const completed = [...this.processes.values()].find(
+          (job) => job.status === "completed",
+        );
+        if (completed) this.processes.delete(completed.jobId);
+      }
+      this.processes.set(process.jobId, process);
+      this.publish();
+    };
+    bus.on("background-job", processChanged);
+    const unbindReasoning = bindReasoningEvents(bus, {
+      isCurrent: current,
+      resetText: display.resetPartialText,
+      update: (agentId, updater) => {
+        if (agentId) {
+          this.agents.setState((previous) => {
+            const agent = previous.get(agentId);
+            if (!agent) return previous;
+            const messages = updater(agent.messages);
+            if (messages === agent.messages) return previous;
+            const next = new Map(previous);
+            next.set(agentId, { ...agent, messages });
+            return next;
+          });
+        } else {
+          const messages = updater(this.messages);
+          if (messages === this.messages) return;
+          this.messages = messages;
+          this.publish();
+        }
+      },
+    });
     const unbind = bindOperatorRunEvents(bus, {
       isCurrent: current,
       handlers: projections.handlers,
@@ -536,17 +582,21 @@ class OperatorHost {
       ["tool-call-start", "responding"],
       ["tool-call-complete", "working"],
       ["tool-result", "waiting"],
+      ["step-finish", "waiting"],
     ] as const;
     const clearActivityListeners = activityEvents.map(([event, activity]) => {
       const update = (payload: { subagentId?: string }) => {
         if (!current() || payload.subagentId) return;
         const next =
           activity === "waiting" &&
-          this.messages.some(
+          (this.messages.some(
             (m) =>
               m.role === "tool" &&
               (m.status === "pending" || m.status === "streaming"),
-          )
+          ) ||
+            [...this.processes.values()].some(
+              (job) => job.status === "running",
+            ))
             ? "working"
             : activity;
         if (this.activity === next) return;
@@ -722,6 +772,16 @@ class OperatorHost {
         }
       }
     } finally {
+      bus.off("background-job", processChanged);
+      this.command.cancelBackground = undefined;
+      unbindReasoning();
+      this.messages = finishReasoning(this.messages);
+      this.agents.setState((previous) => {
+        const next = new Map(previous);
+        for (const [id, agent] of next)
+          next.set(id, { ...agent, messages: finishReasoning(agent.messages) });
+        return next;
+      });
       unbind();
       for (const clear of clearActivityListeners) clear();
       display.finish();
@@ -887,6 +947,18 @@ class OperatorHost {
       case "cancel":
         await this.cancel();
         break;
+      case "cancel-process": {
+        const job = this.processes.get(action.jobId);
+        if (
+          !this.client ||
+          job?.status !== "running" ||
+          job.subagentId ||
+          !this.command.cancelBackground
+        )
+          throw new Error("This process is no longer available to cancel.");
+        await this.command.cancelBackground(action.jobId);
+        break;
+      }
       case "cancel-command":
         if (
           this.status !== "running" ||

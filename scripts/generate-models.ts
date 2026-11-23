@@ -69,6 +69,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "gpt-6": 1050000,
   "gpt-5.4-nano": 400000,
   "gpt-5.4-mini": 400000,
+  "gpt-5.6-cyber": 400000,
   "gpt-5.6": 1050000,
   "gpt-5.5": 1050000,
   "gpt-5": 200000,
@@ -650,6 +651,7 @@ function main() {
     "gpt-6-luna",
     "gpt-6-sol",
     "gpt-6-astra",
+    "gpt-6-cyber",
     "gpt-5.5-pro",
     "gpt-5.5-pro-2026-04-23",
     "gpt-5.4-nano",
@@ -659,6 +661,7 @@ function main() {
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
+    "gpt-5.6-cyber",
     "gpt-5.5",
     "gpt-5.5-2026-04-23",
   ]);

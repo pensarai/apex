@@ -22,7 +22,7 @@ import {
   ResizablePanelGroup,
 } from "@pensarai/design-system/ui/resizable";
 import { Textarea } from "@pensarai/design-system/ui/textarea";
-import { ArrowUp, Network, Square } from "lucide-react";
+import { ArrowUp, Network, ShieldAlert, Square } from "lucide-react";
 import {
   Fragment,
   useCallback,
@@ -42,8 +42,10 @@ import type {
   OperatorLaunch,
   OperatorSnapshot,
 } from "./contract";
+import { Issues } from "./Issues";
 import { applyFrame, type OperatorFrame } from "./live";
 import { ModelPicker } from "./ModelPicker";
+import { Processes } from "./Processes";
 import { Questions } from "./Questions";
 import { OperatorSetup } from "./Setup";
 import { subagentActivity, subagentLabel } from "./subagent-presentation";
@@ -109,6 +111,15 @@ export default function OperatorSessionView({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [surfaceOpen, setSurfaceOpen] = useState(false);
+  const [processesOpen, setProcessesOpen] = useState(false);
+  const [issuesOpen, setIssuesOpen] = useState(false);
+  const issuesTrigger = useRef<HTMLButtonElement>(null);
+  const processTrigger = useRef<HTMLButtonElement>(null);
+  const processes = state.processes ?? [];
+  const runningProcesses = processes.filter(
+    (job) => job.status === "running",
+  ).length;
+  const sidebarOpen = surfaceOpen || processesOpen || issuesOpen;
   const surfaceActivity = hasSurfaceToolCall(state);
   useEffect(() => {
     if (
@@ -116,8 +127,8 @@ export default function OperatorSessionView({
       surfaceActivity &&
       surfaceReveal.claim(state.sessionId)
     )
-      setSurfaceOpen(true);
-  }, [state.sessionId, surfaceActivity]);
+      setSurfaceOpen(!processesOpen && !issuesOpen);
+  }, [state.sessionId, surfaceActivity, processesOpen, issuesOpen]);
   const surfaceId = useId();
   const surfaceWidth = useRef(50);
   const surfaceTrigger = useRef<HTMLButtonElement>(null);
@@ -228,12 +239,12 @@ export default function OperatorSessionView({
       isFocused &&
       ready &&
       !setupOpen &&
-      !surfaceOpen &&
+      !sidebarOpen &&
       !document.activeElement?.matches('[role="tab"][aria-selected="true"]') &&
       !page.current?.contains(document.activeElement)
     )
       input.current?.focus();
-  }, [isFocused, ready, setupOpen, surfaceOpen]);
+  }, [isFocused, ready, setupOpen, sidebarOpen]);
   useEffect(() => {
     if (!isFocused) {
       setSetupOpen(false);
@@ -438,11 +449,29 @@ export default function OperatorSessionView({
                 aria-controls={surfaceOpen ? surfaceId : undefined}
                 onClick={() => {
                   if (state.sessionId) surfaceReveal.markShown(state.sessionId);
+                  setProcessesOpen(false);
+                  setIssuesOpen(false);
                   setSurfaceOpen((open) => !open);
                 }}
               >
                 <Network size={14} aria-hidden="true" />
                 Attack surface
+              </Button>
+            )}
+            {state.sessionId && (
+              <Button
+                size="sm"
+                ref={issuesTrigger}
+                aria-expanded={issuesOpen}
+                aria-controls={issuesOpen ? surfaceId : undefined}
+                onClick={() => {
+                  setSurfaceOpen(false);
+                  setProcessesOpen(false);
+                  setIssuesOpen((open) => !open);
+                }}
+              >
+                <ShieldAlert size={14} aria-hidden="true" />
+                Issues
               </Button>
             )}
             <Button
@@ -466,7 +495,7 @@ export default function OperatorSessionView({
             orientation="horizontal"
             className="op-session-content"
             onLayoutChanged={(layout) => {
-              if (surfaceOpen && layout[surfaceId] !== undefined)
+              if (sidebarOpen && layout[surfaceId] !== undefined)
                 surfaceWidth.current = layout[surfaceId];
             }}
           >
@@ -661,6 +690,26 @@ export default function OperatorSessionView({
                       </div>
                     )}
                   </div>
+                  {!current && runningProcesses > 0 && (
+                    <div className="op-process-bar">
+                      <Button
+                        size="xs"
+                        className="op-process-pill"
+                        ref={processTrigger}
+                        aria-expanded={processesOpen}
+                        aria-controls={processesOpen ? surfaceId : undefined}
+                        onClick={() => {
+                          setSurfaceOpen(false);
+                          setIssuesOpen(false);
+                          setProcessesOpen((open) => !open);
+                        }}
+                      >
+                        <span className="op-process-dot" aria-hidden="true" />
+                        {runningProcesses} running{" "}
+                        {runningProcesses === 1 ? "process" : "processes"}
+                      </Button>
+                    </div>
+                  )}
                   {!current && (
                     <div className="op-compose">
                       {state.queue.map((q) => (
@@ -1023,11 +1072,17 @@ export default function OperatorSessionView({
                 )}
               </div>
             </ResizablePanel>
-            {surfaceOpen && state.sessionId && (
+            {sidebarOpen && state.sessionId && (
               <>
                 <ResizableHandle
                   className="op-surface-resize"
-                  aria-label="Resize attack surface sidebar"
+                  aria-label={
+                    issuesOpen
+                      ? "Resize issues sidebar"
+                      : processesOpen
+                        ? "Resize processes sidebar"
+                        : "Resize attack surface sidebar"
+                  }
                 />
                 <ResizablePanel
                   id={surfaceId}
@@ -1036,16 +1091,40 @@ export default function OperatorSessionView({
                   maxSize="75%"
                   className="op-surface-panel"
                 >
-                  <AttackSurface
-                    key={state.sessionId}
-                    client={client}
-                    sessionId={state.sessionId}
-                    active={visible}
-                    onClose={() => {
-                      setSurfaceOpen(false);
-                      surfaceTrigger.current?.focus();
-                    }}
-                  />
+                  {issuesOpen ? (
+                    <Issues
+                      key={state.sessionId}
+                      sessionId={state.sessionId}
+                      active={visible}
+                      onClose={() => {
+                        setIssuesOpen(false);
+                        issuesTrigger.current?.focus();
+                      }}
+                    />
+                  ) : processesOpen ? (
+                    <Processes
+                      processes={processes}
+                      busy={busy}
+                      onCancel={(jobId) =>
+                        void action({ type: "cancel-process", jobId })
+                      }
+                      onClose={() => {
+                        setProcessesOpen(false);
+                        (processTrigger.current ?? input.current)?.focus();
+                      }}
+                    />
+                  ) : (
+                    <AttackSurface
+                      key={state.sessionId}
+                      client={client}
+                      sessionId={state.sessionId}
+                      active={visible}
+                      onClose={() => {
+                        setSurfaceOpen(false);
+                        surfaceTrigger.current?.focus();
+                      }}
+                    />
+                  )}
                 </ResizablePanel>
               </>
             )}

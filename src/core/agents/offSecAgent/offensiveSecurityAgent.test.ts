@@ -47,7 +47,8 @@ vi.mock("zod", () => {
   return { z, default: z };
 });
 
-vi.mock("./tools", () => ({
+vi.mock("./tools", async () => ({
+  BackgroundJobs: (await import("./tools/backgroundJobs")).BackgroundJobs,
   // The agent constructs via the selective entrypoint; record the tool
   // context there (createAllTools kept for any direct legacy callers).
   createToolsForNames: (

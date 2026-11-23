@@ -230,7 +230,9 @@ describe("createCodeModeTools", () => {
     expect(instructions).toContain(
       "Prefer exec for predictable tool orchestration",
     );
-    expect(instructions).toContain("await each command sequentially");
+    expect(instructions).toContain("Foreground calls are single-lane");
+    expect(instructions).toContain("set background=true");
+    expect(instructions).toContain("completions arrive automatically");
     expect(instructions).toContain('tools.call("http_request"');
     expect(instructions).not.toContain("tools.shell");
     expect(instructions).not.toContain("python3 probe.py");

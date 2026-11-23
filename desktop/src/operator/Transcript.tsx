@@ -11,6 +11,7 @@ import { ActivityIndicator } from "./ActivityIndicator";
 import type { OperatorClient } from "./client";
 import type { OperatorActivity, OperatorMessage } from "./contract";
 import { MessageCopy } from "./MessageCopy";
+import { ReasoningMessage } from "./ReasoningMessage";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { SubagentRows } from "./SubagentRows";
 import { groupSubagents, type OperatorSubagent } from "./subagent-presentation";
@@ -140,7 +141,7 @@ export function Transcript({
             />
           );
         const message = row.message;
-        if (!message.content.trim()) return null;
+        if (!message.content.trim() && !message.reasoning) return null;
         return (
           <article
             key={row.key}
@@ -153,6 +154,9 @@ export function Transcript({
                   : "System"
             }
           >
+            {message.reasoning && (
+              <ReasoningMessage reasoning={message.reasoning} />
+            )}
             {message.role === "assistant" ? (
               <StreamingMarkdown
                 text={message.content}
@@ -162,7 +166,7 @@ export function Transcript({
             ) : (
               <div className="op-text">{message.content}</div>
             )}
-            <MessageCopy text={message.content} />
+            {message.content.trim() && <MessageCopy text={message.content} />}
           </article>
         );
       })}
@@ -176,9 +180,15 @@ export function Transcript({
           />
         </section>
       )}
-      {activity && (
-        <ActivityIndicator activity={activity} modelLoading={modelLoading} />
-      )}
+      {activity &&
+        !(
+          activity === "thinking" &&
+          messages.some(
+            (message) => message.reasoning && !message.reasoning.complete,
+          )
+        ) && (
+          <ActivityIndicator activity={activity} modelLoading={modelLoading} />
+        )}
       {error && <p role="alert">{error}</p>}
       {visible && screenshot && (
         <dialog open className="op-image">

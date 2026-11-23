@@ -74,10 +74,16 @@ interface SavedSubagentData {
   input?: unknown;
 }
 
-/**
- * UI-compatible message format
- */
+export interface DisplayReasoning {
+  text: string;
+  startedAt?: number;
+  endedAt?: number;
+  complete: boolean;
+}
+
+/** UI-compatible message format. */
 export interface UIMessage {
+  reasoning?: DisplayReasoning;
   role: "user" | "assistant" | "tool";
   content: string;
   createdAt: Date;
@@ -611,6 +617,7 @@ function unwrapAiSdkToolOutput(output: unknown): unknown {
 function convertMessagesToUI(
   messages: ModelMessage[],
   baseTime: Date,
+  includeReasoning = false,
 ): UIMessage[] {
   const uiMessages: UIMessage[] = [];
   let messageIndex = 0;
@@ -638,7 +645,14 @@ function convertMessagesToUI(
       });
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part.type === "text" && part.text) {
+        if (includeReasoning && part.type === "reasoning" && part.text) {
+          uiMessages.push({
+            role: "assistant",
+            content: "",
+            createdAt,
+            reasoning: { text: part.text, complete: true },
+          });
+        } else if (part.type === "text" && part.text) {
           uiMessages.push({
             role: "assistant",
             content: part.text,
@@ -692,8 +706,9 @@ function convertMessagesToUI(
 
 export function convertModelMessagesToUI(
   messages: ModelMessage[],
+  includeReasoning = false,
 ): UIMessage[] {
-  return convertMessagesToUI(messages, new Date());
+  return convertMessagesToUI(messages, new Date(), includeReasoning);
 }
 
 /**
@@ -707,7 +722,10 @@ export function convertModelMessagesToUI(
  *  5. Marks matched "running" manifest entries as "paused"
  *  6. Creates paused stubs for unmatched "running" manifest entries
  */
-export function loadSubagents(rootPath: string): UISubagent[] {
+export function loadSubagents(
+  rootPath: string,
+  includeReasoning = false,
+): UISubagent[] {
   const subagentsPath = join(rootPath, SUBAGENTS_DIR);
 
   // Swarm workers are keyed by opaque `ses_` ids that only get a generic
@@ -765,12 +783,20 @@ export function loadSubagents(rootPath: string): UISubagent[] {
             const raw = JSON.parse(
               readFileSync(stepPath, "utf-8"),
             ) as ModelMessage[];
-            messages = convertMessagesToUI(raw, timestamp);
+            messages = convertMessagesToUI(raw, timestamp, includeReasoning);
           } catch {
-            messages = convertMessagesToUI(data.messages ?? [], timestamp);
+            messages = convertMessagesToUI(
+              data.messages ?? [],
+              timestamp,
+              includeReasoning,
+            );
           }
         } else {
-          messages = convertMessagesToUI(data.messages ?? [], timestamp);
+          messages = convertMessagesToUI(
+            data.messages ?? [],
+            timestamp,
+            includeReasoning,
+          );
         }
 
         let status: UISubagent["status"] = "completed";
@@ -843,7 +869,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
 
         const { agentType, name } = parseSubagentFilename(entry);
         const timestamp = statSync(messagesPath).mtime;
-        const messages = convertMessagesToUI(raw, timestamp);
+        const messages = convertMessagesToUI(raw, timestamp, includeReasoning);
 
         agentNameIndex.set(entry, subagents.length);
         subagents.push({
