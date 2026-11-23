@@ -25,6 +25,7 @@ import type { EmailInboxConfig } from "../../../../session";
 import {
   createEmailAdapter,
   type EmailAdapter,
+  fmtImapDate,
   resolveEmailAdapter,
 } from "./adapters";
 
@@ -275,5 +276,27 @@ describe("resolveEmailAdapter", () => {
 
   it("throws for a pensar-managed inbox with no resolver", () => {
     expect(() => resolveEmailAdapter(managed)).toThrow("pensar-managed");
+  });
+});
+
+describe("fmtImapDate", () => {
+  it("formats a parsed envelope date as ISO 8601", () => {
+    expect(fmtImapDate(new Date("2026-11-20T10:30:00Z"))).toBe(
+      "2026-11-20T10:30:00.000Z",
+    );
+  });
+
+  it("parses a date the server sent as text", () => {
+    expect(fmtImapDate("Thu, 20 Nov 2026 10:30:00 +0000")).toBe(
+      "2026-11-20T10:30:00.000Z",
+    );
+  });
+
+  it("keeps the raw text when the server's date is not a valid date", () => {
+    expect(fmtImapDate("not a date")).toBe("not a date");
+  });
+
+  it("returns an empty string when the envelope has no date", () => {
+    expect(fmtImapDate(undefined)).toBe("");
   });
 });
