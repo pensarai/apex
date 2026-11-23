@@ -35,6 +35,6 @@ RUN npx --yes playwright install-deps firefox
 # different build) — mirrors the sandbox Dockerfile and ensureCamoufox().
 WORKDIR /tmp/camoufox-fetch
 RUN npm init -y --silent \
- && npm install --no-audit --no-fund camoufox-js@0.11.1 \
+ && npm install --no-audit --no-fund --save-exact camoufox-js@0.13.0 playwright-core@1.53.1 \
  && node node_modules/camoufox-js/dist/__main__.js fetch \
  && cd / && rm -rf /tmp/camoufox-fetch

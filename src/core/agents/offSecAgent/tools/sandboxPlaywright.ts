@@ -182,10 +182,12 @@ export async function installSandboxPlaywright(
     );
   }
 
-  // camoufox-js pulls in playwright-core, so a single install covers both the
-  // launcher and the Playwright API the generated scripts use.
+  // One install covers the launcher and the Playwright API the generated scripts
+  // use. playwright-core stays below 1.61: from 1.61 camoufox-js requires a newer
+  // Camoufox build than the one images bake. The fingerprint suite is pinned so its
+  // header data stays matched to that build.
   const installResult = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} && npm install camoufox-js@0.11.1 playwright-core@1.53.1 2>&1`,
+    `cd ${SANDBOX_PW_DIR} && npm install --save-exact camoufox-js@0.13.0 playwright-core@1.53.1 fingerprint-generator@2.1.90 header-generator@2.1.90 generative-bayesian-network@2.1.90 2>&1`,
     { timeout: 300 },
   );
   if (!installResult.success) {
