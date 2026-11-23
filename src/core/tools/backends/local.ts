@@ -303,12 +303,20 @@ export function LocalBackends(
   }
 
   const http: ToolBackends["http"] = {
+    enforcesRateLimit: true,
     async request(req: HttpRequest, o?: HttpOpts): Promise<HttpResponse> {
       await authorizeHttp(req);
+      const options = { ...o, abortSignal: o?.abortSignal ?? ctx.abortSignal };
       if (req.extract === "readability") {
-        return fetchReadable(ctx, req.url, req.fetchToken, o, authorizeHttp);
+        return fetchReadable(
+          ctx,
+          req.url,
+          req.fetchToken,
+          options,
+          authorizeHttp,
+        );
       }
-      return fetchStandard(ctx, req, o, authorizeHttp);
+      return fetchStandard(ctx, req, options, authorizeHttp);
     },
   };
 
@@ -644,6 +652,11 @@ async function fetchTargetWithRedirects(
   const redirectChain = [initialRequest.url];
 
   for (let redirectCount = 0; ; redirectCount++) {
+    const slotAcquired = await ctx.session._rateLimiter?.acquireSlot(signal);
+    if (signal.aborted) {
+      if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
+      throw new DOMException("Request aborted", "AbortError");
+    }
     const { response } = await targetFetch(
       resolverSessionFromCtx(ctx),
       request.url,
@@ -685,6 +698,7 @@ async function fetchSandboxWithRedirects(
   initialRequest: HttpRequest,
   o: HttpOpts | undefined,
   authorize: AuthorizeHttp,
+  signal: AbortSignal,
 ): Promise<HttpResponse> {
   const startedAt = Date.now();
   let request = initialRequest;
@@ -692,15 +706,16 @@ async function fetchSandboxWithRedirects(
 
   for (let redirectCount = 0; ; redirectCount++) {
     const elapsed = Date.now() - startedAt;
-    if (o?.timeoutMs !== undefined && elapsed >= o.timeoutMs) {
-      const error = new Error(`Request timeout after ${o.timeoutMs}ms`);
-      error.name = "AbortError";
-      throw error;
+    if (
+      signal.aborted ||
+      (o?.timeoutMs !== undefined && elapsed >= o.timeoutMs)
+    ) {
+      throw new DOMException("Request aborted", "AbortError");
     }
     const timeout =
       o?.timeoutMs === undefined ? undefined : o.timeoutMs - elapsed;
     const response = await requestSandboxHttp(
-      { ...ctx, abortSignal: o?.abortSignal ?? ctx.abortSignal },
+      { ...ctx, abortSignal: signal },
       {
         url: request.url,
         method: request.method ?? "GET",
@@ -745,21 +760,22 @@ async function fetchStandard(
   const timeout = o?.timeoutMs;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
-    if (ctx.sandbox) {
-      return await fetchSandboxWithRedirects(
-        ctx,
-        { ...req, method },
-        o,
-        authorize,
-      );
-    }
-
     const timeoutController = new AbortController();
     if (timeout !== undefined)
       timeoutId = setTimeout(() => timeoutController.abort(), timeout);
     const combinedSignal = o?.abortSignal
       ? AbortSignal.any([o.abortSignal, timeoutController.signal])
       : timeoutController.signal;
+    if (ctx.sandbox) {
+      return await fetchSandboxWithRedirects(
+        ctx,
+        { ...req, method },
+        o,
+        authorize,
+        combinedSignal,
+      );
+    }
+
     const fetched = await fetchTargetWithRedirects(
       ctx,
       { ...req, method, headers },

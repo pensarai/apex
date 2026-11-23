@@ -8,6 +8,7 @@ import type { ReadFileResult } from "../../agents/offSecAgent/tools/readFile";
 import { readFile as readFileTool } from "../../agents/offSecAgent/tools/readFile";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
 import { createLocalResearchFetchToken } from "../../http/researchFetchToken";
+import { RateLimiter } from "../../services/rateLimiter";
 import { LocalBackends, runLocalProgram } from "./local";
 import type { CommandEvent } from "./types";
 
@@ -269,6 +270,8 @@ describe("LocalBackends local research capabilities", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const ctx = makeCtx({ target: "https://target.example" });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 1 });
+    const acquireSlot = vi.spyOn(ctx.session._rateLimiter, "acquireSlot");
     ctx.session.config = {
       headers: { Authorization: "Bearer target-secret" },
       scopeConstraints: {
@@ -290,18 +293,25 @@ describe("LocalBackends local research capabilities", () => {
       redirect: "manual",
       signal: expect.any(AbortSignal),
     });
+    expect(acquireSlot).not.toHaveBeenCalled();
   });
 });
 
 describe("LocalBackends.http redirect policy", () => {
-  it("blocks an out-of-scope sandbox redirect before a second request", async () => {
+  it.each([
+    false,
+    true,
+  ])("charges only authorized sandbox redirects (in scope=%s)", async (inScope) => {
     const execute = vi.fn(async (command: string) => {
       const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      const response = command.includes("/start")
+        ? `HTTP/1.1 302 Found\r\nLocation: https://${inScope ? "target" : "outside"}.example/admin\r\n\r\n`
+        : "HTTP/1.1 200 OK\r\n\r\n";
       return {
         success: true,
         exitCode: 0,
         stdout: Buffer.from(
-          `HTTP/1.1 302 Found\r\nLocation: https://outside.example/admin\r\n\r\n\n__APEX_${nonce}_CURL_EXIT_0\n`,
+          `${response}\n__APEX_${nonce}_CURL_EXIT_0\n`,
         ).toString("base64"),
         stderr: "",
       };
@@ -313,6 +323,10 @@ describe("LocalBackends.http redirect policy", () => {
         execute,
       } as unknown as NonNullable<ToolContext["sandbox"]>,
     });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 1 });
+    const acquireSlot = vi
+      .spyOn(ctx.session._rateLimiter, "acquireSlot")
+      .mockResolvedValue(true);
 
     const result = await LocalBackends(ctx).http.request({
       url: "https://target.example/start",
@@ -320,11 +334,16 @@ describe("LocalBackends.http redirect policy", () => {
       followRedirects: true,
     });
 
-    expect(result).toMatchObject({
-      success: false,
-      error: expect.stringMatching(/scope violation/i),
-    });
-    expect(execute).toHaveBeenCalledOnce();
+    expect(result).toMatchObject(
+      inScope
+        ? { success: true, status: 200 }
+        : {
+            success: false,
+            error: expect.stringMatching(/scope violation/i),
+          },
+    );
+    expect(execute).toHaveBeenCalledTimes(inScope ? 2 : 1);
+    expect(acquireSlot).toHaveBeenCalledTimes(inScope ? 2 : 1);
   });
 
   it.each([
@@ -376,6 +395,194 @@ describe("LocalBackends.http redirect policy", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("LocalBackends.http queued rate limits", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("preserves an adapter AbortError when the request was not cancelled", async () => {
+    const controller = new AbortController();
+    const ctx = makeCtx({
+      target: "https://target.example",
+      abortSignal: controller.signal,
+      sandbox: {
+        type: "linux",
+        execute: vi.fn(async () => {
+          throw new DOMException("sandbox adapter disconnected", "AbortError");
+        }),
+      } as unknown as NonNullable<ToolContext["sandbox"]>,
+    });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 10 });
+
+    expect(
+      await LocalBackends(ctx).http.request({
+        url: "https://target.example/get",
+      }),
+    ).toMatchObject({
+      success: false,
+      error: "sandbox adapter disconnected",
+      capture: { complete: false, stopReason: "error" },
+    });
+  });
+
+  function stagedSandbox() {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const staging = Promise.withResolvers<void>();
+    const finishStaging = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const dispatches: { method: string; time: number }[] = [];
+    const execute = vi.fn(async (command: string) => {
+      if (command.startsWith("printf '%s'")) {
+        staging.resolve();
+        await finishStaging.promise;
+      } else if (!command.startsWith("rm -f ")) {
+        dispatches.push({
+          method: command.includes("-X POST") ? "POST" : "GET",
+          time: performance.now(),
+        });
+      }
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: nonce
+          ? Buffer.from(
+              `HTTP/1.1 200 OK\r\n\r\nok\n__APEX_${nonce}_CURL_EXIT_0\n`,
+            ).toString("base64")
+          : "",
+        stderr: "",
+      };
+    });
+    const ctx = makeCtx({
+      target: "https://target.example",
+      abortSignal: controller.signal,
+      sandbox: { type: "linux", execute } as unknown as NonNullable<
+        ToolContext["sandbox"]
+      >,
+    });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 10 });
+    return {
+      http: LocalBackends(ctx).http,
+      staging,
+      finishStaging,
+      controller,
+      dispatches,
+      execute,
+    };
+  }
+
+  it("spaces sandbox dispatches after delayed request-body staging", async () => {
+    const { http, staging, finishStaging, dispatches, execute } =
+      stagedSandbox();
+    const post = http.request(
+      {
+        url: "https://target.example/post",
+        method: "POST",
+        body: "payload",
+      },
+      { timeoutMs: 1100 },
+    );
+    await staging.promise;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(
+      await http.request({ url: "https://target.example/get" }),
+    ).toMatchObject({
+      success: true,
+    });
+    finishStaging.resolve();
+    await vi.advanceTimersByTimeAsync(99);
+    expect(dispatches).toEqual([{ method: "GET", time: 100 }]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await post).toMatchObject({ success: true });
+    expect(dispatches).toEqual([
+      { method: "GET", time: 100 },
+      { method: "POST", time: 200 },
+    ]);
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringMatching(/-X POST.* --max-time 1 /),
+      expect.any(Object),
+    );
+  });
+
+  it.each([
+    "aborted",
+    "timeout",
+  ] as const)("does not dispatch after %s during request-body staging", async (stop) => {
+    const { http, staging, finishStaging, controller, dispatches, execute } =
+      stagedSandbox();
+    const pending = http.request(
+      { url: "https://target.example/post", method: "POST", body: "payload" },
+      stop === "timeout" ? { timeoutMs: 50 } : undefined,
+    );
+    await staging.promise;
+    if (stop === "aborted") controller.abort();
+    else await vi.advanceTimersByTimeAsync(50);
+    finishStaging.resolve();
+    expect(await pending).toMatchObject({
+      success: false,
+      capture: { complete: false, stopReason: stop },
+    });
+    expect(dispatches).toEqual([]);
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringMatching(/^rm -f \/tmp\/apex_http_body_/),
+      { timeout: 10 },
+    );
+  });
+
+  it.each([
+    { sandbox: false, stop: "aborted" },
+    { sandbox: true, stop: "aborted" },
+    { sandbox: false, stop: "timeout" },
+    { sandbox: true, stop: "timeout" },
+  ] as const)("does not dispatch after $stop while throttled (sandbox=$sandbox)", async ({
+    sandbox,
+    stop,
+  }) => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const fetchSpy = vi.fn(async () => new Response("ok"));
+    const execute = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const controller = new AbortController();
+    const ctx = makeCtx({
+      target: "https://target.example",
+      abortSignal: controller.signal,
+      ...(sandbox
+        ? {
+            sandbox: { type: "linux", execute } as unknown as NonNullable<
+              ToolContext["sandbox"]
+            >,
+          }
+        : {}),
+    });
+    ctx.session._rateLimiter = new RateLimiter({ requestsPerSecond: 1 });
+    await ctx.session._rateLimiter.acquireSlot();
+
+    const pending = LocalBackends(ctx).http.request(
+      { url: "https://target.example/queued" },
+      stop === "timeout" ? { timeoutMs: 50 } : undefined,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+
+    if (stop === "aborted") controller.abort();
+    else await vi.advanceTimersByTimeAsync(50);
+
+    expect(await pending).toMatchObject({
+      success: false,
+      capture: { complete: false, stopReason: stop },
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 });
 

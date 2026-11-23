@@ -20,6 +20,7 @@ import { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
 import { LocalBackends } from "../../../tools/backends/local";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { getPage } from "./getPage";
 import {
   DEFAULT_HTTP_TIMEOUT_MS,
   type HttpRequestResult,
@@ -27,6 +28,7 @@ import {
   resolveHttpRequestTimeoutInput,
 } from "./httpRequest";
 import type { UnifiedSandbox } from "./sandbox";
+import { testEndpointVariations } from "./testEndpointVariations";
 import type { ToolContext } from "./types";
 
 const TEST_LIBRARY = new StaticPromptInjectionLibrary([
@@ -146,15 +148,19 @@ describe("httpRequest rate limiting", () => {
       .mockResolvedValue(true);
     const ctx = makeCtx();
     ctx.session._rateLimiter = limiter;
-    return { ctx, acquireSlot };
+    return { ctx, acquireSlot, limiter };
   }
 
-  it("acquires exactly one rate-limit slot per dispatched request", async () => {
+  it.each([
+    false,
+    true,
+  ])("acquires one slot with injected LocalBackends=%s", async (injected) => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("ok", { status: 200 })),
     );
     const { ctx, acquireSlot } = ctxWithLimiter();
+    if (injected) ctx.backends = LocalBackends(ctx);
 
     await httpRequest(ctx).execute?.(
       {
@@ -168,6 +174,74 @@ describe("httpRequest rate limiting", () => {
     );
 
     expect(acquireSlot).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the tool-level limit for an injected HTTP transport", async () => {
+    const { ctx, acquireSlot } = ctxWithLimiter();
+    const request = vi.fn(async () => ({
+      success: true,
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: "ok",
+      url: "https://example.com/api",
+      redirected: false,
+    }));
+    ctx.backends = { ...LocalBackends(ctx), http: { request } };
+
+    await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Read through the host transport",
+      },
+      { toolCallId: "tc_injected", messages: [] },
+    );
+
+    expect(acquireSlot).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("shares the session limit across HTTP, page, and endpoint tools", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response("ok", {
+          headers: { "content-type": "text/plain" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const { ctx, acquireSlot } = ctxWithLimiter();
+    const options = { toolCallId: "tc_shared", messages: [] };
+
+    await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Read the API",
+      },
+      options,
+    );
+    await getPage(ctx).execute?.(
+      {
+        url: "https://example.com/page",
+        toolCallDescription: "Read the page",
+      },
+      options,
+    );
+    await testEndpointVariations(ctx).execute?.(
+      {
+        endpoints: ["https://example.com/first", "https://example.com/second"],
+        toolCallDescription: "Read related endpoints",
+      },
+      options,
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(acquireSlot).toHaveBeenCalledTimes(4);
   });
 
   it("does not consume a slot when the request is out of scope", async () => {
@@ -200,8 +274,9 @@ describe("httpRequest rate limiting", () => {
         }),
     );
     vi.stubGlobal("fetch", fetchSpy);
+    const { ctx, acquireSlot } = ctxWithLimiter();
 
-    const result = (await httpRequest(makeCtx()).execute?.(
+    const result = (await httpRequest(ctx).execute?.(
       {
         url: "https://example.com/start",
         method: "GET",
@@ -215,6 +290,7 @@ describe("httpRequest rate limiting", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/scope violation/i);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(acquireSlot).toHaveBeenCalledOnce();
   });
 
   it("follows an in-scope redirect one authorized hop at a time", async () => {
@@ -228,8 +304,9 @@ describe("httpRequest rate limiting", () => {
       )
       .mockResolvedValueOnce(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
+    const { ctx, acquireSlot } = ctxWithLimiter();
 
-    const result = (await httpRequest(makeCtx()).execute?.(
+    const result = (await httpRequest(ctx).execute?.(
       {
         url: "https://example.com/start",
         method: "GET",
@@ -243,6 +320,7 @@ describe("httpRequest rate limiting", () => {
     expect(result.success).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[1]?.[0]).toBe("https://example.com/final");
+    expect(acquireSlot).toHaveBeenCalledTimes(2);
   });
 
   it("acquires one slot before the sandbox curl dispatch", async () => {
@@ -308,7 +386,8 @@ describe("httpRequest rate limiting", () => {
   it("returns an aborted result without dispatching when already aborted", async () => {
     const fetchSpy = vi.fn(async () => new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
-    const { ctx } = ctxWithLimiter();
+    const { ctx, limiter } = ctxWithLimiter();
+    const releaseSlot = vi.spyOn(limiter, "releaseSlot");
     const controller = new AbortController();
     controller.abort();
     ctx.abortSignal = controller.signal;
@@ -327,6 +406,7 @@ describe("httpRequest rate limiting", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("aborted");
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(releaseSlot).toHaveBeenCalledOnce();
   });
 });
 
