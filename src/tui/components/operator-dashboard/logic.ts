@@ -1,5 +1,7 @@
+import { hasToolCall, type StopCondition, stepCountIs, type ToolSet } from "ai";
 import {
   type AgentMode,
+  ASK_USER_QUESTIONS_TOOL_NAME,
   buildBaseSystemPrompt,
   type FindingPolicy,
 } from "../../../core/agents/offSecAgent";
@@ -60,6 +62,31 @@ export function resolveOperatorAgentMode(
   if (lanceMode) return "lance";
   if (operatorMode === "plan") return "plan";
   return strikeMode ? "fast-strike" : "default";
+}
+
+export function buildOperatorStopConditions(
+  agentMode: AgentMode,
+): StopCondition<ToolSet>[] {
+  const conditions: StopCondition<ToolSet>[] = [
+    stepCountIs(10000),
+    hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
+  ];
+  if (agentMode === "plan") {
+    conditions.push(
+      ({ steps }) =>
+        steps
+          .at(-1)
+          ?.toolResults.some(
+            ({ toolName, output }) =>
+              toolName === "submit_plan" &&
+              typeof output === "object" &&
+              output !== null &&
+              "success" in output &&
+              output.success === true,
+          ) ?? false,
+    );
+  }
+  return conditions;
 }
 
 interface StrikeModeResolutionInput {
