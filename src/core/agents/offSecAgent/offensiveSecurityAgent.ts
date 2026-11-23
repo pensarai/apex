@@ -63,6 +63,7 @@ import { wrapToolExecutionContext } from "./toolExecutionContext";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  BackgroundJobs,
   CallbackListenerRegistry,
   createResponseTool,
   createToolsForNames,
@@ -405,6 +406,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   private browserDisconnected = false;
   private shellDisposed = false;
 
+  private readonly backgroundJobs?: BackgroundJobs;
   /** Listeners started by this agent's callback helper tools; drained on finalization. */
   private readonly callbackListeners = new CallbackListenerRegistry();
   // Cached dispose barrier — repeat disposeOwnedShell() calls return the
@@ -659,7 +661,27 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
+    if (
+      !input.sandbox &&
+      !input.backends &&
+      !input.contextRecorder &&
+      !input.toolExecutionRecorder &&
+      input.mode !== "lance"
+    ) {
+      this.backgroundJobs = new BackgroundJobs((state) => {
+        this.eventBus.emit("background-job", {
+          ...state,
+          subagentId: this.subagentId,
+        });
+      });
+      if (input.commandCancelHandle) {
+        input.commandCancelHandle.cancelBackground = async (jobId) => {
+          await this.backgroundJobs?.cancel(jobId);
+        };
+      }
+    }
     const toolCtx: ToolContext = {
+      backgroundJobs: this.backgroundJobs,
       findingPolicy: input.findingPolicy,
       ...(input.attackSurfaceArtifactsPath
         ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
@@ -846,6 +868,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         [RESPONSE_TOOL_NAME]: createResponseTool(
           input.responseSchema,
           (result) => {
+            if (this.backgroundJobs?.hasPending)
+              throw new Error(
+                "Background jobs still have pending results. Continue independent work or end with a brief waiting message; completion notices arrive automatically. Submit your final response after incorporating those results.",
+              );
             this._responseToolFired = true;
             this._responseToolResult = result;
             if (RESPONSE_DEBUG) {
@@ -1121,6 +1147,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         activeTools,
         stopWhen,
         toolChoice: "auto",
+        getPendingMessages: this.backgroundJobs
+          ? (wait) =>
+              this.backgroundJobs?.notifications(wait, toolCtx) ??
+              Promise.resolve([])
+          : undefined,
         languageModelMiddleware: input.languageModelMiddleware,
         usageRecorder: input.usageRecorder,
         contextRecorder: input.contextRecorder,
@@ -1130,7 +1161,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             messages: [...context.messages],
             responseMessageOffset: context.responseMessageOffset,
           };
-          if (this.lanceRuntime) {
+          if (this.lanceRuntime || this.backgroundJobs) {
             this.writer.setLatest(persistedMessages(context.messages));
           }
         },
@@ -1757,6 +1788,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       // fire-and-forget: hosts rely on drained before closeout, so an
       // active command must settle (bounded) before finalization continues.
       try {
+        await this.backgroundJobs?.dispose();
         await this.disposeOwnedShell();
       } catch (error) {
         recordFinalizationError(error);
@@ -1883,6 +1915,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   async abortAndDrain(): Promise<void> {
     await this.codeModeRuntime?.dispose();
     await this.disconnectOwnedBrowser();
+    await this.backgroundJobs?.dispose();
     await this.disposeOwnedShell().catch(() => {});
     await this.callbackListeners.stopAll().catch(() => {});
     await this.drained.catch(() => {});

@@ -3,6 +3,73 @@ import { verifyApiKey } from "./verify";
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("verifyApiKey OpenAI", () => {
+  it("checks the submitted key with surrounding whitespace removed", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(verifyApiKey("openai", " submitted-key ")).resolves.toEqual({
+      valid: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.openai.com/v1/models",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer submitted-key" },
+      }),
+    );
+  });
+
+  it.each([
+    [401, "Missing scopes: api.model.read"],
+    [403, "Project does not have access to this resource"],
+    [429, "Rate limit reached"],
+  ])("preserves the reason for HTTP %s", async (status, message) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: { message } }, { status })),
+    );
+    await expect(verifyApiKey("openai", "submitted-key")).resolves.toEqual({
+      valid: false,
+      error: `OpenAI key verification (GET /v1/models) returned HTTP ${status}: ${message}`,
+    });
+  });
+
+  it.each([
+    "submitted-key",
+    "sk-proj-secret123",
+    "sk-proj-abc****xyz",
+  ])("redacts echoed credentials: %s", async (echoedKey) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: { message: `Incorrect API key provided: ${echoedKey}` } },
+          { status: 401 },
+        ),
+      ),
+    );
+    const result = await verifyApiKey("openai", "submitted-key");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Incorrect API key provided: [redacted]");
+    expect(result.error).not.toContain(echoedKey);
+  });
+
+  it.each([
+    null,
+    "not json",
+    '{"error":{"message":42}}',
+  ])("reports the status without guessing the cause for an unusable body", async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 401 })),
+    );
+    await expect(verifyApiKey("openai", "submitted-key")).resolves.toEqual({
+      valid: false,
+      error:
+        "OpenAI key verification (GET /v1/models) returned HTTP 401: OpenAI did not provide an error description",
+    });
+  });
+});
+
 describe("verifyApiKey Hoonify catalog access", () => {
   it("accepts the live catalog without requiring context metadata or a key prefix", async () => {
     vi.stubGlobal(

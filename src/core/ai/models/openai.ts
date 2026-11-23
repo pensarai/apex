@@ -35,6 +35,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
     contextLength: 1050000,
   },
   {
+    id: "gpt-6-cyber",
+    name: "GPT-6-cyber",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
     id: "gpt-5.6-sol",
     name: "GPT-5.6-sol",
     provider: "openai",
@@ -51,6 +57,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
     name: "GPT-5.6-luna",
     provider: "openai",
     contextLength: 1050000,
+  },
+  {
+    id: "gpt-5.6-cyber",
+    name: "GPT-5.6-cyber",
+    provider: "openai",
+    contextLength: 400000,
   },
   {
     id: "gpt-5.5-pro",

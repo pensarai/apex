@@ -1,0 +1,114 @@
+.op-process-bar {
+  display: flex;
+  flex-shrink: 0;
+}
+.op-process-pill {
+  align-self: flex-start;
+  border-radius: var(--radius-pill);
+  font: 11px var(--font-mono);
+  margin-bottom: 8px;
+}
+.op-process-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+.op-processes {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-canvas);
+}
+.op-process-empty {
+  padding: 16px;
+  font-size: 12px;
+  color: var(--color-fg-3);
+}
+.op-process-picker {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border-strong);
+  max-height: 30%;
+  min-height: 0;
+  flex-shrink: 0;
+}
+.op-process-picker > button {
+  margin-top: 4px;
+}
+.op-process-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+.op-process-row {
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  gap: 8px;
+  height: auto;
+  text-align: left;
+}
+.op-process-row[aria-pressed="true"] {
+  background: var(--color-surface-2);
+}
+.op-process-row > span:first-of-type {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px var(--font-code);
+}
+.op-process-state {
+  font: 10px var(--font-mono);
+  color: var(--color-fg-3);
+}
+.op-process-detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  font: 12px / 1.6 var(--font-code);
+}
+.op-process-terminal-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  margin-bottom: 4px;
+  color: var(--color-fg-3);
+  font-size: 11px;
+}
+.op-process-command,
+.op-process-output {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.op-process-command {
+  margin-bottom: 8px;
+}
+.op-process-command > span {
+  color: var(--color-accent);
+}
+.op-process-stderr,
+.op-process-error {
+  color: var(--color-fg-3);
+}
+.op-process-error {
+  margin-top: 8px;
+}

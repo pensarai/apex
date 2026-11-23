@@ -43,8 +43,96 @@ test("saved credentials and sensitive header values stay in the host", () => {
     expect(payload).not.toContain(secret);
   expect(data.services.daytonaAPIKey).toBe(true);
 });
+test("OpenAI key replacement overrides the environment and removal reveals its source", async () => {
+  const previous = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "fixture-environment-key";
+  fetchSpy.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "https://api.openai.com/v1/models") {
+      expect(new Headers(init?.headers).get("Authorization")).toBe(
+        "Bearer fixture-replacement-key",
+      );
+      return Response.json({ data: [] });
+    }
+    return new Response(null, { status: 503 });
+  });
+  const openai = (data: ReturnType<typeof settingsSnapshot>) =>
+    data.providers.find((provider) => provider.id === "openai");
+  try {
+    expect(openai(await host.requests.desktopSettings())).toMatchObject({
+      configured: true,
+      keySource: "environment",
+      environmentVariable: "OPENAI_API_KEY",
+    });
+    await config.update({ openAiAPIKey: "fixture-original-key" });
+    const saved = await host.requests.changeSettings({
+      kind: "provider",
+      id: "openai",
+      key: "  fixture-replacement-key  ",
+    });
+    expect(openai(saved)?.keySource).toBe("saved");
+    expect((await config.getStored()).openAiAPIKey).toBe(
+      "fixture-replacement-key",
+    );
+    expect((await config.get()).openAiAPIKey).toBe("fixture-replacement-key");
+    expect(openai(await host.requests.desktopSettings())?.keySource).toBe(
+      "saved",
+    );
+    const removed = await host.requests.changeSettings({
+      kind: "provider",
+      id: "openai",
+      key: null,
+    });
+    expect((await config.getStored()).openAiAPIKey).toBeNull();
+    expect((await config.get()).openAiAPIKey).toBe("fixture-environment-key");
+    expect(openai(removed)).toMatchObject({
+      configured: true,
+      keySource: "environment",
+    });
+    for (const snapshot of [saved, removed]) {
+      expect(JSON.stringify(snapshot)).not.toContain("fixture-replacement-key");
+      expect(JSON.stringify(snapshot)).not.toContain("fixture-environment-key");
+    }
+    delete process.env.OPENAI_API_KEY;
+    const disconnected = openai(await host.requests.desktopSettings());
+    expect(disconnected?.configured).toBe(false);
+    expect(disconnected?.keySource).toBeUndefined();
+  } finally {
+    if (previous === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previous;
+  }
+});
+test("a rejected OpenAI replacement preserves the saved key and reports the failure", async () => {
+  await config.update({ openAiAPIKey: "fixture-original-key" });
+  fetchSpy.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "https://api.openai.com/v1/models") {
+      expect(new Headers(init?.headers).get("Authorization")).toBe(
+        "Bearer fixture-rejected-key",
+      );
+      return Response.json(
+        { error: { message: "Missing scopes: api.model.read" } },
+        { status: 401 },
+      );
+    }
+    return new Response(null, { status: 503 });
+  });
+  await expect(
+    host.requests.changeSettings({
+      kind: "provider",
+      id: "openai",
+      key: "fixture-rejected-key",
+    }),
+  ).rejects.toThrow(
+    "New key was not saved: OpenAI key verification (GET /v1/models) returned HTTP 401: Missing scopes: api.model.read. Existing credentials are unchanged.",
+  );
+  expect((await config.getStored()).openAiAPIKey).toBe("fixture-original-key");
+  const next = await host.requests.desktopSettings();
+  expect(
+    next.providers.find((provider) => provider.id === "openai")?.keySource,
+  ).toBe("saved");
+  expect(JSON.stringify(next)).not.toContain("fixture-original-key");
+});
 test("serialized edits preserve unrelated settings and case-insensitive header names", async () => {
-  await Promise.all([
+  const [first, , last] = await Promise.all([
     host.requests.changeSettings({
       kind: "header",
       name: "X-Target",
@@ -65,6 +153,8 @@ test("serialized edits preserve unrelated settings and case-insensitive header n
       value: "two",
     }),
   ]);
+  expect(first.headers).toContainEqual({ name: "X-Target", display: "one" });
+  expect(last.headers).toContainEqual({ name: "x-target", display: "two" });
   const stored = JSON.parse(
     await readFile(join(directory, ".pensar", "config.json"), "utf8"),
   );

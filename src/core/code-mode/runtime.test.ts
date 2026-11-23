@@ -286,6 +286,38 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("allows managed background launches alongside foreground commands", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({
+          command: z.string(),
+          background: z.boolean().optional(),
+        }),
+        execute: async () => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          active--;
+          return { stdout: "ok" };
+        },
+      }),
+    });
+    try {
+      const result = await runtime.execute(
+        'text(await Promise.all([tools.call("execute_command", {command:"scan",background:true}), tools.call("execute_command", {command:"probe"})]));',
+        context,
+        5000,
+      );
+      expect(result.status).toBe("completed");
+      expect(maxActive).toBe(2);
+      expect(result.output).not.toContain("single-lane");
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   test("rejects overlapping calls to the single-lane shell", async () => {
     let calls = 0;
     const runtime = createRuntime({

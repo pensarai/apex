@@ -77,3 +77,16 @@ html.apex-transparent,
 .apex-transparent .shell {
   background: color-mix(in srgb, var(--color-canvas) 85%, transparent);
 }
+
+.settings-key-source {
+  color: var(--color-fg-3);
+  font-size: 12px;
+}
+.settings-feedback {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-canvas);
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+  z-index: 1;
+}

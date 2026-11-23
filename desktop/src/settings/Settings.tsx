@@ -63,7 +63,13 @@ function Providers({
           {data.providers.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
-              {p.configured ? " · configured" : ""}
+              {p.keySource === "environment"
+                ? " · environment"
+                : p.keySource === "saved"
+                  ? " · saved key"
+                  : p.configured
+                    ? " · configured"
+                    : ""}
             </option>
           ))}
         </select>
@@ -122,6 +128,18 @@ function Providers({
               setKey("");
           }}
         >
+          {provider?.keySource === "environment" && (
+            <p className="settings-key-source">
+              Using <code>{provider.environmentVariable}</code> from the
+              environment. Save a key here to override it. To remove the
+              environment key, unset that variable and restart Apex.
+            </p>
+          )}
+          {provider?.keySource === "saved" && (
+            <p className="settings-key-source">
+              Using the saved API key. Replacements apply to the next turn.
+            </p>
+          )}
           <label>
             {provider?.configured ? "Replace API key" : "API key"}
             <Input
@@ -134,12 +152,19 @@ function Providers({
           </label>
           <div className="actions">
             <Button type="submit">Verify and save</Button>
-            {provider?.configured && (
+            {provider?.keySource === "saved" && (
               <Button
                 type="button"
-                onClick={() =>
-                  save({ kind: "provider", id: id as KeyProvider, key: null })
-                }
+                onClick={async () => {
+                  if (
+                    await save({
+                      kind: "provider",
+                      id: id as KeyProvider,
+                      key: null,
+                    })
+                  )
+                    setKey("");
+                }}
               >
                 Remove saved key
               </Button>
@@ -710,21 +735,27 @@ export default function Settings({
             </p>
           )}
         </Tabs>
-        {error && (
-          <div role="alert">
-            {error}{" "}
-            <Button
-              size="sm"
-              onClick={() => {
-                setError("");
-                refresh();
-              }}
-            >
-              Refresh
-            </Button>
+        {(error || busy || saved) && (
+          <div className="settings-feedback">
+            {error && (
+              <div role="alert">
+                {error}{" "}
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setError("");
+                    refresh();
+                  }}
+                >
+                  Refresh
+                </Button>
+              </div>
+            )}
+            {(busy || saved) && (
+              <p role="status">{busy ? "Saving…" : "Saved."}</p>
+            )}
           </div>
         )}
-        {(busy || saved) && <p role="status">{busy ? "Saving…" : "Saved."}</p>}
       </DialogContent>
     </Dialog>
   );

@@ -47,7 +47,13 @@ export type AccountState =
   | { stage: "choose"; workspaces: { id: string; name: string }[] }
   | { stage: "error"; message: string };
 export interface SettingsSnapshot {
-  providers: { id: ProviderType; name: string; configured: boolean }[];
+  providers: {
+    id: ProviderType;
+    name: string;
+    configured: boolean;
+    keySource?: "saved" | "environment";
+    environmentVariable?: string;
+  }[];
   hasProvider: boolean;
   local: { url: string; name: string };
   custom: {

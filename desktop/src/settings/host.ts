@@ -51,6 +51,17 @@ const keys = {
   hoonify: "hoonifyAPIKey",
   bedrock: "bedrockAPIKey",
 } as const satisfies Record<KeyProvider, keyof Config>;
+const keyEnvironment = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GOOGLE_GENERATIVE_AI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  concentrate: "CONCENTRATE_API_KEY",
+  inference: "INFERENCE_API_KEY",
+  inception: "INCEPTION_API_KEY",
+  hoonify: "HOONIFY_API_KEY",
+  bedrock: "BEDROCK_API_KEY",
+} as const satisfies Record<KeyProvider, string>;
 const services = [
   "daytonaAPIKey",
   "daytonaOrgId",
@@ -68,18 +79,30 @@ function appearance(cfg: Config): Appearance {
   };
 }
 
-export function settingsSnapshot(cfg: Config): SettingsSnapshot {
+export function settingsSnapshot(
+  cfg: Config,
+  stored: Partial<Config> = cfg,
+): SettingsSnapshot {
   const selected = getSavedModelForConfig(cfg) ?? getDefaultModelForConfig(cfg);
   const available = getAvailableModels(cfg);
   if (selected && !available.some((m) => m.id === selected.id))
     available.push(selected);
   const envProviders = loadCustomProviders();
   return {
-    providers: getConfiguredProviders(cfg).map(({ id, name, configured }) => ({
-      id,
-      name,
-      configured,
-    })),
+    providers: getConfiguredProviders(cfg).map(({ id, name, configured }) => {
+      if (id === "local" || id === "pensar") return { id, name, configured };
+      return {
+        id,
+        name,
+        configured,
+        keySource: stored[keys[id]]
+          ? "saved"
+          : configured
+            ? "environment"
+            : undefined,
+        environmentVariable: keyEnvironment[id],
+      };
+    }),
     hasProvider: hasAnyProviderConfigured(cfg),
     local: { url: cfg.localModelUrl ?? "", name: cfg.localModelName ?? "" },
     custom: Object.entries(cfg.customProviders ?? {}).map(([id, p]) => ({
@@ -165,10 +188,7 @@ async function change(action: SettingsChange) {
         const result = await verifyApiKey(action.id, apiKey);
         if (!result.valid)
           throw new Error(
-            (result.error || "Invalid API key.").replaceAll(
-              apiKey,
-              "[redacted]",
-            ),
+            `New key was not saved: ${(result.error || "API key verification failed.").replaceAll(apiKey, "[redacted]")}. Existing credentials are unchanged.`,
           );
       }
       await config.update({ [keys[action.id]]: apiKey });
@@ -285,7 +305,11 @@ export function createSettingsHost(opts: {
 }) {
   const account = createAccount(opts.openExternal);
   let pending = Promise.resolve();
-  const snapshot = async () => settingsSnapshot(await config.get());
+  const snapshot = async () => {
+    const stored = await config.getStored();
+    const cfg = await config.get();
+    return settingsSnapshot(cfg, stored);
+  };
   if (process.env.PENSAR_OBFUSCATE === "1") setObfuscationEnabled(true);
   return {
     dispose: account.dispose,
@@ -297,10 +321,15 @@ export function createSettingsHost(opts: {
       desktopAppearance: async () => appearance(await config.get()),
       changeSettings: async (action: SettingsChange) => {
         opts.requireAcceptance();
-        const write = pending.then(() => change(action));
-        pending = write.catch(() => {});
-        await write;
-        return snapshot();
+        const write = pending.then(async () => {
+          await change(action);
+          return snapshot();
+        });
+        pending = write.then(
+          () => {},
+          () => {},
+        );
+        return write;
       },
       accountAction: async (
         action: SettingsRequests["accountAction"]["params"],

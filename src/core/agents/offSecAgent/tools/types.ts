@@ -30,6 +30,7 @@ import type {
   StreamIdFactory,
   SystemPentestScope,
 } from "../types";
+import type { BackgroundJobs } from "./backgroundJobs";
 import type { CallbackListenerRegistry } from "./callbackListener";
 import type { EmailAdapterResolver } from "./email/adapters";
 import type { PerCommandShell } from "./perCommandShell";
@@ -45,6 +46,7 @@ import type { SmsInbox } from "./smsInbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  backgroundJobs?: BackgroundJobs;
   findingPolicy?: FindingPolicy;
   attackSurfaceArtifactsPath?: string;
 

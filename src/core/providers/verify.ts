@@ -48,16 +48,25 @@ async function verifyAnthropic(apiKey: string): Promise<VerifyResult> {
 }
 
 async function verifyOpenAI(apiKey: string): Promise<VerifyResult> {
+  const key = apiKey.trim();
+  if (!key) return { valid: false, error: "Enter an OpenAI API key" };
   try {
     const res = await fetchWithTimeout("https://api.openai.com/v1/models", {
       method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${key}` },
     });
     if (res.ok) return { valid: true };
-    if (res.status === 401) return { valid: false, error: "Invalid API key" };
+    const body = await res.json().catch(() => null);
+    const message =
+      typeof body?.error?.message === "string"
+        ? body.error.message
+            .replaceAll(key, "[redacted]")
+            .replace(/\bsk-[A-Za-z0-9_*-]+/g, "[redacted]")
+            .slice(0, 1000)
+        : "OpenAI did not provide an error description";
     return {
       valid: false,
-      error: `OpenAI returned HTTP ${res.status}`,
+      error: `OpenAI key verification (GET /v1/models) returned HTTP ${res.status}: ${message}`,
     };
   } catch (err) {
     return {

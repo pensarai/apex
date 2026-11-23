@@ -162,10 +162,12 @@ describe("desktop operator", () => {
       expect(activity()).toBe("waiting");
       bus.emit("reasoning-start", {});
       expect(activity()).toBe("thinking");
-      bus.emit("reasoning-delta", { text: "private reasoning" });
+      bus.emit("reasoning-delta", {
+        text: "Inspect the authentication boundary.",
+      });
       expect(activity()).toBe("thinking");
-      expect(JSON.stringify(host.requests.operatorState())).not.toContain(
-        "private reasoning",
+      expect(JSON.stringify(host.requests.operatorState())).toContain(
+        "Inspect the authentication boundary.",
       );
       bus.emit("reasoning-end", {});
       expect(activity()).toBe("waiting");
@@ -211,6 +213,93 @@ describe("desktop operator", () => {
     input.eventBus?.emit("reasoning-start", {});
     expect(activity()).toBeUndefined();
   });
+  it("streams background processes in snapshots and cancels only a current job", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let input!: OffensiveSecurityAgentClientInput;
+    const cancel = vi.fn(async (jobId: string) => {
+      input.eventBus?.emit("background-job", {
+        jobId,
+        command: "sleep 30",
+        startedAt: 1,
+        status: "completed",
+        stdout: "partial",
+        stderr: "aborted",
+        exitCode: 130,
+        finishedAt: 2,
+      });
+    });
+    sdk.run.mockImplementation(
+      async (value: OffensiveSecurityAgentClientInput) => {
+        input = value;
+        if (value.commandCancelHandle)
+          value.commandCancelHandle.cancelBackground = cancel;
+        await pending;
+        return {
+          session: value.session,
+          streamResult: { response: Promise.resolve({ messages: [] }) },
+        };
+      },
+    );
+    const { sessionId } = await host.start({
+      name: "Process sidebar",
+      prompt: "Start jobs",
+    });
+    await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledOnce());
+    const job = {
+      jobId: "job-1",
+      command: "sleep 30",
+      startedAt: 1,
+      status: "running" as const,
+      stdout: "",
+      stderr: "",
+    };
+    try {
+      input.eventBus?.emit("background-job", job);
+      input.eventBus?.emit("background-job", { ...job, stdout: "partial" });
+      input.eventBus?.emit("background-job", { ...job, jobId: "job-2" });
+      input.eventBus?.emit("step-finish", { messages: [] });
+      expect(host.requests.operatorState().activity).toBe("working");
+      expect(host.requests.operatorState().processes).toHaveLength(2);
+      expect(host.requests.operatorState().processes?.[0].stdout).toBe(
+        "partial",
+      );
+      await host.requests.operatorAction({
+        sessionId,
+        action: { type: "cancel-process", jobId: "job-1" },
+      });
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(cancel).toHaveBeenCalledWith("job-1");
+      expect(sdk.abort).not.toHaveBeenCalled();
+      expect(
+        host.requests.operatorState().processes?.map((p) => p.status),
+      ).toEqual(["completed", "running"]);
+      await expect(
+        host.requests.operatorAction({
+          sessionId,
+          action: { type: "cancel-process", jobId: "job-1" },
+        }),
+      ).rejects.toThrow("no longer available");
+      await expect(
+        host.requests.operatorAction({
+          sessionId,
+          action: { type: "cancel-process", jobId: "other-job" },
+        }),
+      ).rejects.toThrow("no longer available");
+    } finally {
+      finish();
+      await vi.waitFor(() =>
+        expect(host.requests.operatorState().status).toBe("idle"),
+      );
+    }
+    input.eventBus?.emit("background-job", { ...job, jobId: "late" });
+    expect(host.requests.operatorState().processes).toHaveLength(2);
+    await host.start({ name: "Another session" });
+    expect(host.requests.operatorState().processes).toEqual([]);
+  });
+
   it("cancels only the command named by the clicked row, rejecting stale rows", async () => {
     let finish!: () => void;
     const pending = new Promise<void>((resolve) => {
@@ -344,6 +433,11 @@ describe("desktop operator", () => {
             name: "Worker",
             input: { target: "fixture" },
           });
+          eventBus.emit("reasoning-start", { subagentId: "worker" });
+          eventBus.emit("reasoning-delta", {
+            subagentId: "worker",
+            text: "Inspect the worker scope.",
+          });
           eventBus.emit("text-delta", {
             subagentId: "worker",
             text: "Worker result",
@@ -389,6 +483,9 @@ describe("desktop operator", () => {
     expect(
       host.requests.operatorState().subagents[0]?.messages[0]?.content,
     ).toContain("Worker result");
+    expect(
+      host.requests.operatorState().subagents[0]?.messages[0]?.reasoning,
+    ).toMatchObject({ text: "Inspect the worker scope.", complete: true });
     await host.requests.operatorAction({
       sessionId,
       action: { type: "send", text: "follow up" },

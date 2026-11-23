@@ -37,6 +37,7 @@ const definitions: Record<string, ToolDefinition> = {
     kind: "command",
     fields: ["command"],
   },
+  command_job: { name: "Command job", kind: "command", fields: ["jobId"] },
   http_request: { name: "HTTP request", kind: "http", fields: ["url"] },
   read_file: { name: "Read file", kind: "file", fields: ["path", "file_path"] },
   list_files: {
@@ -307,6 +308,12 @@ export function describeTool(message: OperatorMessage): ToolPresentation {
       (normalized.error && typeof output === "string" ? output : undefined);
   if (!summary && httpStatus !== undefined)
     summary = `HTTP ${httpStatus}${text(result, "statusText") ? ` ${text(result, "statusText")}` : ""}`;
+  if (
+    !summary &&
+    (tool === "execute_command" || tool === "document_vulnerability") &&
+    result?.status === "running"
+  )
+    summary = "Started in background";
   if (!summary && definition.kind === "command" && exitCode !== undefined)
     summary = `Exit ${exitCode}`;
   if (!summary && tool === "read_file") {

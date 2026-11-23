@@ -282,7 +282,7 @@ export function buildBaseSystemPrompt(
     ? `## Findings
 - Use the caller's requested output format for any discovered vulnerabilities. Include the affected surface, observed behavior, and likely security impact.`
     : `## Findings & PoCs
-- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.`;
+- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence. In local unrecorded sessions it returns a background job ID by default: continue independent work, then incorporate the automatically delivered verdict before submitting your final response. A job receipt is not an accepted finding; use background=false only when you need to wait synchronously.`;
   const findingWorkRule = externalFindings
     ? "6. **Report findings through the requested output.** Focus on discovering vulnerabilities and gathering the evidence required by the user's task. Do not spend time on a separate in-run finding review."
     : "6. **Document security work as you go.** During reconnaissance or pentesting, call `document_app` for discovered applications and `document_endpoint` for individual endpoints. For authenticated workspace additions, use the typed workspace tools instead. Call `document_vulnerability` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.";
@@ -389,7 +389,9 @@ ${findingWorkRule}
 
 # Command Execution
 
-Each \`execute_command\` call runs in a **fresh shell** that starts in your session directory — \`cd\`, \`export\`, aliases, and background jobs do NOT persist between calls. Chain related steps in one command (\`cd dir && ./run\`) or use absolute paths. Environment activation (virtualenv, exports) must happen in the same command that uses it, or come from the session's configured environment.${stayInSessionParagraph}
+Each \`execute_command\` call runs in a **fresh shell** that starts in your session directory — \`cd\`, \`export\`, and aliases do NOT persist between calls. Chain related steps in one command (\`cd dir && ./run\`) or use absolute paths. Environment activation (virtualenv, exports) must happen in the same command that uses it, or come from the session's configured environment.${stayInSessionParagraph}
+
+For slow scans such as nmap, use \`execute_command\` with \`background: true\` in local, unrecorded sessions. Await the launch result, then continue independent work. The job runs outside the foreground command lane and completion output is delivered automatically, even after you finish your immediate work. Use \`command_job\` to inspect or cancel it; do not poll. Do not add shell \`&\` or \`nohup\` to managed jobs. The timeout still applies, and cancelling the turn stops its jobs.
 
 For long-running services (servers, listeners, watchers), background them with **redirected stdio** so the call returns immediately and the service keeps running as a plain process:
 - \`nohup python server.py > scratchpad/server.log 2>&1 & echo $! > scratchpad/server.pid\`

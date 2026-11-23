@@ -95,6 +95,9 @@ function ToolOutput({ view }: { view: ToolPresentation }) {
   ) {
     body = (
       <>
+        {typeof result.jobId === "string" && (
+          <DataBlock label="Job ID" value={result.jobId} />
+        )}
         <DataBlock label="Output" value={result.stdout} />
         {result.stderr !== "" && (
           <DataBlock label="Standard error" value={result.stderr} />

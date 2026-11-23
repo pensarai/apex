@@ -1,4 +1,6 @@
 import type { LoadedTopology } from "../../../src/core/agents/offSecAgent/tools/topologyRecords";
+import type { BackgroundJobState } from "../../../src/core/eventBus";
+import type { DisplayReasoning } from "../../../src/core/session/persistence";
 import type { WorkflowData } from "../../../src/core/workflows/pentest-progress";
 
 import type { OperatorFrame } from "./live";
@@ -50,6 +52,7 @@ export interface Question {
 }
 
 export interface OperatorMessage {
+  reasoning?: DisplayReasoning;
   role: "user" | "system" | "assistant" | "tool";
   content: string;
   createdAt: string;
@@ -69,6 +72,7 @@ export type OperatorActivity =
   | "working";
 
 export interface OperatorSnapshot {
+  processes?: BackgroundJobState[];
   revision: number;
   activity?: OperatorActivity;
   sessionId?: string;
@@ -116,6 +120,7 @@ export type OperatorAction =
   | { type: "approval"; id: string; decision: "approve" | "deny" | "auto" }
   | { type: "cancel" }
   | { type: "cancel-command"; toolCallId: string }
+  | { type: "cancel-process"; jobId: string }
   | { type: "queue"; id: string; operation: "remove" | "send-now" }
   | {
       type: "answer";
