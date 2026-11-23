@@ -86,6 +86,72 @@ function completion(model: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 it.each([
+  ["gpt-6-cyber", 1_050_000],
+  ["gpt-5.6-cyber", 400_000],
+])("exposes %s in the picker and routes it to OpenAI Responses", async (id, contextLength) => {
+  const available = getVisiblePickerModels(
+    getAvailableModels({
+      responsibleUseAccepted: true,
+      openAiAPIKey: "test-key",
+    }),
+  );
+  expect(available.find((model) => model.id === id)).toMatchObject({
+    provider: "openai",
+    contextLength,
+  });
+  expect(resolveExplicitCliModel({ model: id })).toBe(id);
+  expect(getMaxOutputTokens(id)).toBe(128_000);
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) => completion(id),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  await getProviderModel(id, { openAiAPIKey: "test-key" }).doGenerate({
+    prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
+  });
+  const call = fetchMock.mock.calls[0];
+  if (!call) throw new Error("Expected an OpenAI Cyber request");
+  const [url, init] = call;
+  expect(String(url)).toBe("https://api.openai.com/v1/responses");
+  expect(JSON.parse(String(init?.body)).model).toBe(id);
+  expect(new Headers(init?.headers).get("authorization")).toBe(
+    "Bearer test-key",
+  );
+});
+
+it.each([
+  "gpt-6-cyber",
+  "gpt-5.6-cyber",
+  "gpt-5.5",
+])("sends %s history inline so Zero Data Retention orgs can continue", async (id) => {
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) => completion(id),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  await getProviderModel(id, { openAiAPIKey: "test-key" }).doGenerate({
+    prompt: [
+      { role: "user", content: [{ type: "text", text: "Hello" }] },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Hi",
+            providerOptions: { openai: { itemId: "msg_prior" } },
+          },
+        ],
+      },
+      { role: "user", content: [{ type: "text", text: "Continue" }] },
+    ],
+  });
+  const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+  expect(body.store).toBe(false);
+  expect(JSON.stringify(body.input)).not.toContain("item_reference");
+  expect(body.input).toContainEqual(
+    expect.objectContaining({ role: "assistant" }),
+  );
+});
+
+it.each([
   "gpt-5.5-pro",
   "gpt-5.5-pro-2026-04-23",
 ])("adapts %s non-streaming tool calls into the agent stream", async (id) => {

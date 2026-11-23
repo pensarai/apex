@@ -234,20 +234,23 @@ export function getProviderModel(
         apiKey: openAiAPIKey,
         fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
       });
-      providerModel = openai.responses(model);
-      if (/^gpt-6[.-]/.test(model)) {
-        // The pinned SDK recognizes reasoning models only through GPT-5.
-        providerModel = wrapLanguageModel({
-          model: providerModel,
-          middleware: defaultSettingsMiddleware({
-            settings: {
-              providerOptions: {
-                openai: { forceReasoning: true, reasoningEffort: "medium" },
+      // Stateless requests: ZDR orgs can't resolve item_reference ids from prior turns.
+      providerModel = wrapLanguageModel({
+        model: openai.responses(model),
+        middleware: defaultSettingsMiddleware({
+          settings: {
+            providerOptions: {
+              openai: {
+                store: false,
+                // The pinned SDK recognizes reasoning models only through GPT-5.
+                ...(/^gpt-6[.-]/.test(model)
+                  ? { forceReasoning: true, reasoningEffort: "medium" }
+                  : {}),
               },
             },
-          }),
-        });
-      }
+          },
+        }),
+      });
       if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
         // Pro supports Responses tool calls but cannot stream from the API.
         providerModel = wrapLanguageModel({
