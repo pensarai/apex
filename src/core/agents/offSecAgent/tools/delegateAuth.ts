@@ -199,8 +199,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
       },
       { toolCallId },
     ) => {
-      // Resolved from a stored credential only — agents never pass raw secrets.
-      let additionalFields: Record<string, string> | undefined;
+      let authSession = ctx.session;
       const subagentName = "Authentication Agent";
       const spawner = ctx.subagentSpawner;
       try {
@@ -214,8 +213,10 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
         }
 
         // Resolve credential from manager when an ID is provided
-        if (credentialId && ctx.credentialManager) {
-          const stored = ctx.credentialManager.resolve(credentialId);
+        if (credentialId) {
+          const stored = (
+            ctx.credentialManager ?? ctx.session.credentialManager
+          )?.resolve(credentialId);
           if (!stored) {
             return {
               success: false,
@@ -223,11 +224,21 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
               message: `Unknown credential ID: ${credentialId}`,
             };
           }
+          // A delegated login must not inherit another saved account's fields or headers.
+          const selected = new CredentialManager();
+          selected.add(stored);
+          authSession = {
+            ...ctx.session,
+            config: {
+              ...ctx.session.config,
+              authCredentials: selected.toAuthCredentials(credentialId),
+            },
+            credentialManager: selected,
+          };
           username = stored.username ?? username;
           password = stored.password ?? password;
           apiKey = stored.apiKey ?? apiKey;
           loginUrl = stored.loginUrl ?? loginUrl;
-          additionalFields = stored.additionalFields;
           if (stored.tokens && !tokens) {
             tokens = { ...stored.tokens };
           }
@@ -248,7 +259,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
             : undefined,
         });
 
-        const rawSessionCreds = ctx.session.config?.authCredentials;
+        const rawSessionCreds = authSession.config?.authCredentials;
         const sessionCreds: AuthCredentials | undefined = rawSessionCreds
           ? Array.isArray(rawSessionCreds)
             ? rawSessionCreds[0]
@@ -281,30 +292,29 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           });
         }
 
-        const credentials = mergeAuthCredentials(sessionCreds, {
-          username,
-          password,
-          apiKey,
-          loginUrl,
-          tokens,
-          additionalFields,
-        });
+        const credentials = credentialId
+          ? undefined
+          : mergeAuthCredentials(sessionCreds, {
+              username,
+              password,
+              apiKey,
+              loginUrl,
+              tokens,
+            });
 
         // Ensure the session has a credential manager with the resolved credentials.
         // This is the single path for secret management — the auth agent reads
         // from session.credentialManager and never sees raw secrets.
-        if (!ctx.session.credentialManager) {
-          ctx.session.credentialManager = new CredentialManager();
-        }
+        authSession.credentialManager ??= new CredentialManager();
         if (credentials) {
-          ctx.session.credentialManager.addFromAuthCredentials(credentials);
+          authSession.credentialManager.addFromAuthCredentials(credentials);
         }
 
         const result = await spawner.spawn<AuthenticationResult>({
           spec: { type: "authentication", target, authHints },
           runtime: {
             findingPolicy: ctx.findingPolicy,
-            session: ctx.session,
+            session: authSession,
             ...getModelSettings(ctx),
             abortSignal: ctx.abortSignal,
             environmentVariables: ctx.environmentVariables,

@@ -31,13 +31,30 @@ export async function locate(key: string[], ext?: string) {
   return target;
 }
 
-export async function write<T>(key: string[], content: T, ext?: string) {
+export async function write<T>(
+  key: string[],
+  content: T,
+  ext?: string,
+  mode?: number,
+) {
   const dir = getBaseDir();
   const target = path.join(dir, ...key) + (ext ? ext : ".json");
   return withErrorHandling(async () => {
     using _ = await Lock.write(target);
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, JSON.stringify(content, null, 2), "utf-8");
+    const data = JSON.stringify(content, null, 2);
+    if (mode === undefined) {
+      await fs.writeFile(target, data, "utf-8");
+      return;
+    }
+    const file = await fs.open(target, "a", mode);
+    try {
+      await file.chmod(mode);
+      await file.truncate(0);
+      await file.writeFile(data);
+    } finally {
+      await file.close();
+    }
   });
 }
 

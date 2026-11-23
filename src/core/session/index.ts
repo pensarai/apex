@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ModelMessage } from "ai";
@@ -542,6 +544,7 @@ export function migrateLegacySessionData(input: unknown): unknown {
 export const SessionInfoObject = z.object({
   id: Identifier.schema("session"),
   name: z.string().optional(),
+  nameOnFirstMessage: z.boolean().optional(),
   version: z.string(),
   targets: z.array(z.string()),
   config: SessionConfigObject.optional(),
@@ -569,6 +572,7 @@ export interface CreateInputProps {
   /** Explicit session name. When omitted, an AI-generated name is attempted
    *  (requires `model` + `authConfig`), falling back to a random name. */
   name?: string;
+  nameOnFirstMessage?: boolean;
   prefix?: string;
   config?: SessionConfig;
   /** Recorded runs bind configuration at admission instead of inheriting ambient settings. */
@@ -581,6 +585,30 @@ export interface CreateInputProps {
   userMessage?: string;
   /** Called when the async AI name generation resolves with a name. */
   onNameGenerated?: (name: string) => void;
+}
+
+function restoreSession(session: SessionInfo): SessionInfo {
+  const credentials = session.config?.authCredentials;
+  if (credentials) {
+    const manager = new CredentialManager();
+    const entries = Array.isArray(credentials) ? credentials : [credentials];
+    entries.forEach((entry, index) => {
+      // Older files lack IDs. Keep their references stable across reloads and appends.
+      manager.addFromAuthCredentials({
+        ...entry,
+        id: entry.id ?? `cred_${session.id}_${index}`,
+      });
+    });
+    session.credentialManager = manager;
+  }
+  if (session.config?.requestsPerSecond) {
+    session._rateLimiter = new RateLimiter({
+      requestsPerSecond: session.config.requestsPerSecond,
+    });
+  } else {
+    delete session._rateLimiter;
+  }
+  return session;
 }
 
 export async function create(input: CreateInputProps) {
@@ -605,17 +633,18 @@ export async function create(input: CreateInputProps) {
     requestsPerSecond: normalizedConfig?.requestsPerSecond,
   });
 
-  // Auto-create CredentialManager when authCredentials are provided.
-  // Secrets live only in memory — they are never serialized to disk.
   let credentialManager: CredentialManager | undefined;
   if (normalizedConfig?.authCredentials) {
-    credentialManager = new CredentialManager();
-    const creds = Array.isArray(normalizedConfig.authCredentials)
-      ? normalizedConfig.authCredentials
-      : [normalizedConfig.authCredentials];
-    for (const cred of creds) {
-      credentialManager.addFromAuthCredentials(cred);
-    }
+    const manager = new CredentialManager();
+    const withId = (entry: AuthCredentials) => ({
+      ...entry,
+      id: manager.addFromAuthCredentials(entry),
+    });
+    const entries = normalizedConfig.authCredentials;
+    normalizedConfig.authCredentials = Array.isArray(entries)
+      ? entries.map(withId)
+      : withId(entries);
+    credentialManager = manager;
   }
 
   const smtpConfig =
@@ -643,6 +672,9 @@ export async function create(input: CreateInputProps) {
     version: getCurrentVersion(),
     targets: input.targets,
     name,
+    ...(input.nameOnFirstMessage && !input.name
+      ? { nameOnFirstMessage: true }
+      : {}),
     time: {
       created: Date.now(),
       updated: Date.now(),
@@ -670,46 +702,57 @@ export async function create(input: CreateInputProps) {
   // Exclude non-serializable fields (class instances with methods)
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
   await createSessionDirs({ session: result });
-  await Storage.write(["sessions", result.id, "session"], sessionData);
+  await Storage.write(
+    ["sessions", result.id, "session"],
+    sessionData,
+    undefined,
+    0o600,
+  );
 
-  // Fire-and-forget AI name generation — updates persisted session in the background
-  if (!input.name && input.model) {
-    generateSessionName({
-      targets: input.targets,
-      userMessage: input.userMessage,
-      model: input.model,
-      authConfig: input.authConfig,
-      sessionId: result.id,
-    }).then((aiName) => {
-      if (aiName) {
-        result.name = aiName;
-        update(result.id, (s) => {
-          s.name = aiName;
-        }).catch(() => {});
-        input.onNameGenerated?.(aiName);
-      }
-    });
+  if (!input.name && input.model && !result.nameOnFirstMessage) {
+    await startNaming(result, { ...input, model: input.model });
   }
 
   return result;
+}
+
+async function startNaming(
+  session: SessionInfo,
+  input: Pick<
+    CreateInputProps,
+    "authConfig" | "userMessage" | "onNameGenerated"
+  > & { model: AIModel },
+) {
+  if (session.nameOnFirstMessage) {
+    let claimed = false;
+    await update(session.id, (saved) => {
+      claimed = saved.nameOnFirstMessage === true;
+      delete saved.nameOnFirstMessage;
+    });
+    delete session.nameOnFirstMessage;
+    if (!claimed) return;
+  }
+  void generateSessionName({
+    targets: session.targets,
+    userMessage: input.userMessage,
+    model: input.model,
+    authConfig: input.authConfig,
+    sessionId: session.id,
+  }).then((name) => {
+    if (!name) return;
+    session.name = name;
+    update(session.id, (saved) => {
+      saved.name = name;
+    }).catch(() => {});
+    input.onNameGenerated?.(name);
+  });
 }
 
 export const get = async (id: string) => {
   const raw = await Storage.read<unknown>(["sessions", id, "session"]);
   const read = migrateLegacySessionData(raw) as SessionInfo;
 
-  // Reconstruct RateLimiter instance (it gets serialized as plain object)
-  // This ensures the session has a proper RateLimiter with methods
-  if (read.config?.requestsPerSecond) {
-    read._rateLimiter = new RateLimiter({
-      requestsPerSecond: read.config.requestsPerSecond,
-    });
-  } else {
-    // Remove any stale serialized _rateLimiter data (plain object without methods)
-    delete read._rateLimiter;
-  }
-
-  return read;
+  return restoreSession(read);
 };
 
 const sessionPath = (id: string) => Storage.locate(["sessions", id], "");
@@ -722,7 +765,7 @@ async function update(id: string, editor: (session: SessionInfo) => void) {
       draft.time.updated = Date.now();
     },
   );
-  return result;
+  return restoreSession(result);
 }
 
 export async function* list() {
@@ -1063,6 +1106,22 @@ export async function updateOperatorSettings(
 // Custom HTTP Headers Update
 // ============================================================================
 
+async function addCredential(
+  id: string,
+  credential: Omit<AuthCredentials, "id">,
+): Promise<SessionInfo> {
+  // Session files created by older releases may be readable by other local users.
+  await chmod(await Storage.locate(["sessions", id, "session"]), 0o600);
+  return update(id, (session) => {
+    session.config ??= {};
+    const current = session.config.authCredentials;
+    session.config.authCredentials = [
+      ...(Array.isArray(current) ? current : current ? [current] : []),
+      { ...credential, id: randomUUID() },
+    ];
+  });
+}
+
 /** Replace the session's custom HTTP headers. Pass `{}` to clear. */
 export async function updateSessionHeaders(
   sessionId: string,
@@ -1131,6 +1190,8 @@ export const sessions = {
   getResumeMessages,
   updateOperatorSettings,
   updateSessionHeaders,
+  addCredential,
+  startNaming,
   updateModelReasoning,
 };
 

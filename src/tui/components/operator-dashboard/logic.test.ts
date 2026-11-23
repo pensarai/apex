@@ -668,6 +668,19 @@ describe("buildOperatorSystemPrompt", () => {
     stageProgress: {},
   } as unknown as OperatorSessionState;
 
+  it("makes saved login instructions available on the next operator turn", () => {
+    const context =
+      "Credential ID: cred_reader\nContext: Use the partner login.";
+    expect(
+      buildOperatorSystemPrompt(target, state, "plan", {
+        credentialContext: context,
+      }),
+    ).toContain(context);
+    expect(routeCommand("/credentials", () => null)).toEqual({
+      type: "credentials",
+    });
+  });
+
   it("includes the target", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).toContain("Target: https://example.com");
