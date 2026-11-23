@@ -13,6 +13,7 @@ import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import { LocalBackends } from "../../../tools/backends/local";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { acceptedTypes, type WireSchemaProperty } from "./__tests__/wireSchema";
 import {
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
   type ExecuteCommandInput,
@@ -818,18 +819,12 @@ describe("execute_command timeout fields (canonical timeoutSeconds)", () => {
 
   it("serializes both spellings as nullable optional seconds in the wire schema", () => {
     const json = wireSchema().jsonSchema as {
-      properties: Record<
-        string,
-        { anyOf?: { type: string }[]; description?: string } | undefined
-      >;
+      properties: Record<string, WireSchemaProperty | undefined>;
       required?: string[];
       additionalProperties?: boolean;
     };
     for (const field of ["timeoutSeconds", "timeout"]) {
-      expect(json.properties[field]?.anyOf?.map((t) => t.type)).toEqual([
-        "number",
-        "null",
-      ]);
+      expect(acceptedTypes(json.properties[field])).toEqual(["number", "null"]);
     }
     expect(json.required ?? []).not.toContain("timeoutSeconds");
     expect(json.required ?? []).not.toContain("timeout");

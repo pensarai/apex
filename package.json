@@ -43,7 +43,7 @@
     "tldts": "7.4.3",
     "undici": "6.29.1",
     "yaml": "2.9.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "devDependencies": {
