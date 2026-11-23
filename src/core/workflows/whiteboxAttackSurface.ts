@@ -1691,8 +1691,28 @@ async function readIncrementalReconAssets(
   const read = async (path: string): Promise<unknown> => {
     abortSignal?.throwIfAborted();
     const result = await fs.readRaw(path);
-    if (!result.success) throw new Error(`Recon artifact read failed: ${path}`);
-    return JSON.parse(result.content);
+    if (!result.success)
+      throw Object.assign(new Error("Recon artifact read failed"), { path });
+    try {
+      return JSON.parse(result.content);
+    } catch (cause) {
+      throw Object.assign(
+        new Error("Recon artifact is not valid JSON", { cause }),
+        { path },
+      );
+    }
+  };
+  const validate = <T extends z.ZodType>(
+    schema: T,
+    raw: unknown,
+    path: string,
+  ): z.output<T> => {
+    const parsed = schema.safeParse(raw);
+    if (parsed.success) return parsed.data;
+    throw Object.assign(
+      new Error("Recon artifact failed validation", { cause: parsed.error }),
+      { path, issueCount: parsed.error.issues.length },
+    );
   };
   const apps: App[] = [];
   for (const directory of await list(assetsPath)) {
@@ -1704,7 +1724,8 @@ async function readIncrementalReconAssets(
     )
       throw new Error("Invalid recon artifact directory");
     const appPath = join(assetsPath, directory);
-    const metadata = AppInfoSchema.parse(await read(join(appPath, "app.json")));
+    const appJson = join(appPath, "app.json");
+    const metadata = validate(AppInfoSchema, await read(appJson), appJson);
     const previousApp = existing.apps.find((app) => app.name === metadata.name);
     const app: App = {
       ...previousApp,
@@ -1716,14 +1737,17 @@ async function readIncrementalReconAssets(
       if (file === "app.json" || !file.endsWith(".json")) continue;
       if (file.includes("/") || file === "..")
         throw new Error("Invalid recon artifact filename");
-      const raw = await read(join(appPath, file));
-      const record = z
-        .object({
-          method: z.union([z.string(), z.array(z.string())]),
-          routePath: z.string(),
-        })
-        .passthrough()
-        .parse(raw) as DocumentedEndpointRecord;
+      const filePath = join(appPath, file);
+      const record = validate(
+        z
+          .object({
+            method: z.union([z.string(), z.array(z.string())]),
+            routePath: z.string(),
+          })
+          .passthrough(),
+        await read(filePath),
+        filePath,
+      ) as DocumentedEndpointRecord;
       const endpoint = assetRecordToEndpoint(record);
       if (!endpoint)
         throw new Error(`Invalid recon endpoint artifact: ${file}`);

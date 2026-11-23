@@ -4,11 +4,13 @@ import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import {
+  APICallError,
   generateText,
   type LanguageModel,
   type LanguageModelMiddleware,
   type ModelMessage,
   Output,
+  RetryError,
   type StepResult,
   type StopCondition,
   type StreamTextOnFinishCallback,
@@ -367,6 +369,17 @@ export function getContextWindow(
 }
 
 function checkIfRateLimitError(error: unknown): boolean {
+  if (
+    APICallError.isInstance(error) &&
+    [429, 503, 529].includes(error.statusCode ?? 0)
+  ) {
+    return true;
+  }
+  // SDK RetryError (AI_RetryError) hides the cause behind lastError/errors
+  if (RetryError.isInstance(error)) {
+    return [error.lastError, ...error.errors].some(checkIfRateLimitError);
+  }
+
   const errObj =
     typeof error === "object" && error !== null
       ? (error as Record<string, unknown>)
@@ -684,6 +697,53 @@ class InStreamCompactionRequired extends Error {
 // Retry once after new tool output, then let fitting handle this turn.
 const MAX_PROACTIVE_SUMMARY_FAILURES = 2;
 
+function streamOutputTokenLimit(opts: StreamResponseOpts): number {
+  const configured = getMaxOutputTokens(
+    opts.model,
+    opts.authConfig?.customProviders,
+    opts.authConfig?.hoonifyModels,
+    opts.authConfig?.ollama,
+  );
+  // Conversation calls and multi-step tool calls enter the shared history fitter.
+  if (!opts.messages?.length && !Object.keys(opts.tools ?? {}).length)
+    return configured;
+  const contextWindow = getContextWindow(
+    opts.model,
+    opts.authConfig?.customProviders,
+    opts.authConfig?.hoonifyModels,
+    opts.authConfig?.ollama,
+  );
+  const system = applySequentialToolCallPolicy(
+    opts.system,
+    opts.tools,
+    opts.model,
+  );
+  const overhead = estimateToolsOverheadTokens(opts.tools) + 1_000;
+  const systemTokens = system ? estimateTokens(system) : 0;
+  const usable = contextWindow - overhead - systemTokens - 10_000;
+  // An already overfull fixed prompt still uses the existing recovery path.
+  if (usable < 2) return configured;
+  const capability = getReasoningCapabilities(
+    opts.model,
+    opts.authConfig?.customProviders,
+  );
+  const setting = resolveReasoningSetting(opts.model, {
+    ...opts,
+    customProviders: opts.authConfig?.customProviders,
+  });
+  const minimum =
+    capability.thinking === "budget" &&
+    capability.transport !== "google" &&
+    setting !== undefined &&
+    setting !== "disabled" &&
+    setting !== "none" &&
+    !(setting === "default" && capability.defaultEnabled === false)
+      ? 2048
+      : 1;
+  // Reserve conversation space after fixed overhead, preserving provider thinking minima.
+  return Math.min(configured, Math.max(minimum, Math.floor(usable / 2)));
+}
+
 function shouldSummarizeBeforeFitting(
   messages: ModelMessage[],
   contextWindow: number,
@@ -984,12 +1044,7 @@ function wrapStreamWithErrorHandler(
                           opts.authConfig?.hoonifyModels,
                           opts.authConfig?.ollama,
                         ),
-                        maxOutputTokens: getMaxOutputTokens(
-                          opts.model,
-                          opts.authConfig?.customProviders,
-                          opts.authConfig?.hoonifyModels,
-                          opts.authConfig?.ollama,
-                        ),
+                        maxOutputTokens: streamOutputTokenLimit(opts),
                         system: applySequentialToolCallPolicy(
                           opts.system,
                           opts.tools,
@@ -1761,12 +1816,7 @@ function streamResponseWithinOperation(
     authConfig?.hoonifyModels,
     authConfig?.ollama,
   );
-  const maxOutputTokens = getMaxOutputTokens(
-    model,
-    authConfig?.customProviders,
-    authConfig?.hoonifyModels,
-    authConfig?.ollama,
-  );
+  const maxOutputTokens = streamOutputTokenLimit(opts);
   if (
     messages &&
     (!opts.primaryModelOnly || opts.runContextCompaction) &&
@@ -2104,12 +2154,7 @@ function streamResponseWithinOperation(
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(
-        model,
-        authConfig?.customProviders,
-        authConfig?.hoonifyModels,
-        authConfig?.ollama,
-      ),
+      maxOutputTokens,
       // Awaiting inside prepareStep keeps streamResponse synchronous; the
       // SDK awaits it before provider dispatch, so every turn and every
       // recovery re-entry commits before use.
@@ -2762,23 +2807,23 @@ export function resumeMessagesWithPinned(
   const replayed = latestUser ? [latestUser, ...pinned] : pinned;
   if (replayed.length === 0) return undefined;
   const messages: ModelMessage[] = [resumePrompt, ...replayed];
+  const system = applySequentialToolCallPolicy(
+    opts.system,
+    opts.tools,
+    opts.model,
+  );
   const overhead =
     estimateToolsOverheadTokens(opts.tools) +
     1_000 +
-    (opts.system ? estimateTokens(opts.system) : 0);
+    10_000 +
+    (system ? estimateTokens(system) : 0);
   const budget =
     getContextWindow(
       opts.model,
       opts.authConfig?.customProviders,
       opts.authConfig?.hoonifyModels,
       opts.authConfig?.ollama,
-    ) -
-    getMaxOutputTokens(
-      opts.model,
-      opts.authConfig?.customProviders,
-      opts.authConfig?.hoonifyModels,
-      opts.authConfig?.ollama,
-    );
+    ) - streamOutputTokenLimit({ ...opts, messages });
   const fits = (history: ModelMessage[]) =>
     estimateMessageTokens(history) + overhead <= budget;
   if (latestUser && !fits([resumePrompt, latestUser]))

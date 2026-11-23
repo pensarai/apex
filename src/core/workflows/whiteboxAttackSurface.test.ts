@@ -722,6 +722,72 @@ it.each([
   ).rejects.toThrow(/enumeration|pagination/);
 });
 
+it.each([
+  ["unreadable", undefined, "Recon artifact read failed"],
+  [
+    "invalid",
+    JSON.stringify({ routePath: 1 }),
+    "Recon artifact failed validation",
+  ],
+])("reports a %s incremental asset with a static message and the path as a property", async (_name, content, message) => {
+  const { LocalBackends } = await import("../tools/backends/local");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const ownedRoot = join(rootPath, "owned-sandbox-bad-asset");
+  const assetsPath = join(ownedRoot, "assets");
+  mkdirSync(join(assetsPath, "api"), { recursive: true });
+  writeFileSync(
+    join(assetsPath, "api", "app.json"),
+    JSON.stringify({
+      name: "API",
+      type: "api",
+      framework: "Express",
+      description: "app",
+      location: "api",
+    }),
+  );
+  const assetPath = join(assetsPath, "api", "asset_0.json");
+  const backends = LocalBackends({
+    session,
+    agentCwd: ownedRoot,
+    fileWorkspaceRoot: ownedRoot,
+    subagentSpawner: codeSpawner,
+  });
+  if (content === undefined) {
+    const readRaw = backends.fs.readRaw.bind(backends.fs);
+    vi.spyOn(backends.fs, "readRaw").mockImplementation(async (path) =>
+      path.endsWith("asset_0.json")
+        ? ({ success: false, error: "denied", content: "" } as never)
+        : readRaw(path),
+    );
+  }
+  writeFileSync(assetPath, content ?? "{}");
+  mocks.consumeImpl = async () => ({ changedApps: [] });
+  const error = await runWhiteboxAttackSurfaceWorkflow({
+    codebasePath: ownedRoot,
+    model: {} as AIModel,
+    session,
+    hooks: { backends },
+    incremental: {
+      assetsPath,
+      diffPath: join(ownedRoot, "diff"),
+      existingResult: {
+        repoType: "single-app",
+        packageManager: "bun",
+        apps: [],
+        summary: {
+          totalApps: 0,
+          totalPages: 0,
+          totalApiEndpoints: 0,
+          totalPentestObjectives: 0,
+        },
+      },
+    },
+  }).catch((e: unknown) => e as Error & { path?: string });
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toBe(message);
+  expect((error as Error & { path?: string }).path).toBe(assetPath);
+});
+
 it("uses the injected ID factory for surface endpoint children in dispatch order", async () => {
   vi.spyOn(surfaceModule, "mapAppWithSurface").mockReturnValue({
     mode: "surface",
