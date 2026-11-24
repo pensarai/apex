@@ -8,10 +8,10 @@
 # build, plus bun + git so the smoke orchestrator can clone & install apex and
 # run its REAL MCP browser code inside the sandbox.
 
-FROM node:20.18.1-slim
+FROM node:22.23.5-slim
 
 # Same base apt set style as the prod deps layer. build-essential + python3:
-# camoufox-js pulls in native better-sqlite3 (no node-20 prebuilt → node-gyp).
+# camoufox-js pulls in native better-sqlite3 (13.x needs Node 22; built with node-gyp).
 # git: clone the apex branch at runtime. unzip/curl/wget: tooling.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \

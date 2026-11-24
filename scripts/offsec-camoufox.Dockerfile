@@ -10,11 +10,11 @@
 #
 # Built via the Daytona SDK's Image.fromDockerfile() in smoke-daytona-camoufox.ts.
 
-FROM node:20.18.1-slim
+FROM node:22.23.5-slim
 
 # Same base apt style as the prod deps layer, trimmed to what the browser path
 # needs. build-essential + python3: camoufox-js pulls in the native
-# better-sqlite3, which has no prebuilt for node 20 and falls back to node-gyp.
+# better-sqlite3 (13.x needs Node 22), which builds from source with node-gyp.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \
     ca-certificates curl wget git \
