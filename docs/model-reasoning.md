@@ -16,6 +16,7 @@ appears beside the model in the input bar.
 
 ```sh
 pensar -p 'Review the current changes' --model gpt-6.1-sol --effort low
+pensar -p 'Review the current changes' --model mantle:openai.gpt-6.1-sol --effort high
 pensar pentest --target https://example.test --model claude-opus-5-5 --effort medium
 pensar -p 'Review the current changes' --model claude-sonnet-4-5 --extended-thinking
 pensar -p 'Review the current changes' --model gemini-2.5-flash --no-extended-thinking
@@ -24,6 +25,11 @@ pensar -p 'Review the current changes' --model gemini-2.5-flash --no-extended-th
 These flags apply to headless operator, pentest, targeted-pentest, and threat-model
 commands. They are mutually exclusive. The library accepts `reasoning` with the
 same values on agent, workflow, streaming, and structured-generation inputs.
+
+The Bedrock Mantle GPT 6.1 Sol route uses Bedrock credentials and the Responses
+endpoint in `us-east-1`, independently of `AWS_REGION`. An explicit
+`BEDROCK_MANTLE_REGION` overrides it; GPT 5.5 retains its `us-east-2` default.
+See the [AWS model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-1-sol.html).
 
 Preferences live in `modelReasoning[modelId]` in the Apex config. An explicit CLI
 flag overrides the saved preference. Supported legacy `reasoningEnabled` and
