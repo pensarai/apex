@@ -57,10 +57,11 @@ export function cacheBreakpointFor(
   const { provider } = getModelInfo(model);
   switch (provider) {
     case "anthropic":
+      return ANTHROPIC_CACHE_CONTROL;
     // The Pensar gateway speaks the native Anthropic Messages API and reads
     // this same key — see providers/pensarFormatters.ts.
     case "pensar":
-      return ANTHROPIC_CACHE_CONTROL;
+      return model.includes("/") ? undefined : ANTHROPIC_CACHE_CONTROL;
     case "bedrock":
       return bedrockSupportsCachePoint(model) ? BEDROCK_CACHE_POINT : undefined;
     default:

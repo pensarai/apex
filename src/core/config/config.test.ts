@@ -36,6 +36,32 @@ afterEach(() => {
 });
 
 describe("provider environment fallbacks", () => {
+  it("loads Pensar models without persisting discovery or changing the selected model", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        data: [{ id: "vendor/config-model", context_length: 64000 }],
+      }),
+    );
+    await init();
+    await update({
+      pensarAPIKey: "test-catalog-key",
+      selectedModelId: "pensar:vendor/config-model",
+    });
+    const loaded = await get();
+    expect(loaded.pensarModels).toContainEqual(
+      expect.objectContaining({
+        id: "pensar:vendor/config-model",
+        provider: "pensar",
+      }),
+    );
+    expect(loaded.selectedModelId).toBe("pensar:vendor/config-model");
+    await update({ pensarModels: loaded.pensarModels });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.pensarModels).toBeUndefined();
+    expect(persisted.pensarCatalogError).toBeUndefined();
+  });
   it("loads Ollama at startup without persisting discovery or changing a manual local endpoint", async () => {
     const ollama = {
       baseURL: "http://127.0.0.1:11434",

@@ -528,6 +528,14 @@ export function ModelPicker({
       overflow="hidden"
     >
       {/* Search input */}
+      {config?.pensarCatalogError && (
+        <box flexShrink={0} overflow="hidden" marginBottom={1}>
+          <text fg={colors.error}>
+            {config.pensarCatalogError} Existing Pensar selections remain
+            available.
+          </text>
+        </box>
+      )}
       {config?.hoonifyCatalogError && (
         <box flexShrink={0} overflow="hidden" marginBottom={1}>
           <text fg={colors.error}>

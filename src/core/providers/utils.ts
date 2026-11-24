@@ -106,6 +106,8 @@ export function getAvailableModels(config: Config): ModelInfo[] {
       model.provider === "bedrock-mantle" ? "bedrock" : model.provider;
     return isProviderConfigured(provider as ProviderType, config);
   });
+  if (isProviderConfigured("pensar", config))
+    models.push(...(config.pensarModels ?? []));
 
   for (const [providerId, provider] of Object.entries(
     config.customProviders ?? {},
@@ -158,6 +160,11 @@ export function getSavedModelForConfig(config: Config): ModelInfo | null {
   // Catalog outages must not silently switch an explicit provider selection.
   return (
     available ??
+    (id.startsWith("pensar:") &&
+    id.includes("/") &&
+    isProviderConfigured("pensar", config)
+      ? getModelInfo(id)
+      : null) ??
     (id.startsWith("ollama:") ? getModelInfo(id) : null) ??
     (id.startsWith("hoonify:") &&
     isProviderConfigured("hoonify", config) &&

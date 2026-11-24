@@ -63,6 +63,7 @@ export {
   getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
+  isRegisteredModel,
 } from "./models";
 export type {
   CreateNativeRolloutEvidenceCaptureInput,
