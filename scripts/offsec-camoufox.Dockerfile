@@ -13,8 +13,9 @@
 FROM node:22.23.5-slim
 
 # Same base apt style as the prod deps layer, trimmed to what the browser path
-# needs. build-essential + python3: camoufox-js pulls in the native
-# better-sqlite3 (13.x needs Node 22), which builds from source with node-gyp.
+# needs. build-essential + python3: a fallback for native modules without a
+# prebuild (better-sqlite3 13, which camoufox-js pulls in, ships prebuilt
+# binaries and needs Node 22).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \
     ca-certificates curl wget git \

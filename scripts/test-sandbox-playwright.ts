@@ -49,7 +49,7 @@ async function createDaytonaSandbox(): Promise<DaytonaSandboxInfo> {
     method: "POST",
     headers,
     body: JSON.stringify({
-      image: "node:22-slim",
+      image: "node:22.23.5", // full image: setup needs curl, unzip and git
       resources: { cpu: 2, memory: 4, disk: 10 },
       public: true,
       autoStopInterval: 0,

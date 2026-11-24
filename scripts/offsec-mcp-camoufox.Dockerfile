@@ -10,8 +10,9 @@
 
 FROM node:22.23.5-slim
 
-# Same base apt set style as the prod deps layer. build-essential + python3:
-# camoufox-js pulls in native better-sqlite3 (13.x needs Node 22; built with node-gyp).
+# Same base apt set style as the prod deps layer. build-essential + python3: a
+# fallback for native modules without a prebuild (better-sqlite3 13, which
+# camoufox-js pulls in, ships prebuilt binaries and needs Node 22).
 # git: clone the apex branch at runtime. unzip/curl/wget: tooling.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \
