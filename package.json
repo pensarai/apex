@@ -219,6 +219,11 @@
       "import": "./build/lib/core/eventBus.js",
       "types": "./build/lib/core/eventBus.d.ts"
     },
+    "./core/goals": {
+      "default": "./build/lib/core/goals/index.js",
+      "import": "./build/lib/core/goals/index.js",
+      "types": "./build/lib/core/goals/index.d.ts"
+    },
     "./core/id": {
       "default": "./build/lib/core/id/id.js",
       "import": "./build/lib/core/id/id.js",
