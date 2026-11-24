@@ -111,6 +111,86 @@ afterEach(() => {
 });
 
 describe("custom inference", () => {
+  it.each([
+    true,
+    false,
+    undefined,
+  ])("requests streaming usage only when opted in (%s)", async (includeUsage) => {
+    vi.stubEnv("APEX_TEST_CUSTOM_KEY", "test-secret");
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const chunks = [
+        {
+          choices: [
+            { index: 0, delta: { content: "ok" }, finish_reason: null },
+          ],
+        },
+        { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+        ...(body.stream_options?.include_usage
+          ? [
+              {
+                choices: [],
+                usage: {
+                  prompt_tokens: 10,
+                  completion_tokens: 5,
+                  total_tokens: 15,
+                  prompt_tokens_details: { cached_tokens: 4 },
+                },
+              },
+            ]
+          : []),
+      ];
+      return new Response(
+        `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+        {
+          headers: { "content-type": "text/event-stream" },
+        },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const providers = {
+      research: { ...customProviders.research, includeUsage },
+    };
+    const run = await streamResponse({
+      model: modelId,
+      authConfig: { customProviders: providers },
+      prompt: "Say ok",
+      silent: true,
+    });
+    await consumeStream(run, {});
+    expect(await run.text).toBe("ok");
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const usage = await run.totalUsage;
+    if (includeUsage) {
+      expect(body.stream_options).toEqual({ include_usage: true });
+      expect(usage).toMatchObject({
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        inputTokenDetails: { cacheReadTokens: 4 },
+      });
+    } else {
+      expect(body.stream_options).toBeUndefined();
+      expect(usage.inputTokens).toBeUndefined();
+    }
+  });
+
+  it("keeps stream_options out of non-streaming generations", async () => {
+    vi.stubEnv("APEX_TEST_CUSTOM_KEY", "test-secret");
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      completion("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await getProviderModel(modelId, {
+      customProviders: {
+        research: { ...customProviders.research, includeUsage: true },
+      },
+    }).doGenerate({ prompt: [] });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).stream_options,
+    ).toBeUndefined();
+  });
+
   it("sends configured effort, credentials, and output budget through Responses", async () => {
     vi.stubEnv("APEX_TEST_RESPONSES_KEY", "test-secret");
     vi.stubEnv("OPENAI_API_KEY", "wrong-key");

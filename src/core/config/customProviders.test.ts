@@ -25,6 +25,17 @@ const providers = {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("custom provider configuration", () => {
+  it.each([
+    true,
+    false,
+  ])("accepts explicit streaming usage opt-in: %s", (includeUsage) => {
+    expect(
+      parseCustomProviders({
+        research: { ...providers.research, includeUsage },
+      }).research.includeUsage,
+    ).toBe(includeUsage);
+  });
+
   it("normalizes a pasted completion URL without duplicating its path", () => {
     const parsed = parseCustomProviders({
       research: {
@@ -64,6 +75,9 @@ describe("custom provider configuration", () => {
     { requestBody: { messages: [] } },
     { requestBody: { stream: false } },
     { requestBody: { max_tokens: 1 } },
+    { requestBody: { stream_options: { include_usage: true } } },
+    { includeUsage: "true" },
+    { apiType: "responses", includeUsage: true },
     { apiType: "unknown" },
     { models: [{ ...providers.research.models[0], reasoningEffort: "high" }] },
     { apiType: "responses", apiKeyEnv: undefined },

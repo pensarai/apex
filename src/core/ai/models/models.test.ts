@@ -13,6 +13,20 @@ import {
   prefersSequentialToolCalls,
 } from "./index";
 
+describe("Bedrock catalog ids", () => {
+  it("lists Sonnet 4.6 under the ids Bedrock accepts, which carry no -v1 suffix", () => {
+    for (const id of [
+      "anthropic.claude-sonnet-4-6",
+      "us.anthropic.claude-sonnet-4-6",
+      "global.anthropic.claude-sonnet-4-6",
+    ])
+      expect(getModelInfo(id).provider, id).toBe("bedrock");
+    expect(
+      AVAILABLE_MODELS.filter((m) => m.id.includes("claude-sonnet-4-6-v1")),
+    ).toEqual([]);
+  });
+});
+
 describe("getMaxOutputTokens", () => {
   it("returns a positive value for every model in AVAILABLE_MODELS", () => {
     for (const model of AVAILABLE_MODELS) {
@@ -363,6 +377,13 @@ describe("open-weight gateway models", () => {
       id: "concentrate:mimo-v2.6-pro",
       name: "MiMo V2.6 Pro",
       provider: "concentrate",
+      contextLength: 1_048_576,
+      maxOutputTokens: 131_072,
+    },
+    {
+      id: "moonshotai/kimi-k3.1-pro",
+      name: "Kimi K3.1 Pro",
+      provider: "openrouter",
       contextLength: 1_048_576,
       maxOutputTokens: 131_072,
     },

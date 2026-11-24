@@ -1455,9 +1455,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         !this._responseToolFired &&
         !reportErrorCompleted
       ) {
-        throw new Error(
-          `Structured agent ${this.busSessionId} ended without a validated response`,
-          { cause: responseError },
+        throw Object.assign(
+          new Error("Structured agent ended without a validated response", {
+            cause: responseError,
+          }),
+          { sessionId: this.busSessionId },
         );
       }
 

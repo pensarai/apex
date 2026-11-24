@@ -163,9 +163,10 @@ it.each([
 
 it("rejects a structured run without a response call", async () => {
   const f = fixture({ calls: 0 });
-  await expect(f.consume()).rejects.toThrow(
-    "Structured agent ses_response_context ended without a validated response",
-  );
+  await expect(f.consume()).rejects.toMatchObject({
+    message: "Structured agent ended without a validated response",
+    sessionId: "ses_response_context",
+  });
   await f.agent.drained;
   expect(f.resolved).toEqual([]);
 });

@@ -45,6 +45,7 @@ const customModelSchema = z
 const customProviderBaseSchema = z.strictObject({
   name: z.string().trim().min(1).optional(),
   apiType: z.enum(["chat-completions", "responses"]).optional(),
+  includeUsage: z.boolean().optional(),
   baseUrl: z.string().transform((value, ctx) => {
     try {
       const url = new URL(value);
@@ -118,6 +119,12 @@ const customProviderSchema = customProviderBaseSchema.superRefine(
           code: "custom",
           path: ["requestBody"],
           message: "requestBody is only supported for Chat Completions",
+        });
+      if (provider.includeUsage !== undefined)
+        ctx.addIssue({
+          code: "custom",
+          path: ["includeUsage"],
+          message: "includeUsage is only supported for Chat Completions",
         });
     } else if (
       provider.models.some(
