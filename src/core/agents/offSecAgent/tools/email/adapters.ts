@@ -752,6 +752,7 @@ class ImapAdapter implements EmailAdapter {
       const lock = await client.getMailboxLock(folder);
       try {
         const status = await client.status(folder, { messages: true });
+        if (!status) throw new Error(`IMAP STATUS failed for ${folder}`);
         const total = status.messages ?? 0;
         if (total === 0 || offset >= total) {
           return { messages: [], totalEstimate: total };
@@ -774,7 +775,7 @@ class ImapAdapter implements EmailAdapter {
             from: env?.from?.[0] ? fmtImapAddr(env.from[0]) : "",
             to: (env?.to ?? []).map(fmtImapAddr),
             subject: env?.subject ?? "",
-            date: env?.date?.toISOString() ?? "",
+            date: fmtImapDate(env?.date),
             snippet: "",
             isRead: msg.flags?.has("\\Seen") ?? false,
             hasAttachments: hasImapAttachments(msg.bodyStructure),
@@ -825,7 +826,7 @@ class ImapAdapter implements EmailAdapter {
             from: env?.from?.[0] ? fmtImapAddr(env.from[0]) : "",
             to: (env?.to ?? []).map(fmtImapAddr),
             subject: env?.subject ?? "",
-            date: env?.date?.toISOString() ?? "",
+            date: fmtImapDate(env?.date),
             snippet: (parsed.text ?? "").slice(0, 200),
             isRead: msg.flags?.has("\\Seen") ?? false,
             hasAttachments: (parsed.attachments?.length ?? 0) > 0,
@@ -875,7 +876,7 @@ class ImapAdapter implements EmailAdapter {
             from: env?.from?.[0] ? fmtImapAddr(env.from[0]) : "",
             to: (env?.to ?? []).map(fmtImapAddr),
             subject: env?.subject ?? "",
-            date: env?.date?.toISOString() ?? "",
+            date: fmtImapDate(env?.date),
             snippet: "",
             isRead: msg.flags?.has("\\Seen") ?? false,
             hasAttachments: hasImapAttachments(msg.bodyStructure),
@@ -976,6 +977,13 @@ class ImapAdapter implements EmailAdapter {
       await client.logout();
     }
   }
+}
+
+/** The envelope date as ISO 8601, or the server's raw text when it is not a valid date. */
+export function fmtImapDate(date: Date | string | undefined): string {
+  if (date === undefined) return "";
+  const parsed = date instanceof Date ? date : new Date(date);
+  return Number.isNaN(parsed.getTime()) ? String(date) : parsed.toISOString();
 }
 
 function fmtImapAddr(a: MessageAddressObject): string {
