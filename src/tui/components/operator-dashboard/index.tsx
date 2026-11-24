@@ -327,6 +327,7 @@ export default function OperatorDashboard({
   const generationRef = useRef(0);
   // goal.json is the durable copy; this holds a goal set before the session exists.
   const goalRef = useRef<Goal | null>(null);
+  const goalsEnabled = config.data?.goalsEnabled !== false;
   const goalNextRef = useRef<GoalNext | null>(null);
   const resumeGoalRef = useRef(false);
 
@@ -1021,7 +1022,9 @@ export default function OperatorDashboard({
       const goalSession = sessionRef.current ?? session;
       if (goalSession) goalRef.current = readGoalFile(goalSession.rootPath);
       const activeGoal =
-        goalRef.current?.status === "active" ? goalRef.current : null;
+        goalsEnabled && goalRef.current?.status === "active"
+          ? goalRef.current
+          : null;
 
       const skillsCatalog = lanceMode
         ? undefined
@@ -1341,6 +1344,7 @@ export default function OperatorDashboard({
       usageStore,
       markExecuted,
       goalHost,
+      goalsEnabled,
     ],
   );
 
@@ -1489,8 +1493,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   useEffect(() => {
     if (loading || !resumeGoalRef.current) return;
     resumeGoalRef.current = false;
+    if (!goalsEnabled) return;
     runAgentRef.current(continuationMessage(), { hidden: true });
-  }, [loading]);
+  }, [loading, goalsEnabled]);
 
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
@@ -1639,6 +1644,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           return;
         case "goal": {
           const { op } = action;
+          if (!goalsEnabled) {
+            addSystemMessage(
+              "Goals are turned off. Set goalsEnabled to true in ~/.pensar/config.json to use /goal.",
+            );
+            return;
+          }
           const goalSession = sessionRef.current ?? session;
           const current = goalSession
             ? readGoalFile(goalSession.rootPath)
@@ -1777,6 +1788,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       lanceMode,
       status,
       session,
+      goalsEnabled,
     ],
   );
 
