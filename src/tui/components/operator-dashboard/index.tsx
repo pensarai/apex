@@ -47,7 +47,6 @@ import {
 } from "../../../core/api";
 import {
   continuationMessage,
-  createFileGoalHost,
   createGoal,
   createUpdateGoalTool,
   endGoal,
@@ -59,13 +58,16 @@ import {
   isGoalControlMessage,
   kickoffMessage,
   newGoalSchema,
-  readGoalFile,
   scheduleGoalNext,
   settleGoalTurn,
   turnFactsFromMessages,
   UPDATE_GOAL_TOOL_NAME,
-  writeGoalFile,
 } from "../../../core/goals";
+import {
+  createFileGoalHost,
+  readGoalFile,
+  writeGoalFile,
+} from "../../../core/goals/fileHost";
 import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
 import {
   isSensitiveHeaderName,
