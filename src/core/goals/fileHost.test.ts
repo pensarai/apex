@@ -70,6 +70,33 @@ describe("file goal host", () => {
     ).toEqual([]);
   });
 
+  it("flags a command that exited nonzero inside an ordinary result", async () => {
+    messages([
+      { role: "user", content: kickoffMessage(goal) },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "execute_command",
+            output: {
+              type: "json",
+              value: {
+                success: false,
+                stdout: "2 passed, 1 failed",
+                exitCode: 1,
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    expect(await host().findEvidence(goal, ref("2 passed"))).toMatchObject([
+      { succeeded: false },
+    ]);
+  });
+
   it("treats every remaining message as in the window once compaction dropped the kickoff", async () => {
     messages([result("kept")]);
     expect(await host().findEvidence(goal, ref("kept"))).toMatchObject([

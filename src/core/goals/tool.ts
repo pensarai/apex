@@ -18,6 +18,7 @@ export const updateGoalInputSchema = z.object({
         tool: z.string().min(1).describe("Name of the tool that was called"),
         quote: z
           .string()
+          .trim()
           .min(1)
           .max(500)
           .describe("A short exact quote from that tool call's output"),

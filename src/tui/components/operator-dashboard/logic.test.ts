@@ -358,6 +358,10 @@ describe("routeCommand", () => {
     ],
     ["/goal --rounds 5", { kind: "invalid", reason: "expected an objective" }],
     [
+      "/goal fix it --rounds",
+      { kind: "invalid", reason: "--rounds expects a whole number" },
+    ],
+    [
       "/goal fix it --rounds x",
       { kind: "invalid", reason: "--rounds expects a whole number" },
     ],

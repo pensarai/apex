@@ -45,6 +45,7 @@ import {
 } from "../../../core/api";
 import {
   continuationMessage,
+  createFileGoalHost,
   createGoal,
   createUpdateGoalTool,
   endGoal,
@@ -56,16 +57,13 @@ import {
   isGoalControlMessage,
   kickoffMessage,
   newGoalSchema,
+  readGoalFile,
   scheduleGoalNext,
   settleGoalTurn,
   turnFactsFromMessages,
   UPDATE_GOAL_TOOL_NAME,
-} from "../../../core/goals";
-import {
-  createFileGoalHost,
-  readGoalFile,
   writeGoalFile,
-} from "../../../core/goals/fileHost";
+} from "../../../core/goals";
 import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
 import {
   isSensitiveHeaderName,
@@ -1207,7 +1205,10 @@ export default function OperatorDashboard({
             turnFactsFromMessages(response.messages, {
               outcome: "completed",
               automatic: !!opts.hidden,
-              heldCallCount: pendingToolCallIdRef.current ? 1 : 0,
+              heldCallCount:
+                pendingToolCallIdRef.current || planSubmittedRef.current
+                  ? 1
+                  : 0,
             }),
           );
         }
