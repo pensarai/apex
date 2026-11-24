@@ -277,7 +277,7 @@ describe("createInterruptedStepFinalizer", () => {
     // The completed result's output is preserved.
     expect(
       tool.content.find((p) => p.toolCallId === "tc-done")?.output,
-    ).toEqual({ ok: true });
+    ).toEqual({ type: "json", value: { ok: true } });
   });
 
   it("no writer path: emits but persists nothing; listener errors still throw", async () => {

@@ -1,4 +1,4 @@
-import type { ToolResultPart } from "ai";
+import type { JSONValue, ToolResultPart } from "ai";
 import { responseArgBytes } from "./streamDiagnostics";
 
 // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ export class ToolLifecycleTracker {
           type: "tool-result",
           toolCallId: chunk.toolCallId as string,
           toolName: chunk.toolName as string,
-          output: (chunk.result ?? chunk.output) as ToolResultPart["output"],
+          output: toResultOutput(chunk.result ?? chunk.output),
         });
         break;
     }
@@ -175,4 +175,26 @@ export class ToolLifecycleTracker {
       toolErrors: new Map(this.errors),
     };
   }
+}
+
+const OUTPUT_TYPES = new Set([
+  "text",
+  "json",
+  "error-text",
+  "error-json",
+  "content",
+  "execution-denied",
+]);
+
+/** Stream chunks carry the tool's raw return value; a persisted tool-result needs the model output shape. */
+function toResultOutput(raw: unknown): ToolResultPart["output"] {
+  if (
+    raw &&
+    typeof raw === "object" &&
+    OUTPUT_TYPES.has((raw as { type?: unknown }).type as string)
+  )
+    return raw as ToolResultPart["output"];
+  return typeof raw === "string"
+    ? { type: "text", value: raw }
+    : { type: "json", value: (raw ?? null) as JSONValue };
 }

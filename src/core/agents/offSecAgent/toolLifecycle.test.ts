@@ -32,6 +32,16 @@ function approvalRequest(id: string, toolName: string) {
 // ---------------------------------------------------------------------------
 
 describe("ToolLifecycleTracker", () => {
+  it("stores completed results in the model output shape, so an interrupted step persists a valid transcript", () => {
+    const t = new ToolLifecycleTracker();
+    t.observePart(toolResult("tc-1", "execute_command", { stdout: "ok" }));
+    t.observePart(toolResult("tc-2", "read_file", "file text"));
+    expect(t.completedResults.map((r) => r.output)).toEqual([
+      { type: "json", value: { stdout: "ok" } },
+      { type: "text", value: "file text" },
+    ]);
+  });
+
   it("a tool held for approval is not in flight; a plain unfinished call still is", () => {
     const t = new ToolLifecycleTracker();
     t.observePart(toolCall("tc-read", "read"));
@@ -54,7 +64,7 @@ describe("ToolLifecycleTracker", () => {
     expect(t.completedResults).toHaveLength(1);
     expect(t.completedResults[0]).toMatchObject({
       toolCallId: "tc-1",
-      output: { ok: true },
+      output: { type: "json", value: { ok: true } },
     });
     expect(t.hasUnpersistedState()).toBe(true);
 
