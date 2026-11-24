@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 export const GOAL_LIMITS = {
@@ -73,7 +72,7 @@ export function createGoal(
 ): Goal {
   const { objective, maxRounds } = newGoalSchema.parse(input);
   return {
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     sessionId: input.sessionId,
     objective,
     status: "active",

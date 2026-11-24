@@ -1,9 +1,3 @@
-export {
-  createFileGoalHost,
-  findLocalEvidence,
-  readGoalFile,
-  writeGoalFile,
-} from "./fileHost";
 export type { CitedPart, GoalHost, GoalNext, ScheduleResult } from "./host";
 export {
   continuationMessage,

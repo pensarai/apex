@@ -224,6 +224,11 @@
       "import": "./build/lib/core/goals/index.js",
       "types": "./build/lib/core/goals/index.d.ts"
     },
+    "./core/goals/types": {
+      "default": "./build/lib/core/goals/types.js",
+      "import": "./build/lib/core/goals/types.js",
+      "types": "./build/lib/core/goals/types.d.ts"
+    },
     "./core/id": {
       "default": "./build/lib/core/id/id.js",
       "import": "./build/lib/core/id/id.js",
