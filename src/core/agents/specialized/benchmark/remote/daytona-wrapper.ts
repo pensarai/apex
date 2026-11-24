@@ -141,7 +141,7 @@ async function runSingleBranchBenchmark(
         () =>
           daytona.create(
             {
-              image: "daytona/node:20-slim",
+              image: "node:22-slim",
               language: "typescript",
               resources: {
                 cpu: 4,
