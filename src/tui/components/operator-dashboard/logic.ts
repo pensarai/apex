@@ -3,6 +3,7 @@ import {
   buildBaseSystemPrompt,
   type FindingPolicy,
 } from "../../../core/agents/offSecAgent";
+import type { Goal } from "../../../core/goals";
 import type {
   OperatorMode,
   OperatorSessionState,
@@ -27,6 +28,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/obfuscate",
   "/headers",
   "/help",
+  "/goal",
 ]);
 
 export function filterOperatorAutocomplete(
@@ -145,7 +147,44 @@ export type CommandAction =
   | { type: "open-session" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "headers"; op: HeadersOp }
+  | { type: "goal"; op: GoalOp }
   | { type: "execute-command"; command: string };
+
+export type GoalOp =
+  | { kind: "status" }
+  | { kind: "clear" }
+  | { kind: "set"; objective: string; maxRounds?: number }
+  | { kind: "invalid"; reason: string };
+
+export function goalStatusLine(goal: Goal): string {
+  const rounds = `${goal.rounds}/${goal.maxRounds} rounds`;
+  switch (goal.status) {
+    case "active":
+      return `Goal active (${rounds}): ${goal.objective}`;
+    case "complete":
+      return `Goal complete (${rounds}): ${goal.completion?.summary ?? ""}\nEvidence: ${goal.completion?.evidence.join(", ") ?? ""}`;
+    case "blocked":
+      return `Goal blocked: ${goal.reason}${goal.detail ? ` (${goal.detail})` : ""}`;
+    case "cancelled":
+      return "Goal ended.";
+  }
+}
+
+const GOAL_CLEAR_WORDS = new Set(["clear", "stop", "cancel", "off"]);
+
+export function parseGoalSlashCommand(rest: string): GoalOp {
+  const trimmed = rest.trim();
+  if (!trimmed) return { kind: "status" };
+  if (GOAL_CLEAR_WORDS.has(trimmed.toLowerCase())) return { kind: "clear" };
+  const rounds = /(?:^|\s)--rounds(?:=|\s+)(\S+)/.exec(trimmed);
+  const objective = trimmed.replace(/(?:^|\s)--rounds(?:=|\s+)\S+/, "").trim();
+  if (!objective) return { kind: "invalid", reason: "expected an objective" };
+  if (!rounds) return { kind: "set", objective };
+  const maxRounds = Number(rounds[1]);
+  if (!Number.isInteger(maxRounds))
+    return { kind: "invalid", reason: "--rounds expects a whole number" };
+  return { kind: "set", objective, maxRounds };
+}
 
 function parseHeadersSlashCommand(rest: string): HeadersOp {
   const trimmed = rest.trim();
@@ -197,6 +236,10 @@ export function routeCommand(
 
   if (commandLower === "plan" || commandLower.startsWith("plan ")) {
     return { type: "show-plan" };
+  }
+
+  if (commandLower === "goal" || commandLower.startsWith("goal ")) {
+    return { type: "goal", op: parseGoalSlashCommand(stripped.slice(4)) };
   }
 
   if (commandLower === "open-session") {

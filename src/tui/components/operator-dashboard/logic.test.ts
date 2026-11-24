@@ -348,6 +348,23 @@ describe("routeCommand", () => {
     expect(resolveSkill).toHaveBeenCalledWith("/my-skill");
   });
 
+  it.each([
+    ["/goal", { kind: "status" }],
+    ["/goal clear", { kind: "clear" }],
+    ["/goal make tests pass", { kind: "set", objective: "make tests pass" }],
+    [
+      "/goal make tests pass --rounds 5",
+      { kind: "set", objective: "make tests pass", maxRounds: 5 },
+    ],
+    ["/goal --rounds 5", { kind: "invalid", reason: "expected an objective" }],
+    [
+      "/goal fix it --rounds x",
+      { kind: "invalid", reason: "--rounds expects a whole number" },
+    ],
+  ])("routes %s to a goal op", (command, op) => {
+    expect(routeCommand(command, noSkill)).toEqual({ type: "goal", op });
+  });
+
   it("routes /plan to show-plan", () => {
     expect(routeCommand("/plan", noSkill)).toEqual({ type: "show-plan" });
   });
