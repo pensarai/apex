@@ -21,8 +21,6 @@ rules:
     disable: true
   excessive-permissions:
     disable: true
-  self-repository:
-    disable: true
   superfluous-actions:
     disable: true
   template-injection:
