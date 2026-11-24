@@ -160,6 +160,8 @@ export async function checkSandboxPlaywright(
  * glibc-based (Debian/Ubuntu). Alpine/musl is unsupported and fails loudly
  * rather than silently falling back to a detectable browser.
  */
+const MIN_SANDBOX_NODE_MAJOR = 22;
+
 export async function installSandboxPlaywright(
   sandbox: UnifiedSandbox,
 ): Promise<void> {
@@ -169,6 +171,18 @@ export async function installSandboxPlaywright(
   if (isAlpine) {
     throw new Error(
       "Camoufox requires a glibc-based sandbox image (Debian/Ubuntu); Alpine/musl is unsupported.",
+    );
+  }
+
+  // camoufox-js 0.12+ depends on better-sqlite3 13, which requires Node 22.
+  const nodeVersion = await sandbox.execute("node -p process.versions.node", {
+    timeout: 10,
+  });
+  const found = nodeVersion.success ? nodeVersion.stdout.trim() : "";
+  const major = Number.parseInt(found.split(".")[0] ?? "", 10);
+  if (!(major >= MIN_SANDBOX_NODE_MAJOR)) {
+    throw new Error(
+      `Camoufox requires Node ${MIN_SANDBOX_NODE_MAJOR} or newer in the sandbox image; found ${found || "no node"}.`,
     );
   }
 
@@ -182,10 +196,12 @@ export async function installSandboxPlaywright(
     );
   }
 
-  // camoufox-js pulls in playwright-core, so a single install covers both the
-  // launcher and the Playwright API the generated scripts use.
+  // One install covers the launcher and the Playwright API the generated scripts
+  // use. playwright-core stays below 1.61: from 1.61 camoufox-js requires a newer
+  // Camoufox build than the one images bake. The fingerprint suite is pinned so its
+  // header data stays matched to that build.
   const installResult = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} && npm install camoufox-js@0.11.1 playwright-core@1.53.1 2>&1`,
+    `cd ${SANDBOX_PW_DIR} && npm install --save-exact camoufox-js@0.13.0 playwright-core@1.53.1 fingerprint-generator@2.1.90 header-generator@2.1.90 generative-bayesian-network@2.1.90 2>&1`,
     { timeout: 300 },
   );
   if (!installResult.success) {

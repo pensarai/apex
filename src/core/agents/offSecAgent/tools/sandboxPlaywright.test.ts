@@ -6,6 +6,7 @@ import { createBrowserToolset } from "./browserTools";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
 import {
   createSandboxBrowserTools,
+  installSandboxPlaywright,
   SandboxBrowserBackend,
 } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
@@ -268,5 +269,43 @@ describe("SandboxBrowserBackend", () => {
       cookies,
       cookieHeader: "session=abc",
     });
+  });
+});
+
+describe("installSandboxPlaywright Node runtime", () => {
+  function sandboxWithNode(version: string): {
+    sandbox: UnifiedSandbox;
+    commands: string[];
+  } {
+    const commands: string[] = [];
+    const sandbox: UnifiedSandbox = {
+      type: "linux",
+      execute: vi.fn(async (command: string) => {
+        commands.push(command);
+        if (command === "which apk")
+          return { stdout: "", stderr: "", exitCode: 1, success: false };
+        if (command.startsWith("node -p")) return ok(`${version}\n`);
+        return ok();
+      }),
+    };
+    return { sandbox, commands };
+  }
+
+  it("refuses a Node 20 sandbox before installing camoufox-js", async () => {
+    const { sandbox, commands } = sandboxWithNode("20.18.1");
+    await expect(installSandboxPlaywright(sandbox)).rejects.toThrow(
+      "Camoufox requires Node 22 or newer in the sandbox image; found 20.18.1.",
+    );
+    expect(commands.some((c) => c.includes("npm install"))).toBe(false);
+  });
+
+  it("installs on a Node 22 sandbox", async () => {
+    const { sandbox, commands } = sandboxWithNode("22.23.5");
+    await installSandboxPlaywright(sandbox);
+    expect(
+      commands.some((c) =>
+        c.includes("npm install --save-exact camoufox-js@0.13.0"),
+      ),
+    ).toBe(true);
   });
 });
