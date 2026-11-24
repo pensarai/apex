@@ -14,10 +14,13 @@ export function continuationMessage(rejections: string[] = []): string {
   return `${CONTINUATION}\nYour completion claim was not accepted:\n${rejections.map((r) => `- ${r}`).join("\n")}`;
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 const STOP_REASONS: Partial<Record<GoalReason, (goal: Goal) => string>> = {
-  rounds: (goal) => `it reached the limit of ${goal.maxRounds} rounds`,
+  rounds: (goal) =>
+    `it reached the limit of ${plural(goal.maxRounds, "round")}`,
   no_progress: (goal) =>
-    `${goal.maxStalledRounds} automatic turns in a row made no tool calls`,
+    `${plural(goal.maxStalledRounds, "automatic turn")} in a row made no tool calls`,
 };
 
 export function wrapUpMessage(goal: Goal): string {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CitedPart, GoalHost, GoalNext, ScheduleResult } from "./host";
+import { wrapUpMessage } from "./prompt";
 import {
   type Citations,
   decideGoalAfterTurn,
@@ -169,6 +170,22 @@ describe("decideGoalAfterTurn", () => {
       [{ ref: ok, candidates: [good] }],
     );
     expect(d.goal?.status).toBe("complete");
+  });
+});
+
+describe("wrapUpMessage", () => {
+  it("names the limit that stopped the goal, in the right number", () => {
+    expect(
+      wrapUpMessage({
+        ...goal(),
+        status: "blocked",
+        reason: "rounds",
+        maxRounds: 1,
+      }),
+    ).toContain("the limit of 1 round.");
+    expect(
+      wrapUpMessage({ ...goal(), status: "blocked", reason: "rounds" }),
+    ).toContain("the limit of 50 rounds.");
   });
 });
 
