@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { CitedPart, GoalHost, GoalNext, ScheduleResult } from "./host";
 import { kickoffMessage } from "./prompt";
-import { outputContainsQuote } from "./settle";
+import { outputContainsQuote, outputSucceeded } from "./settle";
 import type { EvidenceRef } from "./tool";
 import { type Goal, goalSchema } from "./types";
 
@@ -64,7 +64,8 @@ export function findLocalEvidence(
         address: `local:${goal.sessionId}/m${m}/p${p}`,
         succeeded:
           part.output.type !== "error-text" &&
-          part.output.type !== "error-json",
+          part.output.type !== "error-json" &&
+          outputSucceeded(output),
         inGoalWindow: m >= windowStart,
       });
     });

@@ -176,6 +176,8 @@ export function parseGoalSlashCommand(rest: string): GoalOp {
   const trimmed = rest.trim();
   if (!trimmed) return { kind: "status" };
   if (GOAL_CLEAR_WORDS.has(trimmed.toLowerCase())) return { kind: "clear" };
+  if (/(?:^|\s)--rounds=?$/.test(trimmed))
+    return { kind: "invalid", reason: "--rounds expects a whole number" };
   const rounds = /(?:^|\s)--rounds(?:=|\s+)(\S+)/.exec(trimmed);
   const objective = trimmed.replace(/(?:^|\s)--rounds(?:=|\s+)\S+/, "").trim();
   if (!objective) return { kind: "invalid", reason: "expected an objective" };

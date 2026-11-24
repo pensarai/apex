@@ -350,8 +350,12 @@ export const commands: CommandConfig[] = [
       },
       { name: "clear", description: "End the active goal" },
     ],
-    handler: async () => {
-      // Handled by the operator dashboard — this is a no-op for routing
+    handler: async (_args, ctx) => {
+      // The operator dashboard handles /goal; this only runs outside it.
+      ctx.toast?.(
+        "Goals run in an operator session. Start one with /operator.",
+        "warn",
+      );
     },
   },
   {

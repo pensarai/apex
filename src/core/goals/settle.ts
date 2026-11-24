@@ -42,9 +42,19 @@ function stringLeaves(value: unknown, out: string[]): string[] {
 
 /** The one matching rule every host uses: the quote appears in the output's text, whitespace-insensitive. */
 export function outputContainsQuote(output: unknown, quote: string): boolean {
-  return normalize(stringLeaves(output, []).join("\n")).includes(
-    normalize(quote),
+  const needle = normalize(quote);
+  return (
+    needle.length > 0 &&
+    normalize(stringLeaves(output, []).join("\n")).includes(needle)
   );
+}
+
+/** False when a tool reported its own failure inside an ordinary result (a nonzero exit, `success: false`). */
+export function outputSucceeded(output: unknown): boolean {
+  if (typeof output === "string") return !/^success=false\b/m.test(output);
+  if (!output || typeof output !== "object") return true;
+  const { success, exitCode } = output as Record<string, unknown>;
+  return success !== false && !(typeof exitCode === "number" && exitCode !== 0);
 }
 
 /** The cited part, or why the citation fails. */
@@ -129,6 +139,8 @@ export function decideGoalAfterTurn(
   const stalled =
     facts.automatic && facts.toolCallCount === 0 ? goal.stalledRounds + 1 : 0;
   const progressed: Goal = { ...counted, stalledRounds: stalled };
+  // Limits wait for the operator too; the turn after their answer settles them.
+  if (facts.heldCallCount > 0) return { goal: progressed, next: null };
   const limit =
     stalled >= goal.maxStalledRounds
       ? "no_progress"
@@ -146,7 +158,6 @@ export function decideGoalAfterTurn(
       },
     };
   }
-  if (facts.heldCallCount > 0) return { goal: progressed, next: null };
   return {
     goal: progressed,
     next: {

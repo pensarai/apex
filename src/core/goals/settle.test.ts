@@ -5,6 +5,7 @@ import {
   type Citations,
   decideGoalAfterTurn,
   outputContainsQuote,
+  outputSucceeded,
   scheduleGoalNext,
   settleGoalTurn,
   type TurnFacts,
@@ -154,6 +155,27 @@ describe("decideGoalAfterTurn", () => {
     expect(d.next?.message).toMatch(/^The goal stopped: /);
   });
 
+  it("holds a turn that hit the round limit until the operator answers", () => {
+    const held = decideGoalAfterTurn(
+      goal({ rounds: 49 }),
+      facts({ heldCallCount: 1 }),
+      [],
+    );
+    expect(held.goal).toMatchObject({ status: "active", rounds: 50 });
+    expect(held.next).toBeNull();
+
+    const answered = decideGoalAfterTurn(
+      held.goal as Goal,
+      facts({ automatic: false }),
+      [],
+    );
+    expect(answered.goal).toMatchObject({
+      status: "blocked",
+      reason: "rounds",
+    });
+    expect(answered.next?.kind).toBe("wrap_up");
+  });
+
   it("does not count an operator turn without tool calls as a stall", () => {
     const d = decideGoalAfterTurn(
       goal({ stalledRounds: 2 }),
@@ -205,6 +227,23 @@ describe("outputContainsQuote", () => {
       outputContainsQuote({ stdout: "3  passed\n", exitCode: 0 }, "3 passed"),
     ).toBe(true);
     expect(outputContainsQuote({ stdout: "failed" }, "passed")).toBe(false);
+  });
+
+  it("never matches a blank quote", () => {
+    expect(outputContainsQuote({ stdout: "anything" }, "  \n ")).toBe(false);
+  });
+});
+
+describe("outputSucceeded", () => {
+  it.each<[string, unknown, boolean]>([
+    ["a zero exit", { success: true, exitCode: 0 }, true],
+    ["a nonzero exit", { stdout: "2 passed, 1 failed", exitCode: 1 }, false],
+    ["success: false", { success: false, error: "denied" }, false],
+    ["a bounded failed result", "ref\nsuccess=false; exitCode=1\n...", false],
+    ["a bounded passing result", "ref\nsuccess=true; exitCode=0\n...", true],
+    ["a result with no outcome", { content: "file text" }, true],
+  ])("reads %s", (_label, output, expected) => {
+    expect(outputSucceeded(output)).toBe(expected);
   });
 });
 

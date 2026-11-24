@@ -1,3 +1,8 @@
+export {
+  createFileGoalHost,
+  readGoalFile,
+  writeGoalFile,
+} from "./fileHost";
 export type { CitedPart, GoalHost, GoalNext, ScheduleResult } from "./host";
 export {
   continuationMessage,
@@ -12,6 +17,7 @@ export {
   decideGoalAfterTurn,
   type GoalDecision,
   outputContainsQuote,
+  outputSucceeded,
   scheduleGoalNext,
   settleGoalTurn,
   type TurnFacts,
