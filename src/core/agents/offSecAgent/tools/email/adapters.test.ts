@@ -22,6 +22,22 @@ import {
   vi,
 } from "vitest";
 import type { EmailInboxConfig } from "../../../../session";
+
+const imap = vi.hoisted(() => ({
+  status: vi.fn(),
+  release: vi.fn(),
+  logout: vi.fn(async () => {}),
+}));
+
+vi.mock("imapflow", () => ({
+  ImapFlow: class {
+    connect = async () => {};
+    getMailboxLock = async () => ({ release: imap.release });
+    status = imap.status;
+    logout = imap.logout;
+  },
+}));
+
 import {
   createEmailAdapter,
   type EmailAdapter,
@@ -298,5 +314,43 @@ describe("fmtImapDate", () => {
 
   it("returns an empty string when the envelope has no date", () => {
     expect(fmtImapDate(undefined)).toBe("");
+  });
+});
+
+describe("ImapAdapter (unit — mocked imapflow)", () => {
+  const IMAP_INBOX: EmailInboxConfig = {
+    provider: "imap",
+    id: "test-imap-inbox",
+    name: "IMAP inbox",
+    emailAddress: "agent@example.com",
+    imapHost: "imap.example.com",
+    imapPort: 993,
+    username: "agent@example.com",
+    password: "app-password",
+    tls: true,
+  };
+
+  afterEach(() => {
+    imap.status.mockReset();
+    imap.release.mockReset();
+    imap.logout.mockClear();
+  });
+
+  it("listMessages reports a failed STATUS and still releases the lock and logs out", async () => {
+    // imapflow returns false, not a throw, when the server rejects STATUS.
+    imap.status.mockResolvedValue(false);
+    await expect(
+      createEmailAdapter(IMAP_INBOX).listMessages({ folder: "Archive" }),
+    ).rejects.toThrow("IMAP STATUS failed for Archive");
+    expect(imap.release).toHaveBeenCalledTimes(1);
+    expect(imap.logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("listMessages returns an empty page for an empty mailbox", async () => {
+    imap.status.mockResolvedValue({ path: "INBOX", messages: 0 });
+    await expect(
+      createEmailAdapter(IMAP_INBOX).listMessages({}),
+    ).resolves.toEqual({ messages: [], totalEstimate: 0 });
+    expect(imap.logout).toHaveBeenCalledTimes(1);
   });
 });
