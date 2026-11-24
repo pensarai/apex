@@ -342,6 +342,7 @@ describe("ImapAdapter (unit — mocked imapflow)", () => {
     await expect(
       createEmailAdapter(IMAP_INBOX).listMessages({ folder: "Archive" }),
     ).rejects.toThrow("IMAP STATUS failed for Archive");
+    expect(imap.status).toHaveBeenCalledWith("Archive", { messages: true });
     expect(imap.release).toHaveBeenCalledTimes(1);
     expect(imap.logout).toHaveBeenCalledTimes(1);
   });
@@ -351,6 +352,7 @@ describe("ImapAdapter (unit — mocked imapflow)", () => {
     await expect(
       createEmailAdapter(IMAP_INBOX).listMessages({}),
     ).resolves.toEqual({ messages: [], totalEstimate: 0 });
+    expect(imap.status).toHaveBeenCalledWith("INBOX", { messages: true });
     expect(imap.logout).toHaveBeenCalledTimes(1);
   });
 });
