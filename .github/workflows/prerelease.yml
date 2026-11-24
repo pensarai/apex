@@ -5,10 +5,11 @@ on:
     branches:
       - canary
 
-# Two pushes publishing at once would race on npm's canary tag.
+# Prereleases run one at a time, in order. `queue: max` keeps every pending
+# run; the default keeps only one and would drop a canary before it publishes.
 concurrency:
   group: prerelease
-  cancel-in-progress: false
+  queue: max
 
 permissions: {}
 
