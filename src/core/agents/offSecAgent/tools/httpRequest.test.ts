@@ -20,6 +20,7 @@ import { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
 import { LocalBackends } from "../../../tools/backends/local";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { acceptedTypes, type WireSchemaProperty } from "./__tests__/wireSchema";
 import {
   DEFAULT_HTTP_TIMEOUT_MS,
   type HttpRequestResult,
@@ -2271,18 +2272,12 @@ describe("http_request timeout fields (canonical timeoutMs)", () => {
 
   it("serializes both spellings as nullable optional milliseconds in the wire schema", () => {
     const json = wireSchema().jsonSchema as {
-      properties: Record<
-        string,
-        { anyOf?: { type: string }[]; description?: string } | undefined
-      >;
+      properties: Record<string, WireSchemaProperty | undefined>;
       required?: string[];
       additionalProperties?: boolean;
     };
     for (const field of ["timeoutMs", "timeout"]) {
-      expect(json.properties[field]?.anyOf?.map((t) => t.type)).toEqual([
-        "number",
-        "null",
-      ]);
+      expect(acceptedTypes(json.properties[field])).toEqual(["number", "null"]);
     }
     expect(json.required ?? []).not.toContain("timeoutMs");
     expect(json.required ?? []).not.toContain("timeout");
