@@ -16,7 +16,7 @@
     "@googleapis/gmail": "16.1.2",
     "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
     "@microsoft/microsoft-graph-client": "3.0.7",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@openrouter/ai-sdk-provider": "2.9.1",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
@@ -41,7 +41,7 @@
     "react": "19.2.7",
     "sharp": "0.35.5",
     "tldts": "7.4.3",
-    "undici": "6.29.0",
+    "undici": "6.29.1",
     "yaml": "2.9.0",
     "zod": "4.4.3"
   },
@@ -334,6 +334,12 @@
   "name": "@pensar/apex",
   "optionalDependencies": {
     "weave": "0.12.1"
+  },
+  "overrides": {
+    "body-parser": "2.4.0",
+    "browserslist": "4.28.7",
+    "follow-redirects": "1.16.2",
+    "form-data": "4.0.6"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
   "peerDependencies": {
