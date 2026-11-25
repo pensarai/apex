@@ -35,6 +35,7 @@
     "mailparser": "3.14.5",
     "marked": "16.4.2",
     "mime-types": "3.0.2",
+    "minimist": "1.2.5",
     "nodemailer": "10.6.0",
     "p-limit": "7.3.0",
     "playwright-core": "1.53.1",
