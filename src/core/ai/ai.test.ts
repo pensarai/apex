@@ -9,6 +9,7 @@ import {
   isRepairFailClosedTool,
   modelSupportsOpenAIReasoning,
   normalizeOpenAIReasoningEffort,
+  repairHttpRequestPrototypeBodyToolCallInput,
   restrictToolsToActive,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
@@ -151,6 +152,56 @@ describe("isRepairFailClosedTool", () => {
     // a mis-shaped field instead of discarding a completed recon or finding.
     expect(isRepairFailClosedTool("submit_results")).toBe(false);
     expect(isRepairFailClosedTool("document_vulnerability")).toBe(false);
+  });
+});
+
+describe("repairHttpRequestPrototypeBodyToolCallInput", () => {
+  it("wraps only a prototype-shaped http_request body as a verbatim string", () => {
+    const input =
+      '{"url":"https://target.test/api","method":"POST","headers":"{\\"Content-Type\\":\\"application/json\\"}","body":{"__proto__":{"isAdmin":true},"constructor":{"prototype":{"role":"admin"}}},"toolCallDescription":"prototype pollution probe"}';
+
+    const repaired = repairHttpRequestPrototypeBodyToolCallInput(
+      "http_request",
+      input,
+    );
+
+    expect(repaired).not.toBeNull();
+    const parsed = JSON.parse(repaired ?? "{}") as { body?: string };
+    expect(parsed).toMatchObject({
+      url: "https://target.test/api",
+      method: "POST",
+      toolCallDescription: "prototype pollution probe",
+    });
+    expect(parsed.body).toBe(
+      '{"__proto__":{"isAdmin":true},"constructor":{"prototype":{"role":"admin"}}}',
+    );
+  });
+
+  it("leaves unrelated tools and ordinary object bodies unrepaired", () => {
+    expect(
+      repairHttpRequestPrototypeBodyToolCallInput(
+        "spawn_pentest_agent",
+        '{"body":{"__proto__":{"isAdmin":true}}}',
+      ),
+    ).toBeNull();
+    expect(
+      repairHttpRequestPrototypeBodyToolCallInput(
+        "http_request",
+        '{"url":"https://target.test/api","body":{"name":"alice"}}',
+      ),
+    ).toBeNull();
+    expect(
+      repairHttpRequestPrototypeBodyToolCallInput(
+        "http_request",
+        '{"url":"https://target.test/api","body":"{\\"__proto__\\":{}}"}',
+      ),
+    ).toBeNull();
+    expect(
+      repairHttpRequestPrototypeBodyToolCallInput(
+        "http_request",
+        '{"url":"https://target.test/api","body":{"note":"string mentions \\"__proto__\\":"}}',
+      ),
+    ).toBeNull();
   });
 });
 
