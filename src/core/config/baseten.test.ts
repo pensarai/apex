@@ -22,6 +22,13 @@ it.each([
     undefined,
   ],
   [`/bin/sh -c 'echo ready && exec uv run ${serve} --max-model-len 8K'`, 8192],
+  [
+    `bash -e -c 'if test -d /mnt/model; then exec -- ${serve} --max-model-len 8K; fi'`,
+    8192,
+  ],
+  [`bash -ce 'uv run -- ${serve} --max-model-len 8K'`, 8192],
+  [`bash -ec -- '${serve} --max-model-len 8K'`, 8192],
+  [`${serve} --max-model-len 8K || ${serve} --max-model-len 8192`, 8192],
   [`${serve} --max-model-len 32K || ${serve} --max-model-len 8K`, undefined],
 ] as const)("discovers the serving arguments in %s without waking the deployment", async (command, expected) => {
   const key = `local-account-test-${encodeURIComponent(command)}`;

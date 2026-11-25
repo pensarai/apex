@@ -1,4 +1,5 @@
 import { basename } from "node:path/posix";
+import { parseArgs } from "node:util";
 import { parse, type Node as ShellNode } from "unbash";
 import { z } from "zod";
 import {
@@ -86,21 +87,49 @@ async function getJson(url: string, key: string, optional = false) {
 function servingCommands(node: ShellNode): string[][] {
   if (node.type === "Statement") return servingCommands(node.command);
   if ("commands" in node) return node.commands.flatMap(servingCommands);
-  if (node.type === "Subshell" || node.type === "BraceGroup")
+  if (node.type === "If")
+    return [node.then, ...(node.else ? [node.else] : [])].flatMap(
+      servingCommands,
+    );
+  if (node.type === "Case")
+    return node.items.flatMap((item) => servingCommands(item.body));
+  if ("body" in node && typeof node.body !== "string")
     return servingCommands(node.body);
   if (node.type !== "Command" || !node.name) return [];
   const argv = [node.name.value, ...node.suffix.map((word) => word.value)];
-  if (argv[0] === "exec") argv.shift();
+  if (argv[0] === "exec") argv.splice(0, argv[1] === "--" ? 2 : 1);
   const executable = basename(argv[0] ?? "");
-  if (
-    (executable === "sh" || executable === "bash") &&
-    /^-[a-z]*c$/.test(argv[1]) &&
-    argv[2]
-  )
-    return parseServingCommands(argv[2]);
+  if (executable === "sh" || executable === "bash") {
+    const { tokens } = parseArgs({
+      args: argv.slice(1),
+      options: {
+        o: { type: "string" },
+        O: { type: "string" },
+        rcfile: { type: "string" },
+        "init-file": { type: "string" },
+      },
+      strict: false,
+      allowPositionals: true,
+      tokens: true,
+    });
+    const script = tokens.find((token) => token.kind === "positional");
+    return script &&
+      tokens.some(
+        (token) =>
+          token.kind === "option" &&
+          token.name === "c" &&
+          token.index < script.index,
+      )
+      ? parseServingCommands(script.value)
+      : [];
+  }
   if (executable === "echo" || executable === "printf") return [];
-  const end = argv.indexOf("--");
-  const args = argv.slice(1, end === -1 ? undefined : end);
+  const serve = argv.findIndex(
+    (arg, i) => basename(arg) === "vllm" && argv[i + 1] === "serve",
+  );
+  const start = serve === -1 ? 1 : serve + 2;
+  const end = argv.indexOf("--", start);
+  const args = argv.slice(start, end === -1 ? undefined : end);
   return optionValue(args, "--served-model-name") ? [args] : [];
 }
 
@@ -199,19 +228,33 @@ async function load(key: string, endpoint?: string) {
             ? metadata.data.config.docker_server
             : undefined;
           if (server?.predict_endpoint !== "/v1/chat/completions") return;
-          const commands = parseServingCommands(server.start_command);
-          if (commands.length !== 1) return;
-          const served = optionValue(commands[0], "--served-model-name");
-          const length = configuredContextLength(
-            optionValue(commands[0], "--max-model-len") ?? "",
+          const candidates = parseServingCommands(server.start_command).map(
+            (args) => ({
+              served: optionValue(args, "--served-model-name"),
+              length: configuredContextLength(
+                optionValue(args, "--max-model-len") ?? "",
+              ),
+            }),
           );
-          if (!served || !/^[\w./:-]+$/.test(served) || !length) return;
+          const [first] = candidates;
+          if (
+            !first?.served ||
+            !/^[\w./:-]+$/.test(first.served) ||
+            !first.length
+          )
+            return;
+          if (
+            !candidates.every(
+              (c) => c.served === first.served && c.length === first.length,
+            )
+          )
+            return;
           providers[`baseten-${m.id}-${deployment}`] = {
             name: "Baseten",
             baseUrl: `https://model-${m.id}.api.baseten.co/deployment/${deployment}/sync/v1`,
             apiKeyEnv: "BASETEN_API_KEY",
             includeUsage: true,
-            models: [model(served, m.name, length)],
+            models: [model(first.served, m.name, first.length)],
           };
         }),
       );
