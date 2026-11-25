@@ -115,20 +115,14 @@ export async function runGoalRecon(
   const root = input.session.rootPath;
   const origins = [...new Set([input.target, ...input.session.targets])];
   const requested = createGoal({ sessionId: input.session.id, ...options });
-  if (journal) {
-    // Replay starts at the first model turn, not the last executor's local checkpoint.
-    for (const file of [
-      "goal.json",
-      "recon-goal-input.json",
-      "messages.json",
-      REPORT_BINDING,
-      "attack-surface-results.json",
-    ])
-      rmSync(join(root, file), { force: true });
-  }
   const journalScope = {
     origins,
-    update: input.update?.trigger ?? null,
+    update: input.update
+      ? {
+          trigger: input.update.trigger,
+          baseline: completionSnapshot(input.update.baselineSessionRoot, null),
+        }
+      : null,
     repositories: input.session.config?.connectedRepositories ?? [],
   };
   const initial = journal
@@ -153,6 +147,17 @@ export async function runGoalRecon(
     throw new Error(
       "Recon goal changed during resume; start a new session for a different objective or budget",
     );
+  if (journal) {
+    // Replay starts at the first model turn, not the last executor's local checkpoint.
+    for (const file of [
+      "goal.json",
+      "recon-goal-input.json",
+      "messages.json",
+      REPORT_BINDING,
+      "attack-surface-results.json",
+    ])
+      rmSync(join(root, file), { force: true });
+  }
   const inputPath = join(root, "recon-goal-input.json");
   const scope = { origins, update: input.update ?? null };
   let updateBrief = input.updateBrief;
@@ -274,7 +279,17 @@ export async function runGoalRecon(
       goal = settled.goal;
       writeGoalFile(root, goal);
       const next = settled.next;
-      if (goal.status === "complete") return { ...result, goal };
+      if (goal.status === "complete") {
+        const gaps = reportGaps(root, goal, origins);
+        if (gaps.length)
+          throw new Error(
+            `Completed recon goal has stale output: ${gaps.join("; ")}`,
+          );
+        const results = loadAttackSurfaceResults(
+          join(root, "attack-surface-results.json"),
+        );
+        return { ...result, results, targets: results.targets, goal };
+      }
       if (next?.kind === "wrap_up") {
         await runTurn(next.message, true);
         break;

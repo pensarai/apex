@@ -44,7 +44,11 @@ then live in that journal. Each executor replays from the first turn, rebuilding
 local transcript and report binding rather than trusting stale scratch files. The
 host restores topology and awaits child work and record persistence before returning
 each turn. A recorded context without that journal is rejected before dispatch.
-Console wires this seam in its system-recon workflow, separately from chat goals.
+Console PR [#4343](https://github.com/pensarai/console/pull/4343) wires this seam
+in system recon, separately from chat goals; it has not been deployed. Replayed
+completion is rejected if the host did not restore the report and binding or
+restored different topology. The journal pins the update baseline by content,
+so changing executor paths is safe but changing the baseline is rejected.
 The no-goal API path keeps its existing behavior.
 
 The local host searches retained root-session tool messages; it cannot retrieve

@@ -189,6 +189,16 @@ describe("persistent-goal recon", () => {
       true,
     );
 
+    const savedFiles = [
+      "goal.json",
+      "messages.json",
+      "attack-surface-results.json",
+      "recon-goal-report.json",
+      "recon-goal-input.json",
+    ];
+    const savedOutput = savedFiles.map((file) =>
+      readFileSync(join(i.session.rootPath, file), "utf8"),
+    );
     cursor = 0;
     await expect(
       runGeneralizedReconToReport(
@@ -196,6 +206,70 @@ describe("persistent-goal recon", () => {
         resumed.factory,
       ),
     ).rejects.toThrow("scope changed during replay");
+    expect(
+      savedFiles.map((file) =>
+        readFileSync(join(i.session.rootPath, file), "utf8"),
+      ),
+    ).toEqual(savedOutput);
+  });
+
+  it("rejects cached completion when replay does not restore its report", async () => {
+    const entries = new Map<string, unknown>();
+    const journal: ReconGoalJournal = {
+      async runStep<T>(key: string, run: () => Promise<T>): Promise<T> {
+        if (!entries.has(key)) entries.set(key, structuredClone(await run()));
+        return structuredClone(entries.get(key)) as T;
+      },
+    };
+    const i = { ...input(), goalJournal: journal };
+    await runGeneralizedReconToReport(
+      i,
+      scripted([{ report: true, claim: true }]).factory,
+    );
+    await expect(
+      runGeneralizedReconToReport(i, scripted([{ claim: true }]).factory),
+    ).rejects.toThrow("Completed recon goal has stale output");
+  });
+
+  it("rejects a different update baseline even when its trigger is unchanged", async () => {
+    const entries = new Map<string, unknown>();
+    const journal: ReconGoalJournal = {
+      async runStep<T>(key: string, run: () => Promise<T>): Promise<T> {
+        if (!entries.has(key)) entries.set(key, structuredClone(await run()));
+        return structuredClone(entries.get(key)) as T;
+      },
+    };
+    const baseline = input().session.rootPath;
+    const i = {
+      ...input(),
+      goalJournal: journal,
+      update: {
+        baselineSessionRoot: baseline,
+        trigger: { kind: "schedule" as const },
+      },
+    };
+    await runGeneralizedReconToReport(
+      i,
+      scripted([{ report: true, claim: true }]).factory,
+    );
+    const report = readFileSync(
+      join(i.session.rootPath, "attack-surface-results.json"),
+      "utf8",
+    );
+    writeRecord(baseline, "baseline", "component", "added", {
+      id: "added",
+      name: "Added",
+      kind: "application",
+    });
+    await expect(
+      runGeneralizedReconToReport(i, scripted([]).factory),
+    ).rejects.toThrow("scope changed during replay");
+    expect(
+      readFileSync(
+        join(i.session.rootPath, "attack-surface-results.json"),
+        "utf8",
+      ),
+    ).toBe(report);
   });
 
   it("continues past report creation until an evidence-checked completion claim", async () => {
