@@ -24,10 +24,12 @@ results and manages continuation, round/stall limits and blocked outcomes.
 
 Small deterministic checks reject dangling record references, unauthorized report
 targets and a report that no longer matches the topology. Ordered attack steps
-participate in the snapshot. A report written in the same step as topology mutations
-must be regenerated in a separate step. Check failures become corrective work without
+participate in the snapshot. The report binds to the topology during report-tool
+execution, including calls through code mode. Later direct or worker writes require
+regeneration. A report marked incomplete cannot settle the goal. Check failures become corrective work without
 launching another model or audit worker. Cancellation preserves an active goal;
-provider failures block it. A limit gets one read-only wrap-up turn.
+provider failures block it. Update runs seed the baseline once and preserve their
+brief and scope for resume. A limit gets one read-only wrap-up turn.
 
 Coverage and useful depth remain model judgments. No component threat quota is
 imposed. Conditional threat hypotheses are appropriate when they state prerequisites

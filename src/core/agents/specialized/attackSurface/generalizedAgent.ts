@@ -13,6 +13,7 @@ import {
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
+import { createAttackSurfaceReport } from "../../offSecAgent/tools/createAttackSurfaceReport";
 import { describeDocumentedTopology } from "../../offSecAgent/tools/documentTopology";
 import type { TopologyChangeSet } from "../../offSecAgent/tools/topologyRecords";
 import {
@@ -20,7 +21,11 @@ import {
   buildGeneralizedAttackSurfacePrompt,
   GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
 } from "./generalizedPrompts";
-import { type ReconGoalOptions, runGoalRecon } from "./reconGoal";
+import {
+  bindGoalReport,
+  type ReconGoalOptions,
+  runGoalRecon,
+} from "./reconGoal";
 import { GENERALIZED_ATTACK_SURFACE_TOOLS } from "./reconToolset";
 import { finishUpdate, type ReconUpdate, startUpdate } from "./reconUpdate";
 import {
@@ -95,10 +100,17 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
   },
   system: (opts) =>
     `${GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT}${opts.goalTurn?.status === "active" ? `\n\n${goalPromptSection(opts.goalTurn)}\nBefore completing: inspect current persisted topology against every supplied origin and repository. Check coverage and depth across components, trust boundaries, assets and distinct attack paths. Conditional hypotheses are allowed; state prerequisites and how testing would confirm or rule them out. Reconcile omissions, shallow scenarios, duplicates and stale reports. Explain justified absence and access limitations; do not invent findings or expand authorized testing scope. Write a fresh report, then call update_goal with supporting tool evidence.` : ""}`,
-  extraTools: (opts) =>
-    opts.goalTurn?.status === "active"
-      ? { [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool() }
-      : undefined,
+  extraTools: (opts) => {
+    const goal = opts.goalTurn;
+    if (goal?.status !== "active") return undefined;
+    return {
+      [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool(),
+      create_attack_surface_report: createAttackSurfaceReport(
+        { session: opts.session },
+        () => bindGoalReport(opts.session.rootPath, goal),
+      ),
+    };
+  },
   activeTools: (opts) => {
     if (opts.goalTurn && opts.goalTurn.status !== "active")
       return ["read_file"];
@@ -194,6 +206,12 @@ export async function runGeneralizedReconToReport(
   } = (i) => new GeneralizedAttackSurfaceAgent(i),
 ): Promise<GeneralizedAttackSurfaceResult> {
   const root = input.session.rootPath;
+  if (input.goal) {
+    const result = await runGoalRecon(input, createAgent);
+    return input.update
+      ? { ...result, ...finishUpdate(input.update, root, input.session.id) }
+      : result;
+  }
   let first = input;
   if (input.update) {
     const start = startUpdate(input.update, root);
@@ -207,12 +225,6 @@ export async function runGeneralizedReconToReport(
         ...finishUpdate(input.update, root, input.session.id),
       };
     first = { ...input, updateBrief: start.brief };
-  }
-  if (input.goal) {
-    const result = await runGoalRecon(first, createAgent);
-    return input.update
-      ? { ...result, ...finishUpdate(input.update, root, input.session.id) }
-      : result;
   }
   let result = await createAgent(first).consume();
   for (

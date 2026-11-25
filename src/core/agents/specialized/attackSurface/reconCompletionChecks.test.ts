@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeRecord } from "../../offSecAgent/tools/topologyRecords";
 import {
   completionSnapshot,
@@ -11,6 +11,7 @@ import {
 
 const roots: string[] = [];
 afterEach(() => {
+  vi.useRealTimers();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -54,12 +55,15 @@ describe("recon goal completion checks", () => {
   });
   it("ignores storage timestamps but detects a report change", () => {
     const dir = root();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01"));
     writeRecord(dir, "s", "component", "service", {
       id: "service",
       name: "Service",
       recordedAt: "first",
     });
     const before = completionSnapshot(dir, { targets: [] });
+    vi.setSystemTime(new Date("2026-01-02"));
     writeRecord(dir, "s", "component", "service", {
       id: "service",
       name: "Service",

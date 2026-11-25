@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readGoalFile } from "../../../goals";
 import type { SessionInfo } from "../../../session";
-import { writeRecord } from "../../offSecAgent/tools/topologyRecords";
+import {
+  loadTopology,
+  writeRecord,
+} from "../../offSecAgent/tools/topologyRecords";
 import {
   type GeneralizedAttackSurfaceAgentInput,
   type GeneralizedAttackSurfaceResult,
@@ -50,6 +47,7 @@ type Turn = {
   report?: boolean;
   mutate?: boolean;
   tools?: number;
+  incomplete?: boolean;
 };
 function scripted(turns: Turn[]) {
   const calls: GeneralizedAttackSurfaceAgentInput[] = [];
@@ -62,7 +60,10 @@ function scripted(turns: Turn[]) {
       assert(i.goalTurn);
       assert(i.messages);
       const root = i.session.rootPath;
-      const report = { summary: { analysisComplete: true }, targets: [] };
+      const report = {
+        summary: { analysisComplete: !turn.incomplete },
+        targets: [],
+      };
       if (turn.report) {
         writeFileSync(
           join(root, "attack-surface-results.json"),
@@ -217,27 +218,111 @@ describe("persistent-goal recon", () => {
     expect(drain).toHaveBeenCalledOnce();
   });
 
-  it("requires a new report after report and topology writes share a step", async () => {
+  it("binds at report execution so later indirect writes cannot refresh the binding", async () => {
     const i = input();
     const s = scripted([{ report: true, claim: true }]);
     await runGeneralizedReconToReport(i, s.factory);
     const turn = s.calls[0];
-    assert(turn?.onStepFinish);
-    const binding = join(i.session.rootPath, "recon-goal-report.json");
-    expect(existsSync(binding)).toBe(true);
-    await turn.onStepFinish({
-      toolResults: [
-        { toolName: "create_attack_surface_report", output: { success: true } },
-        { toolName: "update_record", output: { success: true } },
-      ],
-    } as Parameters<NonNullable<typeof turn.onStepFinish>>[0]);
-    expect(existsSync(binding)).toBe(false);
-    await turn.onStepFinish({
-      toolResults: [
-        { toolName: "create_attack_surface_report", output: { success: true } },
-      ],
-    } as Parameters<NonNullable<typeof turn.onStepFinish>>[0]);
-    expect(existsSync(binding)).toBe(true);
+    assert(turn);
+    assert(generalizedAttackSurfaceDefinition.createState);
+    assert(generalizedAttackSurfaceDefinition.extraTools);
+    const state = generalizedAttackSurfaceDefinition.createState(turn);
+    const tools = generalizedAttackSurfaceDefinition.extraTools(turn, state);
+    assert(tools);
+    const reportTool = tools.create_attack_surface_report;
+    assert(reportTool?.execute);
+    await reportTool.execute(
+      {
+        summary: { analysisComplete: true, totalAssets: 0, totalDomains: 0 },
+        targets: [],
+        discoveredAssets: [],
+        keyFindings: [],
+        toolCallDescription: "Report",
+      },
+      { toolCallId: "report-via-exec", messages: [] },
+    );
+    writeRecord(
+      i.session.rootPath,
+      "worker",
+      "component",
+      "late-worker-write",
+      {
+        id: "late-worker-write",
+        name: "Worker dependency",
+        kind: "application",
+      },
+    );
+    await expect(runGeneralizedReconToReport(i, s.factory)).rejects.toThrow(
+      "stale output",
+    );
+  });
+
+  it("continues when the report explicitly marks analysis incomplete", async () => {
+    const s = scripted([
+      { report: true, claim: true, incomplete: true },
+      { report: true, claim: true },
+    ]);
+    await runGeneralizedReconToReport(input(), s.factory);
+    expect(s.calls).toHaveLength(2);
+    expect(JSON.stringify(s.calls[1]?.messages)).toContain(
+      "marks analysis incomplete",
+    );
+  });
+
+  it("uses caller history before an on-disk transcript exists", async () => {
+    const i = input();
+    i.messages = [
+      { role: "user", content: "Keep the customer integration scope" },
+    ];
+    const s = scripted([{ report: true, claim: true }]);
+    await runGeneralizedReconToReport(i, s.factory);
+    expect(s.calls[0]?.messages?.[0]).toEqual(i.messages[0]);
+  });
+
+  it("resumes an update without reseeding and rejects changed update inputs", async () => {
+    const baseline = input().session.rootPath;
+    writeRecord(baseline, "baseline", "component", "service", {
+      id: "service",
+      name: "Service",
+      kind: "application",
+    });
+    const i = input();
+    i.update = { baselineSessionRoot: baseline, trigger: { kind: "schedule" } };
+    const controller = new AbortController();
+    await expect(
+      runGeneralizedReconToReport(
+        { ...i, abortSignal: controller.signal },
+        () => ({
+          consume: async () => {
+            controller.abort();
+            throw new Error("cancelled");
+          },
+        }),
+      ),
+    ).rejects.toThrow("cancelled");
+    expect(loadTopology(i.session.rootPath).components).toHaveLength(1);
+    const s = scripted([{ report: true, claim: true }]);
+    await expect(
+      runGeneralizedReconToReport(
+        {
+          ...i,
+          update: {
+            baselineSessionRoot: baseline,
+            trigger: {
+              kind: "scope",
+              addedOrigins: ["https://new.example"],
+              addedRepositories: [],
+            },
+          },
+        },
+        s.factory,
+      ),
+    ).rejects.toThrow("scope or update changed");
+    expect(s.calls).toHaveLength(0);
+    const result = await runGeneralizedReconToReport(i, s.factory);
+    expect(result.goal?.status).toBe("complete");
+    expect(s.calls[0]?.updateBrief).toContain("scheduled re-check");
+    expect(loadTopology(i.session.rootPath).components).toHaveLength(1);
   });
 
   it("fails before dispatch when a durable host has not supplied persistence", async () => {

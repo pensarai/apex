@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import {
@@ -9,7 +9,6 @@ import {
   endGoal,
   type Goal,
   kickoffMessage,
-  outputSucceeded,
   readGoalFile,
   settleGoalTurn,
   writeGoalFile,
@@ -27,6 +26,7 @@ import {
   structuralGaps,
   targetScopeGaps,
 } from "./reconCompletionChecks";
+import { startUpdate } from "./reconUpdate";
 import { loadAttackSurfaceResults } from "./types";
 
 export interface ReconGoalOptions {
@@ -45,16 +45,6 @@ export class ReconGoalIncompleteError extends Error {
 }
 
 const REPORT_BINDING = "recon-goal-report.json";
-const TOPOLOGY_WRITES = new Set([
-  "document_boundary",
-  "document_component",
-  "document_flow",
-  "document_control",
-  "document_threat",
-  "update_record",
-  "retire_record",
-  "merge_records",
-]);
 
 export function bindGoalReport(root: string, goal: Goal): void {
   const report = loadAttackSurfaceResults(
@@ -82,6 +72,11 @@ function reportGaps(root: string, goal: Goal, origins: string[]): string[] {
   );
   const binding = JSON.parse(readFileSync(join(root, REPORT_BINDING), "utf8"));
   return [
+    ...(report.summary.analysisComplete === true
+      ? []
+      : [
+          "The report marks analysis incomplete. Finish the work and regenerate the report.",
+        ]),
     ...structuralGaps(root),
     ...targetScopeGaps(report, origins),
     ...(binding.goalId !== goal.id ||
@@ -114,7 +109,8 @@ export async function runGoalRecon(
   const root = input.session.rootPath;
   const origins = [...new Set([input.target, ...input.session.targets])];
   const requested = createGoal({ sessionId: input.session.id, ...options });
-  let goal = readGoalFile(root) ?? requested;
+  const savedGoal = readGoalFile(root);
+  let goal = savedGoal ?? requested;
   if (
     goal.sessionId !== input.session.id ||
     goal.objective !== requested.objective ||
@@ -123,7 +119,22 @@ export async function runGoalRecon(
     throw new Error(
       "Recon goal changed during resume; start a new session for a different objective or budget",
     );
-  writeGoalFile(root, goal);
+  const inputPath = join(root, "recon-goal-input.json");
+  const scope = { origins, update: input.update ?? null };
+  let updateBrief = input.updateBrief;
+  if (savedGoal) {
+    const savedInput = JSON.parse(readFileSync(inputPath, "utf8"));
+    assert.deepEqual(
+      savedInput.scope,
+      scope,
+      "Recon goal scope or update changed during resume",
+    );
+    updateBrief = savedInput.updateBrief;
+  } else {
+    if (input.update) updateBrief = startUpdate(input.update, root).brief;
+    writeFileSync(inputPath, JSON.stringify({ scope, updateBrief }));
+    writeGoalFile(root, goal);
+  }
   const host = createFileGoalHost({
     sessionRoot: root,
     scheduleTurn: () => {
@@ -134,7 +145,7 @@ export async function runGoalRecon(
   const readMessages = (): ModelMessage[] =>
     existsSync(join(root, "messages.json"))
       ? JSON.parse(readFileSync(join(root, "messages.json"), "utf8"))
-      : [];
+      : (input.messages ?? []);
   const runTurn = async (message: string, wrapUp = false) => {
     const history = readMessages();
     const initial: ModelMessage[] = history.length
@@ -147,7 +158,7 @@ export async function runGoalRecon(
               input.session.config?.connectedRepositories ?? [],
               input.session.config?.prompt,
               undefined,
-              input.updateBrief,
+              updateBrief,
               buildCredentialsBlock(
                 (
                   input.credentialManager ?? input.session.credentialManager
@@ -159,25 +170,11 @@ export async function runGoalRecon(
         ];
     const agent = createAgent({
       ...input,
+      updateBrief,
       harness: "general",
       goalTurn: goal,
       messages: [...initial, { role: "user", content: message }],
       stepLimit: wrapUp ? 1 : (options.workSteps ?? 100),
-      onStepFinish: async (event) => {
-        await input.onStepFinish?.(event);
-        if (
-          event.toolResults.some(
-            (r) =>
-              r.toolName === "create_attack_surface_report" &&
-              outputSucceeded(r.output),
-          )
-        ) {
-          // Parallel writes leave the report's relationship to the final map ambiguous.
-          if (event.toolResults.some((r) => TOPOLOGY_WRITES.has(r.toolName)))
-            rmSync(join(root, REPORT_BINDING), { force: true });
-          else bindGoalReport(root, goal);
-        }
-      },
     });
     try {
       return await agent.consume();

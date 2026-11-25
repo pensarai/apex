@@ -88,7 +88,9 @@ let estimatedUsd = 0,
   inputTokens = 0,
   outputTokens = 0,
   calls = 0;
-const catalog = await fetch("https://openrouter.ai/api/v1/models").then((r) => {
+const catalog = await fetch("https://openrouter.ai/api/v1/models", {
+  signal: controller.signal,
+}).then((r) => {
   if (!r.ok) throw new Error(`Model catalog: ${r.status}`);
   return r.json();
 });
