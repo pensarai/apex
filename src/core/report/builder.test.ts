@@ -26,6 +26,13 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 }
 
 describe("buildPentestReport", () => {
+  it("accepts version 1.0 reports without inferring worker coverage", () => {
+    const report = buildPentestReport([], defaultContext);
+    const parsed = PentestReportSchema.parse({ ...report, version: "1.0" });
+    expect(parsed.version).toBe("1.0");
+    expect(parsed.coverage).toBeUndefined();
+  });
+
   it("produces a valid report from sample findings", () => {
     const findings: Finding[] = [
       makeFinding({ title: "SQL Injection", severity: "CRITICAL" }),

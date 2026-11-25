@@ -8,6 +8,7 @@ export { renderJson } from "./renderers/json";
 // Renderers
 export { renderMarkdown } from "./renderers/markdown";
 export type {
+  PentestCoverage,
   PentestReport,
   PentestReportFinding,
 } from "./schemas";

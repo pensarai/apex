@@ -17,10 +17,44 @@ export function renderMarkdown(report: PentestReport): string {
     "",
   ];
 
+  if (report.coverage) {
+    const { status, targets } = report.coverage;
+    const count = (value: "completed" | "failed" | "untested") =>
+      targets.filter((target) => target.status === value).length;
+    header.push(
+      "## Worker Coverage",
+      "",
+      `**Worker coverage:** ${status === "complete" ? "Complete" : "Incomplete"}`,
+      "",
+      `${count("completed")} completed, ${count("failed")} failed, ${count("untested")} untested (of ${targets.length} scheduled targets).`,
+      "",
+      "This records scheduled worker completion, not completion of every security check or objective.",
+      "",
+    );
+    if (status === "incomplete") {
+      header.push(
+        "**Testing is incomplete. Findings only reflect the work performed; missing findings do not establish that the target is secure.**",
+        "",
+      );
+    }
+    if (targets.length === 0) {
+      header.push("No targets were scheduled for testing.", "");
+    }
+    for (const outcome of targets) {
+      header.push(
+        `- **${outcome.status}** — ${outcome.target}`,
+        ...outcome.objectives.map((objective) => `  - ${objective}`),
+      );
+    }
+    header.push("");
+  }
+
   if (findings.length === 0) {
     return [
       ...header,
-      "No findings were identified during this assessment.",
+      report.coverage?.status === "incomplete"
+        ? "No findings were identified in the work completed. Assessment coverage is incomplete."
+        : "No findings were identified during this assessment.",
       "",
     ].join("\n");
   }

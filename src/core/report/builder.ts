@@ -1,11 +1,16 @@
 import type { Finding } from "../agents/offSecAgent";
-import { type PentestReport, REPORT_VERSION } from "./schemas";
+import {
+  type PentestCoverage,
+  type PentestReport,
+  REPORT_VERSION,
+} from "./schemas";
 
 export interface ReportContext {
   target: string;
   model: string;
   sessionId: string;
   mode: "blackbox" | "whitebox" | "targeted";
+  coverage?: PentestCoverage;
 }
 
 const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
@@ -37,6 +42,7 @@ export function buildPentestReport(
       totalFindings: findings.length,
       bySeverity,
     },
+    ...(context.coverage ? { coverage: context.coverage } : {}),
     findings: sorted.map((f) => ({
       title: f.title,
       severity: f.severity,
