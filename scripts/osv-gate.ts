@@ -461,14 +461,18 @@ function git(args: string[]): string {
   return res.stdout;
 }
 
-function scan(lockfile: string, config?: string): OsvScan {
+function scan(
+  lockfile: string,
+  config?: string,
+  { download = true }: { download?: boolean } = {},
+): OsvScan {
   const args = [
     "scan",
     "source",
     // Full offline mode: only the advisory database download below touches the
     // network; no other scanner feature can send the dependency list anywhere.
     "--offline",
-    "--download-offline-databases",
+    ...(download ? ["--download-offline-databases"] : []),
     "--all-packages",
     "--format",
     "json",
@@ -488,6 +492,22 @@ function scan(lockfile: string, config?: string): OsvScan {
       `osv-scanner failed on ${lockfile} (exit ${res.status}): ${res.stderr}`,
     );
   return JSON.parse(res.stdout) as OsvScan;
+}
+
+/** Scans the base and head lockfiles the same way, then compares them. */
+export function scanAndCompare(
+  baseLock: string,
+  headLock: string,
+  config: string,
+  scanner: typeof scan = scan,
+): GateResult {
+  // Both scans honor the exceptions: a finding hidden only on the head would
+  // read as a version the PR removed, and let a new affected version replace it.
+  const base = scanner(baseLock, config, { download: true });
+  // The head reads the database the base scan just downloaded, so an advisory
+  // published between the two scans cannot look introduced.
+  const head = scanner(headLock, config, { download: false });
+  return compareScans(base, head);
 }
 
 /** The trunk as the remote names it (`origin/staging` today), never hardcoded. */
@@ -531,18 +551,17 @@ async function main(): Promise<void> {
 
   const mergeBase = git(["merge-base", baseRef, "HEAD"]).trim();
   const baseDir = mkdtempSync(join(tmpdir(), "osv-gate-base-"));
-  let baseScan: OsvScan;
+  let result: GateResult;
   try {
     writeFileSync(
       join(baseDir, "bun.lock"),
       git(["show", `${mergeBase}:bun.lock`]),
     );
-    baseScan = scan(join(baseDir, "bun.lock"));
+    result = scanAndCompare(join(baseDir, "bun.lock"), "bun.lock", config);
   } finally {
     rmSync(baseDir, { recursive: true, force: true });
   }
 
-  const result = compareScans(baseScan, scan("bun.lock", config));
   const others = OTHER_LOCKFILES.map((path) => ({
     path,
     findings: findingsFromScan(scan(path)),
