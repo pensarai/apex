@@ -15,8 +15,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   console-typecheck:
+    name: console-typecheck
+    permissions:
+      contents: read
     # Fork PRs don't receive secrets, so the private console checkout can't run there.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -24,11 +29,13 @@ jobs:
       - name: Checkout apex (this repo)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           path: apex
 
       - name: Checkout pensarai/console
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: pensarai/console
           token: ${{ secrets.CONSOLE_REPO_TOKEN }}
           submodules: recursive

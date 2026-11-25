@@ -421,6 +421,32 @@ describe("cached system prompt (Claude) (real SDK)", () => {
       }
     }
   });
+
+  it("does not trigger the SDK system-in-messages warning", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      state.model = new MockLanguageModelV3({
+        modelId: "claude-sonnet-4-5",
+        doStream: async () =>
+          streamOf([...textStepChunks("t0", "ok"), finishChunk()]),
+      });
+      await drain(
+        streamResponse({
+          model: "claude-sonnet-4-5",
+          prompt: "hello",
+          system: "You are a test.",
+          silent: true,
+        }),
+      );
+      expect(
+        warn.mock.calls.some((args) =>
+          String(args[0]).includes("System messages in the prompt or messages"),
+        ),
+      ).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe("critical failure modes (real SDK)", () => {

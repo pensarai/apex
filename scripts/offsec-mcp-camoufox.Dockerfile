@@ -8,10 +8,11 @@
 # build, plus bun + git so the smoke orchestrator can clone & install apex and
 # run its REAL MCP browser code inside the sandbox.
 
-FROM node:20.18.1-slim
+FROM node:22.23.5-slim
 
-# Same base apt set style as the prod deps layer. build-essential + python3:
-# camoufox-js pulls in native better-sqlite3 (no node-20 prebuilt → node-gyp).
+# Same base apt set style as the prod deps layer. build-essential + python3: a
+# fallback for native modules without a prebuild (better-sqlite3 13, which
+# camoufox-js pulls in, ships prebuilt binaries and needs Node 22).
 # git: clone the apex branch at runtime. unzip/curl/wget: tooling.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \
@@ -35,6 +36,6 @@ RUN npx --yes playwright install-deps firefox
 # different build) — mirrors the sandbox Dockerfile and ensureCamoufox().
 WORKDIR /tmp/camoufox-fetch
 RUN npm init -y --silent \
- && npm install --no-audit --no-fund camoufox-js@0.11.1 \
+ && npm install --no-audit --no-fund --save-exact camoufox-js@0.13.0 playwright-core@1.53.1 \
  && node node_modules/camoufox-js/dist/__main__.js fetch \
  && cd / && rm -rf /tmp/camoufox-fetch

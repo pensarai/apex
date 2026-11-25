@@ -16,7 +16,7 @@
     "@googleapis/gmail": "16.1.2",
     "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
     "@microsoft/microsoft-graph-client": "3.0.7",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@openrouter/ai-sdk-provider": "2.9.1",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
@@ -28,22 +28,23 @@
     "@pensar/surface": "0.3.1",
     "@playwright/mcp": "0.0.54",
     "ai": "6.0.208",
-    "camoufox-js": "0.11.1",
+    "camoufox-js": "0.13.0",
     "glob": "13.0.6",
     "highlight.js": "11.11.1",
-    "imapflow": "1.4.2",
-    "mailparser": "3.9.11",
+    "imapflow": "2.12.1",
+    "mailparser": "3.14.5",
     "marked": "16.4.2",
     "mime-types": "3.0.2",
-    "nodemailer": "8.0.11",
+    "nodemailer": "10.6.0",
     "p-limit": "7.3.0",
+    "playwright-core": "1.53.1",
     "quickjs-emscripten": "0.32.0",
     "react": "19.2.7",
     "sharp": "0.35.5",
     "tldts": "7.4.3",
-    "undici": "6.29.0",
+    "undici": "6.29.1",
     "yaml": "2.9.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "devDependencies": {
@@ -51,9 +52,7 @@
     "@opentelemetry/context-async-hooks": "2.10.0",
     "@opentelemetry/sdk-trace-base": "2.10.0",
     "@types/bun": "1.3.14",
-    "@types/mailparser": "3.4.6",
     "@types/mime-types": "3.0.1",
-    "@types/nodemailer": "8.0.1",
     "@types/react": "19.2.17",
     "dotenv": "17.4.2",
     "knip": "6.17.1",
@@ -62,7 +61,7 @@
   },
   "engines": {
     "bun": ">=1.0.0",
-    "node": ">=20.9.0"
+    "node": ">=22.0.0"
   },
   "exports": {
     ".": {
@@ -220,6 +219,16 @@
       "import": "./build/lib/core/eventBus.js",
       "types": "./build/lib/core/eventBus.d.ts"
     },
+    "./core/goals": {
+      "default": "./build/lib/core/goals/index.js",
+      "import": "./build/lib/core/goals/index.js",
+      "types": "./build/lib/core/goals/index.d.ts"
+    },
+    "./core/goals/types": {
+      "default": "./build/lib/core/goals/types.js",
+      "import": "./build/lib/core/goals/types.js",
+      "types": "./build/lib/core/goals/types.d.ts"
+    },
     "./core/id": {
       "default": "./build/lib/core/id/id.js",
       "import": "./build/lib/core/id/id.js",
@@ -335,6 +344,12 @@
   "optionalDependencies": {
     "weave": "0.12.1"
   },
+  "overrides": {
+    "body-parser": "2.4.0",
+    "browserslist": "4.28.7",
+    "follow-redirects": "1.16.2",
+    "form-data": "4.0.6"
+  },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
   "peerDependencies": {
     "typescript": "^5.9.3"
@@ -355,6 +370,7 @@
     "check": "biome check --write",
     "check:ci": "biome check",
     "check:dependency-pins": "bun scripts/check-dependency-pins.ts",
+    "check:osv-gate": "bun scripts/osv-gate.ts",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",

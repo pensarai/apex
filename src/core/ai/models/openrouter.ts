@@ -253,6 +253,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 262144,
   },
   {
+    id: "moonshotai/kimi-k3.1-pro",
+    name: "Kimi K3.1 Pro",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "moonshotai/kimi-k3",
     name: "Kimi K3",
     provider: "openrouter",

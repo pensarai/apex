@@ -223,7 +223,7 @@ export function getReasoningCapabilities(
     };
   }
   const native = modelId
-    .replace(/^(?:pensar:|concentrate:|bedrock-mantle:)/, "")
+    .replace(/^(?:pensar:|concentrate:|bedrock-mantle:|mantle:)/, "")
     .replace(/^(?:(?:us|global|eu|au|jp|ap)\.)?anthropic[./]/, "")
     .replace(/^(?:openai[/.]|google\/)/, "")
     .replace(/-\d{4}-\d{2}-\d{2}$/, "")

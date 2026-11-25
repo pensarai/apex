@@ -138,6 +138,12 @@
       "mandatory": true,
       "default_enabled": true
     },
+    "moonshotai/kimi-k3.1-pro": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": ["max", "high", "low", "none"],
+      "default_effort": "max"
+    },
     "moonshotai/kimi-k3": {
       "mandatory": false,
       "default_enabled": true,

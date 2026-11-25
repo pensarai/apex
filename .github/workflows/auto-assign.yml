@@ -4,11 +4,18 @@ on:
   pull_request:
     types: [opened, ready_for_review]
 
-permissions:
-  pull-requests: write
+# One run per PR at a time; `queue: max` keeps every pending event.
+concurrency:
+  group: auto-assign-${{ github.event.pull_request.number }}
+  queue: max
+
+permissions: {}
 
 jobs:
   assign:
+    name: assign
+    permissions:
+      pull-requests: write # requests reviewers
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:

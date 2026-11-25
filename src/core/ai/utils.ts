@@ -60,7 +60,7 @@ import {
   fitMessagesToContext,
   splitResumeHistory,
 } from "./contextManagement";
-import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
+import { mantleBaseUrl, mantleRegion, stripMantlePrefix } from "./mantle";
 import { getMaxOutputTokens, getModelInfo } from "./models";
 import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
 import { createAnthropicModel } from "./providers/anthropic";
@@ -373,9 +373,7 @@ export function getProviderModel(
     }
 
     case "bedrock-mantle": {
-      // GPT-5.x on Bedrock Mantle: OpenAI Responses API only, region-locked to
-      // us-east-2, on the `/openai/v1` path. Authenticates via the same SigV4
-      // credential chain / keys as standard Bedrock.
+      const region = mantleRegion(model);
       const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
         globalThis.fetch(input, {
           ...init,
@@ -383,8 +381,8 @@ export function getProviderModel(
         });
       const mantle = createBedrockMantle({
         apiKey: bedrockApiKey,
-        region: MANTLE_REGION,
-        baseURL: mantleBaseUrl(),
+        region,
+        baseURL: mantleBaseUrl(region),
         accessKeyId: bedrockAccessKeyId,
         secretAccessKey: bedrockSecretAccessKey,
         sessionToken: bedrockSessionToken,
@@ -395,6 +393,17 @@ export function getProviderModel(
         fetch: bedrockFetch as typeof globalThis.fetch,
       });
       providerModel = mantle.responses(stripMantlePrefix(model));
+      // The SDK does not recognize Bedrock-prefixed GPT reasoning IDs.
+      providerModel = wrapLanguageModel({
+        model: providerModel,
+        middleware: defaultSettingsMiddleware({
+          settings: {
+            providerOptions: {
+              openai: { forceReasoning: true, reasoningEffort: "medium" },
+            },
+          },
+        }),
+      });
       break;
     }
 
@@ -554,6 +563,7 @@ async function summarizeConversation(
       model,
       providerOptions: summaryProviderOptions,
       system: cacheBreakpoint ? undefined : opts.system,
+      allowSystemInMessages: true,
       messages: cacheBreakpoint
         ? withCachedLastMessage(history, cacheBreakpoint)
         : history,

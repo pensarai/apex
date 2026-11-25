@@ -115,7 +115,12 @@ A tag such as `@v4` can be repointed by whoever controls the action's repository
 - **Find the SHA from the release tag**: `gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq .object`. When `.type` is `tag`, follow it with `gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha`. Pin a release that has been out for at least 7 days.
 - **Reach for `gh` or a few lines of shell before adding a third-party action.** Every action is code that runs with the job's token.
 - **Check locally** with `zizmor --pedantic .` (`brew install zizmor`). Set `GH_TOKEN` to include the checks that need the GitHub API.
-- **Never disable an audit or add an ignore in `.github/zizmor.yml` to get a check green.** The audits disabled there have existing findings that are being worked off. Fix the finding, or ask.
+- **Permissions start empty.** Every workflow sets `permissions: {}`, and each job lists only what it uses. Each write, `id-token` or non-`contents` grant carries a comment saying what needs it: `contents: write # creates the release and its tag`.
+- **Expressions never go inside a script.** Pass `${{ … }}` values to `run:` steps through `env:` and quote them (`"$VERSION"`). Default variables like `$GITHUB_EVENT_NAME` and `$GITHUB_SHA` are already in the environment.
+- **Checkouts set `persist-credentials: false`** unless a later step runs git against the remote. Prefer `gh api` or `gh release` for tags and releases, which need no saved credential.
+- **In-repo actions and workflows use the self-repository form**, `uses: $/.github/workflows/build.yml`, not `./`. An action that runs files from the checkout stays `./`, with an inline ignore saying why.
+- **CI workflows set a `concurrency` group** that cancels superseded PR runs. A workflow where every event must run (a release, a publish, an event handler) uses a shared group with `queue: max`, so runs go one at a time and none is dropped. Without `queue: max` a group keeps only one pending run and cancels the older one, so `cancel-in-progress: false` alone is not a queue.
+- **Never disable an audit or add an ignore to get a check green.** Each ignore in `.github/zizmor.yml` or inline `# zizmor: ignore[...]` comment says why the finding is safe. A new one needs the same, and a review. Otherwise fix the finding, or ask.
 
 ### Dependencies — exact versions
 
@@ -129,6 +134,14 @@ A tag such as `@v4` can be repointed by whoever controls the action's repository
 - **Do not work around the release-age gate.** `bunfig.toml` refuses packages published too recently (`minimumReleaseAge`). If an install fails on it, pick an older version; do not lower the setting or add an exclusion without asking.
 - **Before adding a dependency**, check that a few lines of our own code would not do, that the package is maintained and widely used, and whether it runs an install script. Bun runs install scripts only for trusted packages. With no `trustedDependencies` in `package.json`, as here today, those are the packages on Bun's built-in default list (`bun pm default-trusted`). Defining `trustedDependencies` replaces that list, so the first time one is added, also list every default-trusted package we still need. A trusted package runs code on every machine that installs, so say why in the PR.
 - **Run tools from the lockfile**: after `bun install`, `bunx <tool>` runs the installed, pinned version of a package we depend on. If the package is not installed, `bunx` downloads whatever version is current, so install first or name the version (`bunx <tool>@<version>`). Do not `bunx` or `npx` a package that is not in `bun.lock`.
+
+### Vulnerable dependencies — the osv gate
+
+The `vulnerable-dependencies` CI job runs `scripts/osv-gate.ts` on every PR. It scans `bun.lock` and the merge base's copy with `osv-scanner`, offline, and fails when the PR introduces a critical or high advisory (CVSS 7.0 and up) or any malware advisory, dev dependencies included. GitHub's dependency graph reads only `package.json`, so a clean Dependabot page does not mean a clean lockfile; this gate reads every locked package. Run it locally with `bun run check:osv-gate` (needs `osv-scanner` on your `PATH`).
+
+- **Introduced means new to that package.** An advisory already on that package version at the base does not block, and neither does an affected version that replaces one the PR removed, so upgrading to a less vulnerable version passes. Adding a second affected version beside one already there blocks. Advisories already in the lockfile and the licenses of added packages appear in the job summary only. An introduced advisory with no score is a warning, unless it is malware, which always blocks.
+- **Fix the dependency first**: upgrade, choose another package, or pin a patched transitive in `overrides`. A blocking advisory with no fixed version still blocks.
+- **An exception is an `[[IgnoredVulns]]` entry in `osv-scanner.toml`** with the advisory `id` and a `reason` that says why it is safe here (not reachable, dev-only path, no fix and accepted). The gate fails on an entry without a reason, and on a `[[PackageOverrides]]` entry that ignores a package or its vulnerabilities without one. `ignoreUntil` is optional. Write the file as those two tables with one-line `key = value` entries: the gate rejects top-level keys, inline tables, other tables and multi-line values rather than guess what `osv-scanner` makes of them. Never add one just to get the check green; it is reviewed like any other change.
 
 ### TUI startup flow
 

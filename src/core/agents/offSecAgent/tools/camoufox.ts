@@ -153,6 +153,9 @@ export async function resolveCamoufoxLaunchOptions(
   // Loaded lazily (and kept external from the bundle) so the CLI's startup
   // commands (--version/--help) don't pull camoufox-js + its data-file deps
   // (fingerprint-generator/territoryInfo.xml) at module load.
+  // camoufox-js checks the installed build against the playwright-core it resolves;
+  // apex pins playwright-core 1.53.1 so that check accepts the baked build instead
+  // of downloading a newer one here.
   const { launchOptions: camoufoxLaunchOptions } = await import("camoufox-js");
   const windowOpts = opts?.window ? camoufoxWindowOptions(opts.window) : {};
   const resolved = (await camoufoxLaunchOptions({

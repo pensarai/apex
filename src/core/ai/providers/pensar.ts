@@ -343,8 +343,7 @@ export function createPensarModel(
           ? rawIdleTimeoutTop
           : 90_000;
 
-      // GPT-5.x on Bedrock Mantle streams OpenAI Responses events, not
-      // Anthropic Messages events — parse them with the dedicated reader.
+      // Mantle GPT routes stream Responses events rather than Anthropic Messages.
       if (isMantleResponsesModelId(bedrockModelId)) {
         return {
           stream: parseResponsesSSE(sseStream, {

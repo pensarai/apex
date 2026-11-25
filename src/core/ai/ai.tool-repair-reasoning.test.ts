@@ -139,7 +139,8 @@ it("keeps primary adaptive reasoning while actual Bedrock repair uses the same s
   expect(body.additionalModelRequestFields).toEqual({
     thinking: { type: "disabled" },
   });
-  expect(body.inferenceConfig.maxTokens).toBe(128000);
+  expect(body.inferenceConfig.maxTokens).toBe(f.primary[0].maxOutputTokens);
+  expect(body.inferenceConfig.maxTokens).toBeGreaterThan(2048);
   expect(body.toolConfig.toolChoice).toEqual({ any: {} });
   expect(body.toolConfig.tools[0].toolSpec.inputSchema.json).toMatchObject({
     type: "object",

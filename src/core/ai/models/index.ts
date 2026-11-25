@@ -181,7 +181,7 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // `getMaxOutputTokens` handles legacy small-window variants.
   if (
     modelId.includes("gpt-5") ||
-    /^(?:openai\/|concentrate:)?gpt-6[.-]/.test(modelId)
+    /^(?:openai\/|concentrate:|mantle:openai\.)?gpt-6[.-]/.test(modelId)
   ) {
     return 128_000;
   }
