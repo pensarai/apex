@@ -1,5 +1,22 @@
 # AGENTS.md
 
+## Repo contract
+
+| Key        | Value                                                                                                                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trunk      | `canary`, the default branch. PRs branch from and target it; each push to it publishes a prerelease. Releases publish from `release`.                                                          |
+| Bootstrap  | `bun install`, with Bun on `PATH` (see [Environment](#environment))                                                                                                                            |
+| Validation | `bun run test`, `bun run tsc`, `bun run lint`, `bun run format:check`, from the repo root. Add `bun run knip` for dependency or export changes, `bun run build` for CLI or build-path changes. |
+| Format     | `bun run format` (Biome on JS/TS/JSON/CSS, Prettier on Markdown/YAML)                                                                                                                          |
+| Worktrees  | No fixed location. When the checkout has unrelated work, use a separate worktree or clone rather than stashing it (the [`pr` skill](.agents/skills/pr/SKILL.md)).                              |
+| Issues     | GitHub issues in `pensarai/apex` (see [CONTRIBUTING.md](./CONTRIBUTING.md)). PRs link one with `Fixes #N` only when they complete it.                                                          |
+
+## Directory rules
+
+| File                                     | Read it when                              |
+| ---------------------------------------- | ----------------------------------------- |
+| [`src/tui/AGENTS.md`](src/tui/AGENTS.md) | Changing the terminal UI under `src/tui/` |
+
 ## Working in this repo
 
 ### Overview
@@ -78,7 +95,7 @@ See `package.json` `scripts` for the full list.
 ### Testing notes
 
 - Unit tests (`src/core/installation/`, `src/core/findings/`, `src/core/credentials/`) and AI stream tests (`src/core/ai/ai.test.ts`) run without API keys.
-- Integration tests (`src/tests/auth.test.ts`, `src/tests/attackSurface.test.ts`, `src/core/api/attackSurface.test.ts`) require an `ANTHROPIC_API_KEY` (or other AI provider key) and make real network calls to external services with 2-minute timeouts. They are currently skipped via `describe.skip` because they depend on a live staging server and LLM API calls.
+- Integration tests (the `describe.skip` suites in `src/tests/`, and `src/core/api/attackSurface.test.ts`) require an `ANTHROPIC_API_KEY` (or other AI provider key) and make real network calls to external services with 2-minute timeouts. They are currently skipped via `describe.skip` because they depend on a live staging server and LLM API calls.
 - Some auth tests also require `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD` environment variables.
 - Tests use vitest with the `node` environment and a 120-second default timeout (see `vitest.config.ts`).
 - When making code changes, always run `bun run test` — all tests should pass (or be skipped) before committing.
@@ -92,7 +109,7 @@ See `package.json` `scripts` for the full list.
 - `src/core/credentials/` — Credential management
 - `src/core/findings/` — Vulnerability findings registry
 - `src/core/session/` — Session management
-- `src/cli/` — Headless CLI commands (auth, uninstall)
+- `src/cli/` — Headless CLI commands
 - `src/tests/` — Integration tests (many require live services)
 - `src/tui/` — Terminal UI components
 
@@ -100,10 +117,13 @@ See `package.json` `scripts` for the full list.
 
 The CI pipeline (`.github/workflows/ci.yml`) runs these jobs in parallel on every PR and push to `main`/`canary`:
 
-- **Lint** — Biome (lint + format + organize imports for JS/TS/JSON/CSS) + Prettier (Markdown/YAML only)
-- **TypeCheck** — `tsc --noEmit`
-- **Test** — `bun run test` (vitest)
-- **Build** — full build + smoke test
+- **lint** — `bun run lint`, `bun run format:check` (Biome for JS/TS/JSON/CSS, Prettier for Markdown/YAML) and `bun run check:dependency-pins`
+- **dead-code** — `bun run knip`
+- **typecheck** — `tsc --noEmit`
+- **test** — `bun run test` (vitest) and `bun run test:tui`
+- **build** — full build + smoke test
+- **Windows tool contracts** — the Windows-specific tool tests on `windows-latest`
+- **vulnerable-dependencies** — the osv gate (PRs only; see below)
 - **zizmor** — static analysis of the workflows themselves
 
 ### GitHub Actions — pinned to a commit SHA
@@ -155,26 +175,6 @@ On first launch, the TUI shows a "Responsible Use Disclosure" screen that must b
 - No database or Docker required for development or running the TUI.
 - AI provider API key (e.g. `ANTHROPIC_API_KEY`) is needed for pentesting features and integration tests, but not for basic TUI operation or unit tests.
 
-### UI/UX conventions
-
-**Reuse shared components.** Before building inline UI for controls, indicators, or dialog chrome, check `src/tui/components/shared/` for existing components. If you see the same pattern implemented inline in 2+ places, extract it into a shared component rather than duplicating it — duplication is how conventions silently diverge.
-
-**Dialog shortcut controls.** Use the `DialogControls` component (`src/tui/components/shared/dialog-controls.tsx`) for keyboard hint bars at the bottom of dialogs. It supports three variants: `default` (muted — for secondary actions), `primary` (bright — for the main CTA), and `danger` (red — for irreversible actions like Delete/Disconnect). Ordering: primary action first, secondary actions next, danger actions after, Esc always last. `[Esc] Close` is rendered automatically by the `Dialog` component's top-right chrome — don't add it to the controls array. Only show non-obvious shortcuts; intuitive actions like ↑/↓ navigation don't need hints. Key capitalization: Title Case for named keys (`Enter`, `Esc`, `Tab`), uppercase for single letters (`D`, `R`, `M`), arrows as `↑/↓`.
-
-**Consistency over novelty.** When adding a new dialog or view, match the patterns of existing ones. Don't invent new shortcut formatting, separator styles, color schemes, or layouts. Open a few existing dialogs as reference before starting — small inconsistencies compound quickly across a codebase.
-
-**Dialogs, not routes.** Commands that show supplementary information (settings, model selection, help, credits, skills) must open as dialog overlays, not full-page route navigation. Full-page routes break the user's context and are reserved for primary workflows (pentest, operator mode). Use the `DialogLayout` component for consistent structure.
-
-**Terminal size resilience.** Layouts must degrade gracefully on small terminals. All text containers must set `overflow="hidden"`. Fixed-height elements (headers, footers, control bars) must use `flexShrink={0}`. Use terminal dimensions (`stdout.columns`, `stdout.rows`) to compute available space and hide non-essential decorative elements (animations, verbose help text) when space is tight. Never assume a minimum terminal size.
-
-**Theme-aware colors.** All color values must respect the current `ColorMode` (dark/light). Never hardcode RGBA values for a single theme. Use dual-palette maps keyed by `ColorMode` (see `syntax-highlight.ts` for the pattern). This applies to syntax highlighting, status indicators, and any styled text output.
-
-**Stable React keys.** Never include mutable content (message text, streaming output) in React `key` props. Use stable identifiers like `role + timestamp`, tool call IDs, or array indices. Content-derived keys cause unmount/remount on every frame during streaming, which resets scroll position and causes visual flicker.
-
-**No state toggling in streaming callbacks.** Avoid calling `setState` to toggle visual indicators (like "Thinking...") directly in high-frequency streaming callbacks (`onTextDelta`, `onToolCallStreaming`). This causes per-frame flicker. Instead, derive display state from the underlying data model (e.g., check if the last message is a tool result rather than toggling a boolean).
-
-**Scrollbars.** Don't pass `scrollbarOptions={{ visible: true }}` — opentui auto-shows the bar when content overflows the viewport and hides it otherwise. Forcing `visible: true` paints a full-track thumb when content fits, which reads as a stray colored block. Style with `trackOptions: { foregroundColor: colors.textMuted, backgroundColor: colors.backgroundElement }` so the thumb stays subtle and theme-aware (don't use `colors.primary` — too loud). Never explicitly hide scrollbars in scrollable regions.
-
 ### Code hygiene
 
 **Clean up dead code.** When removing a feature or command, delete all associated code paths — route entries, component files, registry entries. Don't leave orphaned code "in case we need it later."
@@ -198,7 +198,7 @@ Anti-patterns:
 - **Half-bypassed barrels** — barrel exists; some callers use it, others reach past it. Pick one direction per module.
 - **Mixed-direction imports** — same file imports both `from "./mod"` and `from "./mod/internals"`. Never. One direction per dependency edge.
 
-Enforced via the `import-x/no-internal-modules` ESLint rule in `eslint.config.js`. The `forbid` list there is the source of truth for which directories are kept module barriers — adding a new kept barrel means adding a new entry to that list. Test files (`*.test.ts`) are exempt.
+Enforced via Biome's `noRestrictedImports` rule in `biome.jsonc`, scoped to `src/`. The `patterns` list there is the source of truth for which directories are kept module barriers — adding a new kept barrel means adding a new entry to that list. Test files (`*.test.ts`) are exempt.
 
 `src/cli.ts`'s `await import("./core/api/<feature>")` calls are a documented exception (see header comment in `src/core/api/index.ts`): they stay direct so `bun build --splitting` produces per-feature chunks.
 
