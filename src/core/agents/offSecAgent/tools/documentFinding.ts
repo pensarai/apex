@@ -506,6 +506,7 @@ async function runDocumentVulnerability(
     }
   }
 
+  const reportPaths: string[] = [];
   let rawEvidencePath: string | undefined;
   let findingPersisted = false;
   try {
@@ -863,13 +864,14 @@ async function runDocumentVulnerability(
       },
     };
 
-    const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}`;
+    const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}${jobId ? `-${jobId}` : ""}`;
     const jsonFilename = `${findingId}.json`;
     const mdFilename = `${findingId}.md`;
     const jsonPath = artifactPath(ctx, outputDir, jsonFilename);
     const mdPath = artifactPath(ctx, outputDir, mdFilename);
 
     try {
+      reportPaths.push(jsonPath, mdPath);
       const jsonWrite = await writeArtifact(
         ctx,
         jsonPath,
@@ -1038,6 +1040,8 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
     if (jobId && !findingPersisted) {
       // Cancellation stops validation, but must not abort removal of its owned artifacts.
       const cleanupCtx = { ...ctx, abortSignal: undefined };
+      for (const reportPath of reportPaths)
+        await deleteArtifact(cleanupCtx, reportPath);
       await cleanupPocFiles(cleanupCtx, preparePoc(poc).filename);
       if (rawEvidencePath) await deleteArtifact(cleanupCtx, rawEvidencePath);
     }

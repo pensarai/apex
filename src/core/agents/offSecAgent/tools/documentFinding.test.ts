@@ -17,6 +17,7 @@ import { CredentialManager } from "../../../credentials";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 import { setLogSink } from "../../../logger/structured";
 import { LocalBackends } from "../../../tools/backends/local";
+import * as artifactBackends from "../../../tools/backends/resolve";
 import type { ToolBackends } from "../../../tools/backends/types";
 import { scoreFindingWithCVSS } from "../../specialized/cvssScorer";
 import {
@@ -2374,6 +2375,54 @@ describe("background vulnerability validation", () => {
     await jobs.cancel(receipt.jobId);
     expect(readdirSync(ctx.session.findingsPath)).toEqual([]);
     expect(readdirSync(ctx.session.pocsPath)).toEqual([]);
+  });
+
+  it("rolls back a cancelled partial report before removing its evidence", async () => {
+    mockedJudgeFinding.mockResolvedValue({ ...verdict, valid: true });
+    const controller = new AbortController();
+    const ctx = context();
+    ctx.abortSignal = controller.signal;
+    const existing = join(ctx.session.findingsPath, "existing.json");
+    writeFileSync(existing, "existing finding");
+    const unregister = vi.fn(async () => {});
+    ctx.findingsRegistry = {
+      isDuplicate: () => ({ duplicate: false }),
+      register: async () => ({ duplicate: false }),
+      unregister,
+    } as unknown as typeof ctx.findingsRegistry;
+    const resolve = artifactBackends.resolveArtifactFs;
+    const spy = vi
+      .spyOn(artifactBackends, "resolveArtifactFs")
+      .mockImplementation((owner, options) => {
+        const fs = resolve(owner, options);
+        return {
+          ...fs,
+          write: async (...args) => {
+            const result = await fs.write(...args);
+            if (
+              args[0].startsWith(ctx.session.findingsPath) &&
+              args[0].endsWith(".json")
+            )
+              controller.abort();
+            return result;
+          },
+        };
+      });
+    try {
+      const receipt = await launch(ctx, {
+        ...makeDocumentInput(),
+        evidence: "long capture".repeat(2000),
+      });
+      await jobs.notifications(true);
+      expect(controller.signal.aborted).toBe(true);
+      expect(jobs.status(receipt.jobId).success).toBe(false);
+      expect(unregister).toHaveBeenCalledOnce();
+      expect(readdirSync(ctx.session.findingsPath)).toEqual(["existing.json"]);
+      expect(readFileSync(existing, "utf8")).toBe("existing finding");
+      expect(readdirSync(ctx.session.pocsPath)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("keeps concurrently judged proofs with the same name separate", async () => {
