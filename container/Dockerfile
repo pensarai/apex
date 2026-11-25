@@ -26,20 +26,20 @@ RUN apt-get update && apt-get dist-upgrade -y && \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Node.js (required by @pensar/apex's pensar binary) from the official release
-# tarball, checked against the SHA-256 in that release's SHASUMS256.txt.
-ARG NODE_VERSION=22.23.5
+# tarball, checked against the SHA-256 in that release's SHASUMS256.txt. The
+# version sits beside its hashes so neither changes without the other.
 ARG TARGETARCH
 RUN set -eu; \
+    node_version=22.23.5; \
     case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
       amd64) arch=x64; sha256=cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 ;; \
       arm64) arch=arm64; sha256=2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09 ;; \
       *) echo "unsupported architecture: ${TARGETARCH:-unknown}" >&2; exit 1 ;; \
     esac; \
     curl -fsSL -o /tmp/node.tar.xz \
-      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${arch}.tar.xz"; \
+      "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${arch}.tar.xz"; \
     echo "${sha256}  /tmp/node.tar.xz" | sha256sum -c -; \
-    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --no-same-owner \
-      --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md'; \
+    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --no-same-owner; \
     rm /tmp/node.tar.xz; \
     node --version
 
@@ -50,7 +50,7 @@ ENV BUN_INSTALL="/usr/local"
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s bun /usr/local/bin/bunx && bun --version
 
-# Install @pensar/apex globally, at a fixed release
+# Install @pensar/apex globally
 ARG APEX_VERSION=2.7.0
 RUN bun install -g "@pensar/apex@${APEX_VERSION}"
 
@@ -63,6 +63,7 @@ RUN groupadd -g ${GID} ${USER} || true \
 WORKDIR /home/${USER}
 USER ${USER}
 ENV HOME=/home/${USER}
+RUN pensar --version
 
 # Load variables from ~/.env automatically for convenience inside the shell
 # Uses set -a / source instead of xargs to handle comments and empty lines
