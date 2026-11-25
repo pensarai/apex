@@ -59,6 +59,8 @@ interface OsvPackage {
 
 export interface OsvScan {
   results?: { source?: { path?: string }; packages?: OsvPackage[] }[] | null;
+  /** Set by `scan`: packages the run's `[[PackageOverrides]]` ignores left out. */
+  ignoredPackages?: Set<string>;
 }
 
 export interface Finding {
@@ -102,6 +104,8 @@ export interface ScannedLockfile extends LockfileResult {
   files: LockfilePair;
   base: OsvScan;
   head: OsvScan;
+  /** Packages the run's exceptions left out (`ignoredPackagesFrom`). */
+  ignored: Set<string>;
 }
 
 /** What osv-scanner read of each copy; `base` is null for a lockfile the PR adds. */
@@ -595,7 +599,27 @@ function scan(
     throw new Error(
       `osv-scanner failed on ${lockfiles.join(", ")} (exit ${res.status}): ${res.stderr}`,
     );
-  return JSON.parse(res.stdout) as OsvScan;
+  const scanned = JSON.parse(res.stdout) as OsvScan;
+  scanned.ignoredPackages = ignoredPackagesFrom(res.stderr);
+  return scanned;
+}
+
+/**
+ * The npm packages osv-scanner logs as dropped by a `[[PackageOverrides]]`
+ * ignore ("Package npm/<name>/<version> has been filtered out because: …"), as
+ * `name@version`. The scanner applies its own override rules, so the gate takes
+ * its word; a log line it does not recognize excuses nothing.
+ */
+export function ignoredPackagesFrom(log: string | undefined): Set<string> {
+  const ignored = new Set<string>();
+  for (const line of (log ?? "").split("\n")) {
+    const m =
+      /^Package npm\/(.+)\/([^/\s]+) has been filtered out because:/.exec(
+        line.trim(),
+      );
+    if (m) ignored.add(`${m[1]}@${m[2]}`);
+  }
+  return ignored;
 }
 
 /**
@@ -633,10 +657,9 @@ export function scanAndCompare(
   // hidden only on the head would read as a version the PR removed), match
   // against one database snapshot, and load every ecosystem either one uses.
   const files = pairs.flatMap((p) => (p.base ? [p.base, p.head] : [p.head]));
-  const scans = splitBySource(
-    scanner(files, config, { download: true }),
-    files,
-  );
+  const scanned = scanner(files, config, { download: true });
+  const scans = splitBySource(scanned, files);
+  const ignored = scanned.ignoredPackages ?? new Set<string>();
   const byFile = new Map(files.map((f, i) => [f, scans[i]!]));
   return pairs.map((p) => {
     // A lockfile the PR adds has no base: everything in it is introduced.
@@ -648,6 +671,7 @@ export function scanAndCompare(
       files: p,
       base,
       head,
+      ignored,
     };
   });
 }
@@ -679,8 +703,9 @@ export function parseJsonWithTrailingCommas(text: string): unknown {
 // Any other version is a workspace, link, file, Git or tarball dependency,
 // which osv-scanner names differently, or an entry the gate cannot read.
 const REGISTRY_VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/;
+// Bun writes a local tarball as a bare path: ./x.tgz, ../x.tgz or /x.tgz.
 const BUN_NOT_REGISTRY =
-  /^(?:workspace:|link:|file:|root:|git\+|git:|github:|https?:)/;
+  /^(?:workspace:|link:|file:|root:|git\+|git:|github:|https?:|\.{1,2}\/|\/)/;
 const NPM_NOT_REGISTRY = /^(?:git\+|git:|github:|file:)/;
 
 export interface LockedPackages {
@@ -759,31 +784,20 @@ export function lockedPackages(path: string, text: string): LockedPackages {
 
 /**
  * Locked registry packages missing from osv-scanner's result: their advisories
- * were never checked. A package a `[[PackageOverrides]]` entry hides with
- * `ignore = true` is returned as `hidden`; that entry already needs a reason.
+ * were never checked. A package the scanner says a `[[PackageOverrides]]`
+ * ignore left out is returned as `hidden`; that entry already needs a reason.
  */
 export function unreadPackages(
   locked: LockedPackages,
   scan: OsvScan,
-  overrides: ConfigEntry[],
+  ignored: Set<string>,
 ): Coverage {
   const read = packageVersions(scan);
   const missing: string[] = [];
   const hidden: string[] = [];
   for (const p of [...locked.registry].sort()) {
     if (read.has(p)) continue;
-    const at = p.lastIndexOf("@");
-    const name = p.slice(0, at);
-    const version = p.slice(at + 1);
-    const ignored = overrides.some(
-      (o) =>
-        o.ignore === true &&
-        o.name === name &&
-        (o.version === undefined || o.version === version) &&
-        (o.ecosystem === undefined ||
-          String(o.ecosystem).toLowerCase() === "npm"),
-    );
-    (ignored ? hidden : missing).push(p);
+    (ignored.has(p) ? hidden : missing).push(p);
   }
   return { total: locked.registry.size, other: locked.other, missing, hidden };
 }
@@ -812,11 +826,8 @@ async function main(): Promise<void> {
 
   const config = resolve("osv-scanner.toml");
   let problems: string[];
-  let overrides: ConfigEntry[];
   try {
-    const parsed = parseOsvConfig(readFileSync(config, "utf8"));
-    problems = invalidExceptions(parsed);
-    overrides = parsed.PackageOverrides;
+    problems = invalidExceptions(parseOsvConfig(readFileSync(config, "utf8")));
   } catch (err) {
     // A config the gate cannot read is a failed gate, reported where it points.
     console.log(
@@ -847,12 +858,12 @@ async function main(): Promise<void> {
       return { path, base, head };
     });
     results = scanAndCompare(pairs, config).map(
-      ({ path, result, files, base, head }) => {
+      ({ path, result, files, base, head, ignored }) => {
         const coverageOf = (file: string, scanned: OsvScan) =>
           unreadPackages(
             lockedPackages(path, readFileSync(file, "utf8")),
             scanned,
-            overrides,
+            ignored,
           );
         return {
           path,
@@ -880,10 +891,6 @@ async function main(): Promise<void> {
     if (coverage.head.missing.length)
       console.log(
         `::error file=${path},title=Packages osv-scanner did not read::${coverage.head.missing.length} of ${coverage.head.total} registry packages, starting with ${coverage.head.missing.slice(0, 5).join(", ")}`,
-      );
-    if (coverage.base?.missing.length)
-      console.log(
-        `::warning file=${path},title=Base packages osv-scanner did not read::${coverage.base.missing.length} of ${coverage.base.total} registry packages in the merge base's copy`,
       );
     for (const f of result.blocking)
       console.log(

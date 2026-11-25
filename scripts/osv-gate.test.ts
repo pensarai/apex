@@ -6,6 +6,7 @@ import {
   compareScans,
   findingsFromScan,
   GATED_LOCKFILES,
+  ignoredPackagesFrom,
   invalidExceptions,
   lockedPackages,
   lookupLicenses,
@@ -412,6 +413,22 @@ describe("scanAndCompare", () => {
     ]);
   });
 
+  it("passes on the packages the run's exceptions left out", () => {
+    const ignoredPackages = new Set(["js-yaml@4.3.2"]);
+    const [scanned] = scanAndCompare(
+      [{ path: "bun.lock", head: "/head/bun.lock" }],
+      "osv-scanner.toml",
+      (paths: string[]): OsvScan => ({
+        results: paths.map((path) => ({
+          source: { path },
+          packages: [qs("2.0.0")],
+        })),
+        ignoredPackages,
+      }),
+    );
+    expect(scanned?.ignored).toBe(ignoredPackages);
+  });
+
   it("fails when the scan fails", () => {
     expect(() =>
       scanAndCompare(
@@ -722,6 +739,9 @@ const BUN_LOCK = `{
     "gitdep": ["gitdep@git+https://github.com/a/gitdep.git#0123456", {}, "0123456"],
     "ghdep": ["ghdep@github:a/ghdep#0123456", {}, "a-ghdep-0123456"],
     "tardep": ["tardep@https://example.com/tardep-1.0.0.tgz", {}],
+    "localtar": ["localtar@./vendor/localtar-1.0.0.tgz", {}],
+    "uptar": ["uptar@../vendor/uptar-1.0.0.tgz", {}],
+    "abstar": ["abstar@/opt/vendor/abstar-1.0.0.tgz", {}],
   },
 }
 `;
@@ -761,8 +781,8 @@ describe("lockedPackages", () => {
       "left-pad@1.3.0",
       "string-width@4.2.3",
     ]);
-    // Workspace, link, file, root, Git, GitHub and tarball entries.
-    expect(locked.other).toBe(7);
+    // Workspace, link, file, root, Git, GitHub, tarball URL and local tarball entries.
+    expect(locked.other).toBe(10);
   });
 
   it("reads the distinct registry packages of a package-lock.json", () => {
@@ -840,7 +860,7 @@ describe("unreadPackages", () => {
       pkg("@scope/pkg", "2.0.0"),
       pkg("ws", "workspace:ws"),
     );
-    expect(unreadPackages(locked, scan, [])).toEqual({
+    expect(unreadPackages(locked, scan, new Set())).toEqual({
       total: 3,
       other: 2,
       missing: [],
@@ -850,7 +870,8 @@ describe("unreadPackages", () => {
 
   it("names each registry package the scan is missing", () => {
     expect(
-      unreadPackages(locked, scanOf(pkg("left-pad", "1.3.0")), []).missing,
+      unreadPackages(locked, scanOf(pkg("left-pad", "1.3.0")), new Set())
+        .missing,
     ).toEqual(["@scope/pkg@2.0.0", "js-yaml@4.3.2"]);
   });
 
@@ -861,38 +882,25 @@ describe("unreadPackages", () => {
       pkg("js-yaml", ""),
       pkg("@scope/pkg", "2.0.0"),
     );
-    expect(unreadPackages(locked, scan, []).missing).toEqual(["js-yaml@4.3.2"]);
+    expect(unreadPackages(locked, scan, new Set()).missing).toEqual([
+      "js-yaml@4.3.2",
+    ]);
   });
 
-  it("excepts a package a [[PackageOverrides]] entry hides with ignore = true", () => {
+  it("excepts a package osv-scanner says an override left out, and only that version", () => {
     const scan = scanOf(pkg("left-pad", "1.3.0"), pkg("@scope/pkg", "2.0.0"));
-    const hides = (o: Record<string, string | boolean>) =>
-      unreadPackages(locked, scan, [{ ignore: true, reason: "r", ...o }]);
-    expect(hides({ name: "js-yaml" })).toEqual({
+    expect(unreadPackages(locked, scan, new Set(["js-yaml@4.3.2"]))).toEqual({
       total: 3,
       other: 2,
       missing: [],
       hidden: ["js-yaml@4.3.2"],
     });
     expect(
-      hides({ name: "js-yaml", version: "4.3.2", ecosystem: "npm" }).hidden,
-    ).toEqual(["js-yaml@4.3.2"]);
-    // Only the version and ecosystem it names, and only an ignore of the whole package.
-    expect(hides({ name: "js-yaml", version: "4.0.0" }).missing).toEqual([
-      "js-yaml@4.3.2",
-    ]);
-    expect(hides({ name: "js-yaml", ecosystem: "PyPI" }).missing).toEqual([
-      "js-yaml@4.3.2",
-    ]);
-    expect(hides({ name: "left-pad" }).missing).toEqual(["js-yaml@4.3.2"]);
-    expect(
-      unreadPackages(locked, scan, [
-        { name: "js-yaml", "vulnerability.ignore": true, reason: "r" },
-      ]).missing,
+      unreadPackages(locked, scan, new Set(["js-yaml@4.0.0"])).missing,
     ).toEqual(["js-yaml@4.3.2"]);
   });
 
-  it("reads a real bun.lock against the scan osv-scanner returns for it", () => {
+  it("matches the names and versions osv-scanner 2.7.1 reports for each kind of bun.lock entry", () => {
     const scan = scanOf(
       pkg("left-pad", "1.3.0"),
       pkg("left-pad", "1.2.0"),
@@ -902,8 +910,33 @@ describe("unreadPackages", () => {
       pkg("https://github.com/a/gitdep", ""),
     );
     expect(
-      unreadPackages(lockedPackages("bun.lock", BUN_LOCK), scan, []).missing,
+      unreadPackages(lockedPackages("bun.lock", BUN_LOCK), scan, new Set())
+        .missing,
     ).toEqual([]);
+  });
+});
+
+describe("ignoredPackagesFrom", () => {
+  it("reads each npm package osv-scanner 2.7.1 logs as filtered out, scoped names included", () => {
+    const log = [
+      "Scanned /w/bun.lock file and found 479 packages",
+      "Package npm/@babel/code-frame/7.29.0 has been filtered out because: generated code only",
+      "Package npm/js-yaml/4.3.2 has been filtered out because: a reason: with colons",
+      "Package PyPI/requests/2.0.0 has been filtered out because: not npm",
+      "Filtered 3 ignored package/s from the scan.",
+      "GHSA-1234 and 1 alias have been filtered out because: unrelated advisory",
+    ].join("\n");
+    expect(ignoredPackagesFrom(log)).toEqual(
+      new Set(["@babel/code-frame@7.29.0", "js-yaml@4.3.2"]),
+    );
+  });
+
+  it("excuses nothing when the log has no such line", () => {
+    expect(ignoredPackagesFrom("")).toEqual(new Set());
+    expect(ignoredPackagesFrom(undefined)).toEqual(new Set());
+    expect(ignoredPackagesFrom("Package js-yaml was skipped")).toEqual(
+      new Set(),
+    );
   });
 });
 
