@@ -1,6 +1,15 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { hasToolCall, stepCountIs } from "ai";
+import {
+  createUpdateGoalTool,
+  type Goal,
+  goalPromptSection,
+  goalStopCondition,
+  type TurnFacts,
+  turnFactsFromMessages,
+  UPDATE_GOAL_TOOL_NAME,
+} from "../../../goals";
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
@@ -11,6 +20,7 @@ import {
   buildGeneralizedAttackSurfacePrompt,
   GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
 } from "./generalizedPrompts";
+import { type ReconGoalOptions, runGoalRecon } from "./reconGoal";
 import { GENERALIZED_ATTACK_SURFACE_TOOLS } from "./reconToolset";
 import { finishUpdate, type ReconUpdate, startUpdate } from "./reconUpdate";
 import {
@@ -30,6 +40,10 @@ export interface GeneralizedAttackSurfaceAgentInput
    * the environment can't fulfill.
    */
   excludeTools?: string[];
+  goal?: ReconGoalOptions;
+  goalTurn?: Goal;
+  harness?: "general";
+  stepLimit?: number;
   /**
    * Set when an earlier pass stopped before its report: what is already
    * documented, so this pass continues instead of starting over.
@@ -52,6 +66,8 @@ export interface GeneralizedAttackSurfaceResult {
   changesPath?: string;
   /** Update runs the agent did not need to run for, and why. */
   skipped?: string;
+  goal?: Goal;
+  goalTurnFacts?: TurnFacts;
 }
 
 interface GeneralizedState {
@@ -77,16 +93,26 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
     }
     return { target: opts.target, subagentFolder };
   },
-  system: () => GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
+  system: (opts) =>
+    `${GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT}${opts.goalTurn?.status === "active" ? `\n\n${goalPromptSection(opts.goalTurn)}\nBefore completing: inspect current persisted topology against every supplied origin and repository. Check coverage and depth across components, trust boundaries, assets and distinct attack paths. Conditional hypotheses are allowed; state prerequisites and how testing would confirm or rule them out. Reconcile omissions, shallow scenarios, duplicates and stale reports. Explain justified absence and access limitations; do not invent findings or expand authorized testing scope. Write a fresh report, then call update_goal with supporting tool evidence.` : ""}`,
+  extraTools: (opts) =>
+    opts.goalTurn?.status === "active"
+      ? { [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool() }
+      : undefined,
   activeTools: (opts) => {
-    if (!opts.excludeTools?.length)
-      return [...GENERALIZED_ATTACK_SURFACE_TOOLS];
-    const excluded = new Set(opts.excludeTools);
-    return GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t));
+    if (opts.goalTurn && opts.goalTurn.status !== "active")
+      return ["read_file"];
+    const excluded = new Set(opts.excludeTools ?? []);
+    return [
+      ...GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t)),
+      ...(opts.goalTurn?.status === "active" ? [UPDATE_GOAL_TOOL_NAME] : []),
+    ];
   },
-  stopWhen: () => [
-    hasToolCall("create_attack_surface_report"),
-    stepCountIs(10_000),
+  stopWhen: (opts) => [
+    opts.goalTurn
+      ? goalStopCondition
+      : hasToolCall("create_attack_surface_report"),
+    stepCountIs(opts.stepLimit ?? 10_000),
   ],
   target: (_opts, state) => state.target,
   prompt: (opts, state) =>
@@ -103,7 +129,7 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
         opts.session.config?.authenticationInstructions,
       ),
     ),
-  resolveResult: (opts) => {
+  resolveResult: async (opts, _state, stream) => {
     const resultsPath = join(
       opts.session.rootPath,
       "attack-surface-results.json",
@@ -119,7 +145,24 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
         // Report may not have been written yet.
       }
     }
-    return { results, targets, resultsPath, assetsPath };
+    return {
+      results,
+      targets,
+      resultsPath,
+      assetsPath,
+      ...(opts.goalTurn
+        ? {
+            goalTurnFacts: turnFactsFromMessages(
+              (await stream.response).messages,
+              {
+                outcome: "completed",
+                automatic: opts.goalTurn.rounds > 0,
+                heldCallCount: 0,
+              },
+            ),
+          }
+        : {}),
+    };
   },
 });
 
@@ -147,13 +190,14 @@ export async function runGeneralizedReconToReport(
   input: GeneralizedAttackSurfaceAgentInput,
   createAgent: (input: GeneralizedAttackSurfaceAgentInput) => {
     consume(): Promise<GeneralizedAttackSurfaceResult>;
+    abortAndDrain?(): Promise<void>;
   } = (i) => new GeneralizedAttackSurfaceAgent(i),
 ): Promise<GeneralizedAttackSurfaceResult> {
   const root = input.session.rootPath;
   let first = input;
   if (input.update) {
     const start = startUpdate(input.update, root);
-    if (start.skip)
+    if (start.skip && !input.goal)
       return {
         results: null,
         targets: [],
@@ -163,6 +207,12 @@ export async function runGeneralizedReconToReport(
         ...finishUpdate(input.update, root, input.session.id),
       };
     first = { ...input, updateBrief: start.brief };
+  }
+  if (input.goal) {
+    const result = await runGoalRecon(first, createAgent);
+    return input.update
+      ? { ...result, ...finishUpdate(input.update, root, input.session.id) }
+      : result;
   }
   let result = await createAgent(first).consume();
   for (
