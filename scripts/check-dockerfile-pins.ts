@@ -189,7 +189,7 @@ export function checkDockerfile(path: string, text: string): Violation[] {
     for (const global of command.matchAll(GLOBAL_INSTALL)) {
       const pkgs = (global[1] ?? "")
         .split(/\s+/)
-        .filter(Boolean)
+        .filter((p) => p && !p.startsWith("-"))
         .map((p) => p.replace(/^(["'])(.*)\1$/, "$2"));
       for (const pkg of pkgs.length ? pkgs : [""])
         if (!EXACT_PACKAGE.test(pkg))

@@ -220,7 +220,8 @@ RUN ["npx", "--yes", "playwright", "install-deps", "firefox"]`;
 RUN bun install -g @pensar/apex
 RUN bun add --global left-pad@^1.0.0
 RUN bun install -g "@pensar/apex@$APEX_VERSION"
-RUN bun install -g left-pad@1.3.0 "is-odd@3.0.1"`;
+RUN bun install -g left-pad@1.3.0 "is-odd@3.0.1" --ignore-scripts
+RUN ["bun", "install", "-g", "@pensar/apex@2.7.0", "--ignore-scripts"]`;
       expect(problems(text)).toEqual([
         "2: global install of `@pensar/apex` without a literal exact version",
         "3: global install of `left-pad@^1.0.0` without a literal exact version",
