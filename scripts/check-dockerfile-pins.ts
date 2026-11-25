@@ -5,7 +5,7 @@
  * into a shell, or a package tool that fetches whatever version is current.
  */
 import { spawnSync } from "node:child_process";
-import { posix, resolve } from "node:path";
+import { resolve } from "node:path";
 import { GATED_LOCKFILES } from "./osv-gate";
 
 export interface Violation {
@@ -35,7 +35,10 @@ const CHECKED_FILE =
   /echo\s+(["']?)\S+\s+\*?([^\s"']+)\1\s*\|\s*sha(?:256|512)sum\s+(?:-{1,2}[\w-]+\s+)*?(?:-c|--check)\b/g;
 // A heredoc runs as a script only when it is the RUN command or a shell's input.
 const HEREDOC_SCRIPT =
-  /^RUN\s+(?:--\S+\s+)*(?:(?:\/usr)?(?:\/bin\/)?(?:ba|da|z)?sh(?:\s+-\S+)*\s+)?<<-?(["']?)\w+\1\s*$/i;
+  /^RUN\s+(?:--\S+\s+)*(?:(?:\/usr)?(?:\/bin\/)?(?:ba|da|z)?sh(?:\s+-\S+)*\s+)?(?:\d?[<>]{1,2}&?\s*\S+\s+)*<<-?(["']?)\w+\1(?:\s*\d?[<>]{1,2}&?\s*\S+)*\s*$/i;
+// A shell's `-c` string is code for the inner shell, not one quoted word.
+const SHELL_C_SCRIPT =
+  /\b(?:ba|da|z)?sh\s+(?:-[A-Za-z]+\s+)*?-[A-Za-z]*c\s+(["'])((?:(?!\1)[\s\S])*)\1/g;
 const AUTO_INSTALL = new RegExp(
   `${COMMAND_START}(npx|bunx)\\b([^;&|\\n]*)`,
   "g",
@@ -119,6 +122,11 @@ function maskQuoted(command: string): string {
   return command.replace(/"[^"]*"|'[^']*'/g, (q) => q.replace(/[;&|\n]/g, " "));
 }
 
+/** Drops leading `./`; `..` is kept, since a symlink can change where it leads. */
+function sameDirectory(path: string): string {
+  return path.replace(/^(?:\.\/)+/, "");
+}
+
 function unquote(token: string): string {
   return token.replace(/^(["'])(.*)\1$/, "$2");
 }
@@ -132,7 +140,7 @@ function downloadTarget(tool: string, args: string): string | undefined {
   const target = m?.[1] ? unquote(m[1]) : undefined;
   return target === undefined || target === "-"
     ? undefined
-    : posix.normalize(target);
+    : sameDirectory(target);
 }
 
 export function checkDockerfile(path: string, text: string): Violation[] {
@@ -208,7 +216,10 @@ export function checkDockerfile(path: string, text: string): Violation[] {
       const from = mount[1] ?? "";
       if (!/^\d+$/.test(from)) checkImage(line, from, "RUN --mount image");
     }
-    const command = maskQuoted(rest);
+    const command = [
+      maskQuoted(rest),
+      ...[...rest.matchAll(SHELL_C_SCRIPT)].map((m) => maskQuoted(m[2] ?? "")),
+    ].join("\n");
     if (PIPE_TO_SHELL.test(command) || SHELL_FROM_DOWNLOAD.test(command)) {
       report(
         line,
@@ -218,7 +229,7 @@ export function checkDockerfile(path: string, text: string): Violation[] {
     } else {
       const checked = new Set(
         [...command.matchAll(CHECKED_FILE)].map((m) =>
-          posix.normalize(m[2] ?? ""),
+          sameDirectory(m[2] ?? ""),
         ),
       );
       for (const call of command.matchAll(DOWNLOAD)) {

@@ -135,6 +135,34 @@ EOF`;
     ]);
   });
 
+  it("checks a heredoc script whose output is redirected", () => {
+    const text = `FROM x@${DIGEST}
+RUN bash <<EOF > /tmp/install.log 2>&1
+curl -o /tmp/tool https://example.com/tool
+EOF`;
+    expect(problems(text)).toEqual([
+      "2: `/tmp/tool` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+    ]);
+  });
+
+  it("checks the script of a nested shell -c as commands", () => {
+    const text = `FROM x@${DIGEST}
+RUN bash -c 'set -e; curl -o /tmp/tool https://example.com/tool'
+RUN sh -ec "curl -o /tmp/ok https://example.com/ok && echo '${SHA}  /tmp/ok' | sha256sum -c -"
+RUN curl -fsSL "https://example.com/dl?a=1&b=2" -o /tmp/q && echo "${SHA}  /tmp/q" | sha256sum -c -`;
+    expect(problems(text)).toEqual([
+      "2: `/tmp/tool` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+    ]);
+  });
+
+  it("does not fold .. in paths, which a symlink can redirect", () => {
+    const text = `FROM x@${DIGEST}
+RUN curl -o /var/run/../tool https://example.com/tool && echo "${SHA}  /var/tool" | sha256sum -c -`;
+    expect(problems(text)).toEqual([
+      "2: `/var/run/../tool` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+    ]);
+  });
+
   it("reads options after a quoted URL, checksum flags and equivalent paths", () => {
     const text = `FROM x@${DIGEST}
 RUN curl -fsSL "https://example.com/dl?a=1&b=2" -o ./tool \\
