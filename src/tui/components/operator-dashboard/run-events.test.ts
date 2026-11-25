@@ -725,16 +725,16 @@ describe("createRunEventProjections", () => {
       elapsedMs: 0,
     };
     s.bus.emit("model-loading", event);
-    expect(s.onModelLoading).toHaveBeenLastCalledWith("ollama:twil");
+    expect(s.onModelLoading).toHaveBeenLastCalledWith(event);
     child.emit("model-loading", event);
     expect(s.subagents.setModelLoading).toHaveBeenLastCalledWith(
       "child-1",
-      "ollama:twil",
+      expect.objectContaining(event),
     );
     expect(s.onModelLoading).toHaveBeenCalledTimes(1);
     s.bus.emit("model-loading", { ...event, status });
     child.emit("model-loading", { ...event, status });
-    expect(s.onModelLoading).toHaveBeenLastCalledWith(null);
+    expect(s.onModelLoading).toHaveBeenLastCalledWith({ ...event, status });
     expect(s.subagents.setModelLoading).toHaveBeenLastCalledWith(
       "child-1",
       null,

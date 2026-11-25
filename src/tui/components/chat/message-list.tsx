@@ -7,6 +7,7 @@
 
 import type { BoxRenderable } from "@opentui/core";
 import { memo } from "react";
+import type { PendingModelLoad } from "../../../core/eventBus";
 import type { PendingApproval } from "../../../core/operator";
 import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
@@ -17,7 +18,11 @@ import {
   MessageRenderer,
 } from "../shared";
 import { InlineApprovalPrompt } from "./approval-inline";
-import { LoadingIndicator, type LoadingState } from "./loading-indicator";
+import {
+  BasetenFirstTokenWait,
+  LoadingIndicator,
+  type LoadingState,
+} from "./loading-indicator";
 
 /** Tools that spawn subagents — show "Waiting for agents" instead of "Executing" */
 const SUBAGENT_TOOLS = new Set([
@@ -80,7 +85,7 @@ export interface MessageListProps {
   streamingMessageIndex?: number;
   /** Is agent currently running */
   isRunning?: boolean;
-  modelLoading?: string | null;
+  modelLoading?: PendingModelLoad | null;
   /** Display variant */
   variant?: "chat" | "operator" | "subagent";
   /** Username for chat variant */
@@ -239,6 +244,12 @@ export const MessageList = memo(function MessageList({
         !hasPendingApproval &&
         (hasMessages || modelLoading) &&
         (() => {
+          if (modelLoading?.firstTokenStartedAt != null)
+            return (
+              <BasetenFirstTokenWait
+                startedAt={modelLoading.firstTokenStartedAt}
+              />
+            );
           const pendingToolInfo = getPendingToolInfo(messages);
           const pendingToolName = pendingToolInfo?.toolName ?? null;
           const liveLabel = pendingToolInfo

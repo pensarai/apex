@@ -48,8 +48,10 @@ try {
           messages: [],
           variant: "subagent",
           isRunning: true,
-          modelLoading:
-            "ollama:hf.co/webAI-Official/TwIL-8B:TwIL-8B-Q4_K_M-balanced.gguf",
+          modelLoading: {
+            model:
+              "ollama:hf.co/webAI-Official/TwIL-8B:TwIL-8B-Q4_K_M-balanced.gguf",
+          },
         };
         const loading = await render(loadingProps);
         assert.match(loading.replace(/\s+/g, " "), /Loading model weights/);
@@ -62,6 +64,18 @@ try {
         });
         await act(setup.renderOnce);
         assert.notEqual(setup.captureCharFrame(), loading);
+        const baseten = await render({
+          ...loadingProps,
+          modelLoading: {
+            model: "custom:baseten:nyx",
+            firstTokenStartedAt: Date.now() - 124_000,
+          },
+        });
+        assert.match(
+          baseten.replace(/\s+/g, " "),
+          /[◇◈◆] Baseten · 2m 4s · Waiting for first token/,
+        );
+        assert.equal(timers.size, baselineTimers + 1);
         const messages: DisplayMessage[] = [
           { role: "user", content: "Hello", createdAt: new Date() },
         ];
@@ -97,7 +111,7 @@ try {
         assert.ok(!stopped.includes("Loading model weights"));
         assert.equal(timers.size, baselineTimers);
         if (process.env.APEX_LOADING_VISUAL_QA)
-          console.log(`${initialMode} ${width} columns\n${loading}`);
+          console.log(`${initialMode} ${width} columns\n${baseten}`);
       } finally {
         await act(() => setup.renderer.destroy());
       }

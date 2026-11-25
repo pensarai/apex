@@ -2,6 +2,11 @@ import { EventEmitter } from "node:events";
 import type { TextStreamPart, ToolSet } from "ai";
 import type { OllamaModelLoadEvent } from "./ollama";
 
+export type PendingModelLoad = Pick<
+  AgentEventMap["model-loading"],
+  "model" | "firstTokenStartedAt"
+>;
+
 /**
  * Typed event map for the agent event bus.
  *
@@ -12,7 +17,9 @@ import type { OllamaModelLoadEvent } from "./ollama";
  * events (`command-output`, `error`) round out the map.
  */
 export type AgentEventMap = {
-  "model-loading": OllamaModelLoadEvent & {
+  "model-loading": Omit<OllamaModelLoadEvent, "status"> & {
+    status: OllamaModelLoadEvent["status"] | "finished";
+    firstTokenStartedAt?: number;
     subagentId?: string;
     sessionId?: string;
   };

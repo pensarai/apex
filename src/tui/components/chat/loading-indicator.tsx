@@ -17,6 +17,40 @@ const SPINNER_INTERVAL = 80;
 const DOTS_FRAMES = ["", ".", "..", "..."];
 const DOTS_INTERVAL = 400;
 
+// throbber-widgets DIAMOND (MIT), rendered with OpenTUI like the model-loading icon.
+const DIAMOND = ["◇", "◈", "◆", "◈"];
+
+export function BasetenFirstTokenWait({ startedAt }: { startedAt: number }) {
+  const { colors } = useTheme();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 180);
+    return () => clearInterval(timer);
+  }, []);
+  const elapsed = Math.max(0, now - startedAt);
+  const seconds = Math.floor(elapsed / 1000);
+  const duration =
+    seconds < 60
+      ? `${seconds}s`
+      : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return (
+    <box
+      flexDirection="row"
+      marginTop={1}
+      marginLeft={2}
+      gap={1}
+      overflow="hidden"
+    >
+      <text fg={colors.primary} flexShrink={0}>
+        {DIAMOND[Math.floor(elapsed / 180) % DIAMOND.length]}
+      </text>
+      <text fg={colors.textMuted} flexShrink={1}>
+        Baseten · {duration} · Waiting for first token
+      </text>
+    </box>
+  );
+}
+
 export type LoadingState =
   | "loading-model"
   | "thinking"

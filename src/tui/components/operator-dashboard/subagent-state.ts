@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import type { PendingModelLoad } from "../../../core/eventBus";
 import { loadSubagents } from "../../../core/session/persistence";
 import type { DisplayMessage } from "../agent-display";
 // Importing through the shared barrel pulls in opentui/ink-using components
@@ -28,7 +29,7 @@ export interface SubagentSession {
   completedAt?: Date;
   input: unknown;
   messages: DisplayMessage[];
-  modelLoading?: string | null;
+  modelLoading?: PendingModelLoad | null;
   parentToolCallId?: string;
 }
 
@@ -363,7 +364,7 @@ export function createSubagentSessionHelpers(setState: SetState) {
     });
   };
 
-  const setModelLoading = (id: string, model: string | null) => {
+  const setModelLoading = (id: string, model: PendingModelLoad | null) => {
     setState((prev) => {
       const session = prev.get(id);
       if (!session || session.status !== "running") return prev;
