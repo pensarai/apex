@@ -250,3 +250,19 @@ under `Documents/Codex/2026-11-25/recon-coverage-review`. The standalone
 their prerequisites, steps, impact, controls and verification guidance. A matching
 interactive view supports component filtering and search. No live security tests
 or Console runtime changes were made.
+
+## Balanced service consistency case
+
+The [balanced-services fixture](https://github.com/pensarai/recon-eval-environments/tree/codex/balanced-recon-coverage/environments/balanced-services)
+provides four structurally matched business services with six planted threat
+opportunities each. Its evaluator reports per-service coverage and depth, the
+weakest service and the spread, rather than requiring equal raw threat counts.
+The fixture contains no benchmark results yet; behavioral checks establish the
+planted opportunities, not agent performance.
+
+The harness accepts repeated `--origin` arguments; the first is the initial target
+and all are authorized report origins. Pass the four origins from the generated
+customer source's service catalog and that fixture's `agent-objective.txt` via
+`--objective-file`. Existing invocations retain the corporate fixture default.
+Rotate the initial origin to examine starting-service bias. The answer key and
+24-cell review remain outside the agent's source and tool scope.

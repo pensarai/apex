@@ -29,6 +29,7 @@ const { values } = parseArgs({
     minutes: { type: "string", default: "10" },
     dollars: { type: "string", default: "12" },
     "objective-file": { type: "string" },
+    origin: { type: "string", multiple: true },
   },
   strict: true,
 });
@@ -47,7 +48,23 @@ if (!(minutes > 0 && minutes <= 30 && dollars > 0 && dollars <= 30))
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output directory already exists");
 mkdirSync(output, { recursive: true });
-const target = "http://portal.corp.localtest.me:18080";
+const origins = [
+  ...new Set(
+    (values.origin ?? ["http://portal.corp.localtest.me:18080"]).map(
+      (value) => {
+        const url = new URL(value);
+        if (
+          !["http:", "https:"].includes(url.protocol) ||
+          url.origin !== value.replace(/\/$/, "")
+        )
+          throw new Error(`Expected a concrete HTTP(S) origin: ${value}`);
+        return url.origin;
+      },
+    ),
+  ),
+];
+const target = origins[0];
+if (!target) throw new Error("At least one origin is required");
 const fixture = realpathSync(values.fixture);
 const model = values.model as AIModel;
 const objective = values["objective-file"]
@@ -55,7 +72,7 @@ const objective = values["objective-file"]
   : "Map the supplied corporate application from all supplied source files, including its boundaries, components, data flows, assets, trust assumptions, distinct source-supported threats and applicable controls. Check the complete map for omissions, duplicates, contradictions and unsupported claims before finishing. Explain justified absence and unavailable deployment evidence. Do not invent threats or controls. Preserve third-party dependencies as threat vectors without authorizing provider testing. No live security tests or network requests are authorized; this is a source-only analysis.";
 const session = await sessions.create({
   name: `recon-${values.arm}-comparison`,
-  targets: [target],
+  targets: origins,
   config: {
     connectedRepositories: [
       { id: "corporate-source", name: "corporate-source", url: fixture },
@@ -231,6 +248,7 @@ writeFileSync(
       commit,
       fixture,
       target,
+      origins,
       objective,
       sourcePolicy: "source-only; no live requests",
       minutes,
