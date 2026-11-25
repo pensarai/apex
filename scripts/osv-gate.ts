@@ -502,17 +502,21 @@ function scan(
  * Splits a scan of several lockfiles into one scan per lockfile, in order.
  * osv-scanner names each result by the path it was given and leaves out a
  * lockfile with no packages, so a missing or unknown source fails the gate
- * rather than reading as a lockfile with no findings.
+ * rather than reading as a lockfile with no findings. osv-scanner reports
+ * Windows paths with forward slashes, so both sides are compared that way.
  */
 export function splitBySource(scan: OsvScan, lockfiles: string[]): OsvScan[] {
+  const slashed = (path = "") => path.replaceAll("\\", "/");
   const results = scan.results ?? [];
   for (const r of results)
-    if (!lockfiles.includes(r.source?.path ?? ""))
+    if (!lockfiles.some((l) => slashed(l) === slashed(r.source?.path)))
       throw new Error(
         `osv-scanner returned results for an unexpected source: ${r.source?.path}`,
       );
   return lockfiles.map((path) => {
-    const own = results.filter((r) => r.source?.path === path);
+    const own = results.filter(
+      (r) => slashed(r.source?.path) === slashed(path),
+    );
     if (!own.length)
       throw new Error(`osv-scanner returned no results for ${path}`);
     return { results: own };

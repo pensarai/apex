@@ -243,6 +243,14 @@ describe("splitBySource", () => {
     expect([...packageVersions(head)]).toEqual(["qs@2.0.0"]);
   });
 
+  it("matches Windows paths, which osv-scanner reports with forward slashes", () => {
+    const [head] = splitBySource(
+      { results: [result("C:/src/repo/bun.lock", pkg("qs", "2.0.0"))] },
+      ["C:\\src\\repo\\bun.lock"],
+    );
+    expect([...packageVersions(head)]).toEqual(["qs@2.0.0"]);
+  });
+
   it("fails when a lockfile has no results rather than reading it as clean", () => {
     expect(() =>
       splitBySource(
