@@ -1,6 +1,15 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { hasToolCall, stepCountIs } from "ai";
+import {
+  createUpdateGoalTool,
+  type Goal,
+  goalPromptSection,
+  goalStopCondition,
+  type TurnFacts,
+  turnFactsFromMessages,
+  UPDATE_GOAL_TOOL_NAME,
+} from "../../../goals";
 import { AgentRuntime } from "../../agentRuntime";
 import { defineAgent } from "../../defineAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent";
@@ -21,6 +30,7 @@ import {
   type ReconCompletionOptions,
   runAuditedRecon,
 } from "./reconCompletion";
+import { type ReconGoalOptions, runGoalRecon } from "./reconGoal";
 import { GENERALIZED_ATTACK_SURFACE_TOOLS } from "./reconToolset";
 import {
   buildUpdateBrief,
@@ -52,6 +62,8 @@ export interface GeneralizedAttackSurfaceAgentInput
   continuation?: string;
   harness?: "general";
   completion?: ReconCompletionOptions;
+  goal?: ReconGoalOptions;
+  goalTurn?: Goal;
   auditPrompt?: string;
   auditRequirementIds?: string[];
   stepLimit?: number;
@@ -73,6 +85,8 @@ export interface GeneralizedAttackSurfaceResult {
   /** Update runs the agent did not need to run for, and why. */
   skipped?: string;
   completionAudit?: CompletionAudit;
+  goal?: Goal;
+  goalTurnFacts?: TurnFacts;
 }
 
 interface GeneralizedState {
@@ -101,7 +115,11 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
   system: (opts) =>
     opts.auditPrompt
       ? COMPLETION_AUDIT_SYSTEM
-      : GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT,
+      : `${GENERALIZED_ATTACK_SURFACE_SYSTEM_PROMPT}${opts.goalTurn?.status === "active" ? `\n\n${goalPromptSection(opts.goalTurn)}\nBefore completing: check current persisted topology against every supplied origin and repository. Reconcile missing surfaces, distinct supported threat paths, applicable controls, contradictory sections and stale evidence. State justified absence and access limitations; never invent findings or expand authorized testing scope. Write a fresh report, then call update_goal with supporting tool evidence.` : ""}`,
+  extraTools: (opts) =>
+    opts.goalTurn?.status === "active"
+      ? { [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool() }
+      : undefined,
   responseSchema: (opts) =>
     opts.auditPrompt
       ? opts.auditRequirementIds
@@ -109,15 +127,20 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
         : completionAuditSchema
       : undefined,
   activeTools: (opts) => {
+    if (opts.goalTurn && opts.goalTurn.status !== "active")
+      return ["read_file"];
     if (opts.auditPrompt)
       return ["read_file", "list_files", "grep", "glob", "response"];
-    if (!opts.excludeTools?.length)
-      return [...GENERALIZED_ATTACK_SURFACE_TOOLS];
-    const excluded = new Set(opts.excludeTools);
-    return GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t));
+    const excluded = new Set(opts.excludeTools ?? []);
+    return [
+      ...GENERALIZED_ATTACK_SURFACE_TOOLS.filter((t) => !excluded.has(t)),
+      ...(opts.goalTurn?.status === "active" ? [UPDATE_GOAL_TOOL_NAME] : []),
+    ];
   },
   stopWhen: (opts) => [
-    hasToolCall("create_attack_surface_report"),
+    opts.goalTurn
+      ? goalStopCondition
+      : hasToolCall("create_attack_surface_report"),
     stepCountIs(opts.stepLimit ?? 10_000),
   ],
   target: (_opts, state) => state.target,
@@ -136,7 +159,7 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
         opts.session.config?.authenticationInstructions,
       ),
     ),
-  resolveResult: (opts, _state, _stream, validatedResponse) => {
+  resolveResult: async (opts, _state, stream, validatedResponse) => {
     const resultsPath = join(
       opts.session.rootPath,
       "attack-surface-results.json",
@@ -157,6 +180,18 @@ export const generalizedAttackSurfaceDefinition = defineAgent<
       targets,
       resultsPath,
       assetsPath,
+      ...(opts.goalTurn
+        ? {
+            goalTurnFacts: turnFactsFromMessages(
+              (await stream.response).messages,
+              {
+                outcome: "completed",
+                automatic: opts.goalTurn.rounds > 0,
+                heldCallCount: 0,
+              },
+            ),
+          }
+        : {}),
       ...(opts.auditPrompt
         ? { completionAudit: completionAuditSchema.parse(validatedResponse) }
         : {}),
@@ -191,11 +226,13 @@ export async function runGeneralizedReconToReport(
     abortAndDrain?(): Promise<void>;
   } = (i) => new GeneralizedAttackSurfaceAgent(i),
 ): Promise<GeneralizedAttackSurfaceResult> {
+  if (input.goal && input.completion)
+    throw new Error("Choose persistent goals or completion audits, not both");
   const root = input.session.rootPath;
   let first = input;
   if (input.update) {
     const start = startUpdate(input.update, root);
-    if (start.skip && !input.completion)
+    if (start.skip && !input.completion && !input.goal)
       return {
         results: null,
         targets: [],
@@ -210,6 +247,12 @@ export async function runGeneralizedReconToReport(
         ? buildUpdateBrief(input.update, root)
         : start.brief,
     };
+  }
+  if (input.goal) {
+    const result = await runGoalRecon(first, createAgent);
+    return input.update
+      ? { ...result, ...finishUpdate(input.update, root, input.session.id) }
+      : result;
   }
   if (input.completion) {
     await input.completion.restore?.();
