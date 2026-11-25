@@ -6,6 +6,8 @@ temp
 
 # lockfiles (using bun, not npm)
 package-lock.json
+# Installed with npm ci into the offsec sandbox images; gated by scripts/osv-gate.ts.
+!scripts/offsec-sandbox/package-lock.json
 yarn.lock
 
 # output

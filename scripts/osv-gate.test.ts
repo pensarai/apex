@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -695,10 +695,24 @@ describe("renderSummary", () => {
 });
 
 describe("GATED_LOCKFILES", () => {
-  it("gates bun.lock, and each gated lockfile exists", () => {
-    expect(GATED_LOCKFILES).toEqual(["bun.lock"]);
+  it("gates bun.lock and the sandbox image lockfile, and each exists", () => {
+    expect(GATED_LOCKFILES).toEqual([
+      "bun.lock",
+      "scripts/offsec-sandbox/package-lock.json",
+    ]);
     for (const path of GATED_LOCKFILES)
       expect(existsSync(join(import.meta.dirname, "..", path))).toBe(true);
+  });
+
+  it("reads every entry of the sandbox image lockfile as a registry package", () => {
+    const path = "scripts/offsec-sandbox/package-lock.json";
+    const locked = lockedPackages(
+      path,
+      readFileSync(join(import.meta.dirname, "..", path), "utf8"),
+    );
+    expect(locked.registry.size).toBeGreaterThan(0);
+    expect(locked.registry).toContain("camoufox-js@0.13.0");
+    expect(locked.other).toBe(0);
   });
 });
 
