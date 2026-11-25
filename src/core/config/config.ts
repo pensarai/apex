@@ -47,6 +47,7 @@ export interface Config {
   // Direct search
   braveAPIKey?: string | null;
   exaAPIKey?: string | null;
+  keenableAPIKey?: string | null;
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
@@ -182,6 +183,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
     braveAPIKey: parsedConfig.braveAPIKey ?? process.env.BRAVE_API_KEY,
     exaAPIKey: parsedConfig.exaAPIKey ?? process.env.EXA_API_KEY,
+    keenableAPIKey: parsedConfig.keenableAPIKey ?? process.env.KEENABLE_API_KEY,
   };
 }
 

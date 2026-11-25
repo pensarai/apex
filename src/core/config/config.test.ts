@@ -100,6 +100,19 @@ describe("provider environment fallbacks", () => {
     expect((await get()).exaAPIKey).toBe("exa-saved-key");
   });
 
+  it("loads a Keenable environment key and prefers a persisted key without saving the environment key", async () => {
+    vi.stubEnv("KEENABLE_API_KEY", "keenable-env-key");
+    expect((await get()).keenableAPIKey).toBe("keenable-env-key");
+    await update({ selectedModelId: "test-model" });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.keenableAPIKey).toBeUndefined();
+
+    await update({ keenableAPIKey: "keenable-saved-key" });
+    expect((await get()).keenableAPIKey).toBe("keenable-saved-key");
+  });
+
   it("loads an Inference.net environment key and prefers a persisted key", async () => {
     vi.stubEnv("INFERENCE_API_KEY", "inference-env-key");
     expect((await get()).inferenceAPIKey).toBe("inference-env-key");
