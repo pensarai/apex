@@ -1,4 +1,7 @@
-FROM kalilinux/kali-rolling:latest
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS bun
+
+# Kali is a rolling release with no version tags, so the digest is the pin.
+FROM kalilinux/kali-rolling:latest@sha256:69a9a33d98a584a537bd0f7144d20c3b6d23f3bafa9ffcf0cadf4c5f186d02ff
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -16,23 +19,40 @@ RUN apt-get update && apt-get dist-upgrade -y && \
       gdb gdb-multiarch binutils-multiarch \
       strace ltrace hexedit upx \
       binwalk radare2 \
-      unzip zip zlib1g-dev \
+      unzip zip xz-utils zlib1g-dev \
       gobuster sqlmap nikto hydra john hashcat \
       foremost exiftool \
       wireshark-common \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js LTS (required by @pensar/apex's pensar binary)
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# Node.js (required by @pensar/apex's pensar binary) from the official release
+# tarball, checked against the SHA-256 in that release's SHASUMS256.txt.
+ARG NODE_VERSION=22.23.5
+ARG TARGETARCH
+RUN set -eu; \
+    case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+      amd64) arch=x64; sha256=cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 ;; \
+      arm64) arch=arm64; sha256=2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09 ;; \
+      *) echo "unsupported architecture: ${TARGETARCH:-unknown}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${arch}.tar.xz"; \
+    echo "${sha256}  /tmp/node.tar.xz" | sha256sum -c -; \
+    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --no-same-owner \
+      --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md'; \
+    rm /tmp/node.tar.xz; \
+    node --version
 
-# Install bun system-wide (required for @pensar/apex)
+# bun system-wide (required for @pensar/apex), the same release as console's,
+# from the digest-pinned official image. BUN_INSTALL puts global installs in
+# /usr/local so the non-root user can run them.
 ENV BUN_INSTALL="/usr/local"
-RUN curl -fsSL https://bun.sh/install | bash
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s bun /usr/local/bin/bunx && bun --version
 
-# Install @pensar/apex globally
-RUN bun install -g @pensar/apex
+# Install @pensar/apex globally, at a fixed release
+ARG APEX_VERSION=2.7.0
+RUN bun install -g "@pensar/apex@${APEX_VERSION}"
 
 # Create non-root user for safety
 RUN groupadd -g ${GID} ${USER} || true \
