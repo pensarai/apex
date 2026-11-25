@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
-import { getResumeMessages, normalizeMessages } from "../../../core/session";
+import { prepareConversationMessages } from "../../../core/session";
 import type { DisplayMessage } from "../agent-display";
 
 // ---------------------------------------------------------------------------
@@ -124,6 +124,7 @@ export function rewriteToolResultOutput(
 // ---------------------------------------------------------------------------
 
 export interface RecoverAbortedTranscriptInput {
+  preserveHistory?: boolean;
   /** Session root — `messages.json` is read from and written here. */
   rootPath: string;
   /** In-memory conversation — the base when no usable transcript is on disk. */
@@ -155,7 +156,10 @@ export function recoverAbortedTranscript(
     if (existsSync(messagesPath)) {
       const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
       if (Array.isArray(raw) && raw.length > 0) {
-        conversation = normalizeMessages(getResumeMessages(raw));
+        conversation = prepareConversationMessages(raw, {
+          preserveHistory: input.preserveHistory,
+          resume: true,
+        });
       }
     }
     recovered = recoverAbortedConversation(
