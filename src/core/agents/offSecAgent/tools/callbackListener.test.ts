@@ -83,7 +83,12 @@ async function startListener(
       toolCallDescription: "Test listener",
       ...input,
     },
-    { toolCallId, messages: [], abortSignal: ctx.abortSignal },
+    {
+      context: {},
+      toolCallId,
+      messages: [],
+      abortSignal: ctx.abortSignal,
+    },
   )) as {
     success: boolean;
     summary: string;
@@ -107,7 +112,12 @@ async function startListener(
 async function pollListener(ctx: ToolContext, jobId: string) {
   return (await pollCallbackListener(ctx).execute?.(
     { jobId, toolCallDescription: "Test poll" },
-    { toolCallId: "tc_poll", messages: [], abortSignal: ctx.abortSignal },
+    {
+      context: {},
+      toolCallId: "tc_poll",
+      messages: [],
+      abortSignal: ctx.abortSignal,
+    },
   )) as {
     success: boolean;
     summary: string;
@@ -341,7 +351,12 @@ describe("callback listener helper (real local jobs)", () => {
     // Stop: real outcome, evidence preserved, port actually released.
     const stopped = (await stopCallbackListener(ctx).execute?.(
       { jobId: listener.jobId, toolCallDescription: "Test stop" },
-      { toolCallId: "tc_stop", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_stop",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string; artifactPaths: string[] };
     expect(stopped.success).toBe(true);
     expect(stopped.summary).toContain("Final evidence persisted");
@@ -384,7 +399,12 @@ describe("callback listener helper (real local jobs)", () => {
         port,
         toolCallDescription: "Conflicting listener",
       },
-      { toolCallId: "tc_conflict", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_conflict",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as {
       success: boolean;
       summary: string;
@@ -427,7 +447,12 @@ describe("callback listener helper (real local jobs)", () => {
 
     const result = (await startCallbackListener(ctx).execute?.(
       { toolCallDescription: "Aborted start" },
-      { toolCallId: "tc_aborted", messages: [], abortSignal: ac.signal },
+      {
+        context: {},
+        toolCallId: "tc_aborted",
+        messages: [],
+        abortSignal: ac.signal,
+      },
     )) as { success: boolean; summary: string };
 
     expect(result.success).toBe(false);
@@ -448,14 +473,24 @@ describe("callback listener helper (real local jobs)", () => {
     });
     const foreignPoll = (await pollCallbackListener(ctxB).execute?.(
       { jobId: listener.jobId, toolCallDescription: "Foreign poll" },
-      { toolCallId: "tc_foreign", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_foreign",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string };
     expect(foreignPoll.success).toBe(false);
     expect(foreignPoll.summary).toContain("not owned by this agent");
 
     const foreignStop = (await stopCallbackListener(ctxB).execute?.(
       { jobId: listener.jobId, toolCallDescription: "Foreign stop" },
-      { toolCallId: "tc_foreign_stop", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_foreign_stop",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string };
     expect(foreignStop.success).toBe(false);
 
@@ -464,7 +499,12 @@ describe("callback listener helper (real local jobs)", () => {
     const ctxC = makeCtx();
     const sameSessionStop = (await stopCallbackListener(ctxC).execute?.(
       { jobId: listener.jobId, toolCallDescription: "Sibling agent stop" },
-      { toolCallId: "tc_sibling", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_sibling",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string };
     expect(sameSessionStop.success).toBe(false);
     expect(sameSessionStop.summary).toContain("not owned by this agent");
@@ -522,7 +562,12 @@ describe("callback listener helper (real local jobs)", () => {
     // No handle at all: explicit unknown, never an implicit replay.
     const unknown = (await pollCallbackListener(ctx).execute?.(
       { jobId: "wjob_99999_cafef00d", toolCallDescription: "Unknown" },
-      { toolCallId: "tc_unknown", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_unknown",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string };
     expect(unknown.success).toBe(false);
     expect(unknown.summary).toContain("not owned by this agent");
@@ -570,7 +615,12 @@ describe("callback listener helper (real local jobs)", () => {
 
     const stopped = (await stopCallbackListener(ctx).execute?.(
       { jobId, toolCallDescription: "No-evidence stop" },
-      { toolCallId: "tc_no_evidence", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_no_evidence",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as {
       success: boolean;
       summary: string;
@@ -611,7 +661,12 @@ describe("callback listener helper (real local jobs)", () => {
 
     const result = (await startCallbackListener(ctx).execute?.(
       { toolCallDescription: "No node here" },
-      { toolCallId: "tc_no_node", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_no_node",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string };
 
     expect(result.success).toBe(false);
@@ -671,7 +726,12 @@ describe("callback listener helper (remote-adapter contract, local machine)", ()
 
     const stopped = (await stopCallbackListener(ctx).execute?.(
       { jobId: listener.jobId, toolCallDescription: "Remote-adapter stop" },
-      { toolCallId: "tc_remote_stop", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_remote_stop",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string };
     expect(stopped.success).toBe(true);
     await expect(
@@ -807,7 +867,12 @@ describe("record-gone snapshot retrieval (bugbot regressions)", () => {
       : stopCallbackListener(ctx)
     ).execute?.(
       { jobId, toolCallDescription: "Pruned during evidence retrieval" },
-      { toolCallId: "tc_pruned", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_pruned",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as {
       success: boolean;
       data: { callbackHits: number; status: string };
@@ -888,7 +953,12 @@ describe("record-gone snapshot retrieval (bugbot regressions)", () => {
 
     const poll = (await pollCallbackListener(ctx).execute?.(
       { jobId, toolCallDescription: "Corrupt snapshot poll" },
-      { toolCallId: "tc_corrupt", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_corrupt",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string; artifactPaths: string[] };
     expect(poll.success).toBe(false);
     expect(poll.summary).toContain("could not be read");
@@ -935,7 +1005,12 @@ describe("record-gone snapshot retrieval (bugbot regressions)", () => {
     ] as const) {
       const poll = (await pollCallbackListener(ctx).execute?.(
         { jobId, toolCallDescription: "Malformed snapshot poll" },
-        { toolCallId: `tc_${jobId}`, messages: [], abortSignal: undefined },
+        {
+          context: {},
+          toolCallId: `tc_${jobId}`,
+          messages: [],
+          abortSignal: undefined,
+        },
       )) as { success: boolean; summary: string; artifactPaths: string[] };
       expect(poll.success).toBe(false);
       expect(poll.summary).toContain("could not be read");
@@ -959,7 +1034,12 @@ describe("record-gone snapshot retrieval (bugbot regressions)", () => {
 
     const poll = (await pollCallbackListener(ctx).execute?.(
       { jobId, toolCallDescription: "Capped snapshot poll" },
-      { toolCallId: "tc_capped", messages: [], abortSignal: undefined },
+      {
+        context: {},
+        toolCallId: "tc_capped",
+        messages: [],
+        abortSignal: undefined,
+      },
     )) as { success: boolean; summary: string; artifactPaths: string[] };
     expect(poll.success).toBe(false);
     expect(poll.summary).toContain("bounded read cap");

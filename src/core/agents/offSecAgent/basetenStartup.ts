@@ -6,7 +6,7 @@ export function basetenStartup(
   report: (event: AgentEventMap["model-loading"]) => void,
 ): LanguageModelMiddleware {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     async wrapStream({ doStream, params }) {
       const signal = params.abortSignal;
       if (signal?.aborted) return doStream();

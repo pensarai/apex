@@ -2,18 +2,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
-  LanguageModelV3CallOptions,
-  LanguageModelV3StreamPart,
+  LanguageModelV4CallOptions,
+  LanguageModelV4StreamPart,
 } from "@ai-sdk/provider";
 import { simulateReadableStream, stepCountIs, type ToolSet, tool } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createAllTools } from "../agents/offSecAgent/tools";
 import type { StreamResponseOpts } from "./ai";
 
 const state = vi.hoisted(() => ({
-  model: undefined as MockLanguageModelV3 | undefined,
+  model: undefined as MockLanguageModelV4 | undefined,
 }));
 vi.mock("./utils", async () => ({
   ...(await vi.importActual<typeof import("./utils")>("./utils")),
@@ -66,14 +66,14 @@ it.each([
       }),
     };
     const system = "s".repeat(4_334 * 4);
-    const calls: LanguageModelV3CallOptions[] = [];
-    state.model = new MockLanguageModelV3({
+    const calls: LanguageModelV4CallOptions[] = [];
+    state.model = new MockLanguageModelV4({
       doStream: async (options) => {
         expect(JSON.stringify(options.prompt)).not.toContain(
           "Compact this conversation",
         );
         calls.push(options);
-        const chunks: LanguageModelV3StreamPart[] =
+        const chunks: LanguageModelV4StreamPart[] =
           calls.length === 1
             ? [
                 {
@@ -147,8 +147,8 @@ it.each([
   undefined,
   {},
 ])("budgets a prompt-only replay using the resumed history with tools=%j", async (tools) => {
-  const calls: LanguageModelV3CallOptions[] = [];
-  state.model = new MockLanguageModelV3({
+  const calls: LanguageModelV4CallOptions[] = [];
+  state.model = new MockLanguageModelV4({
     doStream: async (options) => {
       calls.push(options);
       return {
@@ -189,8 +189,8 @@ it.each([
 });
 
 it("preserves the output minimum required by budget-based thinking", async () => {
-  const calls: LanguageModelV3CallOptions[] = [];
-  state.model = new MockLanguageModelV3({
+  const calls: LanguageModelV4CallOptions[] = [];
+  state.model = new MockLanguageModelV4({
     doStream: async (options) => {
       calls.push(options);
       return {
@@ -225,8 +225,8 @@ it("preserves the output minimum required by budget-based thinking", async () =>
 });
 
 it("preserves prompt-only output when no tools are active", async () => {
-  const calls: LanguageModelV3CallOptions[] = [];
-  state.model = new MockLanguageModelV3({
+  const calls: LanguageModelV4CallOptions[] = [];
+  state.model = new MockLanguageModelV4({
     doStream: async (options) => {
       calls.push(options);
       return {

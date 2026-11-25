@@ -94,7 +94,11 @@ describe("Lance selected budget", () => {
     await expect(
       runtime.tools({}).update_plan.execute!(
         { plan: [] },
-        { toolCallId: "blocked", messages: [] },
+        {
+          context: {},
+          toolCallId: "blocked",
+          messages: [],
+        },
       ),
     ).rejects.toThrow();
     expect(runtime.metrics("m").outcome).toBe("token_limit");
@@ -127,7 +131,11 @@ describe("Lance selected budget", () => {
     await Promise.resolve(
       runtime.tools({}).submit_objective.execute!(
         { evidence: "candidate" },
-        { toolCallId: "submit", messages: [] },
+        {
+          context: {},
+          toolCallId: "submit",
+          messages: [],
+        },
       ),
     ).catch(() => {});
     runtime.finish();

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { wrapLanguageModel } from "ai";
 import { afterEach, expect, it, vi } from "vitest";
+import { createCustomModel } from "../../ai/providers/custom";
 import { AgentEventBus, type AgentEventMap } from "../../eventBus";
 import { basetenStartup } from "./basetenStartup";
 import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
@@ -132,19 +133,17 @@ it("waits for provider cancellation before releasing the request", async () => {
   const cleanup = Promise.withResolvers<void>();
   const cancel = vi.fn(() => cleanup.promise);
   const report = vi.fn();
-  const model = wrapLanguageModel({
-    model: {
-      specificationVersion: "v3",
-      modelId: "nyx",
-      provider: "baseten",
-      supportedUrls: {},
-      doGenerate() {
-        throw new Error("stream only");
-      },
-      async doStream() {
-        return { stream: new ReadableStream({ cancel }) };
-      },
+  const deployment = createCustomModel("custom:research:nyx", {
+    research: {
+      baseUrl: "https://model-test.api.baseten.co/deployment/example/sync/v1",
+      models: [{ id: "nyx", contextLength: 262144, maxOutputTokens: 32768 }],
     },
+  });
+  vi.spyOn(deployment, "doStream").mockResolvedValue({
+    stream: new ReadableStream({ cancel }),
+  });
+  const model = wrapLanguageModel({
+    model: deployment,
     middleware: basetenStartup("nyx", report),
   });
   const { stream } = await model.doStream({ prompt: [] });

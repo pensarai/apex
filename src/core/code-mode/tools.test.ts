@@ -139,6 +139,7 @@ describe("createCodeModeTools", () => {
       const result = executeWait(
         { cell_id: pending.cellId, yield_time_ms: 60_000 },
         {
+          context: {},
           toolCallId: "wait_cancelled",
           messages: [],
           abortSignal: controller.signal,

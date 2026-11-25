@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import {
   HOONIFY_BASE_URL,
   type HoonifyModel,
@@ -9,7 +9,7 @@ import {
 export function createHoonifyModel(
   id: string,
   options: { apiKey?: string; models?: HoonifyModel[] },
-): LanguageModelV3 {
+): LanguageModelV4 {
   const apiKey = (options.apiKey ?? process.env.HOONIFY_API_KEY)?.trim();
   if (!apiKey)
     throw new Error("Set HOONIFY_API_KEY or connect Hoonify in /providers.");

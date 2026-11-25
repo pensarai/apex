@@ -47,7 +47,11 @@ afterEach(async () => {
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
-const options = { toolCallId: "output-test", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "output-test",
+  messages: [],
+};
 function reference(text: string): string {
   const ref = text.match(/tool-output:[0-9a-f-]{36}/)?.[0];
   expect(ref).toBeDefined();

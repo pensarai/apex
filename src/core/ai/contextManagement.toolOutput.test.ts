@@ -29,7 +29,11 @@ import {
 } from "./contextManagement";
 
 const roots: string[] = [];
-const options = { toolCallId: "inspect-compacted", messages: [] };
+const options = {
+  context: {},
+  toolCallId: "inspect-compacted",
+  messages: [],
+};
 const original = `${"noise\n".repeat(500)}COMPACTION_EVIDENCE\n${"noise\n".repeat(500)}`;
 function history(): ModelMessage[] {
   return [
@@ -238,7 +242,8 @@ describe("compaction output references", () => {
         }),
       },
       stopWhen: stepCountIs(3),
-      prepareStep: ({ messages, stepNumber }) => {
+      prepareStep: ({ initialMessages, responseMessages, stepNumber }) => {
+        const messages = [...initialMessages, ...responseMessages];
         if (stepNumber === 0) return;
         const raw = messages.find((message) => message.role === "tool");
         if (!raw || raw.role !== "tool")

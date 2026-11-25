@@ -228,7 +228,7 @@ describe.each(models)("OpenAI $ids", ({ ids, context, efforts }) => {
       text: { format: { type: "json_schema" } },
     });
     expect(body.reasoning).toEqual(
-      efforts.length ? { effort: "high" } : undefined,
+      efforts.length ? { effort: "high", summary: "detailed" } : undefined,
     );
   });
 });
@@ -320,7 +320,9 @@ it.each(
     stream: true,
   });
   expect(JSON.parse(String(first[1]?.body)).reasoning).toEqual(
-    getOpenAIReasoningEfforts(id).length ? { effort: "high" } : undefined,
+    getOpenAIReasoningEfforts(id).length
+      ? { effort: "high", summary: "detailed" }
+      : undefined,
   );
   await model.doGenerate({
     prompt: [

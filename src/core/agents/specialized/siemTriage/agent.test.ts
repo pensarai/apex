@@ -58,11 +58,19 @@ describe("SiemTriageAgent contracts", () => {
       lookup: "EventName" as const,
       value: "CreateUser",
     };
-    await tool.execute?.(query, { toolCallId: "aws", messages: [] });
+    await tool.execute?.(query, {
+      context: {},
+      toolCallId: "aws",
+      messages: [],
+    });
     expect(inspect).toHaveBeenCalledWith(query);
     await tool.execute?.(
       { ...query, region: "eu-west-1" },
-      { toolCallId: "outside", messages: [] },
+      {
+        context: {},
+        toolCallId: "outside",
+        messages: [],
+      },
     );
     expect(inspect).toHaveBeenCalledTimes(1);
     expect(
@@ -171,6 +179,7 @@ describe("search_siem_logs tool", () => {
   const execute = (logSearch: SiemLogSearch, input: Record<string, unknown>) =>
     // biome-ignore lint/style/noNonNullAssertion: the tool always defines execute
     buildSearchSiemLogsTool(logSearch).execute!(input as never, {
+      context: {},
       toolCallId: "call-1",
       messages: [],
     });

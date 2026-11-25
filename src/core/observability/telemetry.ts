@@ -1,4 +1,5 @@
-import { APICallError, type LanguageModelV3 } from "@ai-sdk/provider";
+import { LegacyOpenTelemetry } from "@ai-sdk/otel";
+import { APICallError, type LanguageModelV4 } from "@ai-sdk/provider";
 import {
   type Span,
   SpanStatusCode,
@@ -18,6 +19,7 @@ export interface AiTelemetrySettings {
   /** Stable, low-cardinality operation identifier (`apex.<area>.<verb>`). */
   functionId: string;
   metadata?: Record<string, string>;
+  integrations: LegacyOpenTelemetry[];
 }
 
 /** Stable operation identifiers for every model-call helper. */
@@ -49,6 +51,7 @@ export interface CreateAiTelemetryInput {
  */
 export function createAiTelemetrySettings(
   input: CreateAiTelemetryInput,
+  tracer?: Tracer,
 ): AiTelemetrySettings {
   const recordPayloads = shouldRecordAiPayloads();
   const metadata: Record<string, string> = {};
@@ -63,7 +66,34 @@ export function createAiTelemetrySettings(
     metadata.compactionTraceId = input.compaction.traceId;
     metadata.compactionSpanId = input.compaction.spanId;
   }
+  const sdkTracer = tracer ?? trace.getTracer("ai");
+  const attributes = Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) => [
+      `ai.telemetry.metadata.${key}`,
+      value,
+    ]),
+  );
   return {
+    integrations: [
+      new LegacyOpenTelemetry({
+        tracer: {
+          startActiveSpan: sdkTracer.startActiveSpan.bind(sdkTracer),
+          startSpan(name, options, context) {
+            return sdkTracer.startSpan(
+              name,
+              {
+                ...options,
+                attributes: {
+                  ...options?.attributes,
+                  ...attributes,
+                },
+              },
+              context,
+            );
+          },
+        },
+      }),
+    ],
     isEnabled: true,
     recordInputs: recordPayloads,
     recordOutputs: recordPayloads,
@@ -82,7 +112,7 @@ export function createAiTelemetrySettings(
 // ---------------------------------------------------------------------------
 
 export interface GenerationSpanTracker {
-  /** Forwarding tracer — pass as `experimental_telemetry.tracer`. */
+  /** Forwarding tracer — pass to the per-call OpenTelemetry integration. */
   readonly tracer: Tracer;
   /** Record the failure on the captured root generation span (no-op if none
    *  or already marked by the SDK's thrown-error handling). */
@@ -166,6 +196,7 @@ function recordProviderCallFailure(error: unknown): void {
   try {
     const span = trace.getActiveSpan();
     if (!span?.isRecording()) return;
+    if (error instanceof Error) span.recordException(error);
     if (error instanceof Error && ERROR_TYPE_PATTERN.test(error.name)) {
       span.setAttribute("error.type", error.name);
     }
@@ -197,9 +228,9 @@ function recordProviderCallFailure(error: unknown): void {
  * values, thrown errors, and call counts pass through untouched; no messages,
  * request or response bodies, or stack traces are copied into attributes.
  */
-export function withModelCallDiagnostics<T extends LanguageModelV3>(
+export function withModelCallDiagnostics<T extends LanguageModelV4>(
   model: T,
-): LanguageModelV3 {
+): LanguageModelV4 {
   return {
     specificationVersion: model.specificationVersion,
     provider: model.provider,

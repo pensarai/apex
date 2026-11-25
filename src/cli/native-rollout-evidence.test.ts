@@ -10,8 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
+  LanguageModelV4,
+  LanguageModelV4CallOptions,
 } from "@ai-sdk/provider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withNativeRolloutEvidenceModel } from "../core/ai/native-rollout-evidence";
@@ -56,9 +56,9 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-function model(): LanguageModelV3 {
+function model(): LanguageModelV4 {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     provider: "fixture",
     modelId: "fixture-model",
     supportedUrls: {},
@@ -81,7 +81,7 @@ function model(): LanguageModelV3 {
   };
 }
 
-const callOptions = { prompt: [] } as LanguageModelV3CallOptions;
+const callOptions = { prompt: [] } as LanguageModelV4CallOptions;
 
 describe("CLI native rollout evidence", () => {
   it("creates missing parents while reserving the destination exclusively", async () => {

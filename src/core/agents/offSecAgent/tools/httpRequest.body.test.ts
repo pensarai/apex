@@ -192,6 +192,7 @@ describe.each([
       if (!validated?.success)
         throw new Error("Body rejected before execution");
       const result = await tool.execute?.(validated.value, {
+        context: {},
         toolCallId: "tc_body",
         messages: [],
       });

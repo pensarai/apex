@@ -2,9 +2,11 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import type { Context } from "@ai-sdk/provider-utils";
 import {
   APICallError,
+  type GenerateTextOnStepEndCallback,
   generateText,
   type LanguageModel,
   type LanguageModelMiddleware,
@@ -13,8 +15,7 @@ import {
   RetryError,
   type StepResult,
   type StopCondition,
-  type StreamTextOnFinishCallback,
-  type StreamTextOnStepFinishCallback,
+  type StreamTextOnEndCallback,
   type StreamTextResult,
   streamText,
   type TextStreamPart,
@@ -59,6 +60,7 @@ import {
   estimateToolsOverheadTokens,
   type FitContextResult,
   fitMessagesToContext,
+  orderResolvedToolMessages,
   splitResumeHistory,
   truncateWithMarker,
 } from "./contextManagement";
@@ -781,7 +783,7 @@ function retryBudgetOf(opts: StreamResponseOpts): StreamRetryBudget {
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
-  originalStream: StreamTextResult<ToolSet, never>,
+  originalStream: StreamTextResult<ToolSet, Context, never>,
   messagesContainer: { current: ModelMessage[] },
   opts: StreamResponseOpts,
   model: LanguageModel,
@@ -789,13 +791,13 @@ function wrapStreamWithErrorHandler(
   generationSpans?: GenerationSpanTracker,
   drainIdleStream?: (reason: unknown) => Promise<void>,
   settleAttempt?: () => Promise<void>,
-): StreamTextResult<ToolSet, never> {
+): StreamTextResult<ToolSet, Context, never> {
   const budget = retryBudgetOf(opts);
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
   // Result fields must describe the attempt that produced the consumed
   // chunks, not the attempt that failed and was replaced.
-  let finalAttempt: StreamTextResult<ToolSet, never> = originalStream;
+  let finalAttempt: StreamTextResult<ToolSet, Context, never> = originalStream;
   let consumptionStarted = false;
   let settleAttempts!: () => void;
   const attemptsSettled = new Promise<void>((resolve) => {
@@ -803,7 +805,10 @@ function wrapStreamWithErrorHandler(
   });
 
   const handler = {
-    get(_target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
+    get(
+      _target: StreamTextResult<ToolSet, Context, never>,
+      prop: string | symbol,
+    ) {
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
@@ -1513,11 +1518,11 @@ export interface StreamResponseOpts {
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
   onStepFinish?: (
-    step: Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0] & {
+    step: Parameters<GenerateTextOnStepEndCallback<ToolSet>>[0] & {
       /** Context limit used for this call; synthetic usage events may omit it. */
       contextWindow?: number;
     },
-  ) => ReturnType<StreamTextOnStepFinishCallback<ToolSet>>;
+  ) => ReturnType<GenerateTextOnStepEndCallback<ToolSet>>;
   /** Provider middleware applied only to this stream's model calls. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   /** Explicit undefined clears an inherited recorder for an unrecorded child. */
@@ -1528,7 +1533,7 @@ export interface StreamResponseOpts {
   activeTools?: string[];
   silent?: boolean;
   authConfig?: AIAuthConfig;
-  onFinish?: StreamTextOnFinishCallback<ToolSet>;
+  onFinish?: StreamTextOnEndCallback<ToolSet>;
   /**
    * Called when the context window overflows and the conversation is
    * summarized. Callers should use this to discard stale message history
@@ -1626,7 +1631,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 
 export function streamResponse(
   opts: StreamResponseOpts,
-): StreamTextResult<ToolSet, never> {
+): StreamTextResult<ToolSet, Context, never> {
   opts = { ...opts, inferenceRecorder: getInferenceRecorder(opts) };
   return runWithInferenceRecorder(opts.inferenceRecorder, () => {
     const recovery = (opts as InternalStreamResponseOpts)[
@@ -1642,7 +1647,7 @@ export function streamResponse(
 function streamResponseWithinOperation(
   opts: StreamResponseOpts,
   nativeRecovery?: NativeStreamRecovery,
-): StreamTextResult<ToolSet, never> {
+): StreamTextResult<ToolSet, Context, never> {
   const compactionState = opts._compaction ?? {};
   // One effective tool selection per stream, before any fitting: proactive
   // fit, provider schemas, execution, repair, and every continuation path
@@ -1706,6 +1711,7 @@ function streamResponseWithinOperation(
   // older, pre-fit messages again.
   let recorderBase: ModelMessage[] | undefined;
   let responseMessageLength = 0;
+  let responseMessages: ModelMessage[] = [];
   const estimatedOverheadTokens = estimateToolsOverheadTokens(tools) + 1_000;
   let preparedInputEstimateTokens = 0;
   let inputSafetyMarginTokens = 10_000;
@@ -1716,6 +1722,21 @@ function streamResponseWithinOperation(
   // the AI SDK starts the next step. One normalization feeds both sinks —
   // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
+    if (
+      step.response?.messages &&
+      step.response.id !== "summarization" &&
+      step.response.id !== "tool-repair"
+    ) {
+      responseMessages = [...responseMessages, ...step.response.messages];
+      const response = {
+        ...step.response,
+        messages: responseMessages as typeof step.response.messages,
+      };
+      step = new Proxy(step, {
+        get: (target, key) =>
+          key === "response" ? response : Reflect.get(target, key),
+      });
+    }
     const stepUsage = normalizeStepUsage(step);
     if (
       preparedInputEstimateTokens > 0 &&
@@ -2008,11 +2029,11 @@ function streamResponseWithinOperation(
     const attemptModel = wrapLanguageModel({
       model: providerModel,
       middleware: {
-        specificationVersion: "v3",
+        specificationVersion: "v4",
         wrapStream: async ({ doStream }) => {
           const pending = doStream();
           let reader:
-            | ReadableStreamDefaultReader<LanguageModelV3StreamPart>
+            | ReadableStreamDefaultReader<LanguageModelV4StreamPart>
             | undefined;
           let sourceSettled = false;
           let cancellation: Promise<void> | undefined;
@@ -2119,9 +2140,9 @@ function streamResponseWithinOperation(
     };
     const responseOptions: Parameters<typeof streamText>[0] = {
       model: attemptModel,
+      allowSystemInMessages: true,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
-      allowSystemInMessages: true,
       stopWhen: spanningPriorSteps(stopWhen, priorSteps),
       toolChoice,
       tools: effectiveTools,
@@ -2135,16 +2156,18 @@ function streamResponseWithinOperation(
       // span: error-part runs complete normally in the SDK, so nothing
       // marks the span failed — the wrapper's catch does.
       experimental_telemetry: {
-        ...createAiTelemetrySettings({
-          operation: "apex.agent.stream",
-          sessionId,
-          compaction: opts._compaction?.last,
-          reasoning: {
-            requested: reasoning ?? "legacy-default",
-            parameters: JSON.stringify(reasoningProviderOptions ?? {}),
+        ...createAiTelemetrySettings(
+          {
+            operation: "apex.agent.stream",
+            sessionId,
+            compaction: opts._compaction?.last,
+            reasoning: {
+              requested: reasoning ?? "legacy-default",
+              parameters: JSON.stringify(reasoningProviderOptions ?? {}),
+            },
           },
-        }),
-        tracer: generationSpans.tracer,
+          generationSpans.tracer,
+        ),
       },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
@@ -2157,7 +2180,10 @@ function streamResponseWithinOperation(
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
         let stepMessages = projectFailedToolCalls(
-          step.messages,
+          orderResolvedToolMessages([
+            ...step.initialMessages,
+            ...step.responseMessages,
+          ]),
           step.steps.flatMap((previous) => previous.toolCalls),
         );
         if (step.stepNumber > 0) {
@@ -2354,6 +2380,7 @@ function streamResponseWithinOperation(
               { operationKind: "tool.repair", sessionId },
               () =>
                 generateText({
+                  allowSystemInMessages: true,
                   model: providerModel,
                   maxOutputTokens,
                   providerOptions: {
@@ -2433,7 +2460,7 @@ function streamResponseWithinOperation(
                   stepType: "initial",
                   isContinued: false,
                 } as unknown as Parameters<
-                  StreamTextOnStepFinishCallback<ToolSet>
+                  GenerateTextOnStepEndCallback<ToolSet>
                 >[0]);
               } catch (callbackError) {
                 if (isDrainFailure(callbackError)) throw callbackError;
@@ -2481,7 +2508,16 @@ function streamResponseWithinOperation(
         );
         return repair;
       },
-      onFinish,
+      onFinish: onFinish
+        ? (event: Parameters<StreamTextOnEndCallback<ToolSet>>[0]) =>
+            onFinish({
+              ...event,
+              response: {
+                ...event.response,
+                messages: responseMessages as typeof event.response.messages,
+              },
+            })
+        : undefined,
     };
     let recovery = nativeRecovery;
     const response = recovery
@@ -2502,8 +2538,18 @@ function streamResponseWithinOperation(
     const recoveryOpts: InternalStreamResponseOpts = recovery
       ? { ...opts, [NATIVE_STREAM_RECOVERY]: recovery }
       : opts;
+    // Preserve Apex's cumulative response contract across the SDK migration.
+    const compatibleResponse = new Proxy(response, {
+      get(target, key, receiver) {
+        if (key === "response")
+          return Promise.all([target.response, target.responseMessages]).then(
+            ([metadata, messages]) => ({ ...metadata, messages }),
+          );
+        return Reflect.get(target, key, receiver);
+      },
+    });
     return wrapStreamWithErrorHandler(
-      response,
+      compatibleResponse,
       messagesContainer,
       recoveryOpts,
       providerModel,
@@ -2656,6 +2702,7 @@ async function generateObjectResponseWithinRecorder<T extends z.ZodType>(
       ) {
         try {
           const { output, usage, providerMetadata } = await generateText({
+            allowSystemInMessages: true,
             model: providerModel,
             output: Output.object({
               schema,
