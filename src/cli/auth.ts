@@ -61,9 +61,10 @@ function prompt(question: string): Promise<string> {
     output: process.stdout,
   });
   return new Promise((resolve) => {
+    rl.once("close", () => resolve(""));
     rl.question(question, (answer) => {
-      rl.close();
       resolve(answer.trim());
+      rl.close();
     });
   });
 }
@@ -109,6 +110,9 @@ async function login(): Promise<void> {
     console.log("Already connected to Pensar Console.");
     if (appConfig.workspaceSlug) {
       console.log(`  Workspace: ${appConfig.workspaceSlug}`);
+    }
+    if (!process.stdin.isTTY) {
+      return;
     }
     const answer = await prompt("\nReconnect? (y/N): ");
     if (answer.toLowerCase() !== "y") {
