@@ -1,0 +1,141 @@
+import { describe, expect, it } from "vitest";
+import {
+  checkDockerfile,
+  parseDockerfile,
+  ungatedLockfiles,
+} from "./check-dockerfile-pins";
+
+const DIGEST = `sha256:${"a".repeat(64)}`;
+const SHA = "b".repeat(64);
+
+const problems = (text: string) =>
+  checkDockerfile("Dockerfile", text).map((v) => `${v.line}: ${v.problem}`);
+
+describe("parseDockerfile", () => {
+  it("joins continuation lines, skips comments and keeps the start line", () => {
+    const parsed = parseDockerfile(
+      [
+        "# comment",
+        `FROM node:22@${DIGEST}`,
+        "",
+        "RUN apt-get update \\",
+        "  # a comment inside the step",
+        "  && apt-get install -y curl",
+      ].join("\n"),
+    );
+    expect(parsed.map((i) => [i.line, i.keyword])).toEqual([
+      [2, "FROM"],
+      [4, "RUN"],
+    ]);
+    expect(parsed[1]?.args).toContain("apt-get install -y curl");
+  });
+});
+
+describe("checkDockerfile", () => {
+  it("accepts digest-pinned images, build stages and checked downloads", () => {
+    const text = `
+FROM oven/bun:1.4.4@${DIGEST} AS bun
+FROM node:22.23.5-slim@${DIGEST}
+ARG V=1.2.3
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN apt-get install -y curl wget git \\
+ && curl -fsSL -o /tmp/x.tgz "https://example.com/x-\${V}.tgz" \\
+ && echo "${SHA}  /tmp/x.tgz" | sha256sum -c -
+RUN npm ci && npx --no-install playwright-core install-deps firefox
+RUN bun install -g "@pensar/apex@\${V}"
+ADD --checksum=sha256:${SHA} https://example.com/x.tgz /tmp/
+FROM scratch
+`;
+    expect(problems(text)).toEqual([]);
+  });
+
+  it.each([
+    ["FROM node:22.23.5-slim", "base image `node:22.23.5-slim` has no digest"],
+    ["FROM kalilinux/kali-rolling:latest", "has no digest"],
+    ["ARG BASE=node:22\nFROM $BASE", "base image `node:22` has no digest"],
+    [
+      "FROM --platform=linux/amd64 node:22",
+      "base image `node:22` has no digest",
+    ],
+  ])("rejects %j", (text, problem) => {
+    expect(problems(text).join("\n")).toContain(problem);
+  });
+
+  it("checks COPY --from and RUN --mount images that are not build stages", () => {
+    const text = `FROM node@${DIGEST}
+COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
+RUN --mount=type=bind,from=alpine:3,target=/a true`;
+    expect(problems(text)).toEqual([
+      "2: COPY --from image `oven/bun:1.4.4` has no digest",
+      "3: RUN --mount image `alpine:3` has no digest",
+    ]);
+  });
+
+  it.each([
+    "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -",
+    "curl -fsSL https://bun.sh/install | bash -s bun-v1.3.10",
+    "wget -qO- https://example.com/i.sh | sudo -E sh",
+    'sh -c "$(curl -fsSL https://example.com/i.sh)"',
+    "bash <(curl -fsSL https://example.com/i.sh)",
+  ])("rejects a script piped into a shell: %s", (cmd) => {
+    expect(problems(`FROM x@${DIGEST}\nRUN ${cmd}`)).toEqual([
+      "2: a script is piped into a shell",
+    ]);
+  });
+
+  it("rejects a download with no checksum, but not curl in a package list", () => {
+    const text = `FROM x@${DIGEST}
+RUN apt-get install -y curl wget
+RUN curl -SL https://example.com/tool -o /usr/local/bin/tool && chmod +x /usr/local/bin/tool
+RUN wget https://example.com/tool && sha256sum tool`;
+    expect(problems(text)).toEqual([
+      "3: a `curl`/`wget` download has no checksum check in the same `RUN`",
+      "4: a `curl`/`wget` download has no checksum check in the same `RUN`",
+    ]);
+  });
+
+  it("rejects ADD of a URL without a checksum", () => {
+    expect(
+      problems(`FROM x@${DIGEST}\nADD https://example.com/x.tgz /tmp/`),
+    ).toEqual(["2: `ADD` of a URL without `--checksum`"]);
+  });
+
+  it("rejects npx and bunx that may download, and installs with no lockfile", () => {
+    const text = `FROM x@${DIGEST}
+RUN npx --yes playwright install-deps firefox
+RUN cd /app && bunx some-tool
+RUN npm init -y && npm install --save-exact camoufox-js@0.13.0`;
+    expect(problems(text)).toEqual([
+      "2: `npx` can download a package that is not installed",
+      "3: `bunx` can download a package that is not installed",
+      "4: a package install with no lockfile",
+    ]);
+  });
+
+  it("requires an exact version on a global bun install", () => {
+    const text = `FROM x@${DIGEST}
+RUN bun install -g @pensar/apex
+RUN bun add --global left-pad@^1.0.0
+RUN bun install -g left-pad@1.3.0`;
+    expect(problems(text)).toEqual([
+      "2: global install of `@pensar/apex` without an exact version",
+      "3: global install of `left-pad@^1.0.0` without an exact version",
+    ]);
+  });
+});
+
+describe("ungatedLockfiles", () => {
+  it("names a committed npm lockfile the osv gate does not scan", () => {
+    expect(
+      ungatedLockfiles(
+        [
+          "bun.lock",
+          "images/a/package-lock.json",
+          "scripts/offsec-sandbox/package-lock.json",
+          "src/package-lock.json.ts",
+        ],
+        ["bun.lock", "scripts/offsec-sandbox/package-lock.json"],
+      ),
+    ).toEqual(["images/a/package-lock.json"]);
+  });
+});

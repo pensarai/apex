@@ -38,3 +38,6 @@ jobs:
 
       - name: Dependency pins
         run: bun run check:dependency-pins
+
+      - name: Dockerfile pins
+        run: bun run check:dockerfile-pins
