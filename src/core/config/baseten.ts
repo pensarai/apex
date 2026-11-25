@@ -1,3 +1,5 @@
+import { basename } from "node:path/posix";
+import { parse, type Node as ShellNode } from "unbash";
 import { z } from "zod";
 import {
   type CustomProviders,
@@ -81,11 +83,41 @@ async function getJson(url: string, key: string, optional = false) {
   return res.json();
 }
 
-function configuredContextLength(command: string) {
-  const match =
-    /(?:^|\s)--max-model-len(?:=|\s+)["']?(\d+(?:\.\d+)?)([kKmMgG]?)["']?(?=[\s;&|()<>]|$)/.exec(
-      command,
-    );
+function servingCommands(node: ShellNode): string[][] {
+  if (node.type === "Statement") return servingCommands(node.command);
+  if ("commands" in node) return node.commands.flatMap(servingCommands);
+  if (node.type === "Subshell" || node.type === "BraceGroup")
+    return servingCommands(node.body);
+  if (node.type !== "Command" || !node.name) return [];
+  const argv = [node.name.value, ...node.suffix.map((word) => word.value)];
+  if (argv[0] === "exec") argv.shift();
+  const executable = basename(argv[0] ?? "");
+  if (
+    (executable === "sh" || executable === "bash") &&
+    /^-[a-z]*c$/.test(argv[1]) &&
+    argv[2]
+  )
+    return parseServingCommands(argv[2]);
+  if (executable === "echo" || executable === "printf") return [];
+  const end = argv.indexOf("--");
+  const args = argv.slice(1, end === -1 ? undefined : end);
+  return optionValue(args, "--served-model-name") ? [args] : [];
+}
+
+function parseServingCommands(script: string) {
+  const parsed = parse(script);
+  return parsed.errors?.length ? [] : parsed.commands.flatMap(servingCommands);
+}
+
+function optionValue(args: string[], flag: string) {
+  const prefix = `${flag}=`;
+  const i = args.findLastIndex((arg) => arg === flag || arg.startsWith(prefix));
+  if (i === -1) return;
+  return args[i] === flag ? args[i + 1] : args[i].slice(prefix.length);
+}
+
+function configuredContextLength(value: string) {
+  const match = /^(\d+(?:\.\d+)?)([kKmMgG]?)$/.exec(value);
   if (!match) return;
   const [, digits, unit] = match;
   const scale: Record<string, number> = {
@@ -167,12 +199,13 @@ async function load(key: string, endpoint?: string) {
             ? metadata.data.config.docker_server
             : undefined;
           if (server?.predict_endpoint !== "/v1/chat/completions") return;
-          const served =
-            /(?:^|\s)--served-model-name(?:=|\s+)["']?([\w./:-]+)/.exec(
-              server.start_command,
-            )?.[1];
-          const length = configuredContextLength(server.start_command);
-          if (!served || !length) return;
+          const commands = parseServingCommands(server.start_command);
+          if (commands.length !== 1) return;
+          const served = optionValue(commands[0], "--served-model-name");
+          const length = configuredContextLength(
+            optionValue(commands[0], "--max-model-len") ?? "",
+          );
+          if (!served || !/^[\w./:-]+$/.test(served) || !length) return;
           providers[`baseten-${m.id}-${deployment}`] = {
             name: "Baseten",
             baseUrl: `https://model-${m.id}.api.baseten.co/deployment/${deployment}/sync/v1`,

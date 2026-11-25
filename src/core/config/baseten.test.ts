@@ -7,13 +7,25 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
+const serve = "vllm serve /mnt/model --served-model-name private-nyx";
 it.each([
-  ["262144", 262_144],
-  ["32K", 32_768],
-  ["32768;", 32_768],
-  ["25.6k", 25_600],
-] as const)("makes sleeping deployments with a %s context selectable without waking them", async (length, expected) => {
-  vi.stubEnv("BASETEN_API_KEY", `local-account-test-${length}`);
+  [`${serve} --max-model-len 262144`, 262_144],
+  [`${serve} --max-model-len 32K`, 32_768],
+  [`${serve} --max-model-len 32768;`, 32_768],
+  [`${serve} --max-model-len 25.6k`, 25_600],
+  [
+    `echo "previous --served-model-name old --max-model-len 32768)"; exec ${serve} --max-model-len="8192"`,
+    8192,
+  ],
+  [
+    `echo 'vllm serve --served-model-name old --max-model-len 32768'; ${serve}`,
+    undefined,
+  ],
+  [`/bin/sh -c 'echo ready && exec uv run ${serve} --max-model-len 8K'`, 8192],
+  [`${serve} --max-model-len 32K || ${serve} --max-model-len 8K`, undefined],
+] as const)("discovers the serving arguments in %s without waking the deployment", async (command, expected) => {
+  const key = `local-account-test-${encodeURIComponent(command)}`;
+  vi.stubEnv("BASETEN_API_KEY", key);
   vi.stubEnv("BASETEN_BASE_URL", "");
   const calls: string[] = [];
   vi.stubGlobal(
@@ -21,7 +33,7 @@ it.each([
     vi.fn(async (url: string, init: RequestInit) => {
       calls.push(url);
       expect(new Headers(init.headers).get("authorization")).toBe(
-        `Bearer local-account-test-${length}`,
+        `Bearer ${key}`,
       );
       return Response.json(
         url.endsWith("/config")
@@ -29,7 +41,7 @@ it.each([
               config: {
                 docker_server: {
                   predict_endpoint: "/v1/chat/completions",
-                  start_command: `vllm serve /mnt/model --served-model-name private-nyx --max-model-len ${length}`,
+                  start_command: command,
                 },
               },
             }
@@ -47,6 +59,14 @@ it.each([
     }),
   );
   const providers = await discoverBaseten();
+  expect(calls).toEqual([
+    "https://api.baseten.co/v1/models",
+    "https://api.baseten.co/v1/models/owned/deployments/d1/config",
+  ]);
+  if (expected === undefined) {
+    expect(providers).toEqual({});
+    return;
+  }
   const id = "custom:baseten-owned-d1:private-nyx";
   expect(
     getAvailableModels({
@@ -62,10 +82,6 @@ it.each([
       baseUrl: "https://model-owned.api.baseten.co/deployment/d1/sync/v1",
     },
   });
-  expect(calls).toEqual([
-    "https://api.baseten.co/v1/models",
-    "https://api.baseten.co/v1/models/owned/deployments/d1/config",
-  ]);
 });
 it("recognizes explicitly labelled Baseten proxies without depending on the credential variable", async () => {
   vi.stubEnv("BASETEN_API_KEY", "");
