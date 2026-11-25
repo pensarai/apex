@@ -1,8 +1,8 @@
 # Default v2: target harness design
 
-Status: accepted architecture; implementation in progress, 2026-11-11. This document
-defines the intended behavior; it does not claim the current branch implements
-it or that the design has demonstrated a performance improvement.
+Status: runtime implementation under review, 2026-11-11. The delivery section
+distinguishes implemented contracts from research-quality validation. No performance
+improvement is claimed without comparative runs.
 
 ## Objective
 
@@ -176,27 +176,53 @@ success criteria.
 
 ## Delivery through the default-v2 stack
 
-The first continuity slice preserves conversation history across local resume,
-follow-up, and interruption, and prevents fitting from rewriting consumed tool
-results. It opts v2 into explicit summarization with the latest user message
-replayed verbatim, and stops if required compaction fails instead of restarting
-without the investigation. This still uses Apex's custom text compaction;
-provider-native compaction and stable tool/configuration updates remain future
-work. Contract tests do not establish a research-quality improvement.
+The stack now supplies the following runtime behavior when `default-v2` is selected:
 
-Keep default-v2 runnable as an opt-in path throughout delivery. The existing
-mode selection is the development entry point, not evidence that the design is
-complete. Each behavioral change ships with its relevant acceptance cases.
+| Boundary                           | Implementation                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conversation ownership             | `ResearchContext` owns the durable working context, original instructions, positioned updates, and retained context journal. TUI and CLI submit `newMessages`; the public API and direct agent construction use the same context owner.                                                                                                                                                        |
+| Ordinary continuation              | Preserve message parts and provider metadata, maintain tool-result ordering, and append corrections and question answers. The original system prefix stays fixed; changed session instructions append as a new system message.                                                                                                                                                                 |
+| OpenAI compaction                  | Supported direct GPT-5.3+ Responses models use native compaction, `store: false`, and opaque SDK custom parts. GPT-6 uses explicit `compaction_trigger` to coexist with positioned configuration updates; GPT-5 uses server-managed thresholds. Only a returned native marker permits prefix pruning. Native context errors fail explicitly rather than silently converting to a text summary. |
+| Reasoning settings                 | Supported GPT-6 effort changes append positioned updates while retaining request-level effort. After native compaction the latest update is restated. Other providers retain their supported settings; unsupported positioned updates are explicit configuration boundaries.                                                                                                                   |
+| Other providers and model switches | Compaction uses the selected model and disables tool execution for the summary. Switching models replays retained evidence from the journal, omitting provider-specific opaque state and reasoning. This is a model boundary, not a promise of reasoning continuity across models.                                                                                                             |
+| Capability surface                 | Legacy recon/pentest orchestration and built-in specialist spawners are absent from v2 registry discovery and construction, including code-mode invocation and conflicting injected names. Direct primitives, workspace operations, skills, and owned experiment jobs remain.                                                                                                                  |
+| Endpoint observations              | `document_endpoint_v2` writes supplied facts and evidence references under `observations/endpoints`. It does not score risk, generate threats, invoke another model, create workspace endpoints, or launch follow-on work. Legacy `document_app` is also excluded.                                                                                                                             |
+| Completion and interruption        | The API drains v2 execution before returning; client cancellation can be awaited. The TUI waits for cancellation cleanup before another run and leaves persisted context to the core. Interrupted tool results are checkpointed through the same recorder.                                                                                                                                     |
 
-1. Establish the session and provider-state contract, including client parity,
-   continuation, and compaction. Replace incompatible context handling where
-   necessary. Keep pure ownership refactors separate from behavioral changes.
-2. Deliver the capability surface and execution lifecycle: explicit tool
-   effects, supported discovery, retained artifacts, and owned long-running
-   operations. Preserve invocation policy across every path.
-3. Calibrate the security-specific instructions and optional expertise against
-   held-out deep-research and conversational tasks. Remove policies that do
-   not improve outcomes. Publish the comparison evidence before broad rollout.
+`research-context.json` is the current v2 working context. `research-context.jsonl`
+retains context changes, including evidence preceding compaction. `messages.json`
+remains a compatibility projection for existing readers. Host-supplied recorded-run
+context is committed through its existing recorder before the local snapshot.
+Execution, approvals, retained artifacts, and job handles continue to use the
+existing agent/runtime/backend contracts; no separate workflow scheduler is added.
+
+Model-visible tool results are now a separate presentation from captured execution
+evidence. New file/search/command result batches receive a shared preview budget
+before persistence and the next model request. Omitted captured text is retained
+behind an agent-owned reference that supports reading and searching. The exact
+presentation is reused on subsequent steps; previously consumed messages and opaque
+reasoning are not edited. Producer truncation remains explicitly marked as incomplete
+capture. Initial preview sizes are experimental, not a claim of optimal tuning.
+
+Session instruction changes append only the changed span, and skill catalogs have a
+stable order. A local v2 launch directory is a default location, not an implicit source
+scope: profiling, queries, scans, and jobs accept explicit repository paths while
+configured codebase and file-workspace boundaries remain enforced. Repository
+profiling returns inventory without catalog enrichment or follow-on workflows;
+catalog lookups search reference material without implicitly profiling a repository.
+V2 excludes the built-in pentest and threat-model workflow skills from discovery and
+loading. Specialized skills remain available when their knowledge or integrations
+are needed.
+
+The SDK 7 foundation requires a coordinated Console dependency and middleware
+migration. Its downstream compatibility check must pass against the matching
+Console revision before merge. This is integration work, not an interface redesign.
+
+Contract tests exercise opaque-state persistence and actual Responses serialization,
+compaction admission, positioned settings, user corrections, model handoff, failed
+persistence, and exclusion of legacy workflow tools. These tests do not establish
+research-quality or latency improvements. Dogfood the existing research tasks and
+evaluation infrastructure before changing the product default.
 
 No automatic hypothesis-ranking service, mandatory recon checklist, fixed
 research phases, or additional orchestration layer is part of this design.

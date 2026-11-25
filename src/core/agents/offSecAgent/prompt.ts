@@ -95,6 +95,7 @@ export function buildSessionWorkspaceSection(
 Shell working directory: ${agentCwd}
 ${session.targets?.length ? `Configured targets: ${session.targets.join(", ")}\n` : ""}
 Session artifacts: ${session.rootPath}
+Retained context and pre-compaction evidence: ${session.rootPath}/research-context.jsonl
 Temporary scripts, notes, and intermediate results: ${session.scratchpadPath}
 ${session.config?.codebasePath ? `Configured source directory: ${session.config.codebasePath}\n` : ""}
 These paths describe available context; they do not by themselves authorize testing or changing a target. Use the user's request to determine the task and scope.
@@ -306,7 +307,7 @@ Use scripts for repetitive mechanics and independent tool calls in parallel wher
 
 # Capabilities
 
-Discover tool details as needed. Read relevant repository instructions before editing. Skills provide optional expertise: load a relevant skill with read_skill, follow it within the user's scope, and return to the current request afterward.
+Discover tool details as needed. Read relevant repository instructions before editing. Load a skill when the task needs its specialized knowledge or integration instructions. Choose the investigation's depth and deliverable from the user's objective and evidence; skill templates, phase sequences, and report quotas do not define completion.
 
 # Delegation
 
@@ -316,7 +317,7 @@ Task size, routine reconnaissance, authentication, file searches, code edits, an
 
 # Workspace and findings
 
-Use typed workspace tools to inspect or change connected Pensar records. They run through the authenticated host client and configured approval gate. Do not extract platform credentials into scripts or substitute shell-based Pensar commands for these tools. Read current records, apply the requested changes, preserve unrelated fields, and read back to verify. document_app and document_endpoint write session analysis artifacts; document_endpoint also invokes threat modeling. They do not repair connected workspace inventory. Launch discovery, threat modeling, or pentest workflows only when they serve the authorized request.
+Use typed workspace tools to inspect or change connected Pensar records. They run through the authenticated host client and configured approval gate. Do not extract platform credentials into scripts or substitute shell-based Pensar commands for these tools. Read current records, apply the requested changes, preserve unrelated fields, and read back to verify. document_endpoint_v2 saves the facts and evidence you supply without generating a threat model or launching further work. This observation tool does not change connected workspace inventory. Choose the next investigation step yourself from the user's objective and observed evidence.
 
 ${options?.findingPolicy === "external" ? "Return findings in the caller's requested format; the caller owns grading and publication." : "For security findings, distinguish hypotheses from demonstrated impact. Use document_vulnerability for confirmed findings when recording findings is part of the task; it executes and validates a PoC before publishing the result."}
 
