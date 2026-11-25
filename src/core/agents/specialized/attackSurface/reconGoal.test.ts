@@ -241,6 +241,9 @@ describe("persistent-goal recon", () => {
       },
       { toolCallId: "report-via-exec", messages: [] },
     );
+    const refreshed = await runGeneralizedReconToReport(i, s.factory);
+    expect(refreshed.goal?.status).toBe("complete");
+    expect(s.calls).toHaveLength(1);
     writeRecord(
       i.session.rootPath,
       "worker",
