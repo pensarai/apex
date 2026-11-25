@@ -5,6 +5,11 @@ import {
   type OffensiveSecurityAgentInput,
 } from "../agents/offSecAgent";
 import { startAgentExecution } from "../runtime/agentExecution";
+import {
+  type SteerInput,
+  type SteerResult,
+  TurnSteering,
+} from "../runtime/turnSteering";
 import type { SessionInfo } from "../session";
 import {
   persistRootReasoningOverride,
@@ -109,13 +114,18 @@ export type OffensiveSecurityAgentClientInput = (
  * a second `run` throws; create a fresh client per run.
  */
 export function createOffensiveSecurityAgentClient(): {
+  readonly turnId: string;
   run: (input: OffensiveSecurityAgentClientInput) => Promise<RunAgentResult>;
+  steer: (input: SteerInput) => Promise<SteerResult>;
   abort: () => Promise<void>;
 } {
   const controller = new AbortController();
+  const steering = new TurnSteering();
   let started = false;
   let running: Promise<RunAgentResult> | undefined;
   return {
+    turnId: steering.turnId,
+    steer: (input) => steering.steer(input),
     run(input) {
       if (started) {
         throw new Error(
@@ -126,10 +136,12 @@ export function createOffensiveSecurityAgentClient(): {
       running = runOffensiveSecurityAgent({
         ...input,
         abortSignal: controller.signal,
-      });
+        steering: input.mode === "default-v2" ? steering : undefined,
+      }).finally(() => steering.close());
       return running;
     },
     async abort() {
+      steering.close();
       controller.abort();
       await running?.catch(() => {});
     },
