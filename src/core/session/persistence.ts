@@ -10,6 +10,7 @@
  * stable slot id (`pentest-agent-N`) for the swarm.
  */
 
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -20,6 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { compactedHistoryNotice } from "../ai";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
@@ -264,6 +266,7 @@ export interface AgentManifestEntry {
   target: string;
   vulnerabilityClass: string;
   objective: string;
+  assignment?: Pick<SwarmTarget, "objectives" | "grpc">;
   authInfo?: Record<string, unknown>;
   status: "running" | "completed" | "failed";
   spawnedAt: string;
@@ -336,6 +339,10 @@ export function buildManifestEntries(
       target: t.target,
       vulnerabilityClass: t.objectives[0] || "general",
       objective: t.objectives.join("; "),
+      // Match the on-disk representation, which omits undefined optional fields.
+      assignment: JSON.parse(
+        JSON.stringify({ objectives: t.objectives, grpc: t.grpc }),
+      ),
       status: "running" as const,
       spawnedAt: new Date().toISOString(),
     };
@@ -343,10 +350,8 @@ export function buildManifestEntries(
 }
 
 /**
- * Reconcile a fresh manifest against the persisted one on resume so each
- * worker's stable `ses_` id survives. Matches by position (targets re-supplied
- * in the same order) and reuses the persisted id only when the target lines up;
- * an in-progress worker resets to "running" for a retry.
+ * Reuse persisted worker state only for the same ordered assignment;
+ * manifests without an exact assignment must start a fresh worker.
  */
 export function reconcileManifestOnResume(
   existing: AgentManifestEntry[],
@@ -354,7 +359,22 @@ export function reconcileManifestOnResume(
 ): AgentManifestEntry[] {
   return fresh.map((f, i) => {
     const prev = existing[i];
-    if (!prev || prev.target !== f.target) return f;
+    if (
+      !prev ||
+      prev.target !== f.target ||
+      !prev.assignment ||
+      !f.assignment ||
+      !isDeepStrictEqual(prev.assignment, f.assignment)
+    ) {
+      const previous = prev ?? existing.find((entry) => entry.id === f.id);
+      if (!previous) return f;
+      // Deterministic factories can repeat an old ID; chain identities to avoid its transcript.
+      const sessionId = `ses_${createHash("sha256")
+        .update(JSON.stringify([f.id, previous.id]))
+        .digest("hex")
+        .slice(0, 26)}`;
+      return { ...f, id: sessionId, sessionId };
+    }
     if (prev.status === "completed") return prev;
     return {
       ...f,
