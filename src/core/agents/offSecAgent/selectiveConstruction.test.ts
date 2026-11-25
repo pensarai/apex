@@ -27,7 +27,7 @@ vi.mock("zod", () => {
   return { z, default: z };
 });
 
-vi.mock("./tools", () => {
+vi.mock("./tools", async () => {
   const fakeTool = (name: string) => ({
     description: `${name} stub`,
     inputSchema: {},
@@ -69,6 +69,7 @@ vi.mock("./tools", () => {
     return Object.fromEntries(wanted.map((name) => [name, fakeTool(name)]));
   };
   return {
+    BackgroundJobs: (await import("./tools/backgroundJobs")).BackgroundJobs,
     createToolsForNames: (
       ctx: Record<string, unknown>,
       requested: readonly string[] | undefined,

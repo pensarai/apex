@@ -24,10 +24,12 @@ import {
   judgeFinding,
 } from "../../specialized/findingJudge";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { BackgroundJobs } from "./backgroundJobs";
 import {
   documentVulnerability,
   validatePocPortability,
 } from "./documentFinding";
+import { executeCommand } from "./executeCommand";
 import { PerCommandShell } from "./perCommandShell";
 import type { ScriptSyntaxResult } from "./scriptSyntaxCheck";
 
@@ -2211,5 +2213,222 @@ describe("documentVulnerability declared artifact resolution (execution cwd vs f
     })) as DocumentToolResult & { message?: string };
     expect(escapeResult).toMatchObject({ success: false });
     expect(escapeResult.message).toContain("escapes the file workspace");
+  });
+});
+
+describe("background vulnerability validation", () => {
+  let rootPath: string;
+  let jobs: BackgroundJobs;
+  const verdict: FindingJudgeResult = {
+    valid: false,
+    findingType: "vulnerability",
+    confidence: 0.95,
+    reasoning: "The evidence does not establish the claimed impact.",
+    concerns: ["Missing impact proof"],
+    verificationSteps: [],
+    toolEvidence: [],
+    reproducedPoc: false,
+    webResearchUsed: false,
+    limitations: [],
+  };
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-bg-verdict-"));
+    jobs = new BackgroundJobs();
+    mockedJudgeFinding.mockReset();
+  });
+  afterEach(async () => {
+    await jobs.dispose();
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+  function context() {
+    return { ...makeToolContext(rootPath), backgroundJobs: jobs };
+  }
+  async function launch(ctx = context(), input = makeDocumentInput()) {
+    return (await documentVulnerability(ctx).execute!(input, {
+      toolCallId: "verdict-call",
+      messages: [],
+    })) as {
+      jobId: string;
+      status: string;
+      success: boolean;
+      judgeRejected?: boolean;
+      error?: string;
+    };
+  }
+
+  it("returns a receipt, releases the shell, and delivers a rejection once to its owner", async () => {
+    let release!: (value: FindingJudgeResult) => void;
+    mockedJudgeFinding.mockImplementation(
+      (_input, ctx) =>
+        new Promise((resolve) => {
+          release = resolve;
+          ctx.abortSignal?.addEventListener("abort", () => resolve(verdict), {
+            once: true,
+          });
+        }),
+    );
+    const ctx = context();
+    const receipt = await launch(ctx);
+    expect(receipt.status).toBe("running");
+    expect(receipt.judgeRejected).toBeUndefined();
+    await vi.waitFor(() => expect(mockedJudgeFinding).toHaveBeenCalledOnce());
+    const foreground = await executeCommand(ctx).execute!(
+      { command: "printf independent-work", toolCallDescription: "foreground" },
+      { toolCallId: "other", messages: [] },
+    );
+    expect(foreground).toMatchObject({
+      stdout: "independent-work",
+      success: true,
+    });
+    expect(jobs.hasPending).toBe(true);
+    expect(await jobs.notifications(false)).toEqual([]);
+    release(verdict);
+    const notices = await jobs.notifications(true, ctx);
+    expect(JSON.stringify(notices)).toContain(
+      "Background document_vulnerability completed",
+    );
+    expect(JSON.stringify(notices)).toContain(verdict.reasoning);
+    expect(jobs.status(receipt.jobId)).toMatchObject({
+      judgeRejected: true,
+      status: "completed",
+    });
+    expect(await jobs.notifications(false)).toEqual([]);
+    expect(jobs.hasPending).toBe(false);
+    expect(readdirSync(ctx.session.findingsPath)).toEqual([]);
+  });
+
+  it("persists accepted findings before announcing completion", async () => {
+    const progress: string[] = [];
+    jobs = new BackgroundJobs((state) => {
+      if (state.status === "running") progress.push(state.stdout);
+    });
+    mockedJudgeFinding.mockResolvedValue({
+      ...verdict,
+      valid: true,
+      reasoning: "Confirmed",
+    });
+    const ctx = context();
+    const receipt = await launch(ctx);
+    const notices = await jobs.notifications(true, ctx);
+    expect(jobs.status(receipt.jobId)).toMatchObject({
+      success: true,
+      status: "completed",
+    });
+    expect(String(notices[0].content)).toContain('"finding"');
+    expect(progress).toContain("Running proof of concept…");
+    expect(progress).toContain(
+      "Finding Judge accepted the finding. Calculating CVSS severity…",
+    );
+    expect(progress).toContain("Validation complete. Saving finding…");
+    expect(
+      readdirSync(ctx.session.findingsPath).some((name) =>
+        name.endsWith(".json"),
+      ),
+    ).toBe(true);
+  });
+
+  it("propagates cancellation to the judge without persisting a finding", async () => {
+    let judgeSignal: AbortSignal | undefined;
+    mockedJudgeFinding.mockImplementation(
+      (_input, ctx) =>
+        new Promise((resolve) => {
+          judgeSignal = ctx.abortSignal;
+          ctx.abortSignal!.addEventListener(
+            "abort",
+            () => resolve({ ...verdict, valid: true }),
+            { once: true },
+          );
+        }),
+    );
+    const ctx = context();
+    const receipt = await launch(ctx);
+    await vi.waitFor(() => expect(judgeSignal).toBeDefined());
+    expect(await jobs.cancel(receipt.jobId)).toMatchObject({
+      success: false,
+      cancelled: true,
+    });
+    expect(judgeSignal?.aborted).toBe(true);
+    expect(readdirSync(ctx.session.findingsPath)).toEqual([]);
+  });
+
+  it("does not turn cancelled scoring into an accepted fallback finding", async () => {
+    mockedJudgeFinding.mockResolvedValue({ ...verdict, valid: true });
+    let scoringSignal: AbortSignal | undefined;
+    mockedScoreFindingWithCVSS.mockImplementationOnce(
+      (_input, _model, _auth, signal) =>
+        new Promise((_resolve, reject) => {
+          scoringSignal = signal;
+          signal!.addEventListener(
+            "abort",
+            () => reject(new Error("cancelled")),
+            { once: true },
+          );
+        }),
+    );
+    const ctx = context();
+    const receipt = await launch(ctx);
+    await vi.waitFor(() => expect(scoringSignal).toBeDefined());
+    await jobs.cancel(receipt.jobId);
+    expect(readdirSync(ctx.session.findingsPath)).toEqual([]);
+  });
+
+  it("keeps concurrently judged proofs with the same name separate", async () => {
+    const paths: string[] = [];
+    const releases: Array<(value: FindingJudgeResult) => void> = [];
+    mockedJudgeFinding.mockImplementation((input, ctx) => {
+      paths.push(input.pocPath!);
+      return new Promise((resolve) => {
+        releases.push(resolve);
+        ctx.abortSignal?.addEventListener("abort", () => resolve(verdict), {
+          once: true,
+        });
+      });
+    });
+    const ctx = context();
+    const first = await launch(ctx);
+    const second = await launch(ctx);
+    await vi.waitFor(() => expect(paths).toHaveLength(2));
+    expect(paths.some((path) => path.includes(first.jobId))).toBe(true);
+    expect(paths.some((path) => path.includes(second.jobId))).toBe(true);
+    expect(new Set(paths).size).toBe(2);
+    releases[0](verdict);
+    await jobs.notifications(true);
+    expect(existsSync(join(rootPath, paths[1]))).toBe(true);
+    releases[1](verdict);
+    await jobs.notifications(true);
+  });
+
+  it("delivers PoC failure without invoking the judge", async () => {
+    const receipt = await launch(context(), {
+      ...makeDocumentInput(),
+      pocContent: "exit 7",
+    });
+    await jobs.notifications(true);
+    expect(jobs.status(receipt.jobId)).toMatchObject({
+      success: false,
+      pocFailed: true,
+      exitCode: 7,
+    });
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+  });
+
+  it("preserves synchronous opt-out and rejects explicit background without an owner", async () => {
+    mockedJudgeFinding.mockResolvedValue(verdict);
+    const sync = await documentVulnerability(context()).execute!(
+      { ...makeDocumentInput(), background: false },
+      { toolCallId: "sync", messages: [] },
+    );
+    expect(sync).toMatchObject({ judgeRejected: true });
+    expect(jobs.hasPending).toBe(false);
+    const unsupported = await documentVulnerability(makeToolContext(rootPath))
+      .execute!(
+      { ...makeDocumentInput(), background: true },
+      { toolCallId: "unsupported", messages: [] },
+    );
+    expect(unsupported).toMatchObject({
+      success: false,
+      error: expect.stringContaining("local, unrecorded"),
+    });
+    expect(mockedJudgeFinding).toHaveBeenCalledOnce();
   });
 });

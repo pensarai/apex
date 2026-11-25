@@ -8,6 +8,8 @@ export {
   AskUserQuestionSchema,
   type AskUserQuestionsResult,
 } from "./askUserQuestions";
+// Core pentest tools
+export { BackgroundJobs } from "./backgroundJobs";
 export {
   type BrowserHeaderPolicy,
   resolveBrowserHeaderPolicy,
@@ -65,7 +67,6 @@ export {
   SEND_EMAIL_TOOL_NAME,
 } from "./email";
 export { endpointAssetFileName } from "./endpointAssetFileName";
-// Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { extractJsEndpoints } from "./extractJsEndpoints";
 export { getMemory } from "./getMemory";
@@ -222,6 +223,7 @@ import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   askUserQuestions,
 } from "./askUserQuestions";
+import { commandJob } from "./backgroundJobs";
 import {
   type BrowserToolsetFactories,
   type createBrowserToolset,
@@ -368,6 +370,11 @@ const TOOL_REGISTRY = [
 
   // Core pentest tools
   { name: "execute_command", factory: executeCommand },
+  {
+    name: "command_job",
+    factory: commandJob,
+    available: (ctx: ToolContext) => !!ctx.backgroundJobs,
+  },
   { name: "http_request", factory: httpRequest },
   { name: "document_vulnerability", factory: documentVulnerability },
 
@@ -673,6 +680,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_get_cookies",
   // Core pentest
   "execute_command",
+  "command_job",
   "http_request",
   "document_vulnerability",
   // Filesystem / search
@@ -819,6 +827,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "browser_get_cookies",
   // Core pentest (read-only)
   "execute_command",
+  "command_job",
   "http_request",
   // Filesystem / search (read-only)
   "read_file",
