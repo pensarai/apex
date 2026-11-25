@@ -242,6 +242,11 @@ describe("outputSucceeded", () => {
     ["a bounded failed result", "ref\nsuccess=false; exitCode=1\n...", false],
     ["a bounded passing result", "ref\nsuccess=true; exitCode=0\n...", true],
     ["a result with no outcome", { content: "file text" }, true],
+    [
+      "a passing bounded result whose output prints success=false",
+      "ref\nsuccess=true; exitCode=0\nstdout:\nsuccess=false\n2 passed",
+      true,
+    ],
   ])("reads %s", (_label, output, expected) => {
     expect(outputSucceeded(output)).toBe(expected);
   });
