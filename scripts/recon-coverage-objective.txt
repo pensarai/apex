@@ -1,0 +1,10 @@
+Create a complete and useful attack surface and threat model of the supplied corporate application. Optimize for coverage and depth so a security tester can plan meaningful testing; exploit confirmation belongs to a later testing phase.
+
+Cover every application/service, trust boundary, important asset, identity/role, data flow, exposed entry point and third-party integration visible in the supplied sources. For each component, consider relevant threats from external, authenticated, internal and compromised-dependency positions. Explore distinct mechanisms and multi-step paths across boundaries, including bypasses of existing controls. Do not stop after finding one threat per component or meet an arbitrary threat quota. Explain where a component has limited attack surface or where missing context limits analysis.
+
+Threats may be conditional hypotheses rather than verified vulnerabilities. Make each useful for testing: identify attacker position, entry point, prerequisites, meaningful ordered steps, asset/business impact, controls or trust assumptions involved, and what a tester should observe to confirm or rule it out. State unverified assumptions. Do not manufacture additional mechanisms just to increase counts; distinguish variants that add a different prerequisite, asset, boundary crossing or test from duplicate wording.
+
+Before completing, inspect the whole map for uncovered components and flows, shallow one-line scenarios, missing attack positions, overlooked control bypasses, and incomplete cross-boundary chains. Fill these gaps and produce the final report. Keep provider dependencies visible in the threat model while limiting recommended test targets to the authorized customer origin.
+
+No live security tests or network requests are authorized. Analyze the supplied source only; do not claim exploit verification.
+

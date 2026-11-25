@@ -28,6 +28,7 @@ const { values } = parseArgs({
     model: { type: "string", default: "anthropic/claude-opus-4.6" },
     minutes: { type: "string", default: "10" },
     dollars: { type: "string", default: "12" },
+    "objective-file": { type: "string" },
   },
   strict: true,
 });
@@ -49,8 +50,9 @@ mkdirSync(output, { recursive: true });
 const target = "http://portal.corp.localtest.me:18080";
 const fixture = realpathSync(values.fixture);
 const model = values.model as AIModel;
-const objective =
-  "Map the supplied corporate application from all supplied source files, including its boundaries, components, data flows, assets, trust assumptions, distinct source-supported threats and applicable controls. Check the complete map for omissions, duplicates, contradictions and unsupported claims before finishing. Explain justified absence and unavailable deployment evidence. Do not invent threats or controls. Preserve third-party dependencies as threat vectors without authorizing provider testing. No live security tests or network requests are authorized; this is a source-only analysis.";
+const objective = values["objective-file"]
+  ? readFileSync(resolve(values["objective-file"]), "utf8").trim()
+  : "Map the supplied corporate application from all supplied source files, including its boundaries, components, data flows, assets, trust assumptions, distinct source-supported threats and applicable controls. Check the complete map for omissions, duplicates, contradictions and unsupported claims before finishing. Explain justified absence and unavailable deployment evidence. Do not invent threats or controls. Preserve third-party dependencies as threat vectors without authorizing provider testing. No live security tests or network requests are authorized; this is a source-only analysis.";
 const session = await sessions.create({
   name: `recon-${values.arm}-comparison`,
   targets: [target],

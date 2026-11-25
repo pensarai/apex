@@ -210,3 +210,43 @@ to `read_file` and preserves the original kickoff/evidence window on resume.
 Neither path executed in the completed goal pilot; those fixes have unit-test
 coverage, not live-pilot evidence. This was a comparison of Jorge's Apex goal
 module and our Apex audit controller, not a native Codex `/goal` experiment.
+
+## Follow-up: coverage and depth rather than vulnerability confirmation
+
+A second goal run used the same source-only fixture and model with an explicit
+[coverage-and-depth objective](./recon-coverage-objective.txt). It permits conditional
+threat hypotheses and asks for distinct mechanisms, attacker positions, control
+bypasses, cross-boundary paths and useful testing detail. Exploit confirmation is
+deferred to testing. Reproduce with the same command plus
+`--objective-file scripts/recon-coverage-objective.txt` and a fresh output directory.
+The objective changed, so this run is not a controlled comparison with the first
+paired pilot.
+
+The run completed in 519.503 seconds (8m 40s), four goal rounds and 43 model calls,
+at an estimated $4.36. It retained nine components, four boundaries, ten flows,
+eight controls and 29 threats. All ten fixture service/surface concepts are
+represented; the static website is folded into the edge proxy. Seven of nine
+components have multiple threats: edge 3, portal 13, intranet 2, PostgreSQL 3,
+Gitea 2, VPN 1, jump host 2, backups 1 and Grafana 2.
+
+Manual review finds useful depth in session-forgery-to-SSRF paths, jump-host
+tunneling to backups, and database access progressing to tampering and a separate
+privilege-escalation hypothesis. All 29 scenarios specify entry points, impact,
+ordered actions and verification text, with 3–7 steps (median 5). These are
+structural observations, not demonstrated quality scores. Several SSRF and
+jump-host records are variants or branches of shared mechanisms; 29 records do
+not imply 29 independent mechanisms.
+
+Remaining coverage/depth questions include VPN peer isolation and key lifecycle,
+the missing VPN-to-PostgreSQL graph edge despite scenarios relying on it, and
+verification steps that establish reachability without establishing access to the
+modeled asset. One focused backup-server scenario may be appropriate for that
+narrow read-only service. Do not impose a minimum threat quota. Hosted provider
+integrations and richer identity models require other fixtures.
+
+The full unedited threats, review, objective, events and terminal result are saved
+under `Documents/Codex/2026-11-25/recon-coverage-review`. The standalone
+`Threat-Model-Coverage-Review.html` groups actual scenarios by component and expands
+their prerequisites, steps, impact, controls and verification guidance. A matching
+interactive view supports component filtering and search. No live security tests
+or Console runtime changes were made.
