@@ -5,10 +5,12 @@ import {
   invalidExceptions,
   lookupLicenses,
   type OsvScan,
+  packageVersions,
   parseOsvConfig,
   renderSummary,
   scanAndCompare,
   severityOf,
+  splitBySource,
 } from "./osv-gate";
 
 interface Advisory {
@@ -221,48 +223,149 @@ describe("compareScans", () => {
   });
 });
 
+describe("splitBySource", () => {
+  const result = (path: string, ...packages: ReturnType<typeof pkg>[]) => ({
+    source: { path },
+    packages,
+  });
+
+  it("splits a combined scan by the path each lockfile was given", () => {
+    const [base, head] = splitBySource(
+      {
+        results: [
+          result("/head/bun.lock", pkg("qs", "2.0.0")),
+          result("/base/bun.lock", pkg("qs", "1.0.0")),
+        ],
+      },
+      ["/base/bun.lock", "/head/bun.lock"],
+    );
+    expect([...packageVersions(base)]).toEqual(["qs@1.0.0"]);
+    expect([...packageVersions(head)]).toEqual(["qs@2.0.0"]);
+  });
+
+  it("fails when a lockfile has no results rather than reading it as clean", () => {
+    expect(() =>
+      splitBySource(
+        { results: [result("/base/bun.lock", pkg("qs", "1.0.0"))] },
+        ["/base/bun.lock", "/head/bun.lock"],
+      ),
+    ).toThrow("no results for /head/bun.lock");
+  });
+
+  it("fails on results from a lockfile it did not ask for", () => {
+    expect(() =>
+      splitBySource({ results: [result("bun.lock", pkg("qs", "1.0.0"))] }, [
+        "bun.lock",
+        "/elsewhere/bun.lock",
+      ]),
+    ).toThrow();
+    expect(() =>
+      splitBySource(
+        {
+          results: [
+            result("/base/bun.lock", pkg("qs", "1.0.0")),
+            result("/head/bun.lock", pkg("qs", "1.0.0")),
+            result("/other/bun.lock", pkg("qs", "1.0.0")),
+          ],
+        },
+        ["/base/bun.lock", "/head/bun.lock"],
+      ),
+    ).toThrow("unexpected source: /other/bun.lock");
+  });
+});
+
 describe("scanAndCompare", () => {
-  type ScanCall = { lockfile: string; config?: string; download?: boolean };
-  // Stands in for osv-scanner: the config's override accepts GHSA-qs on qs@1.0.0 only.
+  type ScanCall = { lockfiles: string[]; config?: string; download?: boolean };
+  const qs = (version: string) =>
+    pkg("qs", version, [{ id: "GHSA-qs", score: "7.5" }]);
+  // Stands in for osv-scanner over several lockfiles: the config"s override
+  // accepts GHSA-qs on qs@1.0.0 only.
   const fakeScanner =
-    (calls: ScanCall[]) =>
+    (calls: ScanCall[], lockfiles: Record<string, ReturnType<typeof pkg>[]>) =>
     (
-      lockfile: string,
+      paths: string[],
       config?: string,
       opts: { download?: boolean } = {},
     ): OsvScan => {
-      calls.push({ lockfile, config, ...opts });
-      const versions =
-        lockfile === "base.lock" ? ["1.0.0"] : ["1.0.0", "2.0.0"];
-      return scanOf(
-        ...versions
-          .filter((v) => !(config && v === "1.0.0"))
-          .map((v) => pkg("qs", v, [{ id: "GHSA-qs", score: "7.5" }])),
-      );
+      calls.push({ lockfiles: paths, config, ...opts });
+      return {
+        results: paths.map((path) => ({
+          source: { path },
+          packages: (lockfiles[path] ?? []).filter(
+            (p) =>
+              !(
+                config &&
+                p.package.name === "qs" &&
+                p.package.version === "1.0.0"
+              ),
+          ),
+        })),
+      };
     };
+
+  it("scans both lockfiles in one run, with the config and one database download", () => {
+    const calls: ScanCall[] = [];
+    scanAndCompare(
+      "/base/bun.lock",
+      "/head/bun.lock",
+      "osv-scanner.toml",
+      fakeScanner(calls, {
+        "/base/bun.lock": [qs("1.0.0")],
+        "/head/bun.lock": [qs("1.0.0")],
+      }),
+    );
+    expect(calls).toEqual([
+      {
+        lockfiles: ["/base/bun.lock", "/head/bun.lock"],
+        config: "osv-scanner.toml",
+        download: true,
+      },
+    ]);
+  });
 
   it("blocks a new affected version beside one an exception accepts", () => {
     const result = scanAndCompare(
-      "base.lock",
-      "head.lock",
+      "/base/bun.lock",
+      "/head/bun.lock",
       "osv-scanner.toml",
-      fakeScanner([]),
+      fakeScanner([], {
+        "/base/bun.lock": [qs("1.0.0")],
+        "/head/bun.lock": [qs("1.0.0"), qs("2.0.0")],
+      }),
     );
     expect(result.blocking.map((f) => f.version)).toEqual(["2.0.0"]);
   });
 
-  it("applies the config to both scans and downloads the database once", () => {
-    const calls: ScanCall[] = [];
-    scanAndCompare(
-      "base.lock",
-      "head.lock",
-      "osv-scanner.toml",
-      fakeScanner(calls),
-    );
-    expect(calls).toEqual([
-      { lockfile: "base.lock", config: "osv-scanner.toml", download: true },
-      { lockfile: "head.lock", config: "osv-scanner.toml", download: false },
+  it("blocks an advisory in an ecosystem only the head lockfile uses", () => {
+    const requests = pkg("requests", "2.0.0", [
+      { id: "GHSA-req", score: "9.1" },
     ]);
+    requests.package.ecosystem = "PyPI";
+    const result = scanAndCompare(
+      "/base/bun.lock",
+      "/head/bun.lock",
+      "osv-scanner.toml",
+      fakeScanner([], {
+        "/base/bun.lock": [pkg("left-pad", "1.0.0")],
+        "/head/bun.lock": [pkg("left-pad", "1.0.0"), requests],
+      }),
+    );
+    expect(result.blocking.map((f) => `${f.pkg}@${f.version}`)).toEqual([
+      "requests@2.0.0",
+    ]);
+  });
+
+  it("fails when the scan fails", () => {
+    expect(() =>
+      scanAndCompare(
+        "/base/bun.lock",
+        "/head/bun.lock",
+        "osv-scanner.toml",
+        () => {
+          throw new Error("osv-scanner failed (exit 127)");
+        },
+      ),
+    ).toThrow("exit 127");
   });
 });
 
