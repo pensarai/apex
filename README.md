@@ -79,6 +79,33 @@ the background with a short timeout, and Herdr failures do not interrupt Apex.
 
 ### Headless CLI
 
+#### Experimental Default v2
+
+Select **Default v2** in `/advanced`, save, and start a new session. The choice
+is saved with the session and restored on resume. This opt-in harness follows
+the conversation across security research, workspace management, coding, and
+questions. The primary agent does the work directly by default, with skills
+available on demand. Delegation is reserved for explicit requests or bounded,
+independent side tasks whose benefit outweighs the handoff and review cost.
+
+From this checkout:
+
+```bash
+bun src/cli.ts -p "Investigate the behavior described in notes.md" --default-v2
+```
+
+Add `--external-findings` to leave finding review to an external evaluator.
+With non-interactive stdin, v2 exits after the first response. Headless Operator
+runs in Auto mode, including authenticated workspace tools; use the TUI's Manual
+mode when each operation should require approval. Programmatic callers select
+`mode: "default-v2"` on `runOffensiveSecurityAgent`; workspace tools require an
+explicit host approval gate. The automated `pentest` pipeline remains separate.
+
+This is a development experiment. Compare complete conversations and repeated
+security tasks against the existing modes before claiming better outcomes.
+
+#### Automated pentests
+
 Run pentests without the TUI for scripting, CI, or evalgate integration:
 
 ```bash

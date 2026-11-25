@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: Config = {
   defaultHeaders: { "User-Agent": "pensar-apex" },
   strikeMode: false,
   lanceMode: false,
+  defaultV2Mode: false,
   findingPolicy: "native",
 };
 
@@ -76,6 +77,7 @@ export interface Config {
   // Default workflow for newly created TUI operator sessions.
   strikeMode?: boolean;
   lanceMode?: boolean;
+  defaultV2Mode?: boolean;
   lanceBudget?: LanceBudget;
   findingPolicy?: FindingPolicy;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
@@ -143,6 +145,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     strikeMode: parsedConfig.strikeMode ?? DEFAULT_CONFIG.strikeMode,
     lanceMode: parsedConfig.lanceMode === true,
+    defaultV2Mode: parsedConfig.defaultV2Mode === true,
     lanceBudget:
       parsedConfig.lanceBudget === undefined
         ? undefined
