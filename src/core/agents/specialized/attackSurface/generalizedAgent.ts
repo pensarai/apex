@@ -23,6 +23,7 @@ import {
 } from "./generalizedPrompts";
 import {
   bindGoalReport,
+  type ReconGoalJournal,
   type ReconGoalOptions,
   runGoalRecon,
 } from "./reconGoal";
@@ -46,6 +47,7 @@ export interface GeneralizedAttackSurfaceAgentInput
    */
   excludeTools?: string[];
   goal?: ReconGoalOptions;
+  goalJournal?: ReconGoalJournal;
   goalTurn?: Goal;
   harness?: "general";
   stepLimit?: number;

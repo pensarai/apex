@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import {
@@ -33,6 +33,11 @@ export interface ReconGoalOptions {
   objective: string;
   maxRounds?: number;
   workSteps?: number;
+}
+
+/** The host must replay model/tool work in order and rebuild scratch files before each attempt. */
+export interface ReconGoalJournal {
+  runStep<T>(key: string, run: () => Promise<T>): Promise<T>;
 }
 
 export class ReconGoalIncompleteError extends Error {
@@ -102,14 +107,43 @@ export async function runGoalRecon(
     (!Number.isInteger(options.workSteps) || options.workSteps < 1)
   )
     throw new Error("Recon goal workSteps must be a positive integer");
-  if (input.contextRecorder)
+  const journal = input.goalJournal;
+  if (input.contextRecorder && !journal)
     throw new Error(
       "Recon goals currently require the local host; durable hosts must supply goal storage and replay scheduling before enabling this path",
     );
   const root = input.session.rootPath;
   const origins = [...new Set([input.target, ...input.session.targets])];
   const requested = createGoal({ sessionId: input.session.id, ...options });
-  const savedGoal = readGoalFile(root);
+  if (journal) {
+    // Replay starts at the first model turn, not the last executor's local checkpoint.
+    for (const file of [
+      "goal.json",
+      "recon-goal-input.json",
+      "messages.json",
+      REPORT_BINDING,
+      "attack-surface-results.json",
+    ])
+      rmSync(join(root, file), { force: true });
+  }
+  const journalScope = {
+    origins,
+    update: input.update?.trigger ?? null,
+    repositories: input.session.config?.connectedRepositories ?? [],
+  };
+  const initial = journal
+    ? await journal.runStep("recon.goal.initialize", async () => ({
+        goal: requested,
+        scope: journalScope,
+      }))
+    : null;
+  if (initial)
+    assert.deepEqual(
+      initial.scope,
+      journalScope,
+      "Recon goal scope changed during replay",
+    );
+  const savedGoal = initial?.goal ?? readGoalFile(root);
   let goal = savedGoal ?? requested;
   if (
     goal.sessionId !== input.session.id ||
@@ -122,7 +156,7 @@ export async function runGoalRecon(
   const inputPath = join(root, "recon-goal-input.json");
   const scope = { origins, update: input.update ?? null };
   let updateBrief = input.updateBrief;
-  if (savedGoal) {
+  if (savedGoal && !journal) {
     const savedInput = JSON.parse(readFileSync(inputPath, "utf8"));
     assert.deepEqual(
       savedInput.scope,
@@ -211,27 +245,42 @@ export async function runGoalRecon(
       input.abortSignal?.throwIfAborted();
       if (!result.goalTurnFacts)
         throw new Error("Recon goal turn did not return completion facts");
-      const gaps = reportGaps(root, goal, origins);
       const facts = result.goalTurnFacts;
-      const claim = facts.updateCall as { status?: string } | null;
-      const next = await settleGoalTurn(host, input.session.id, {
-        ...facts,
-        ...(claim?.status === "complete" && gaps.length
-          ? {
-              updateCall: null,
-            }
-          : {}),
-      });
-      const saved = await host.load(input.session.id);
-      assert(saved, "Goal disappeared while settling a recon turn");
-      goal = saved;
+      const settle = async () => {
+        const gaps = reportGaps(root, goal, origins);
+        const claim = facts.updateCall as { status?: string } | null;
+        const next = await settleGoalTurn(host, input.session.id, {
+          ...facts,
+          ...(claim?.status === "complete" && gaps.length
+            ? { updateCall: null }
+            : {}),
+        });
+        const saved = await host.load(input.session.id);
+        assert(saved, "Goal disappeared while settling a recon turn");
+        return {
+          goal: saved,
+          next:
+            next?.kind === "continue" && gaps.length
+              ? {
+                  ...next,
+                  message: `${next.message}\nReport checks: ${gaps.join("; ")}`,
+                }
+              : next,
+        };
+      };
+      const settled = journal
+        ? await journal.runStep(`recon.goal.settle.${goal.rounds}`, settle)
+        : await settle();
+      goal = settled.goal;
+      writeGoalFile(root, goal);
+      const next = settled.next;
       if (goal.status === "complete") return { ...result, goal };
       if (next?.kind === "wrap_up") {
         await runTurn(next.message, true);
         break;
       }
       if (!next) break;
-      message = `${next.message}${gaps.length ? `\nReport checks: ${gaps.join("; ")}` : ""}`;
+      message = next.message;
     }
   } catch (error) {
     // Operator cancellation leaves the goal resumable, as in Jorge's CLI host.

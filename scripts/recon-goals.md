@@ -1,6 +1,6 @@
 # Goal-driven Attack Surface recon
 
-This opt-in local API integration uses the persistent-goal host and settlement
+This opt-in API integration uses the persistent-goal host and settlement
 rules from [Apex #1364](https://github.com/pensarai/apex/pull/1364). It replaces the
 experimental audit-worker controller as the proposed completion approach; it does
 not include that controller or enable goals by default.
@@ -38,10 +38,13 @@ marked complete proves comprehensive coverage, correct impact or distinct mechan
 
 ## Host boundary
 
-This is a local file-host implementation. A recorded/durable context is explicitly
-rejected before dispatch until that host supplies goal storage, citation lookup and
-ordered replay scheduling. Console's workspace-chat goal host is not automatically
-a system-recon host. This PR changes no Console feature flag, workflow or deployment.
+Local runs use the file host. Durable callers supply `goalJournal.runStep` alongside
+their ordered model/tool replay hooks. Goal initialization and settlement decisions
+then live in that journal. Each executor replays from the first turn, rebuilding its
+local transcript and report binding rather than trusting stale scratch files. The
+host restores topology and awaits child work and record persistence before returning
+each turn. A recorded context without that journal is rejected before dispatch.
+Console wires this seam in its system-recon workflow, separately from chat goals.
 The no-goal API path keeps its existing behavior.
 
 The local host searches retained root-session tool messages; it cannot retrieve

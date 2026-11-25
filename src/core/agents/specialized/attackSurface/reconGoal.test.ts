@@ -15,7 +15,7 @@ import {
   generalizedAttackSurfaceDefinition,
   runGeneralizedReconToReport,
 } from "./generalizedAgent";
-import { bindGoalReport } from "./reconGoal";
+import { bindGoalReport, type ReconGoalJournal } from "./reconGoal";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -130,6 +130,74 @@ function scripted(turns: Turn[]) {
 }
 
 describe("persistent-goal recon", () => {
+  it("replays into fresh scratch with the same objective and no repeated model work", async () => {
+    const entries: { key: string; value: unknown }[] = [];
+    let cursor = 0;
+    const journal: ReconGoalJournal = {
+      async runStep<T>(key: string, run: () => Promise<T>): Promise<T> {
+        const entry = entries[cursor++];
+        if (entry) {
+          expect(entry.key).toBe(key);
+          return structuredClone(entry.value) as T;
+        }
+        const value = await run();
+        entries.push({ key, value: structuredClone(value) });
+        return value;
+      },
+    };
+    const i = { ...input(), goalJournal: journal };
+    const controller = new AbortController();
+    const first = scripted([{ report: true }]);
+    let modelCalls = 0;
+    await expect(
+      runGeneralizedReconToReport(
+        { ...i, abortSignal: controller.signal },
+        (turn) => ({
+          consume: async () => {
+            if (turn.goalTurn?.rounds === 1) {
+              controller.abort();
+              throw new Error("executor stopped");
+            }
+            await journal.runStep("model", async () => ++modelCalls);
+            return first.factory(turn).consume();
+          },
+        }),
+      ),
+    ).rejects.toThrow("executor stopped");
+    const original = readGoalFile(i.session.rootPath);
+    expect(original?.rounds).toBe(1);
+    cursor = 0;
+    const resumed = scripted([{ report: true }, { report: true, claim: true }]);
+    const result = await runGeneralizedReconToReport(
+      { ...i, session: { ...i.session, rootPath: input().session.rootPath } },
+      (turn) => ({
+        consume: async () => {
+          await journal.runStep("model", async () => ++modelCalls);
+          return resumed.factory(turn).consume();
+        },
+      }),
+    );
+    expect(result.goal?.id).toBe(original?.id);
+    expect(result.goal?.status).toBe("complete");
+    expect(result.goal?.rounds).toBe(2);
+    expect(modelCalls).toBe(2);
+    expect(resumed.calls).toHaveLength(2);
+    expect(resumed.calls[0]?.messages?.some((m) => m.role === "tool")).toBe(
+      false,
+    );
+    expect(resumed.calls[1]?.messages?.some((m) => m.role === "tool")).toBe(
+      true,
+    );
+
+    cursor = 0;
+    await expect(
+      runGeneralizedReconToReport(
+        { ...i, target: "https://changed.example" },
+        resumed.factory,
+      ),
+    ).rejects.toThrow("scope changed during replay");
+  });
+
   it("continues past report creation until an evidence-checked completion claim", async () => {
     const i = input();
     const s = scripted([{ report: true }, { report: true, claim: true }]);
