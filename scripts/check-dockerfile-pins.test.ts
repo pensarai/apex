@@ -122,6 +122,36 @@ RUN echo done`;
     ]);
   });
 
+  it("ignores heredoc text that is not run, and checks heredoc scripts", () => {
+    const text = `FROM x@${DIGEST}
+RUN cat <<'EOF' > /opt/build-notes
+curl https://example.com/tool
+EOF
+RUN bash <<EOF
+curl -o /tmp/d https://example.com/d
+EOF`;
+    expect(problems(text)).toEqual([
+      "5: `/tmp/d` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+    ]);
+  });
+
+  it("reads options after a quoted URL, checksum flags and equivalent paths", () => {
+    const text = `FROM x@${DIGEST}
+RUN curl -fsSL "https://example.com/dl?a=1&b=2" -o ./tool \\
+ && echo "${SHA}  tool" | sha256sum --strict -c -`;
+    expect(problems(text)).toEqual([]);
+  });
+
+  it("carries a stage's ARGs into a stage built on it, and keeps a stage value on a bare ARG", () => {
+    const text = `ARG V=0.0.0
+FROM node@${DIGEST} AS builder
+ARG V=1.2.3
+ARG V
+FROM builder
+RUN bun install -g left-pad@$V`;
+    expect(problems(text)).toEqual([]);
+  });
+
   it("resolves FROM with global ARGs only, whichever way a stage shadows them", () => {
     const pinnedGlobal = `ARG BASE=alpine:3@${DIGEST}
 FROM node@${DIGEST} AS build

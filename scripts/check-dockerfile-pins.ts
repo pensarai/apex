@@ -5,7 +5,7 @@
  * into a shell, or a package tool that fetches whatever version is current.
  */
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { GATED_LOCKFILES } from "./osv-gate";
 
 export interface Violation {
@@ -32,7 +32,10 @@ const SHELL_FROM_DOWNLOAD =
   /\b(?:ba|da|z|k)?sh\b[^|;&]*(?:<\(|\$\()\s*(?:curl|wget)\b/;
 // `echo "<hash>  <file>" | sha256sum -c -`: the form that names the file it checks.
 const CHECKED_FILE =
-  /echo\s+(["']?)\S+\s+\*?([^\s"']+)\1\s*\|\s*sha(?:256|512)sum\s+(?:-c|--check)\b/g;
+  /echo\s+(["']?)\S+\s+\*?([^\s"']+)\1\s*\|\s*sha(?:256|512)sum\s+(?:-{1,2}[\w-]+\s+)*?(?:-c|--check)\b/g;
+// A heredoc runs as a script only when it is the RUN command or a shell's input.
+const HEREDOC_SCRIPT =
+  /^RUN\s+(?:--\S+\s+)*(?:(?:\/usr)?(?:\/bin\/)?(?:ba|da|z)?sh(?:\s+-\S+)*\s+)?<<-?(["']?)\w+\1\s*$/i;
 const AUTO_INSTALL = new RegExp(
   `${COMMAND_START}(npx|bunx)\\b([^;&|\\n]*)`,
   "g",
@@ -47,8 +50,8 @@ const EXACT_PACKAGE =
   /^(?:@[^/@\s]+\/)?[^/@\s]+@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /**
- * Joins continuation lines, drops comments and appends heredoc bodies to their
- * instruction, keeping each start line.
+ * Joins continuation lines and drops comments, keeping each start line. A
+ * heredoc body is consumed, and kept only when it runs as the RUN's script.
  */
 export function parseDockerfile(text: string): Instruction[] {
   const out: Instruction[] = [];
@@ -63,11 +66,12 @@ export function parseDockerfile(text: string): Instruction[] {
     const continued = /\\\s*$/.test(raw);
     buf += `${continued ? raw.replace(/\\\s*$/, "") : raw} `;
     if (continued) continue;
+    const script = HEREDOC_SCRIPT.test(buf.trim());
     for (const doc of buf.matchAll(/<<-?(["']?)(\w+)\1/g)) {
       const body: string[] = [];
       while (++i < lines.length && (lines[i] ?? "").trim() !== doc[2])
         body.push(lines[i] ?? "");
-      buf += `\n${body.join("\n")}`;
+      if (script) buf += `\n${body.join("\n")}`;
     }
     const match = /^\s*(\w+)\s*(.*)$/s.exec(buf.trim());
     if (match)
@@ -110,6 +114,11 @@ function splitFlags(args: string): { flags: string; rest: string } {
   return { flags, rest };
 }
 
+/** Blanks shell separators inside quotes, so `"…?a=1&b=2"` stays one word. */
+function maskQuoted(command: string): string {
+  return command.replace(/"[^"]*"|'[^']*'/g, (q) => q.replace(/[;&|\n]/g, " "));
+}
+
 function unquote(token: string): string {
   return token.replace(/^(["'])(.*)\1$/, "$2");
 }
@@ -121,15 +130,19 @@ function downloadTarget(tool: string, args: string): string | undefined {
       ? /(?:^|\s)(?:-[A-Za-z]*o|--output)(?:\s+|=)(\S+)/.exec(args)
       : /(?:^|\s)(?:-[A-Za-z]*O|--output-document)(?:\s+|=)?(\S+)/.exec(args);
   const target = m?.[1] ? unquote(m[1]) : undefined;
-  return target === "-" ? undefined : target;
+  return target === undefined || target === "-"
+    ? undefined
+    : posix.normalize(target);
 }
 
 export function checkDockerfile(path: string, text: string): Violation[] {
   const violations: Violation[] = [];
   const stages = new Set<string>();
-  // FROM sees only ARGs declared before the first FROM; a stage sees only the
-  // ARGs it declares itself, defaulting to the global value.
+  // FROM sees only ARGs declared before the first FROM. A stage sees the ARGs
+  // it declares (a bare `ARG X` takes the global default) plus those of the
+  // stage it is built on.
   const globalArgs = new Map<string, string>();
+  const stageArgsByName = new Map<string, Map<string, string>>();
   let stageArgs: Map<string, string> | undefined;
   const report = (line: number, problem: string, fix: string) =>
     violations.push({ path, line, problem, fix });
@@ -150,7 +163,9 @@ export function checkDockerfile(path: string, text: string): Violation[] {
       )) {
         const name = decl[1] ?? "";
         const value =
-          decl[2] !== undefined ? unquote(decl[2]) : globalArgs.get(name);
+          decl[2] !== undefined
+            ? unquote(decl[2])
+            : (stageArgs?.get(name) ?? globalArgs.get(name));
         if (value === undefined) continue;
         (stageArgs ?? globalArgs).set(name, value);
       }
@@ -161,8 +176,11 @@ export function checkDockerfile(path: string, text: string): Violation[] {
         substitute(rawArgs, globalArgs),
       );
       checkImage(line, image, "base image");
-      if (as?.toLowerCase() === "as" && name) stages.add(name.toLowerCase());
-      stageArgs = new Map();
+      stageArgs = new Map(stageArgsByName.get(image.toLowerCase()));
+      if (as?.toLowerCase() === "as" && name) {
+        stages.add(name.toLowerCase());
+        stageArgsByName.set(name.toLowerCase(), stageArgs);
+      }
       continue;
     }
     const body = substitute(rawArgs, stageArgs ?? globalArgs);
@@ -190,7 +208,7 @@ export function checkDockerfile(path: string, text: string): Violation[] {
       const from = mount[1] ?? "";
       if (!/^\d+$/.test(from)) checkImage(line, from, "RUN --mount image");
     }
-    const command = rest;
+    const command = maskQuoted(rest);
     if (PIPE_TO_SHELL.test(command) || SHELL_FROM_DOWNLOAD.test(command)) {
       report(
         line,
@@ -199,7 +217,9 @@ export function checkDockerfile(path: string, text: string): Violation[] {
       );
     } else {
       const checked = new Set(
-        [...command.matchAll(CHECKED_FILE)].map((m) => m[2] ?? ""),
+        [...command.matchAll(CHECKED_FILE)].map((m) =>
+          posix.normalize(m[2] ?? ""),
+        ),
       );
       for (const call of command.matchAll(DOWNLOAD)) {
         const target = downloadTarget(call[1] ?? "", call[2] ?? "");
