@@ -30,6 +30,14 @@ it.each([
   [`bash -ec -- '${serve} --max-model-len 8K'`, 8192],
   [`${serve} --max-model-len 8K || ${serve} --max-model-len 8192`, 8192],
   [`${serve} --max-model-len 32K || ${serve} --max-model-len 8K`, undefined],
+  [
+    `if ! ${serve} --max-model-len 32K; then ${serve} --max-model-len 8K; fi`,
+    undefined,
+  ],
+  [
+    `if test -d /mnt/base; then vllm serve /mnt/base; else ${serve} --max-model-len 8K; fi`,
+    undefined,
+  ],
 ] as const)("discovers the serving arguments in %s without waking the deployment", async (command, expected) => {
   const key = `local-account-test-${encodeURIComponent(command)}`;
   vi.stubEnv("BASETEN_API_KEY", key);

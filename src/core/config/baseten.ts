@@ -88,7 +88,7 @@ function servingCommands(node: ShellNode): string[][] {
   if (node.type === "Statement") return servingCommands(node.command);
   if ("commands" in node) return node.commands.flatMap(servingCommands);
   if (node.type === "If")
-    return [node.then, ...(node.else ? [node.else] : [])].flatMap(
+    return [node.clause, node.then, ...(node.else ? [node.else] : [])].flatMap(
       servingCommands,
     );
   if (node.type === "Case")
@@ -130,7 +130,7 @@ function servingCommands(node: ShellNode): string[][] {
   const start = serve === -1 ? 1 : serve + 2;
   const end = argv.indexOf("--", start);
   const args = argv.slice(start, end === -1 ? undefined : end);
-  return optionValue(args, "--served-model-name") ? [args] : [];
+  return serve >= 0 || optionValue(args, "--served-model-name") ? [args] : [];
 }
 
 function parseServingCommands(script: string) {
