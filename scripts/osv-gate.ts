@@ -3,8 +3,9 @@
  * Fails a PR that introduces a dependency with a critical or high advisory, or
  * any malware advisory, in the root `bun.lock`.
  *
- * Both lockfiles are scanned offline with `osv-scanner`: the head checkout and
- * the base ref's copy. An advisory is introduced when its id appears on a
+ * The head checkout and the base ref's copy are scanned offline in one
+ * `osv-scanner` run, so both match one advisory database snapshot under the
+ * same exceptions. An advisory is introduced when its id appears on a
  * package in the head scan but not on that package in the base scan, so moving
  * to a less vulnerable version passes, and an advisory published against an
  * unchanged package is reported without blocking the PR that happened to run.
@@ -48,7 +49,7 @@ interface OsvPackage {
 }
 
 export interface OsvScan {
-  results?: { packages?: OsvPackage[] }[] | null;
+  results?: { source?: { path?: string }; packages?: OsvPackage[] }[] | null;
 }
 
 export interface Finding {
@@ -267,6 +268,10 @@ export function parseOsvConfig(toml: string): OsvConfig {
       throw new Error(
         `${where}: write dotted keys (vulnerability.ignore = true), not inline tables`,
       );
+    // osv-scanner reads keys case-insensitively, so a repeated key (Ignore and
+    // ignore) could let it read a value the reason check never saw.
+    if (Object.hasOwn(current, key.toLowerCase()))
+      throw new Error(`${where}: "${key}" is set twice in one entry`);
     current[key.toLowerCase()] = parseValue(value, where);
   });
   return config;
@@ -461,19 +466,22 @@ function git(args: string[]): string {
   return res.stdout;
 }
 
-function scan(lockfile: string, config?: string): OsvScan {
+function scan(
+  lockfiles: string[],
+  config?: string,
+  { download = true }: { download?: boolean } = {},
+): OsvScan {
   const args = [
     "scan",
     "source",
     // Full offline mode: only the advisory database download below touches the
     // network; no other scanner feature can send the dependency list anywhere.
     "--offline",
-    "--download-offline-databases",
+    ...(download ? ["--download-offline-databases"] : []),
     "--all-packages",
     "--format",
     "json",
-    "-L",
-    lockfile,
+    ...lockfiles.flatMap((l) => ["-L", l]),
     ...(config ? ["--config", config] : []),
   ];
   const res = spawnSync("osv-scanner", args, {
@@ -485,9 +493,51 @@ function scan(lockfile: string, config?: string): OsvScan {
   // 0: nothing found, 1: vulnerabilities found. Anything else is a failed scan.
   if (res.status !== 0 && res.status !== 1)
     throw new Error(
-      `osv-scanner failed on ${lockfile} (exit ${res.status}): ${res.stderr}`,
+      `osv-scanner failed on ${lockfiles.join(", ")} (exit ${res.status}): ${res.stderr}`,
     );
   return JSON.parse(res.stdout) as OsvScan;
+}
+
+/**
+ * Splits a scan of several lockfiles into one scan per lockfile, in order.
+ * osv-scanner names each result by the path it was given and leaves out a
+ * lockfile with no packages, so a missing or unknown source fails the gate
+ * rather than reading as a lockfile with no findings. osv-scanner reports
+ * Windows paths with forward slashes, so both sides are compared that way.
+ */
+export function splitBySource(scan: OsvScan, lockfiles: string[]): OsvScan[] {
+  const slashed = (path = "") => path.replaceAll("\\", "/");
+  const results = scan.results ?? [];
+  for (const r of results)
+    if (!lockfiles.some((l) => slashed(l) === slashed(r.source?.path)))
+      throw new Error(
+        `osv-scanner returned results for an unexpected source: ${r.source?.path}`,
+      );
+  return lockfiles.map((path) => {
+    const own = results.filter(
+      (r) => slashed(r.source?.path) === slashed(path),
+    );
+    if (!own.length)
+      throw new Error(`osv-scanner returned no results for ${path}`);
+    return { results: own };
+  });
+}
+
+/** Scans the base and head lockfiles together, then compares them. */
+export function scanAndCompare(
+  baseLock: string,
+  headLock: string,
+  config: string,
+  scanner: typeof scan = scan,
+): GateResult {
+  // One run over both lockfiles: both sides honor the exceptions (a finding
+  // hidden only on the head would read as a version the PR removed), match
+  // against one database snapshot, and load every ecosystem either one uses.
+  const [base, head] = splitBySource(
+    scanner([baseLock, headLock], config, { download: true }),
+    [baseLock, headLock],
+  );
+  return compareScans(base, head);
 }
 
 /** The trunk as the remote names it (`origin/staging` today), never hardcoded. */
@@ -531,21 +581,25 @@ async function main(): Promise<void> {
 
   const mergeBase = git(["merge-base", baseRef, "HEAD"]).trim();
   const baseDir = mkdtempSync(join(tmpdir(), "osv-gate-base-"));
-  let baseScan: OsvScan;
+  let result: GateResult;
   try {
     writeFileSync(
       join(baseDir, "bun.lock"),
       git(["show", `${mergeBase}:bun.lock`]),
     );
-    baseScan = scan(join(baseDir, "bun.lock"));
+    // Absolute paths: osv-scanner reports each result under the path it was given.
+    result = scanAndCompare(
+      join(baseDir, "bun.lock"),
+      resolve("bun.lock"),
+      config,
+    );
   } finally {
     rmSync(baseDir, { recursive: true, force: true });
   }
 
-  const result = compareScans(baseScan, scan("bun.lock", config));
   const others = OTHER_LOCKFILES.map((path) => ({
     path,
-    findings: findingsFromScan(scan(path)),
+    findings: findingsFromScan(scan([path])),
   }));
   const licenses = await lookupLicenses(result.addedPackages);
 
