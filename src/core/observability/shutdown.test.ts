@@ -363,6 +363,77 @@ describe("installObservabilityExitHandlers", () => {
     expect(exitCalls).toEqual([1]);
   });
 
+  it.each([
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ] as const)("%s keeps its exit code when the interrupted command rejects", async (signal, code) => {
+    const shutdown = Promise.withResolvers<"completed">();
+    const exitWith = install({
+      forceFlush: async () => {},
+      shutdown: () => shutdown.promise,
+    });
+
+    process.emit(signal, signal);
+    const commandExit = exitWith(
+      1,
+      new DOMException("command aborted", "AbortError"),
+      "uncaughtException",
+    );
+    expect(exitCalls).toEqual([]);
+
+    shutdown.resolve("completed");
+    await expect(commandExit).rejects.toThrow("__test_exit__");
+
+    expect(cleanups).toEqual([`cleanup:${code}`]);
+    expect(exitCalls).toEqual([code]);
+    expect(errors).toEqual([]);
+  });
+
+  it.each([
+    ["SIGINT", 130, "uncaughtException"],
+    ["SIGINT", 130, "unhandledRejection"],
+    ["SIGTERM", 143, "uncaughtException"],
+    ["SIGTERM", 143, "unhandledRejection"],
+  ] as const)("%s exit %i still reports an unrelated %s during shutdown", async (signal, code, source) => {
+    const shutdown = Promise.withResolvers<"completed">();
+    const exitWith = install({
+      forceFlush: async () => {},
+      shutdown: () => shutdown.promise,
+    });
+    const failure = new TypeError("unexpected failure");
+
+    process.emit(signal, signal);
+    if (source === "uncaughtException") {
+      process.emit(source, failure);
+    } else {
+      process.emit(source, failure, Promise.resolve());
+    }
+    expect(errors).toEqual([failure]);
+    const pendingExit = exitWith(0);
+
+    shutdown.resolve("completed");
+    await expect(pendingExit).rejects.toThrow("__test_exit__");
+
+    expect(cleanups).toEqual([`cleanup:${code}`]);
+    expect(exitCalls).toEqual([1]);
+  });
+
+  it("reports an abort error when no signal initiated shutdown", async () => {
+    const shutdown = Promise.withResolvers<"completed">();
+    const exitWith = install({
+      forceFlush: async () => {},
+      shutdown: () => shutdown.promise,
+    });
+    const error = new DOMException("unexpected abort", "AbortError");
+
+    const pendingExit = exitWith(1, error, "uncaughtException");
+    shutdown.resolve("completed");
+    await expect(pendingExit).rejects.toThrow("__test_exit__");
+
+    expect(errors).toEqual([error]);
+    expect(exitCalls).toEqual([1]);
+  });
+
   it("a signal keeps its exit code when normal shutdown completes", async () => {
     const runtime = startWithProcessors([new HungProcessor()], 50);
     const exitWith = install(runtime);
