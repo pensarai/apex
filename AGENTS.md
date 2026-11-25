@@ -8,7 +8,6 @@
 | Bootstrap  | `bun install`, with Bun on `PATH` (see [Environment](#environment))                                                                                                                            |
 | Validation | `bun run test`, `bun run tsc`, `bun run lint`, `bun run format:check`, from the repo root. Add `bun run knip` for dependency or export changes, `bun run build` for CLI or build-path changes. |
 | Format     | `bun run format` (Biome on JS/TS/JSON/CSS, Prettier on Markdown/YAML)                                                                                                                          |
-| Worktrees  | No fixed location. When the checkout has unrelated work, use a separate worktree or clone rather than stashing it (the [`pr` skill](.agents/skills/pr/SKILL.md)).                              |
 | Issues     | GitHub issues in `pensarai/apex` (see [CONTRIBUTING.md](./CONTRIBUTING.md)). PRs link one with `Fixes #N` only when they complete it.                                                          |
 
 ## Directory rules
