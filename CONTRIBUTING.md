@@ -36,6 +36,10 @@ Please ensure the following before submitting your pull request:
    tsc --noEmit
    ```
 
+## Agent-assisted review
+
+Contributors using a coding agent with subagent support can run `/pr review <PR number or URL>` for two independent reviews. The [review playbook](.agent-instructions/skills/pr/independent-review.md) covers evidence-based findings, scoped fixes, existing comments, and CI status. It runs in the contributor's agent environment; it does not install a GitHub bot, grant approval, or authorize a merge.
+
 ## Development Setup
 
 1. Clone the repository
