@@ -2382,8 +2382,14 @@ describe("background vulnerability validation", () => {
     const controller = new AbortController();
     const ctx = context();
     ctx.abortSignal = controller.signal;
-    const existing = join(ctx.session.findingsPath, "existing.json");
+    const existingName = `${new Date().toISOString().split("T")[0]}-exposed-admin-data`;
+    const existing = join(ctx.session.findingsPath, `${existingName}.json`);
+    const existingMarkdown = join(
+      ctx.session.findingsPath,
+      `${existingName}.md`,
+    );
     writeFileSync(existing, "existing finding");
+    writeFileSync(existingMarkdown, "existing report");
     const unregister = vi.fn(async () => {});
     ctx.findingsRegistry = {
       isDuplicate: () => ({ duplicate: false }),
@@ -2417,8 +2423,12 @@ describe("background vulnerability validation", () => {
       expect(controller.signal.aborted).toBe(true);
       expect(jobs.status(receipt.jobId).success).toBe(false);
       expect(unregister).toHaveBeenCalledOnce();
-      expect(readdirSync(ctx.session.findingsPath)).toEqual(["existing.json"]);
+      expect(readdirSync(ctx.session.findingsPath).sort()).toEqual([
+        `${existingName}.json`,
+        `${existingName}.md`,
+      ]);
       expect(readFileSync(existing, "utf8")).toBe("existing finding");
+      expect(readFileSync(existingMarkdown, "utf8")).toBe("existing report");
       expect(readdirSync(ctx.session.pocsPath)).toEqual([]);
     } finally {
       spy.mockRestore();
