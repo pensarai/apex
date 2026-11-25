@@ -94,7 +94,8 @@ jobs:
       - name: Exercise sandbox finding collection
         run: bun run test src/core/agents/specialized/pentest/results.test.ts
 
-  # Fails a PR that introduces a critical, high or malware advisory in bun.lock.
+  # Fails a PR that introduces a critical, high or malware advisory in a gated
+  # lockfile, or whose lockfile holds a package osv-scanner did not read.
   # osv-scanner runs offline: the advisory database is downloaded fresh, and the
   # dependency list never leaves the runner. See scripts/osv-gate.ts; its unit
   # tests run in the test job.

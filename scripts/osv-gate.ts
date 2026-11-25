@@ -1,19 +1,26 @@
 #!/usr/bin/env bun
 /**
  * Fails a PR that introduces a dependency with a critical or high advisory, or
- * any malware advisory, in the root `bun.lock`.
+ * any malware advisory, in a gated lockfile (`GATED_LOCKFILES`), or whose
+ * lockfile holds a registry package osv-scanner did not read.
  *
- * The head checkout and the base ref's copy are scanned offline in one
- * `osv-scanner` run, so both match one advisory database snapshot under the
- * same exceptions. An advisory is introduced when its id appears on a
+ * Each lockfile in the head checkout and the base ref's copy are scanned
+ * offline in one `osv-scanner` run, so all match one advisory database snapshot
+ * under the same exceptions. An advisory is introduced when its id appears on a
  * package in the head scan but not on that package in the base scan, so moving
  * to a less vulnerable version passes, and an advisory published against an
  * unchanged package is reported without blocking the PR that happened to run.
  *
+ * The gate also reads each lockfile itself and fails when a registry package in
+ * the head copy is missing from osv-scanner's result: a package the scanner
+ * never read is never matched against an advisory. A package hidden by a
+ * `[[PackageOverrides]]` entry with `ignore = true` is excepted. A shortfall in
+ * the base copy is a warning only.
+ *
  * Severity is the OSV CVSS score: 9.0 and up is critical, 7.0 and up is high.
- * An introduced advisory with no score is a warning. Existing advisories, the
- * other lockfiles and the licenses of added packages (from the npm registry,
- * so the dependency list never goes to OSV or deps.dev) are reported only.
+ * An introduced advisory with no score is a warning. Existing advisories and
+ * the licenses of added packages (from the npm registry, so the dependency list
+ * never goes to OSV or deps.dev) are reported only.
  *
  * Exceptions are `[[IgnoredVulns]]` entries in `osv-scanner.toml`, each with a
  * `reason`. Run `bun run check:osv-gate [--base <ref>]`; the base defaults to
@@ -22,13 +29,15 @@
 import { spawnSync } from "node:child_process";
 import {
   appendFileSync,
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "unscored";
 
@@ -50,6 +59,8 @@ interface OsvPackage {
 
 export interface OsvScan {
   results?: { source?: { path?: string }; packages?: OsvPackage[] }[] | null;
+  /** Set by `scan`: packages the run's `[[PackageOverrides]]` ignores left out. */
+  ignoredPackages?: Set<string>;
 }
 
 export interface Finding {
@@ -71,6 +82,50 @@ export interface GateResult {
   introduced: Finding[];
   existing: Finding[];
   addedPackages: string[];
+}
+
+/** Lockfiles the gate blocks on, relative to the repository root. */
+export const GATED_LOCKFILES = ["bun.lock"];
+
+export interface LockfilePair {
+  /** Path relative to the repo root, used in the summary and annotations. */
+  path: string;
+  /** The merge base's copy; absent when the PR adds the lockfile. */
+  base?: string;
+  head: string;
+}
+
+export interface LockfileResult {
+  path: string;
+  result: GateResult;
+}
+
+export interface ScannedLockfile extends LockfileResult {
+  files: LockfilePair;
+  base: OsvScan;
+  head: OsvScan;
+  /** Packages the run's exceptions left out (`ignoredPackagesFrom`). */
+  ignored: Set<string>;
+}
+
+/** What osv-scanner read of each copy; `base` is null for a lockfile the PR adds. */
+export interface LockfileCoverage {
+  head: Coverage;
+  base: Coverage | null;
+}
+
+export interface Coverage {
+  /** Registry packages the lockfile holds. */
+  total: number;
+  /** Workspace, link, file, Git and tarball entries, which are not checked. */
+  other: number;
+  missing: string[];
+  /** Left out on purpose by a `[[PackageOverrides]]` ignore. */
+  hidden: string[];
+}
+
+export interface GatedLockfile extends LockfileResult {
+  coverage: LockfileCoverage;
 }
 
 export function severityOf(maxSeverity: string | undefined): {
@@ -345,40 +400,81 @@ function counts(findings: Finding[]): string {
   return parts.length ? parts.join(", ") : "none";
 }
 
-export function renderSummary(
-  result: GateResult,
+const HEADER =
+  "| Severity | Package | Advisory | Fix | Summary |\n| --- | --- | --- | --- | --- |";
+
+const MAX_LISTED = 20;
+
+function packageList(packages: string[]): string {
+  const listed = packages.slice(0, MAX_LISTED).map((p) => `\`${p}\``);
+  if (packages.length > MAX_LISTED)
+    listed.push(`and ${packages.length - MAX_LISTED} more`);
+  return listed.join(", ");
+}
+
+function coverageLines(
+  { head, base }: LockfileCoverage,
+  path: string,
+): string[] {
+  const lines: string[] = [];
+  if (head.missing.length) {
+    lines.push(
+      `**Blocked:** osv-scanner did not read ${head.missing.length} of the ${head.total} registry packages locked in \`${path}\`, so they were never checked for advisories: ${packageList(head.missing)}. Check that the lockfile is one the package manager wrote, and the osv-scanner version.`,
+    );
+  } else {
+    const hidden = head.hidden.length
+      ? `, apart from ${head.hidden.length} that \`[[PackageOverrides]]\` entries hide with \`ignore = true\``
+      : "";
+    lines.push(
+      `osv-scanner read all ${head.total} registry packages locked in \`${path}\`${hidden}.`,
+    );
+  }
+  if (head.other)
+    lines.push(
+      `${head.other} workspace, link, file or Git entries are not counted.`,
+    );
+  if (base === null)
+    lines.push(
+      `\`${path}\` is new in this PR, so every advisory in it counts as introduced.`,
+    );
+  else if (base.missing.length)
+    lines.push(
+      `**Warning:** osv-scanner did not read ${base.missing.length} of the ${base.total} registry packages in the merge base's \`${path}\`: ${packageList(base.missing)}. Advisories already on them may show as introduced by this PR.`,
+    );
+  return [lines.join(" "), ""];
+}
+
+function lockfileSection(
+  { path, result, coverage }: GatedLockfile,
   licenses: Map<string, string>,
-  otherLockfiles: { path: string; findings: Finding[] }[],
-): string {
-  const header =
-    "| Severity | Package | Advisory | Fix | Summary |\n| --- | --- | --- | --- | --- |";
-  const lines = ["## Vulnerable dependencies", ""];
+): string[] {
+  const lines = [`### \`${path}\``, "", ...coverageLines(coverage, path)];
   if (result.blocking.length) {
     lines.push(
-      `**Blocked:** this PR introduces ${result.blocking.length} critical, high or malware advisories in \`bun.lock\`. Upgrade or remove the package, or add an \`[[IgnoredVulns]]\` entry with a \`reason\` to \`osv-scanner.toml\`.`,
+      `**Blocked:** this PR introduces ${result.blocking.length} critical, high or malware advisories in \`${path}\`. Upgrade or remove the package, or add an \`[[IgnoredVulns]]\` entry with a \`reason\` to \`osv-scanner.toml\`.`,
       "",
-      header,
+      HEADER,
       ...findingRows(result.blocking),
       "",
     );
   } else {
     lines.push(
-      "No critical, high or malware advisories introduced in `bun.lock`.",
+      `No critical, high or malware advisories introduced in \`${path}\`.`,
       "",
     );
   }
   const other = result.introduced.filter((f) => !result.blocking.includes(f));
   if (other.length) {
     lines.push(
-      "### Other introduced advisories",
+      "#### Other introduced advisories",
       "",
-      header,
+      HEADER,
       ...findingRows(other),
       "",
     );
   }
   lines.push(
-    "### Already in the lockfile",
+    "#### Already in the lockfile",
     "",
     `Not blocking: ${counts(result.existing)}.`,
     "",
@@ -388,19 +484,16 @@ export function renderSummary(
     lines.push(
       "<details><summary>Critical and high</summary>",
       "",
-      header,
+      HEADER,
       ...findingRows(existingSevere),
       "",
       "</details>",
       "",
     );
   }
-  for (const lock of otherLockfiles) {
-    lines.push(`Not gated, \`${lock.path}\`: ${counts(lock.findings)}.`, "");
-  }
   if (result.addedPackages.length) {
     lines.push(
-      `### Added packages (${result.addedPackages.length})`,
+      `#### Added packages (${result.addedPackages.length})`,
       "",
       "| Package | License |",
       "| --- | --- |",
@@ -410,6 +503,15 @@ export function renderSummary(
       "",
     );
   }
+  return lines;
+}
+
+export function renderSummary(
+  results: GatedLockfile[],
+  licenses: Map<string, string>,
+): string {
+  const lines = ["## Vulnerable dependencies", ""];
+  for (const r of results) lines.push(...lockfileSection(r, licenses));
   return lines.join("\n");
 }
 
@@ -453,8 +555,10 @@ export async function lookupLicenses(
   return licenses;
 }
 
-// Lockfiles reported but not gated. This repository has none besides bun.lock.
-const OTHER_LOCKFILES: string[] = [];
+/** Whether `path` exists in `commit`; a lockfile the PR adds does not. */
+function existsAt(commit: string, path: string): boolean {
+  return spawnSync("git", ["cat-file", "-e", `${commit}:${path}`]).status === 0;
+}
 
 function git(args: string[]): string {
   const res = spawnSync("git", args, {
@@ -495,7 +599,27 @@ function scan(
     throw new Error(
       `osv-scanner failed on ${lockfiles.join(", ")} (exit ${res.status}): ${res.stderr}`,
     );
-  return JSON.parse(res.stdout) as OsvScan;
+  const scanned = JSON.parse(res.stdout) as OsvScan;
+  scanned.ignoredPackages = ignoredPackagesFrom(res.stderr);
+  return scanned;
+}
+
+/**
+ * The npm packages osv-scanner logs as dropped by a `[[PackageOverrides]]`
+ * ignore ("Package npm/<name>/<version> has been filtered out because: …"), as
+ * `name@version`. The scanner applies its own override rules, so the gate takes
+ * its word; a log line it does not recognize excuses nothing.
+ */
+export function ignoredPackagesFrom(log: string | undefined): Set<string> {
+  const ignored = new Set<string>();
+  for (const line of (log ?? "").split("\n")) {
+    const m =
+      /^Package npm\/(.+)\/([^/\s]+) has been filtered out because:/.exec(
+        line.trim(),
+      );
+    if (m) ignored.add(`${m[1]}@${m[2]}`);
+  }
+  return ignored;
 }
 
 /**
@@ -523,21 +647,159 @@ export function splitBySource(scan: OsvScan, lockfiles: string[]): OsvScan[] {
   });
 }
 
-/** Scans the base and head lockfiles together, then compares them. */
+/** Scans every base and head lockfile together, then compares each pair. */
 export function scanAndCompare(
-  baseLock: string,
-  headLock: string,
+  pairs: LockfilePair[],
   config: string,
   scanner: typeof scan = scan,
-): GateResult {
-  // One run over both lockfiles: both sides honor the exceptions (a finding
+): ScannedLockfile[] {
+  // One run over every lockfile: both sides honor the exceptions (a finding
   // hidden only on the head would read as a version the PR removed), match
   // against one database snapshot, and load every ecosystem either one uses.
-  const [base, head] = splitBySource(
-    scanner([baseLock, headLock], config, { download: true }),
-    [baseLock, headLock],
-  );
-  return compareScans(base, head);
+  const files = pairs.flatMap((p) => (p.base ? [p.base, p.head] : [p.head]));
+  const scanned = scanner(files, config, { download: true });
+  const scans = splitBySource(scanned, files);
+  const ignored = scanned.ignoredPackages ?? new Set<string>();
+  const byFile = new Map(files.map((f, i) => [f, scans[i]!]));
+  return pairs.map((p) => {
+    // A lockfile the PR adds has no base: everything in it is introduced.
+    const base = p.base ? byFile.get(p.base)! : { results: [] };
+    const head = byFile.get(p.head)!;
+    return {
+      path: p.path,
+      result: compareScans(base, head),
+      files: p,
+      base,
+      head,
+      ignored,
+    };
+  });
+}
+
+/** bun.lock is JSON that allows trailing commas; drops them outside strings. */
+export function parseJsonWithTrailingCommas(text: string): unknown {
+  const out: string[] = [];
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charAt(i);
+    if (inString) {
+      if (c === "\\") {
+        out.push(c, text[i + 1] ?? "");
+        i++;
+        continue;
+      }
+      if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === ",") {
+      let j = i + 1;
+      while (j < text.length && " \t\r\n".includes(text.charAt(j))) j++;
+      if (text[j] === "}" || text[j] === "]") continue;
+    }
+    out.push(c);
+  }
+  return JSON.parse(out.join(""));
+}
+
+// Any other version is a workspace, link, file, Git or tarball dependency,
+// which osv-scanner names differently, or an entry the gate cannot read.
+const REGISTRY_VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/;
+// Bun writes a local tarball as a bare path: ./x.tgz, ../x.tgz or /x.tgz.
+const BUN_NOT_REGISTRY =
+  /^(?:workspace:|link:|file:|root:|git\+|git:|github:|https?:|\.{1,2}\/|\/)/;
+const NPM_NOT_REGISTRY = /^(?:git\+|git:|github:|file:)/;
+
+export interface LockedPackages {
+  /** Registry packages as `name@version`, each once. */
+  registry: Set<string>;
+  other: number;
+}
+
+/**
+ * The registry packages a lockfile holds, read without osv-scanner. Each name
+ * and version counts once, as osv-scanner lists it. bun.lock entries hold the
+ * resolved `name@version` first (an npm alias resolves to the real name);
+ * package-lock.json keys are install paths, where the root, links and
+ * workspace or out-of-tree targets are not registry packages. An entry the
+ * gate cannot read throws.
+ */
+export function lockedPackages(path: string, text: string): LockedPackages {
+  const isBun = basename(path) === "bun.lock";
+  if (!isBun && basename(path) !== "package-lock.json")
+    throw new Error(
+      `${path}: the gate reads bun.lock and package-lock.json only`,
+    );
+  const lock = (
+    isBun ? parseJsonWithTrailingCommas(text) : JSON.parse(text)
+  ) as { packages?: unknown } | null;
+  const packages = lock?.packages;
+  if (!packages || typeof packages !== "object" || Array.isArray(packages))
+    throw new Error(`${path} has no packages map the gate can read`);
+  const registry = new Set<string>();
+  let other = 0;
+  for (const [key, entry] of Object.entries(
+    packages as Record<string, unknown>,
+  )) {
+    if (isBun) {
+      const id: unknown = Array.isArray(entry) ? entry[0] : undefined;
+      const at = typeof id === "string" ? id.indexOf("@", 1) : -1;
+      if (typeof id !== "string" || at < 1)
+        throw new Error(`${path}: cannot read the package entry "${key}"`);
+      const version = id.slice(at + 1);
+      if (REGISTRY_VERSION.test(version)) registry.add(id);
+      else if (BUN_NOT_REGISTRY.test(version)) other++;
+      else
+        throw new Error(`${path}: cannot read the version of "${key}" (${id})`);
+      continue;
+    }
+    if (key === "") continue;
+    if (!entry || typeof entry !== "object")
+      throw new Error(`${path}: cannot read the package entry "${key}"`);
+    const e = entry as {
+      name?: unknown;
+      version?: unknown;
+      resolved?: unknown;
+      link?: unknown;
+    };
+    const at = key.lastIndexOf("node_modules/");
+    if (
+      e.link === true ||
+      at === -1 ||
+      (typeof e.resolved === "string" && NPM_NOT_REGISTRY.test(e.resolved))
+    ) {
+      other++;
+      continue;
+    }
+    const name =
+      typeof e.name === "string"
+        ? e.name
+        : key.slice(at + "node_modules/".length);
+    if (typeof e.version !== "string" || !REGISTRY_VERSION.test(e.version))
+      throw new Error(
+        `${path}: cannot read the version of "${key}" (${String(e.version)})`,
+      );
+    registry.add(`${name}@${e.version}`);
+  }
+  return { registry, other };
+}
+
+/**
+ * Locked registry packages missing from osv-scanner's result: their advisories
+ * were never checked. A package the scanner says a `[[PackageOverrides]]`
+ * ignore left out is returned as `hidden`; that entry already needs a reason.
+ */
+export function unreadPackages(
+  locked: LockedPackages,
+  scan: OsvScan,
+  ignored: Set<string>,
+): Coverage {
+  const read = packageVersions(scan);
+  const missing: string[] = [];
+  const hidden: string[] = [];
+  for (const p of [...locked.registry].sort()) {
+    if (read.has(p)) continue;
+    (ignored.has(p) ? hidden : missing).push(p);
+  }
+  return { total: locked.registry.size, other: locked.other, missing, hidden };
 }
 
 /** The trunk as the remote names it (`origin/staging` today), never hardcoded. */
@@ -581,41 +843,70 @@ async function main(): Promise<void> {
 
   const mergeBase = git(["merge-base", baseRef, "HEAD"]).trim();
   const baseDir = mkdtempSync(join(tmpdir(), "osv-gate-base-"));
-  let result: GateResult;
+  let results: GatedLockfile[];
   try {
-    writeFileSync(
-      join(baseDir, "bun.lock"),
-      git(["show", `${mergeBase}:bun.lock`]),
-    );
-    // Absolute paths: osv-scanner reports each result under the path it was given.
-    result = scanAndCompare(
-      join(baseDir, "bun.lock"),
-      resolve("bun.lock"),
-      config,
+    const pairs = GATED_LOCKFILES.map((path, i): LockfilePair => {
+      // Absolute paths: osv-scanner reports each result under the path it was given.
+      const head = resolve(path);
+      if (!existsSync(head))
+        throw new Error(`Gated lockfile ${path} is missing from the checkout`);
+      if (!existsAt(mergeBase, path)) return { path, head };
+      // osv-scanner picks its parser from the file name, so keep it.
+      const base = join(baseDir, String(i), basename(path));
+      mkdirSync(dirname(base));
+      writeFileSync(base, git(["show", `${mergeBase}:${path}`]));
+      return { path, base, head };
+    });
+    results = scanAndCompare(pairs, config).map(
+      ({ path, result, files, base, head, ignored }) => {
+        const coverageOf = (file: string, scanned: OsvScan) =>
+          unreadPackages(
+            lockedPackages(path, readFileSync(file, "utf8")),
+            scanned,
+            ignored,
+          );
+        return {
+          path,
+          result,
+          coverage: {
+            head: coverageOf(files.head, head),
+            base: files.base ? coverageOf(files.base, base) : null,
+          },
+        };
+      },
     );
   } finally {
     rmSync(baseDir, { recursive: true, force: true });
   }
 
-  const others = OTHER_LOCKFILES.map((path) => ({
-    path,
-    findings: findingsFromScan(scan([path])),
-  }));
-  const licenses = await lookupLicenses(result.addedPackages);
+  const licenses = await lookupLicenses([
+    ...new Set(results.flatMap((r) => r.result.addedPackages)),
+  ]);
 
-  const summary = renderSummary(result, licenses, others);
+  const summary = renderSummary(results, licenses);
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY)
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
-  for (const f of result.blocking)
-    console.log(
-      `::error file=bun.lock,title=Vulnerable dependency::${f.pkg}@${f.version} ${f.id} (${f.malware ? "malware" : f.severity})`,
-    );
-  for (const f of result.warnings)
-    console.log(
-      `::warning file=bun.lock,title=Unscored advisory::${f.pkg}@${f.version} ${f.id}`,
-    );
-  if (result.blocking.length) process.exit(1);
+  for (const { path, result, coverage } of results) {
+    if (coverage.head.missing.length)
+      console.log(
+        `::error file=${path},title=Packages osv-scanner did not read::${coverage.head.missing.length} of ${coverage.head.total} registry packages, starting with ${coverage.head.missing.slice(0, 5).join(", ")}`,
+      );
+    for (const f of result.blocking)
+      console.log(
+        `::error file=${path},title=Vulnerable dependency::${f.pkg}@${f.version} ${f.id} (${f.malware ? "malware" : f.severity})`,
+      );
+    for (const f of result.warnings)
+      console.log(
+        `::warning file=${path},title=Unscored advisory::${f.pkg}@${f.version} ${f.id}`,
+      );
+  }
+  if (
+    results.some(
+      (r) => r.result.blocking.length || r.coverage.head.missing.length,
+    )
+  )
+    process.exit(1);
 }
 
 if (import.meta.main) await main();
