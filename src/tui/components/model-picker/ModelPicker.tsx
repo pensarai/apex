@@ -529,7 +529,9 @@ export function ModelPicker({
     >
       {/* Search input */}
       {config?.basetenCatalogError && (
-        <text fg={colors.error}>{config.basetenCatalogError}</text>
+        <box flexShrink={0} overflow="hidden" marginBottom={1}>
+          <text fg={colors.error}>{config.basetenCatalogError}</text>
+        </box>
       )}
       {config?.hoonifyCatalogError && (
         <box flexShrink={0} overflow="hidden" marginBottom={1}>

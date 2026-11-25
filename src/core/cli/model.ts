@@ -14,6 +14,7 @@ export function resolveExplicitCliModel(options: {
   hoonifyModels?: HoonifyModel[];
   ollama?: OllamaCatalog;
   hoonifyCatalogError?: string;
+  basetenCatalogError?: string;
 }): string | undefined {
   const { model, provider, customProviders } = options;
   if (provider && !model) throw new Error("--model-provider requires --model.");
@@ -31,7 +32,14 @@ export function resolveExplicitCliModel(options: {
       throw new Error(options.hoonifyCatalogError);
     resolveHoonifyModel(id, options.hoonifyModels);
   }
-  if (parseCustomModelId(id)) {
+  const custom = parseCustomModelId(id);
+  if (custom) {
+    if (
+      options.basetenCatalogError &&
+      /^baseten(?:-|$)/.test(custom.providerId) &&
+      !customProviders?.[custom.providerId]
+    )
+      throw new Error(options.basetenCatalogError);
     const resolved = resolveCustomModel(id, customProviders);
     resolveCustomApiKey(resolved.provider);
   }

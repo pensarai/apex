@@ -58,6 +58,25 @@ async function getJson(url: string, key: string, optional = false) {
   return res.json();
 }
 
+function configuredContextLength(command: string) {
+  const match =
+    /(?:^|\s)--max-model-len(?:=|\s+)["']?(\d+(?:\.\d+)?)([kKmMgG]?)["']?(?=\s|$)/.exec(
+      command,
+    );
+  if (!match) return;
+  const [, digits, unit] = match;
+  const scale: Record<string, number> = {
+    k: 1e3,
+    K: 2 ** 10,
+    m: 1e6,
+    M: 2 ** 20,
+    g: 1e9,
+    G: 2 ** 30,
+  };
+  const length = Number(digits) * (scale[unit] ?? 1);
+  return Number.isSafeInteger(length) && length > 1 ? length : undefined;
+}
+
 function model(
   id: string,
   name: string,
@@ -148,16 +167,14 @@ async function load(
             /(?:^|\s)--served-model-name(?:=|\s+)["']?([\w./:-]+)/.exec(
               server.start_command,
             )?.[1];
-          const length = /(?:^|\s)--max-model-len(?:=|\s+)["']?(\d+)\b/.exec(
-            server.start_command,
-          )?.[1];
+          const length = configuredContextLength(server.start_command);
           if (!served || !length) return;
           providers[`baseten-${m.id}-${deployment}`] = {
             name: "Baseten",
             baseUrl: `https://model-${m.id}.api.baseten.co/deployment/${deployment}/sync/v1`,
             apiKeyEnv,
             includeUsage: true,
-            models: [model(served, m.name, Number(length))],
+            models: [model(served, m.name, length)],
           };
         }),
       );

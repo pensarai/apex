@@ -220,6 +220,7 @@ async function resolveCliModel(): Promise<AIModel> {
     hoonifyModels: pensarConfig.hoonifyModels,
     ollama: pensarConfig.ollama,
     hoonifyCatalogError: pensarConfig.hoonifyCatalogError,
+    basetenCatalogError: pensarConfig.basetenCatalogError,
   });
   if (explicit) return explicit;
   const defaultModel = getDefaultModelForConfig(pensarConfig);
@@ -227,6 +228,8 @@ async function resolveCliModel(): Promise<AIModel> {
   if (!defaultModel) {
     if (pensarConfig.hoonifyCatalogError)
       throw new Error(pensarConfig.hoonifyCatalogError);
+    if (pensarConfig.basetenCatalogError)
+      throw new Error(pensarConfig.basetenCatalogError);
     console.error(
       "Error: No AI provider configured. Set one of:\n" +
         "  PENSAR_API_KEY     — Pensar Console (recommended)\n" +
@@ -236,6 +239,7 @@ async function resolveCliModel(): Promise<AIModel> {
         "  CONCENTRATE_API_KEY — Concentrate\n" +
         "  INFERENCE_API_KEY  — Inference.net\n" +
         "  HOONIFY_API_KEY    — Hoonify\n" +
+        "  BASETEN_API_KEY    — Baseten\n" +
         "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
         "\nOr start Ollama with a local model installed.\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
@@ -249,6 +253,7 @@ async function resolveCliModel(): Promise<AIModel> {
     hoonifyModels: pensarConfig.hoonifyModels,
     ollama: pensarConfig.ollama,
     hoonifyCatalogError: pensarConfig.hoonifyCatalogError,
+    basetenCatalogError: pensarConfig.basetenCatalogError,
   });
   return defaultModel.id;
 }

@@ -203,23 +203,16 @@ export async function get(): Promise<Config> {
           : "Could not load Hoonify models.";
     }
   }
-  if (
-    !process.env.EVALGATE_INFERENCE_GATEWAY_URL ||
-    !Object.keys(loaded.customProviders ?? {}).some(
-      (id) => id.startsWith("baseten-") || id === "baseten",
-    )
-  ) {
-    try {
-      loaded.customProviders = {
-        ...(await discoverBaseten()),
-        ...loaded.customProviders,
-      };
-    } catch (error) {
-      loaded.basetenCatalogError =
-        error instanceof Error
-          ? error.message
-          : "Could not discover Baseten models.";
-    }
+  try {
+    loaded.customProviders = {
+      ...(await discoverBaseten()),
+      ...loaded.customProviders,
+    };
+  } catch (error) {
+    loaded.basetenCatalogError =
+      error instanceof Error
+        ? error.message
+        : "Could not discover Baseten models.";
   }
   loaded.ollama = await discoverOllama();
   return loaded;

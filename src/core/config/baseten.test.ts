@@ -7,8 +7,12 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
-it("lists an owned sleeping deployment through management metadata and makes it selectable", async () => {
-  vi.stubEnv("BASETEN_API_KEY", "local-account-test");
+it.each([
+  ["262144", 262_144],
+  ["32K", 32_768],
+  ["25.6k", 25_600],
+] as const)("makes sleeping deployments with a %s context selectable without waking them", async (length, expected) => {
+  vi.stubEnv("BASETEN_API_KEY", `local-account-test-${length}`);
   vi.stubEnv("EVALGATE_INFERENCE_GATEWAY_URL", "");
   vi.stubEnv("BASETEN_BASE_URL", "");
   const calls: string[] = [];
@@ -17,7 +21,7 @@ it("lists an owned sleeping deployment through management metadata and makes it 
     vi.fn(async (url: string, init: RequestInit) => {
       calls.push(url);
       expect(new Headers(init.headers).get("authorization")).toBe(
-        "Bearer local-account-test",
+        `Bearer local-account-test-${length}`,
       );
       return Response.json(
         url.endsWith("/config")
@@ -25,8 +29,7 @@ it("lists an owned sleeping deployment through management metadata and makes it 
               config: {
                 docker_server: {
                   predict_endpoint: "/v1/chat/completions",
-                  start_command:
-                    "vllm serve /mnt/model --served-model-name private-nyx --max-model-len 262144",
+                  start_command: `vllm serve /mnt/model --served-model-name private-nyx --max-model-len ${length}`,
                 },
               },
             }
@@ -52,7 +55,7 @@ it("lists an owned sleeping deployment through management metadata and makes it 
     }).find((m) => m.id === id)?.name,
   ).toBe("Baseten / Nyx");
   expect(resolveCustomModel(id, providers)).toMatchObject({
-    model: { contextLength: 262144 },
+    model: { contextLength: expected },
     provider: {
       apiKeyEnv: "BASETEN_API_KEY",
       includeUsage: true,
@@ -96,9 +99,12 @@ it("uses only the gateway's attempt identity and authorized catalog even if a lo
   });
   expect(fetch).toHaveBeenCalledOnce();
 });
-it("never sends a Baseten account key to an untrusted custom endpoint", async () => {
+it.each([
+  "https://untrusted.example/v1",
+  "https://inference.baseten.co:8443/v1",
+])("rejects %s before sending a Baseten account key", async (endpoint) => {
   vi.stubEnv("EVALGATE_INFERENCE_GATEWAY_URL", "");
-  vi.stubEnv("BASETEN_BASE_URL", "https://untrusted.example/v1");
+  vi.stubEnv("BASETEN_BASE_URL", endpoint);
   vi.stubEnv("BASETEN_API_KEY", "fixture");
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
