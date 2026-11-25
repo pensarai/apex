@@ -45,14 +45,17 @@ function httpsUrl(value: string) {
   return url;
 }
 
-async function getJson(url: string, key: string) {
+async function getJson(url: string, key: string, optional = false) {
   const res = await fetch(url, {
     headers: { authorization: `Bearer ${key}` },
     redirect: "error",
     signal: AbortSignal.timeout(8000),
   });
-  if (!res.ok)
+  if (!res.ok) {
+    await res.body?.cancel();
+    if (optional && (res.status === 403 || res.status === 404)) return null;
     throw new Error(`Baseten model discovery returned HTTP ${res.status}.`);
+  }
   return res.json();
 }
 
@@ -130,14 +133,16 @@ async function load(
       await Promise.all(
         live.slice(offset, offset + 8).map(async (m) => {
           const deployment = m.production_deployment_id;
-          const {
-            config: { docker_server: server },
-          } = config.parse(
+          const metadata = config.safeParse(
             await getJson(
               `${management}/${m.id}/deployments/${deployment}/config`,
               key,
+              true,
             ),
           );
+          const server = metadata.success
+            ? metadata.data.config.docker_server
+            : undefined;
           if (server?.predict_endpoint !== "/v1/chat/completions") return;
           const served =
             /(?:^|\s)--served-model-name(?:=|\s+)["']?([\w./:-]+)/.exec(
@@ -147,7 +152,7 @@ async function load(
             server.start_command,
           )?.[1];
           if (!served || !length) return;
-          providers[`baseten-${m.id}`] = {
+          providers[`baseten-${m.id}-${deployment}`] = {
             name: "Baseten",
             baseUrl: `https://model-${m.id}.api.baseten.co/deployment/${deployment}/sync/v1`,
             apiKeyEnv,

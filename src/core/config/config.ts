@@ -204,6 +204,7 @@ export async function get(): Promise<Config> {
     }
   }
   if (
+    !process.env.EVALGATE_INFERENCE_GATEWAY_URL ||
     !Object.keys(loaded.customProviders ?? {}).some(
       (id) => id.startsWith("baseten-") || id === "baseten",
     )

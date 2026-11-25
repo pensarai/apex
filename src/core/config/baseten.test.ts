@@ -44,7 +44,7 @@ it("lists an owned sleeping deployment through management metadata and makes it 
     }),
   );
   const providers = await discoverBaseten();
-  const id = "custom:baseten-owned:private-nyx";
+  const id = "custom:baseten-owned-d1:private-nyx";
   expect(
     getAvailableModels({
       responsibleUseAccepted: true,
