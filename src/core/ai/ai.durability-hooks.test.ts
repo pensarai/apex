@@ -1,6 +1,7 @@
 import type {
   LanguageModel,
   LanguageModelMiddleware,
+  ModelMessage,
   StreamTextOnStepFinishCallback,
   ToolSet,
 } from "ai";
@@ -141,6 +142,49 @@ describe("streamResponse durability hooks", () => {
 
   afterEach(() => {
     onUsage(null);
+  });
+
+  it("does not clone context when neither mail nor recording needs a snapshot", async () => {
+    const clone = vi.spyOn(globalThis, "structuredClone");
+    try {
+      streamResponse({ model: "test-model", prompt: "scope" });
+      const call = mocks.streamText.mock.calls[0]?.[0] as {
+        prepareStep: (step: {
+          stepNumber: number;
+          messages: ModelMessage[];
+          steps: [];
+        }) => Promise<unknown>;
+      };
+      const messages: ModelMessage[] = [{ role: "user", content: "scope" }];
+      clone.mockClear();
+      await call.prepareStep({ stepNumber: 0, messages, steps: [] });
+      expect(clone).not.toHaveBeenCalled();
+    } finally {
+      clone.mockRestore();
+    }
+  });
+
+  it("normalizes directed mail before a provider step", async () => {
+    streamResponse({
+      model: "test-model",
+      prompt: "scope",
+      getPendingMessages: async () => [{ role: "user", content: "mail" }],
+    });
+    const call = mocks.streamText.mock.calls[0]?.[0] as {
+      prepareStep: (step: {
+        stepNumber: number;
+        messages: ModelMessage[];
+        steps: [];
+      }) => Promise<{ messages?: ModelMessage[] } | undefined>;
+    };
+    const prepared = await call.prepareStep({
+      stepNumber: 0,
+      messages: [{ role: "user", content: "scope" }],
+      steps: [],
+    });
+    expect(prepared?.messages).toEqual([
+      { role: "user", content: "scope\n\nmail" },
+    ]);
   });
 
   describe("languageModelMiddleware", () => {

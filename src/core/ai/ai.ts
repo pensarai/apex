@@ -42,6 +42,7 @@ import { RunPersistenceError } from "../runtime/persistenceError";
 import type { RunContextRecorder } from "../runtime/runContext";
 import { RunControlInterruption } from "../runtime/runControlStore";
 import { RunLimitError } from "../runtime/runModelStore";
+import { normalizeMessages } from "../session";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -1509,6 +1510,7 @@ export interface StreamResponseOpts {
   system?: string;
   model: AIModel;
   messages?: Array<ModelMessage>;
+  getPendingMessages?: () => Promise<ModelMessage[]>;
   stopWhen?:
     | StopCondition<NoInfer<ToolSet>>
     | StopCondition<NoInfer<ToolSet>>[];
@@ -1738,18 +1740,19 @@ function streamResponseWithinOperation(
     // already includes the base (messagesContainer.current) — committing
     // them would duplicate the prefix.
     if (
-      contextRecorder &&
+      (contextRecorder || opts.getPendingMessages) &&
       step.response.id !== "summarization" &&
       step.response.id !== "tool-repair"
     ) {
       if (!recorderBase) {
         throw new Error("context recorder active without a committed base");
       }
-      await contextRecorder.checkpoint({
-        messages: [
-          ...recorderBase,
-          ...step.response.messages.slice(responseMessageLength),
-        ],
+      messagesContainer.current = [
+        ...recorderBase,
+        ...step.response.messages.slice(responseMessageLength),
+      ];
+      await contextRecorder?.checkpoint({
+        messages: messagesContainer.current,
         system: effectiveSystem ?? null,
       });
     }
@@ -2158,9 +2161,20 @@ function streamResponseWithinOperation(
       // recovery re-entry commits before use.
       prepareStep: async (step) => {
         let stepMessages = projectFailedToolCalls(
-          step.messages,
+          opts.getPendingMessages && recorderBase
+            ? messagesContainer.current
+            : step.messages,
           step.steps.flatMap((previous) => previous.toolCalls),
         );
+        const pendingMessages = await opts.getPendingMessages?.();
+        if (pendingMessages?.length) {
+          stepMessages = normalizeMessages([
+            ...stepMessages,
+            ...pendingMessages,
+          ]);
+        }
+        // The SDK reconstructs later steps from its original input, omitting injected mail.
+        messagesContainer.current = stepMessages;
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
@@ -2207,8 +2221,9 @@ function streamResponseWithinOperation(
             throw new InStreamCompactionRequired(fitted);
           }
         }
-        if (contextRecorder) {
+        if (contextRecorder || opts.getPendingMessages)
           recorderBase = structuredClone(stepMessages);
+        if (contextRecorder) {
           // Full logical context each turn — accepted step outputs must
           // survive into every later commit, and system is explicit (when
           // cached into messages, effectiveSystem is undefined → null).

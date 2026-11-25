@@ -14,6 +14,8 @@ We use a three-tier hierarchy:
 2. **Specialized agents** (`TargetedPentestAgent`, `AttackSurfaceAgent`, `AuthenticationAgent`, `CodeAgent`, etc.) — each has a tight, expert-level prompt scoped to a single mission.
 3. **Orchestration tools** (`spawn_pentest_swarm`, `run_attack_surface`, `spawn_coding_agent`) — tools the base agent can call that spin up fleets of specialized agents with bounded concurrency.
 
+Adaptive engagement coordination, shared task ownership, and acceptance of worker results are specified in [PDR-016](./PDR-016-adaptive-engagements.md).
+
 ## Rationale
 
 **Context window fidelity and recall.** A single agent running a full engagement accumulates noise — recon output, failed attempts, intermediate artifacts — that degrades the quality of later reasoning. Specialized agents start every run with a clean, focused context. When targeting specific objectives or testing a specific hypothesis, a scoped agent has dramatically higher recall and precision than a general-purpose agent with thousands of tokens of unrelated history.

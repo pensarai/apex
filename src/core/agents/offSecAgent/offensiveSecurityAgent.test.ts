@@ -400,6 +400,124 @@ describe("spawned-agent usage callbacks", () => {
 });
 
 describe("auxiliary model events", () => {
+  it("acknowledges directed mail only after the transcript is durable", async () => {
+    streamResponseCalls.length = 0;
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-durable-mail-"));
+    try {
+      const onMessagesPersisted = vi.fn((messages) => {
+        expect(
+          JSON.parse(
+            readFileSync(
+              join(rootPath, "subagents", "worker", "messages.json"),
+              "utf8",
+            ),
+          ),
+        ).toEqual(messages);
+      });
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: { id: "ses_durable_mail", rootPath },
+        subagentId: "worker",
+        activeTools: [],
+        sandbox: {},
+        onMessagesPersisted,
+      } as never);
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onContextPrepared: (context: {
+          messages: Array<{ role: string; content: unknown }>;
+          responseMessageOffset: number;
+        }) => void;
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      call.onContextPrepared({
+        messages: [
+          { role: "user", content: "[engagement-mail:123] From lead: help" },
+        ],
+        responseMessageOffset: 0,
+      });
+      await call.onStepFinish({
+        response: {
+          id: "step-1",
+          messages: [{ role: "assistant", content: "done" }],
+        },
+        usage: { inputTokens: 1, outputTokens: 1 },
+      });
+      expect(onMessagesPersisted).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("debounces mail-free steps and flushes before acknowledging newly delivered mail", async () => {
+    streamResponseCalls.length = 0;
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-mail-flush-"));
+    let needsAck = false;
+    let writer: AgentMessageWriter | undefined;
+    const flush = vi.spyOn(AgentMessageWriter.prototype, "enqueueWrite");
+    try {
+      const onMessagesPersisted = vi.fn((messages) => {
+        expect(
+          JSON.parse(
+            readFileSync(
+              join(rootPath, "subagents", "worker", "messages.json"),
+              "utf8",
+            ),
+          ),
+        ).toEqual(messages);
+        needsAck = false;
+      });
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: { id: "ses_flush", rootPath },
+        subagentId: "worker",
+        activeTools: [],
+        sandbox: {},
+        shouldPersistMessages: () => needsAck,
+        onMessagesPersisted,
+      } as never);
+      writer = (agent as unknown as { writer: AgentMessageWriter }).writer;
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onContextPrepared: (context: {
+          messages: Array<{ role: string; content: string }>;
+          responseMessageOffset: number;
+        }) => void;
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      const step = {
+        response: {
+          id: "step",
+          messages: [{ role: "assistant", content: "working" }],
+        },
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+      await call.onStepFinish(step);
+      await call.onStepFinish(step);
+      expect(flush).not.toHaveBeenCalled();
+      expect(onMessagesPersisted).not.toHaveBeenCalled();
+      needsAck = true;
+      call.onContextPrepared({
+        messages: [
+          { role: "user", content: "[engagement-mail:123] From lead: help" },
+        ],
+        responseMessageOffset: 0,
+      });
+      await call.onStepFinish(step);
+      expect(flush).toHaveBeenCalledOnce();
+      expect(onMessagesPersisted).toHaveBeenCalledOnce();
+      await call.onStepFinish(step);
+      expect(flush).toHaveBeenCalledOnce();
+    } finally {
+      writer?.cancelTimer();
+      await writer?.waitForPendingWrites();
+      flush.mockRestore();
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
   it("persists prepared context instead of restoring a fitted-away prefix", async () => {
     streamResponseCalls.length = 0;
     const rootPath = mkdtempSync(join(tmpdir(), "apex-fitted-history-"));

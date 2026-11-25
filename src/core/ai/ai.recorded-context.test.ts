@@ -553,3 +553,94 @@ describe("critical failure modes (real SDK)", () => {
     }
   });
 });
+
+describe("inbound coordination mail", () => {
+  it("retains delivered mail in later requests and the persisted resume context", async () => {
+    const prompts: string[] = [];
+    let reads = 0;
+    const { recorder } = fakeRecorder();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      doStream: async ({ prompt }) => {
+        prompts.push(JSON.stringify(prompt));
+        return prompts.length === 1
+          ? streamOf([toolCallChunk(), finishChunk()])
+          : streamOf([...textStepChunks("done", "done"), finishChunk()]);
+      },
+    });
+    await drain(
+      streamResponse({
+        model: MODEL,
+        prompt: "Test the approved target",
+        silent: true,
+        tools: PROBE_TOOL,
+        stopWhen: stepCountIs(2),
+        contextRecorder: recorder,
+        getPendingMessages: async () =>
+          reads++ === 0
+            ? [
+                {
+                  role: "user",
+                  content:
+                    "[engagement-mail:review] Use the approved test account",
+                },
+              ]
+            : [],
+      }),
+    );
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts)
+      expect(prompt.match(/engagement-mail:review/g)).toHaveLength(1);
+    expect(
+      JSON.stringify(recorder.latest()).match(/engagement-mail:review/g),
+    ).toHaveLength(1);
+    await drain(
+      streamResponse({
+        model: MODEL,
+        prompt: "Continue",
+        messages: recorder.latest(),
+        silent: true,
+        contextRecorder: recorder,
+        getPendingMessages: async () => [],
+      }),
+    );
+    expect(prompts[2]).toContain("engagement-mail:review");
+  });
+});
+
+it("replays taken mail when an interrupted stream resumes before any transcript checkpoint", async () => {
+  const prompts: string[] = [];
+  let taken = false;
+  const interrupted = new Error("Transport interrupted");
+  interrupted.name = "StreamIdleTimeoutError";
+  state.model = new MockLanguageModelV3({
+    modelId: MODEL,
+    doStream: async ({ prompt }) => {
+      prompts.push(JSON.stringify(prompt));
+      return prompts.length === 1
+        ? streamOf([{ type: "error", error: interrupted }])
+        : streamOf([...textStepChunks("done", "done"), finishChunk()]);
+    },
+  });
+  await drain(
+    streamResponse({
+      model: MODEL,
+      prompt: "Test the approved target",
+      silent: true,
+      getPendingMessages: async () => {
+        if (taken) return [];
+        taken = true;
+        return [
+          {
+            role: "user",
+            content:
+              "[engagement-mail:retry] Stop using the expired test account",
+          },
+        ];
+      },
+    }),
+  );
+  expect(prompts).toHaveLength(2);
+  for (const prompt of prompts)
+    expect(prompt.match(/engagement-mail:retry/g)).toHaveLength(1);
+});

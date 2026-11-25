@@ -35,6 +35,7 @@ Apex serves three audiences:
 | [PDR-013](PDR-013-durable-run-controls.md)        | Persist recorded-run control and approvals                                   |
 | [PDR-014](./PDR-014-local-recorded-recovery.md)   | Explicit recovery of recorded local runs                                     |
 | [PDR-015](./PDR-015-local-run-workers.md)         | Optional independent local run workers                                       |
+| [PDR-016](./PDR-016-adaptive-engagements.md)      | Adaptive engagement coordination and lead-accepted landed results            |
 
 ---
 

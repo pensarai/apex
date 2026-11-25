@@ -2,6 +2,7 @@ import type { Finding } from "../agents/offSecAgent";
 import { type PentestReport, REPORT_VERSION } from "./schemas";
 
 export interface ReportContext {
+  assessment?: PentestReport["assessment"];
   target: string;
   model: string;
   sessionId: string;
@@ -26,6 +27,7 @@ export function buildPentestReport(
 
   return {
     version: REPORT_VERSION,
+    ...(context.assessment ? { assessment: context.assessment } : {}),
     metadata: {
       target: context.target,
       model: context.model,

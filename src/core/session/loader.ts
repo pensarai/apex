@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { GrpcPentestContext } from "../agents/specialized/pentest/agent";
 import { createLogger } from "../logger/structured";
 import { REPORT_FILENAME_MD } from "../report";
 import { scopedLogger } from "../util/lazyLogger";
@@ -32,6 +33,7 @@ export interface AttackSurfaceResults {
     target: string;
     objective: string;
     rationale?: string;
+    grpc?: GrpcPentestContext;
   }>;
   keyFindings?: string[];
 }
