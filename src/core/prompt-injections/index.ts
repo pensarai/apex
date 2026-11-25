@@ -3,6 +3,15 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
+export type {
+  PromptInjectionEvalInput,
+  PromptInjectionEvalObservation,
+  PromptInjectionEvalOutcome,
+  PromptInjectionEvalResult,
+  PromptInjectionEvalSignal,
+} from "./eval";
+export { evaluatePromptInjectionAttempt } from "./eval";
+
 /**
  * Categories Apex ships with first-class knowledge of. The runtime library is
  * an open-ended, externally-curated dataset, so the catalog schema accepts any

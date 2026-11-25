@@ -9,11 +9,11 @@ This directory demonstrates the local library shape expected by Apex.
 Run Apex with this library by passing:
 
 ```sh
-/prompt-injection --library ./exmaples/prompt-injection
+/prompt-injection --library ./examples/prompt-injection
 ```
 
 or by setting:
 
 ```sh
-PENSAR_PROMPT_INJECTION_LIBRARY=./exmaples/prompt-injection
+PENSAR_PROMPT_INJECTION_LIBRARY=./examples/prompt-injection
 ```
