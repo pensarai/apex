@@ -3,6 +3,8 @@ import {
   type LanceBudget,
 } from "../../../core/agents/lanceBudget";
 import { getSavedReasoning } from "../../../core/cli/reasoning";
+import type { PendingModelLoad } from "../../../core/eventBus";
+import { useToast } from "../../context/toast";
 /**
  * Operator Dashboard
  *
@@ -172,7 +174,10 @@ export default function OperatorDashboard({
   };
 }) {
   const { colors } = useTheme();
-  const [modelLoading, setModelLoading] = useState<string | null>(null);
+  const { toast } = useToast();
+  const [modelLoading, setModelLoading] = useState<PendingModelLoad | null>(
+    null,
+  );
   const route = useRoute();
   const config = useConfig();
   const {
@@ -746,7 +751,17 @@ export default function OperatorDashboard({
   const runEventProjections = useMemo(
     () =>
       createRunEventProjections({
-        onModelLoading: setModelLoading,
+        onModelLoading: (event) => {
+          setModelLoading(event.status === "loading" ? event : null);
+          if (
+            event.status === "ready" &&
+            event.firstTokenStartedAt != null &&
+            event.elapsedMs >= 5000
+          )
+            toast(
+              `Baseten returned its first token in ${Math.round(event.elapsedMs / 1000)}s`,
+            );
+        },
         display: displayEvents,
         subagents: subagentHelpers,
         updateWorkflowData,
@@ -769,7 +784,7 @@ export default function OperatorDashboard({
           planGateBypassedOnResumeRef.current = false;
         },
       }),
-    [displayEvents, subagentHelpers, updateWorkflowData, subagentStore],
+    [toast, displayEvents, subagentHelpers, updateWorkflowData, subagentStore],
   );
 
   // ---------------------------------------------------------------------------

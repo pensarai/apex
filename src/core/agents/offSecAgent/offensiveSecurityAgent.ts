@@ -23,6 +23,7 @@ import {
   createCodeModeTools,
   resolveCodeModeToolPresentation,
 } from "../../code-mode";
+import { usesBasetenEndpoint } from "../../config/baseten";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
@@ -41,6 +42,7 @@ import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { LANCE_CONFIG, LANCE_SYSTEM_PROMPT, LanceRuntime } from "../lance";
 import { createLanceJudgeVerifier } from "../lanceJudge";
+import { basetenStartup } from "./basetenStartup";
 import {
   createInterruptedStepFinalizer,
   type FinalizeInterruptedStepInput,
@@ -1095,6 +1097,19 @@ export class OffensiveSecurityAgent<TResult = void> {
       });
       this.lanceRuntime?.start();
       const continuation = this.lanceRuntime?.continuationContext();
+      const middleware = input.languageModelMiddleware;
+      const startup = usesBasetenEndpoint(
+        input.model,
+        input.authConfig?.customProviders,
+      )
+        ? basetenStartup(input.model, (event) =>
+            this.eventBus.emit("model-loading", {
+              ...event,
+              sessionId: this.busSessionId,
+              subagentId: this.subagentId,
+            }),
+          )
+        : undefined;
       return streamResponse({
         prompt: continuation
           ? `${input.prompt}\n\n${continuation}`
@@ -1122,7 +1137,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         activeTools,
         stopWhen,
         toolChoice: "auto",
-        languageModelMiddleware: input.languageModelMiddleware,
+        languageModelMiddleware: startup
+          ? [...[middleware ?? []].flat(), startup]
+          : middleware,
         usageRecorder: input.usageRecorder,
         contextRecorder: input.contextRecorder,
         inferenceRecorder: input.inferenceRecorder,

@@ -57,11 +57,13 @@ describe("SubagentStore counts", () => {
     const store = createSubagentStore();
     const helpers = createSubagentSessionHelpers(store.setState);
     helpers.spawnSession("child");
-    helpers.setModelLoading("child", "ollama:twil");
-    expect(store.getSnapshot().get("child")?.modelLoading).toBe("ollama:twil");
+    helpers.setModelLoading("child", { model: "ollama:twil" });
+    expect(store.getSnapshot().get("child")?.modelLoading?.model).toBe(
+      "ollama:twil",
+    );
     if (status === "cancelled") store.setState(markSubagentsInterrupted);
     else helpers.completeSession("child", status);
-    helpers.setModelLoading("child", "ollama:twil");
+    helpers.setModelLoading("child", { model: "ollama:twil" });
     expect(store.getSnapshot().get("child")?.modelLoading).toBeNull();
   });
   it("keeps stable snapshots and skips notifications for identity no-ops", () => {

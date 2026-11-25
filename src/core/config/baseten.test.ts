@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { getAvailableModels } from "../providers/utils";
-import { discoverBaseten } from "./baseten";
+import { discoverBaseten, usesBasetenEndpoint } from "./baseten";
 import { resolveCustomModel } from "./customProviders";
 
 afterEach(() => {
@@ -98,6 +98,17 @@ it("uses only the gateway's attempt identity and authorized catalog even if a lo
     apiKeyEnv: "EVALGATE_INFERENCE_TOKEN",
     baseUrl: `https://gateway.example:8443/deployments/${deployment}/v1`,
   });
+  expect(
+    usesBasetenEndpoint(`custom:baseten-${deployment}:nyx`, providers),
+  ).toBe(true);
+  expect(
+    usesBasetenEndpoint("custom:baseten-research:nyx", {
+      "baseten-research": {
+        ...providers[`baseten-${deployment}`],
+        baseUrl: "https://other.example/v1",
+      },
+    }),
+  ).toBe(false);
   expect(fetch).toHaveBeenCalledOnce();
 });
 it.each([

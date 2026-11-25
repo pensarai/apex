@@ -1,5 +1,32 @@
 import { z } from "zod";
-import { type CustomProviders, parseCustomProviders } from "./customProviders";
+import {
+  type CustomProviders,
+  loadCustomProviders,
+  parseCustomModelId,
+  parseCustomProviders,
+} from "./customProviders";
+
+const basetenHost =
+  /^(model-[a-zA-Z0-9_-]+\.api\.baseten\.co|inference\.baseten\.co)$/;
+
+export function usesBasetenEndpoint(
+  model: string,
+  configured?: CustomProviders,
+): boolean {
+  const id = parseCustomModelId(model);
+  if (!id) return false;
+  const provider = (configured ?? loadCustomProviders())[id.providerId];
+  if (!provider) return false;
+  const url = new URL(provider.baseUrl);
+  return (
+    url.protocol === "https:" &&
+    (basetenHost.test(url.hostname) ||
+      (provider.apiKeyEnv === "EVALGATE_INFERENCE_TOKEN" &&
+        url.pathname ===
+          `/deployments/${id.providerId.slice("baseten-".length)}/v1` &&
+        id.providerId.startsWith("baseten-")))
+  );
+}
 
 const remoteId = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 const modelList = z.object({
@@ -103,13 +130,7 @@ async function load(
   const apiKeyEnv = gateway ? "EVALGATE_INFERENCE_TOKEN" : "BASETEN_API_KEY";
   if (endpoint) {
     const url = httpsUrl(endpoint);
-    if (
-      !gateway &&
-      (url.port ||
-        !/^(model-[a-zA-Z0-9_-]+\.api\.baseten\.co|inference\.baseten\.co)$/.test(
-          url.hostname,
-        ))
-    )
+    if (!gateway && (url.port || !basetenHost.test(url.hostname)))
       throw new Error(
         "BASETEN_BASE_URL must point to a Baseten HTTPS endpoint.",
       );

@@ -172,6 +172,6 @@ before running the live test.
 
 With `BASETEN_API_KEY` set on a trusted workstation, the model picker discovers production vLLM deployments whose configuration declares an OpenAI chat route, served model name, and context length. Discovery reads management metadata and leaves sleeping GPUs asleep. Select the deployment in the picker or pass its displayed model ID to the CLI.
 
-For an invoke-only key or another OpenAI-compatible Baseten server, set `BASETEN_BASE_URL` to its API base, such as `https://model-<model-id>.api.baseten.co/deployment/<deployment-id>/sync/v1`. Apex reads the served models from that endpoint's `/models` route. Contacting a sleeping endpoint can wake it.
+For an invoke-only key or another OpenAI-compatible Baseten server, set `BASETEN_BASE_URL` to its API base, such as `https://model-<model-id>.api.baseten.co/deployment/<deployment-id>/sync/v1`. Apex reads the served models from that endpoint's `/models` route. Contacting a sleeping endpoint can wake it. While a Baseten inference request waits for its first text, reasoning, or tool output, Apex shows a pulsing diamond and the elapsed wait. After a wait of five seconds or more, the main chat shows the measured time to first output.
 
 EvalGate supplies its own inference gateway and attempt-scoped access to hosted runs. Models appear with the same picker, streaming, tool-call, and usage handling. Keep personal Baseten keys out of untrusted execution environments.

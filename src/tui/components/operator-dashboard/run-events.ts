@@ -2,7 +2,11 @@ import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   type AskUserQuestion,
 } from "../../../core/agents/offSecAgent";
-import type { AgentEventBus, AgentEventMap } from "../../../core/eventBus";
+import type {
+  AgentEventBus,
+  AgentEventMap,
+  PendingModelLoad,
+} from "../../../core/eventBus";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { tryParsePartialJson } from "../shared/message-utils";
 import {
@@ -317,7 +321,7 @@ export function createDisplayEventHandlers(
 
 /** Structural subset of createSubagentSessionHelpers used by the projections. */
 export interface SubagentEventSink {
-  setModelLoading(id: string, model: string | null): void;
+  setModelLoading(id: string, model: PendingModelLoad | null): void;
   appendText(id: string, text: string): void;
   addStreamingToolCall(id: string, toolCallId: string, toolName: string): void;
   appendToolCallDelta(
@@ -337,7 +341,7 @@ export interface SubagentEventSink {
 }
 
 export interface RunEventProjectionDeps {
-  onModelLoading?: (model: string | null) => void;
+  onModelLoading?: (event: AgentEventMap["model-loading"]) => void;
   display: DisplayEventAdapter;
   subagents: SubagentEventSink;
   /** Patch the active run_pentest_workflow tool message's workflowData. */
@@ -378,11 +382,11 @@ export function createRunEventProjections(deps: RunEventProjectionDeps): {
   return {
     handlers: {
       onModelLoading: (event) => {
-        const model = event.status === "loading" ? event.model : null;
+        const model = event.status === "loading" ? event : null;
         if (event.subagentId) {
           subagents.setModelLoading(event.subagentId, model);
         } else {
-          deps.onModelLoading?.(model);
+          deps.onModelLoading?.(event);
         }
       },
       onTextDelta: (d) => {
