@@ -60,7 +60,7 @@ async function getJson(url: string, key: string, optional = false) {
 
 function configuredContextLength(command: string) {
   const match =
-    /(?:^|\s)--max-model-len(?:=|\s+)["']?(\d+(?:\.\d+)?)([kKmMgG]?)["']?(?=\s|$)/.exec(
+    /(?:^|\s)--max-model-len(?:=|\s+)["']?(\d+(?:\.\d+)?)([kKmMgG]?)["']?(?=[\s;&|()<>]|$)/.exec(
       command,
     );
   if (!match) return;

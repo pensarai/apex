@@ -10,6 +10,7 @@ afterEach(() => {
 it.each([
   ["262144", 262_144],
   ["32K", 32_768],
+  ["32768;", 32_768],
   ["25.6k", 25_600],
 ] as const)("makes sleeping deployments with a %s context selectable without waking them", async (length, expected) => {
   vi.stubEnv("BASETEN_API_KEY", `local-account-test-${length}`);
