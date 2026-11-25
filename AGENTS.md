@@ -2,13 +2,13 @@
 
 ## Repo contract
 
-| Key        | Value                                                                                                                                                                                          |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Trunk      | `canary`, the default branch. PRs branch from and target it; each push to it publishes a prerelease. Releases publish from `release`.                                                          |
-| Bootstrap  | `bun install`, with Bun on `PATH` (see [Environment](#environment))                                                                                                                            |
-| Validation | `bun run test`, `bun run tsc`, `bun run lint`, `bun run format:check`, from the repo root. Add `bun run knip` for dependency or export changes, `bun run build` for CLI or build-path changes. |
-| Format     | `bun run format` (Biome on JS/TS/JSON/CSS, Prettier on Markdown/YAML)                                                                                                                          |
-| Issues     | GitHub issues in `pensarai/apex` (see [CONTRIBUTING.md](./CONTRIBUTING.md)). PRs link one with `Fixes #N` only when they complete it.                                                          |
+| Key        | Value                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trunk      | `canary`, the default branch. PRs branch from and target it; each push to it publishes a prerelease. Releases publish from `release`.                                                                                                                                                                                                         |
+| Bootstrap  | `bun install`, with Bun on `PATH` (see [Environment](#environment))                                                                                                                                                                                                                                                                           |
+| Validation | For code changes: `bun run test`, `bun run tsc`, `bun run lint`, `bun run format:check`, from the repo root. Add `bun run test:tui` for `src/tui/` changes, `bun run knip` for dependency or export changes, `bun run build` for CLI or build-path changes. For docs-only changes, `bun run format:check` covers the Markdown that CI checks. |
+| Format     | `bun run format` (Biome on JS/TS/JSON/CSS, Prettier on Markdown/YAML)                                                                                                                                                                                                                                                                         |
+| Issues     | GitHub issues in `pensarai/apex` (see [CONTRIBUTING.md](./CONTRIBUTING.md)). PRs link one with `Fixes #N` only when they complete it.                                                                                                                                                                                                         |
 
 ## Directory rules
 
@@ -94,7 +94,7 @@ See `package.json` `scripts` for the full list.
 ### Testing notes
 
 - Unit tests (`src/core/installation/`, `src/core/findings/`, `src/core/credentials/`) and AI stream tests (`src/core/ai/ai.test.ts`) run without API keys.
-- Integration tests (the `describe.skip` suites in `src/tests/`, and `src/core/api/attackSurface.test.ts`) require an `ANTHROPIC_API_KEY` (or other AI provider key) and make real network calls to external services with 2-minute timeouts. They are currently skipped via `describe.skip` because they depend on a live staging server and LLM API calls.
+- Integration tests (the `describe.skip` suites in `src/tests/`, and `src/core/api/attackSurface.test.ts`) require an `ANTHROPIC_API_KEY` (or other AI provider key) and make real network calls to external services (the default test timeout is two minutes; some tests set longer). They are currently skipped via `describe.skip` because they depend on a live staging server and LLM API calls.
 - Some auth tests also require `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD` environment variables.
 - Tests use vitest with the `node` environment and a 120-second default timeout (see `vitest.config.ts`).
 - When making code changes, always run `bun run test` — all tests should pass (or be skipped) before committing.
