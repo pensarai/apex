@@ -64,6 +64,9 @@ export function checkCitation(
   ref: EvidenceRef,
   candidates: CitedPart[],
 ): { part: CitedPart } | { problem: string } {
+  // Its own result only says the claim was recorded, so it can never prove the goal.
+  if (ref.tool === UPDATE_GOAL_TOOL_NAME)
+    return { problem: `${UPDATE_GOAL_TOOL_NAME} cannot be cited as evidence` };
   const part = candidates.find((c) => c.succeeded && c.inGoalWindow);
   if (part) return { part };
   const cited = `${ref.tool} output containing "${ref.quote}"`;

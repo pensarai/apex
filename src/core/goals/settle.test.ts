@@ -75,6 +75,16 @@ describe("decideGoalAfterTurn", () => {
       "is from a failed call",
     ],
     [
+      "a citation of update_goal's own result",
+      [
+        {
+          ref: { tool: "update_goal", quote: "Recorded" },
+          candidates: [good],
+        },
+      ],
+      "update_goal cannot be cited as evidence",
+    ],
+    [
       "only results from before the goal",
       [{ ref: ok, candidates: [{ ...good, inGoalWindow: false }] }],
       "is from before the goal started",
