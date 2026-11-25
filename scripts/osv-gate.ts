@@ -268,6 +268,10 @@ export function parseOsvConfig(toml: string): OsvConfig {
       throw new Error(
         `${where}: write dotted keys (vulnerability.ignore = true), not inline tables`,
       );
+    // osv-scanner reads keys case-insensitively, so a repeated key (Ignore and
+    // ignore) could let it read a value the reason check never saw.
+    if (Object.hasOwn(current, key.toLowerCase()))
+      throw new Error(`${where}: "${key}" is set twice in one entry`);
     current[key.toLowerCase()] = parseValue(value, where);
   });
   return config;

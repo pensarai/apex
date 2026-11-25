@@ -370,6 +370,19 @@ describe("scanAndCompare", () => {
 });
 
 describe("parseOsvConfig and invalidExceptions", () => {
+  it("rejects a key set twice in one entry, in any case", () => {
+    const toml = [
+      "[[PackageOverrides]]",
+      'name = "qs"',
+      "ignore = false",
+      "Ignore = true",
+      'reason = "dev only"',
+    ].join("\n");
+    expect(() => parseOsvConfig(toml)).toThrow(
+      'osv-scanner.toml line 4: "Ignore" is set twice in one entry',
+    );
+  });
+
   it("reads entries, trailing comments, spaced headers and a # inside a string", () => {
     const toml = [
       "# header comment",
