@@ -51,7 +51,9 @@ export function outputContainsQuote(output: unknown, quote: string): boolean {
 
 /** False when a tool reported its own failure inside an ordinary result (a nonzero exit, `success: false`). */
 export function outputSucceeded(output: unknown): boolean {
-  if (typeof output === "string") return !/^success=false\b/m.test(output);
+  // A bounded result's header line comes before any captured output, so only the first status line counts.
+  if (typeof output === "string")
+    return /^success=(\w+)/m.exec(output)?.[1] !== "false";
   if (!output || typeof output !== "object") return true;
   const { success, exitCode } = output as Record<string, unknown>;
   return success !== false && !(typeof exitCode === "number" && exitCode !== 0);
