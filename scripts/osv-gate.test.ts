@@ -717,8 +717,14 @@ describe("GATED_LOCKFILES", () => {
         "utf8",
       ),
     ) as { dependencies: Record<string, string> };
-    for (const [name, version] of Object.entries(manifest.dependencies))
+    const lock = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", path), "utf8"),
+    ) as { packages: Record<string, { version?: string }> };
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      // The top-level install, not a nested copy, is what the manifest pins.
+      expect(lock.packages[`node_modules/${name}`]?.version).toBe(version);
       expect(locked.registry).toContain(`${name}@${version}`);
+    }
     expect(locked.other).toBe(0);
   });
 });
