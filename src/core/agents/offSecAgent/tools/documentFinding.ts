@@ -391,7 +391,10 @@ CRITICAL RULES — READ BEFORE CALLING:
           "document_vulnerability",
           redactSecretValues(input.title, ctx.secretValues),
           async (signal, jobId, output) => {
-            const shell = new PerCommandShell({ cwd: ctx.agentCwd });
+            const shell = new PerCommandShell({
+              cwd: ctx.agentCwd,
+              env: ctx.environmentVariables,
+            });
             const abortSignal = ctx.abortSignal
               ? AbortSignal.any([signal, ctx.abortSignal])
               : signal;
@@ -401,6 +404,7 @@ CRITICAL RULES — READ BEFORE CALLING:
                 { ...input, pocName: `${jobId}-${slugify(input.pocName, 12)}` },
                 toolCallId,
                 output,
+                jobId,
               );
               return JSON.parse(
                 redactSecretValues(JSON.stringify(result), ctx.secretValues),
@@ -425,6 +429,7 @@ async function runDocumentVulnerability(
   input: DocumentVulnerabilityInput,
   toolCallId: string,
   onProgress?: (message: string) => void,
+  jobId?: string,
 ) {
   const { session } = ctx;
   ctx.abortSignal?.throwIfAborted();
@@ -501,6 +506,8 @@ async function runDocumentVulnerability(
     }
   }
 
+  let rawEvidencePath: string | undefined;
+  let findingPersisted = false;
   try {
     // Early dedup check — avoid POC execution + LLM calls for known vulns
     const materializedEvidence = formatMateriality(input);
@@ -689,8 +696,9 @@ async function runDocumentVulnerability(
     let evidenceForPrompt = materializedEvidence;
 
     if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
-      const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
+      const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}${jobId ? `-${jobId}` : ""}-evidence.txt`;
       const evidenceFilePath = artifactPath(ctx, outputDir, evidenceFilename);
+      rawEvidencePath = evidenceFilePath;
       const evidenceWrite = await writeArtifact(
         ctx,
         evidenceFilePath,
@@ -1001,6 +1009,7 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
       throw writeError;
     }
 
+    findingPersisted = true;
     const typeTag = isVulnerability
       ? finding.severity
       : judgeResult.findingType.toUpperCase();
@@ -1025,6 +1034,13 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
       error: errorMsg,
       message: `Failed to document finding: ${errorMsg}`,
     };
+  } finally {
+    if (jobId && !findingPersisted) {
+      // Cancellation stops validation, but must not abort removal of its owned artifacts.
+      const cleanupCtx = { ...ctx, abortSignal: undefined };
+      await cleanupPocFiles(cleanupCtx, preparePoc(poc).filename);
+      if (rawEvidencePath) await deleteArtifact(cleanupCtx, rawEvidencePath);
+    }
   }
 }
 

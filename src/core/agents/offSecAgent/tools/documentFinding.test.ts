@@ -2366,10 +2366,14 @@ describe("background vulnerability validation", () => {
         }),
     );
     const ctx = context();
-    const receipt = await launch(ctx);
+    const receipt = await launch(ctx, {
+      ...makeDocumentInput(),
+      evidence: "cancelled-evidence".repeat(2000),
+    });
     await vi.waitFor(() => expect(scoringSignal).toBeDefined());
     await jobs.cancel(receipt.jobId);
     expect(readdirSync(ctx.session.findingsPath)).toEqual([]);
+    expect(readdirSync(ctx.session.pocsPath)).toEqual([]);
   });
 
   it("keeps concurrently judged proofs with the same name separate", async () => {
@@ -2396,6 +2400,82 @@ describe("background vulnerability validation", () => {
     expect(existsSync(join(rootPath, paths[1]))).toBe(true);
     releases[1](verdict);
     await jobs.notifications(true);
+  });
+
+  it("passes configured environment variables to background proofs", async () => {
+    mockedJudgeFinding.mockResolvedValue(verdict);
+    const ctx = context();
+    ctx.environmentVariables = { APEX_TEST_PROOF_TOKEN: "configured-value" };
+    const receipt = await launch(ctx, {
+      ...makeDocumentInput(),
+      pocContent:
+        'test "$APEX_TEST_PROOF_TOKEN" = "configured-value" && printf confirmed',
+    });
+    await jobs.notifications(true);
+    expect(jobs.status(receipt.jobId)).toMatchObject({ judgeRejected: true });
+    expect(mockedJudgeFinding.mock.calls[0][0].pocOutput?.stdout).toBe(
+      "confirmed",
+    );
+  });
+
+  it("isolates long evidence until concurrent submissions finish deduplication", async () => {
+    mockedJudgeFinding.mockResolvedValue({ ...verdict, valid: true });
+    const score = await mockedScoreFindingWithCVSS(
+      {} as never,
+      "test-model" as never,
+    );
+    const releases = new Map<string, () => void>();
+    const scoreLater = (input: Parameters<typeof scoreFindingWithCVSS>[0]) =>
+      new Promise<typeof score>((resolve) => {
+        releases.set(input.finding.evidence.slice(0, 1), () => resolve(score));
+      });
+    mockedScoreFindingWithCVSS
+      .mockImplementationOnce(scoreLater)
+      .mockImplementationOnce(scoreLater);
+    const ctx = context();
+    let registered = false;
+    ctx.findingsRegistry = {
+      isDuplicate: () => ({ duplicate: false }),
+      register: async () => {
+        const duplicate = registered;
+        registered = true;
+        return { duplicate, matchType: "exact" };
+      },
+    } as unknown as typeof ctx.findingsRegistry;
+    const first = await launch(ctx, {
+      ...makeDocumentInput(),
+      evidence: "A".repeat(21000),
+    });
+    const second = await launch(ctx, {
+      ...makeDocumentInput(),
+      evidence: "B".repeat(21000),
+    });
+    await vi.waitFor(() => expect(releases.size).toBe(2));
+    releases.get("A")!();
+    await jobs.notifications(true);
+    releases.get("B")!();
+    await jobs.notifications(true);
+    expect(jobs.status(first.jobId).success).toBe(true);
+    expect(jobs.status(second.jobId).duplicate).toBe(true);
+    const finding = jobs.status(first.jobId).finding as {
+      evidenceFiles: Array<{ path: string; type: string }>;
+    };
+    const evidence = finding.evidenceFiles.find(
+      (file) => file.type === "raw-evidence",
+    )!;
+    expect(readFileSync(join(rootPath, evidence.path), "utf8")).toContain(
+      "A".repeat(21000),
+    );
+    expect(
+      readdirSync(ctx.session.findingsPath).filter((name) =>
+        name.endsWith("-evidence.txt"),
+      ),
+    ).toEqual([evidence.path.split("/").at(-1)]);
+    expect(
+      readdirSync(ctx.session.pocsPath).every(
+        (name) => !name.includes(second.jobId),
+      ),
+    ).toBe(true);
   });
 
   it("delivers PoC failure without invoking the judge", async () => {

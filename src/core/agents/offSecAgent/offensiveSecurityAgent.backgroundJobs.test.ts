@@ -124,6 +124,12 @@ describe("managed command agent lifecycle", () => {
     const agent = makeAgent();
     await agent.consume();
     expect(calls).toBe(4);
+    expect(await agent.streamResult.steps).toHaveLength(4);
+    expect(await agent.streamResult.totalUsage).toMatchObject({
+      inputTokens: 400,
+      outputTokens: 40,
+      totalTokens: 440,
+    });
     const messages = readFileSync(
       join(agent.session.rootPath, "messages.json"),
       "utf8",

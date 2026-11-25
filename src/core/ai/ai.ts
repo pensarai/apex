@@ -8,6 +8,7 @@ import {
   generateText,
   type LanguageModel,
   type LanguageModelMiddleware,
+  type LanguageModelUsage,
   type ModelMessage,
   Output,
   RetryError,
@@ -779,6 +780,47 @@ function retryBudgetOf(opts: StreamResponseOpts): StreamRetryBudget {
   return budget;
 }
 
+function combineUsage(
+  a: LanguageModelUsage,
+  b: LanguageModelUsage,
+): LanguageModelUsage {
+  const sum = (left: number | undefined, right: number | undefined) =>
+    left === undefined && right === undefined
+      ? undefined
+      : (left ?? 0) + (right ?? 0);
+  return {
+    inputTokens: sum(a.inputTokens, b.inputTokens),
+    outputTokens: sum(a.outputTokens, b.outputTokens),
+    totalTokens: sum(a.totalTokens, b.totalTokens),
+    inputTokenDetails: {
+      noCacheTokens: sum(
+        a.inputTokenDetails?.noCacheTokens,
+        b.inputTokenDetails?.noCacheTokens,
+      ),
+      cacheReadTokens: sum(
+        a.inputTokenDetails?.cacheReadTokens,
+        b.inputTokenDetails?.cacheReadTokens,
+      ),
+      cacheWriteTokens: sum(
+        a.inputTokenDetails?.cacheWriteTokens,
+        b.inputTokenDetails?.cacheWriteTokens,
+      ),
+    },
+    outputTokenDetails: {
+      textTokens: sum(
+        a.outputTokenDetails?.textTokens,
+        b.outputTokenDetails?.textTokens,
+      ),
+      reasoningTokens: sum(
+        a.outputTokenDetails?.reasoningTokens,
+        b.outputTokenDetails?.reasoningTokens,
+      ),
+    },
+    reasoningTokens: sum(a.reasoningTokens, b.reasoningTokens),
+    cachedInputTokens: sum(a.cachedInputTokens, b.cachedInputTokens),
+  };
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -796,6 +838,7 @@ function wrapStreamWithErrorHandler(
   // Result fields must describe the attempt that produced the consumed
   // chunks, not the attempt that failed and was replaced.
   let finalAttempt: StreamTextResult<ToolSet, never> = originalStream;
+  let continuedAfterSuccess = false;
   let consumptionStarted = false;
   let settleAttempts!: () => void;
   const attemptsSettled = new Promise<void>((resolve) => {
@@ -925,7 +968,18 @@ function wrapStreamWithErrorHandler(
                     ],
                   });
                   finalAttempt = continued;
-                  yield* continued.fullStream;
+                  continuedAfterSuccess = true;
+                  for await (const chunk of continued.fullStream) {
+                    yield chunk.type === "finish"
+                      ? {
+                          ...chunk,
+                          totalUsage: combineUsage(
+                            finish.totalUsage,
+                            chunk.totalUsage,
+                          ),
+                        }
+                      : chunk;
+                  }
                 } else yield finish;
               }
             } catch (caughtError) {
@@ -1326,13 +1380,24 @@ function wrapStreamWithErrorHandler(
       // without it belongs to the original attempt.
       const fromFinalAttempt = (original: () => unknown) =>
         consumptionStarted
-          ? attemptsSettled.then(() =>
-              finalAttempt === originalStream
+          ? attemptsSettled.then(async () => {
+              // A wake-up continues a successful segment; recovery replaces a failed one.
+              if (continuedAfterSuccess && prop === "steps")
+                return [
+                  ...(await originalStream.steps),
+                  ...(await finalAttempt.steps),
+                ];
+              if (continuedAfterSuccess && prop === "totalUsage")
+                return combineUsage(
+                  await originalStream.totalUsage,
+                  await finalAttempt.totalUsage,
+                );
+              return finalAttempt === originalStream
                 ? original()
                 : (finalAttempt as unknown as Record<string | symbol, unknown>)[
                     prop
-                  ],
-            )
+                  ];
+            })
           : original();
       return Promise.resolve(value).then(
         (resolved) => fromFinalAttempt(() => resolved),
