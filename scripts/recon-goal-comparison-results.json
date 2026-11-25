@@ -1,0 +1,208 @@
+{
+  "date": "2026-11-25",
+  "fixture": "segmented-corp",
+  "environmentRepository": "https://github.com/pensarai/recon-eval-environments",
+  "environmentCommit": "0611736ea7152c68988243b90a066646dfd99736",
+  "jorgeGoalCommit": "b4c8f094e4b2577081df64905720739cfd977efb",
+  "integrationCommit": "4b1663cd74adc53afc63a46ffe7c13b35cbf3474",
+  "model": "openrouter:anthropic/claude-opus-4.6",
+  "runsPerArm": 1,
+  "sourcePolicy": "source-only; network, browser, shell and inbox denied; no active security tests",
+  "limits": {
+    "minutesPerArm": 10,
+    "estimatedUsdPerArm": 12,
+    "roundsOrPasses": 4,
+    "workSteps": 100,
+    "auditConcurrency": 6
+  },
+  "metrics": {
+    "goal-pilot": {
+      "status": "completed",
+      "elapsedSeconds": 426.087,
+      "calls": 35,
+      "inputTokens": 1805866,
+      "outputTokens": 37146,
+      "estimatedUsd": 3.4608204999999996,
+      "counts": {
+        "boundaries": 4,
+        "components": 9,
+        "flows": 12,
+        "controls": 10,
+        "threats": 17,
+        "retired": 0
+      },
+      "error": null,
+      "finalReportPresent": true,
+      "goal": {
+        "status": "complete",
+        "rounds": 4,
+        "completion": {
+          "summary": "Complete source-only attack surface analysis of Acme Corp corporate application. 52 topology records persisted (4 boundaries, 9 components, 12 flows, 10 controls, 15 threats) with zero structural issues. Report finalized with all test targets scoped to authorized origin http://portal.corp.localtest.me:18080. Internal-only services documented in the topology map but excluded from recommended test targets.\n\nBoundaries: VPC-equivalent Docker network with DMZ, Corp (internal), and Mgmt (internal) subnets. Components: Edge Nginx, Portal, Intranet, PostgreSQL, VPN, SSH Jump, Gitea, Backup Server, Grafana. Controls: 10 documented including critical gaps (XFF trust, absent TLS, absent secret management, no intranet auth). Threats: 15 source-supported threats across STRIDE categories.\n\nJustified absence: No cloud boundaries (Docker Compose deployment). No WAF/logging/authorization controls because none exist in source. Runtime state (Grafana datasources, WireGuard keys) not in source.",
+          "evidence": [
+            "local:ses_dec0c584bffeaE3KIWzhryeT91/m68/p0",
+            "local:ses_dec0c584bffeaE3KIWzhryeT91/m70/p0",
+            "local:ses_dec0c584bffeaE3KIWzhryeT91/m72/p0",
+            "local:ses_dec0c584bffeaE3KIWzhryeT91/m48/p0"
+          ],
+          "claimedAt": "2026-11-25T18:31:31.230Z"
+        }
+      }
+    },
+    "audit-pilot": {
+      "status": "failed",
+      "elapsedSeconds": 599.87,
+      "calls": 42,
+      "inputTokens": 1655998,
+      "outputTokens": 56436,
+      "estimatedUsd": 3.855906500000001,
+      "counts": {
+        "boundaries": 5,
+        "components": 10,
+        "flows": 17,
+        "controls": 6,
+        "threats": 18,
+        "retired": 0
+      },
+      "error": "Evaluation deadline reached",
+      "finalReportPresent": false,
+      "audit": {
+        "status": "working",
+        "pass": 2,
+        "gaps": [
+          "Recommended target is not a concrete authorized origin: http://www.corp.localtest.me:18080. Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: ssh://portal.corp.localtest.me:12222. Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: udp://vpn.corp.localtest.me:51820. Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: http://10.20.2.50:5000 (via SSRF). Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: http://10.20.2.60:3000 (via SSRF or VPN). Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: postgresql://10.20.2.70:5432 (via VPN). Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: http://10.20.4.80:8000 (via jump host). Keep discovered out-of-scope systems in the map, not in recommended test targets.",
+          "Recommended target is not a concrete authorized origin: http://10.20.1.90:3000 (via SSRF or jump host). Keep discovered out-of-scope systems in the map, not in recommended test targets."
+        ]
+      }
+    }
+  },
+  "scores": {
+    "scorerSha256": "482bff8a25948d986af62ed2bccfbb2a4e72306d397646f9713ce1fe43dfb1c2",
+    "caveat": "Regex coverage only. Native record componentId mapped to scorer component id. Includes failed runs when output exists; no latest-success filtering.",
+    "results": {
+      "goal-pilot": {
+        "componentsMatched": 10,
+        "componentTotal": 10,
+        "gapsInAnalysis": 12,
+        "gapTotal": 12,
+        "threatPatterns": 11,
+        "missingComponents": [],
+        "missingAnalysis": [],
+        "missingThreatPatterns": ["Postgres password = username"],
+        "structurallyTestable": 17,
+        "threats": 17
+      },
+      "audit-pilot": {
+        "componentsMatched": 10,
+        "componentTotal": 10,
+        "gapsInAnalysis": 12,
+        "gapTotal": 12,
+        "threatPatterns": 12,
+        "missingComponents": [],
+        "missingAnalysis": [],
+        "missingThreatPatterns": [],
+        "structurallyTestable": 18,
+        "threats": 18
+      }
+    }
+  },
+  "manualReview": {
+    "scope": "One source-only segmented-corporate pilot per arm, same model and merged tree. No live target requests. Manual review is not blind or exhaustive.",
+    "goalFindings": [
+      {
+        "kind": "cross-section contradiction",
+        "recordId": "thr_cce29c2b22",
+        "observation": "Entry point and first attack step propose direct PostgreSQL access via portal SSRF; likelihood rationale explicitly says that SSRF is HTTP-only and cannot provide direct PostgreSQL access. VPN-based access is a separate valid conditional path.",
+        "source": "customer-source/apps/portal/app.py:41-46"
+      },
+      {
+        "kind": "unsupported threat path",
+        "recordId": "thr_acd91493c4",
+        "observation": "Potential SSTI is based on a constant PAGE template rendered with user/news as context data. No attacker-controlled template source or second render is shown; the text incorrectly treats HTML autoescaping as what prevents template re-evaluation.",
+        "source": "customer-source/apps/portal/app.py:13-27"
+      },
+      {
+        "kind": "unsupported threat path",
+        "recordId": "thr_f2df0e0470",
+        "observation": "Local-file/non-HTTP SSRF path is proposed despite using stock requests.get and acknowledging HTTP/HTTPS-only support. Cloud metadata existence is also not established by this Docker fixture.",
+        "source": "customer-source/apps/portal/app.py:38-46",
+        "offlineCheck": "Installed requests 2.32.5 has only http/https adapters and get_adapter(file:/gopher:) raises InvalidSchema without making any network requests. Fixture pins another requests patch version; this is not live fixture validation."
+      },
+      {
+        "kind": "summary inconsistency",
+        "observation": "Accepted goal summary claims 15 threats; active topology contains 17."
+      },
+      {
+        "kind": "overlapping scenarios",
+        "recordIds": ["thr_a020b3b8a0", "thr_bb249f7158"],
+        "observation": "Both rely on the same hardcoded SSH credential and jump-host access. One names backup access, the other a broader pivot. Treat as overlapping paths, not two independent entry mechanisms."
+      }
+    ],
+    "goalRejections": [
+      "Attempt 1: retained deterministic target-scope guard rejected unauthorized recommended origins; adapter replaced the claim evidence with an empty list, producing a misleading no-evidence prefix alongside the accurate scope reasons.",
+      "Attempts 2 and 3: Jorge citation matcher rejected nonexistent list_files quote count:52.",
+      "Attempt 4: citations accepted; semantic issues remained."
+    ],
+    "scorerCaveats": [
+      "10 matched component patterns does not imply 10 separately modeled components: goal output has nine.",
+      "The missing Postgres threat-pattern match is a wording false negative: the scenario says credentials rather than password.",
+      "All 17 goal threats satisfy structural testability fields despite unsupported or contradictory scenarios.",
+      "Audit draft matches 12/12 threat patterns and all 18 threats meet structural fields, despite unsupported scenarios and no final report."
+    ],
+    "pilotImplementation": "The archived implementation snapshots are authoritative for the run. The subsequently pushed adapter adds a read-only wrap-up roster and preserves the kickoff/evidence window on resume; neither wrap-up nor resume executed in the completed goal pilot.",
+    "conclusion": "Do not equate goal status complete, valid citations or field-complete threats with demonstrated comprehensive quality.",
+    "auditFindings": [
+      {
+        "kind": "unsupported and internally contradictory threat path",
+        "recordId": "thr_56342a3a4f",
+        "observation": "Attack step claims a forged user context value executes Jinja2 expressions; likelihood rationale correctly says a constant PAGE template does not re-parse that value. The first audit explicitly endorsed this as satisfactory rather than removing the unsupported path. It remained in the terminal draft.",
+        "source": "customer-source/apps/portal/app.py:13-26"
+      },
+      {
+        "kind": "overstated impact",
+        "recordId": "thr_a31ec4632a",
+        "observation": "Calls HTTP GET SSRF returning at most 500 characters a complete network proxy and full internal network compromise. Internal HTTP data exposure is supported; arbitrary protocol access and full compromise are not established.",
+        "source": "customer-source/apps/portal/app.py:38-44"
+      },
+      {
+        "kind": "unsupported extrapolation",
+        "recordId": "thr_834e354a93",
+        "observation": "Open registration is configured, but repository visibility, existing users, admin bootstrap state and CI/CD links are not established. Some caveats are present, while the scenario still says browse all repositories and become first-user admin.",
+        "source": "customer-source/docker-compose.yml"
+      },
+      {
+        "kind": "review missed scope error",
+        "observation": "The report audit marked nine targets correctly scoped while the deterministic guard rejected eight unauthorized recommended origins. Read-only audit judgments are not a substitute for deterministic authorization checks."
+      }
+    ],
+    "auditTerminal": {
+      "status": "deadline reached during second pass",
+      "finalReportPresent": false,
+      "retainedDraftThreats": 18,
+      "lastAuditAssessments": 18,
+      "lastAuditDispositions": "all satisfied",
+      "lastAuditSnapshot": "Earlier report/map; not a completed audit of the final retained draft.",
+      "retiredThreats": 0
+    },
+    "validationLimitations": [
+      "No live fixture tests were run.",
+      "A proposed offline template rendering check could not run because Jinja2 was not installed; the SSTI judgment is based on the supplied source and the generated records themselves."
+    ]
+  },
+  "validation": {
+    "testsPassed": 6587,
+    "testsSkipped": 63,
+    "filesPassed": 371,
+    "filesSkipped": 11,
+    "typecheck": "passed",
+    "lint": "passed with existing warnings",
+    "libraryBuild": "passed",
+    "exportsVerified": 62
+  },
+  "rawArtifacts": "Preserved locally under Documents/Codex/2026-11-25/recon-goal-comparison, including per-arm implementation snapshots, events, usage, inputs, topology and terminal result."
+}

@@ -93,3 +93,120 @@ scope before interpreting counts. Use the existing regex scorer only as a coarse
 coverage signal. One run per arm is a pilot, not a reliable estimate of which
 method is better. Before rollout, repeat on held-out fixtures and updates, use
 blind source-based review, then test compaction/recovery and durable scheduling.
+
+## November 25 pilot results
+
+Both runs used the same generated `segmented-corp` source from environment commit
+`0611736ea7152c68988243b90a066646dfd99736`. The
+[curated results](./recon-goal-comparison-results.json) retain terminal outcomes,
+coverage scores, record IDs and manual review findings. Full inputs, events,
+usage and topology artifacts are preserved locally in
+`Documents/Codex/2026-11-25/recon-goal-comparison`.
+
+| Measure                                  | Persistent goal   | Completion audit       |
+| ---------------------------------------- | ----------------- | ---------------------- |
+| Terminal outcome                         | Complete, round 4 | Deadline during pass 2 |
+| Elapsed                                  | 7m 6s             | 10m                    |
+| Estimated provider cost                  | $3.46             | $3.86                  |
+| Recorded model calls                     | 35                | 42                     |
+| Active components / threats              | 9 / 17            | 10 / 18                |
+| Component patterns matched               | 10/10             | 10/10                  |
+| Gap themes in analysis                   | 12/12             | 12/12                  |
+| Gap themes matched in threats            | 11/12             | 12/12                  |
+| Threats with required testability fields | 17/17             | 18/18                  |
+| Final report retained                    | Yes               | No                     |
+
+The audit's topology is an **unfinished draft**, not a successful output. Its last
+18 audit assessments were all `satisfied`, but deterministic checks rejected eight
+recommended targets outside the authorized origin. The subsequent correction
+pass reached the deadline before producing a final report. Those assessments
+describe an earlier snapshot, not the final retained draft.
+
+The goal's first completion claim failed the retained deterministic scope guard.
+The next two failed Jorge's citation check because the claimed `list_files` quote
+(`count: 52`) did not exist. The fourth claim cited actual results and completed.
+The scope rejection is our adapter's check; it must not be credited to native
+goal citation validation. The adapter currently rejects structural failures by
+substituting an empty-evidence claim, so the feedback has a misleading
+"no evidence" prefix before the real scope reasons. A dedicated completion-guard
+result would make that diagnostic accurate without changing Jorge's citation rules.
+
+### Quality findings
+
+Both outputs retained a speculative SSTI threat against
+`render_template_string(PAGE, user=user, news=news)`. The supplied portal source
+defines `PAGE` as a constant; the attacker-controlled value is context data, not
+template source. Both records acknowledge that context values are not re-parsed,
+yet still describe expression execution. The audit explicitly endorsed the
+scenario as satisfactory. Relevant records are goal `thr_acd91493c4` and audit
+`thr_56342a3a4f`; source is `apps/portal/app.py:13-26` in the generated fixture.
+This is a substantive failure that field checks and citation matching do not catch.
+
+The goal output also retained a PostgreSQL path through HTTP-only SSRF while its
+own rationale ruled that path out (`thr_cce29c2b22`), and a file-scheme SSRF path
+unsupported by the stock `requests.get` implementation (`thr_f2df0e0470`). Its
+accepted summary said 15 threats while the map contained 17. Two jump-host
+scenarios shared the same credential and access path, so their count should not
+be treated as two independent entry mechanisms.
+
+The audit draft overstated an HTTP GET preview, which returns at most 500
+characters, as a complete network proxy and full internal compromise
+(`thr_a31ec4632a`). Open Gitea registration was also extrapolated into repository
+and bootstrap-admin access without establishing the deployment state
+(`thr_834e354a93`). Neither arm retired a threat during this pilot.
+
+The regex scores overstate quality. The goal's nine components matched ten
+patterns because one record covered both edge and static-site concepts. Its
+missing PostgreSQL threat match was a wording false negative: the scenario used
+"credentials" rather than "password". Every threat met the structural testability
+fields, including the unsupported scenarios above. Manual review was neither
+blind nor exhaustive, so these findings are counterexamples, not measured
+precision rates.
+
+### Interpretation and next evaluation
+
+This pilot supports keeping Jorge's smaller continuation controller as an
+experimental alternative. It finished within the budget and demonstrably rejected
+fabricated citations. It does **not** establish better semantic completeness or
+justify replacing the audit in Console. The audit also failed to demonstrate that
+its extra reviewers improve quality enough to justify their time and cost.
+
+Before choosing a default:
+
+1. Repeat paired runs on all three fixtures and update cases, with identical
+   model, source, network permissions and budgets. Include ordinary execution as
+   a third arm to isolate the value of either completion mechanism. Randomize
+   order and retain timeouts and failures; do not select only successful runs.
+2. Have a reviewer blind to the arm label supported, distinct causal paths,
+   omissions, contradictions, invented deployment facts, justified absences and
+   third-party scope. Measure unique supported paths rather than raw threat count.
+   Add the constant-template and HTTP-only SSRF cases as explicit negative cases
+   in the evaluator, without exposing answer keys to the agent.
+3. Record time to an acceptable report, completion rate, input/output/cache usage,
+   cost, correction effectiveness and errors remaining after a completion claim.
+   Use at least three repeats per fixture before comparing reliability.
+4. Supply a durable recon host for goal state, evidence lookup and replay-safe
+   continuation; test crash recovery, compaction, cancellation/resume, stale
+   reports and duplicate scheduling. Then run a bounded local Console test using
+   customer URL/repository inputs, with AWS inventory still excluded.
+
+Reject a default switch if goals lose supported coverage, increase unsupported
+claims or contradictions, allow unauthorized targets, accept stale output, or
+lose unresolved requirements on recovery. Reject the audit's additional cost if
+blind review does not show a meaningful quality improvement. A complete goal or
+a satisfied audit is not itself an evaluation success criterion.
+
+## Implementation validation and provenance
+
+Integration commit `4b1663cd74adc53afc63a46ffe7c13b35cbf3474` passed 6,587 tests
+(63 skipped), type checking, lint, library build and all 62 export checks. The
+suite used Node 22.23.4 and `TMPDIR=/private/tmp`; live-provider credentials were
+unset for unit tests. Eleven new adapter tests cover completion evidence, stale
+reports, limits, cancellation/resume, failed turns and tool restrictions.
+
+The pilots began before that commit. Their archived implementation snapshots
+are authoritative: the final commit additionally restricts the one-step wrap-up
+to `read_file` and preserves the original kickoff/evidence window on resume.
+Neither path executed in the completed goal pilot; those fixes have unit-test
+coverage, not live-pilot evidence. This was a comparison of Jorge's Apex goal
+module and our Apex audit controller, not a native Codex `/goal` experiment.
