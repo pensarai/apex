@@ -7,6 +7,7 @@ import type { ReasoningSetting } from "../ai";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
 import { discoverOllama, type OllamaCatalog } from "../ollama";
+import { discoverBaseten } from "./baseten";
 import {
   type CustomProviders,
   loadCustomProviders,
@@ -34,6 +35,7 @@ export interface Config {
   /** Runtime catalog; fetched using the current key and never persisted. */
   hoonifyModels?: HoonifyModel[];
   hoonifyCatalogError?: string;
+  basetenCatalogError?: string;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
   customProviders?: CustomProviders;
@@ -201,6 +203,23 @@ export async function get(): Promise<Config> {
           : "Could not load Hoonify models.";
     }
   }
+  if (
+    !Object.keys(loaded.customProviders ?? {}).some(
+      (id) => id.startsWith("baseten-") || id === "baseten",
+    )
+  ) {
+    try {
+      loaded.customProviders = {
+        ...(await discoverBaseten()),
+        ...loaded.customProviders,
+      };
+    } catch (error) {
+      loaded.basetenCatalogError =
+        error instanceof Error
+          ? error.message
+          : "Could not discover Baseten models.";
+    }
+  }
   loaded.ollama = await discoverOllama();
   return loaded;
 }
@@ -225,5 +244,6 @@ export async function update(config: Partial<Config>) {
   delete newConfig.ollama;
   delete newConfig.hoonifyModels;
   delete newConfig.hoonifyCatalogError;
+  delete newConfig.basetenCatalogError;
   await fs.writeFile(file, JSON.stringify(newConfig));
 }

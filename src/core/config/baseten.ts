@@ -1,0 +1,205 @@
+import { z } from "zod";
+import { type CustomProviders, parseCustomProviders } from "./customProviders";
+
+const remoteId = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
+const modelList = z.object({
+  data: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().optional(),
+      deployment_id: z.uuid().optional(),
+      context_length: z.number().int().positive().optional(),
+      max_model_len: z.number().int().positive().optional(),
+      max_output_tokens: z.number().int().positive().optional(),
+    }),
+  ),
+});
+const deployments = z.object({
+  models: z.array(
+    z.object({
+      id: remoteId,
+      name: z.string(),
+      production_deployment_id: remoteId.nullable(),
+    }),
+  ),
+});
+const config = z.object({
+  config: z.object({
+    docker_server: z
+      .object({ predict_endpoint: z.string(), start_command: z.string() })
+      .nullish(),
+  }),
+});
+
+function httpsUrl(value: string) {
+  const url = new URL(value);
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.port
+  )
+    throw new Error("Expected an HTTPS Baseten endpoint.");
+  return url;
+}
+
+async function getJson(url: string, key: string) {
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${key}` },
+    redirect: "error",
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok)
+    throw new Error(`Baseten model discovery returned HTTP ${res.status}.`);
+  return res.json();
+}
+
+function model(
+  id: string,
+  name: string,
+  contextLength: number,
+  output?: number,
+) {
+  return {
+    id,
+    name,
+    contextLength,
+    maxOutputTokens: Math.min(
+      output ?? Math.min(32_768, Math.max(1, Math.floor(contextLength / 2))),
+      contextLength - 1,
+    ),
+  };
+}
+
+async function load(
+  key: string,
+  endpoint: string | undefined,
+  gateway: boolean,
+) {
+  const providers: CustomProviders = {};
+  const apiKeyEnv = gateway ? "EVALGATE_INFERENCE_TOKEN" : "BASETEN_API_KEY";
+  if (endpoint) {
+    const url = httpsUrl(endpoint);
+    if (
+      !gateway &&
+      !/^(model-[a-zA-Z0-9_-]+\.api\.baseten\.co|inference\.baseten\.co)$/.test(
+        url.hostname,
+      )
+    )
+      throw new Error(
+        "BASETEN_BASE_URL must point to a Baseten HTTPS endpoint.",
+      );
+    const base = url.href.replace(/\/+$/, "");
+    const list = modelList.parse(
+      await getJson(base + (gateway ? "/v1/models" : "/models"), key),
+    );
+    for (const m of list.data) {
+      if (gateway && !m.deployment_id)
+        throw new Error(
+          "The inference gateway returned a model without a deployment ID.",
+        );
+      const providerId = gateway ? `baseten-${m.deployment_id}` : "baseten";
+      providers[providerId] ??= {
+        name: "Baseten",
+        baseUrl: gateway ? `${base}/deployments/${m.deployment_id}/v1` : base,
+        apiKeyEnv,
+        includeUsage: true,
+        models: [],
+      };
+      providers[providerId].models.push(
+        model(
+          m.id,
+          m.name ?? m.id,
+          m.context_length ?? m.max_model_len ?? 32_768,
+          m.max_output_tokens,
+        ),
+      );
+    }
+  } else {
+    const management = "https://api.baseten.co/v1/models";
+    const { models } = deployments.parse(await getJson(management, key));
+    // Reading deployment configuration lists sleeping models without waking their replicas.
+    const live = models.flatMap((m) =>
+      m.production_deployment_id
+        ? [{ ...m, production_deployment_id: m.production_deployment_id }]
+        : [],
+    );
+    for (let offset = 0; offset < live.length; offset += 8) {
+      await Promise.all(
+        live.slice(offset, offset + 8).map(async (m) => {
+          const deployment = m.production_deployment_id;
+          const {
+            config: { docker_server: server },
+          } = config.parse(
+            await getJson(
+              `${management}/${m.id}/deployments/${deployment}/config`,
+              key,
+            ),
+          );
+          if (server?.predict_endpoint !== "/v1/chat/completions") return;
+          const served =
+            /(?:^|\s)--served-model-name(?:=|\s+)["']?([\w./:-]+)/.exec(
+              server.start_command,
+            )?.[1];
+          const length = /(?:^|\s)--max-model-len(?:=|\s+)["']?(\d+)\b/.exec(
+            server.start_command,
+          )?.[1];
+          if (!served || !length) return;
+          providers[`baseten-${m.id}`] = {
+            name: "Baseten",
+            baseUrl: `https://model-${m.id}.api.baseten.co/deployment/${deployment}/sync/v1`,
+            apiKeyEnv,
+            includeUsage: true,
+            models: [model(served, m.name, Number(length))],
+          };
+        }),
+      );
+    }
+  }
+  return parseCustomProviders(providers);
+}
+
+let cached:
+  | {
+      key: string;
+      endpoint?: string;
+      gateway: boolean;
+      until: number;
+      result: Promise<CustomProviders>;
+    }
+  | undefined;
+export async function discoverBaseten(): Promise<CustomProviders> {
+  const gatewayUrl = process.env.EVALGATE_INFERENCE_GATEWAY_URL?.trim();
+  const key = (
+    gatewayUrl
+      ? process.env.EVALGATE_INFERENCE_TOKEN
+      : process.env.BASETEN_API_KEY
+  )?.trim();
+  if (!key) return {};
+  const endpoint = gatewayUrl || process.env.BASETEN_BASE_URL?.trim();
+  const gateway = Boolean(gatewayUrl);
+  if (
+    cached &&
+    cached.key === key &&
+    cached.endpoint === endpoint &&
+    cached.gateway === gateway &&
+    cached.until > Date.now()
+  )
+    return cached.result;
+  const entry = {
+    key,
+    endpoint,
+    gateway,
+    until: Date.now() + 60_000,
+    result: load(key, endpoint, gateway),
+  };
+  cached = entry;
+  try {
+    return await entry.result;
+  } catch (error) {
+    if (cached === entry) cached = undefined;
+    throw error;
+  }
+}
