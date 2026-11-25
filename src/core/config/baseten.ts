@@ -22,8 +22,9 @@ export function usesBasetenEndpoint(
     url.protocol === "https:" &&
     (basetenHost.test(url.hostname) ||
       (provider.apiKeyEnv === "EVALGATE_INFERENCE_TOKEN" &&
-        url.pathname ===
-          `/deployments/${id.providerId.slice("baseten-".length)}/v1` &&
+        url.pathname.endsWith(
+          `/deployments/${id.providerId.slice("baseten-".length)}/v1`,
+        ) &&
         id.providerId.startsWith("baseten-")))
   );
 }

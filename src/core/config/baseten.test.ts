@@ -71,10 +71,13 @@ it.each([
 it("uses only the gateway's attempt identity and authorized catalog even if a local key exists", async () => {
   const deployment = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   vi.stubEnv("BASETEN_API_KEY", "upstream-never-forward");
-  vi.stubEnv("EVALGATE_INFERENCE_GATEWAY_URL", "https://gateway.example:8443");
+  vi.stubEnv(
+    "EVALGATE_INFERENCE_GATEWAY_URL",
+    "https://gateway.example:8443/team",
+  );
   vi.stubEnv("EVALGATE_INFERENCE_TOKEN", "attempt-fixture");
   const fetch = vi.fn(async (url: string, init: RequestInit) => {
-    expect(url).toBe("https://gateway.example:8443/v1/models");
+    expect(url).toBe("https://gateway.example:8443/team/v1/models");
     expect(new Headers(init.headers).get("authorization")).toBe(
       "Bearer attempt-fixture",
     );
@@ -96,7 +99,7 @@ it("uses only the gateway's attempt identity and authorized catalog even if a lo
     resolveCustomModel(`custom:baseten-${deployment}:nyx`, providers).provider,
   ).toMatchObject({
     apiKeyEnv: "EVALGATE_INFERENCE_TOKEN",
-    baseUrl: `https://gateway.example:8443/deployments/${deployment}/v1`,
+    baseUrl: `https://gateway.example:8443/team/deployments/${deployment}/v1`,
   });
   expect(
     usesBasetenEndpoint(`custom:baseten-${deployment}:nyx`, providers),

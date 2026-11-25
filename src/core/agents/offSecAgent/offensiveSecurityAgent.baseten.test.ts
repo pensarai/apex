@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { wrapLanguageModel } from "ai";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentEventBus, type AgentEventMap } from "../../eventBus";
+import { basetenStartup } from "./basetenStartup";
 import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -72,7 +74,10 @@ it.each([
     try {
       await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
       await send({ role: "assistant", content: "" });
-      expect(events.map((e) => e.status)).toEqual(["loading"]);
+      await vi.waitFor(
+        () => expect(events.map((e) => e.status)).toEqual(["loading"]),
+        { timeout: 2500 },
+      );
       expect(events[0]).toMatchObject({
         model,
         sessionId: "ses_baseten_startup",
@@ -122,3 +127,32 @@ it.each([
   },
   8_000,
 );
+
+it("waits for provider cancellation before releasing the request", async () => {
+  const cleanup = Promise.withResolvers<void>();
+  const cancel = vi.fn(() => cleanup.promise);
+  const report = vi.fn();
+  const model = wrapLanguageModel({
+    model: {
+      specificationVersion: "v3",
+      modelId: "nyx",
+      provider: "baseten",
+      supportedUrls: {},
+      doGenerate() {
+        throw new Error("stream only");
+      },
+      async doStream() {
+        return { stream: new ReadableStream({ cancel }) };
+      },
+    },
+    middleware: basetenStartup("nyx", report),
+  });
+  const { stream } = await model.doStream({ prompt: [] });
+  const released = vi.fn();
+  const stopped = stream.cancel("stop").then(released);
+  await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith("stop"));
+  expect(released).not.toHaveBeenCalled();
+  cleanup.resolve();
+  await stopped;
+  expect(report).not.toHaveBeenCalled();
+});
