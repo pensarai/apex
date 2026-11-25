@@ -87,17 +87,78 @@ RUN --mount=type=bind,from=alpine:3,target=/a true`;
     const text = `FROM x@${DIGEST}
 RUN apt-get install -y curl wget
 RUN curl -SL https://example.com/tool -o /usr/local/bin/tool && chmod +x /usr/local/bin/tool
-RUN wget https://example.com/tool && sha256sum tool`;
+RUN wget https://example.com/tool && sha256sum tool
+RUN curl -fsSL https://example.com/x.tgz | tar -xz`;
     expect(problems(text)).toEqual([
-      "3: a `curl`/`wget` download has no checksum check in the same `RUN`",
-      "4: a `curl`/`wget` download has no checksum check in the same `RUN`",
+      "3: `/usr/local/bin/tool` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+      "4: a `wget` download writes no named file, so no checksum can cover it",
+      "5: a `curl` download writes no named file, so no checksum can cover it",
     ]);
   });
 
-  it("rejects ADD of a URL without a checksum", () => {
+  it("requires a checksum for each downloaded file, not one per RUN", () => {
+    const text = `FROM x@${DIGEST}
+RUN curl -fsSLo /tmp/a https://example.com/a \\
+ && curl -fsSL --output /tmp/b https://example.com/b \\
+ && echo "${SHA}  /tmp/a" | sha256sum -c -`;
+    expect(problems(text)).toEqual([
+      "2: `/tmp/b` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+    ]);
+  });
+
+  it("finds downloads after RUN flags, in exec form and in heredocs", () => {
+    const text = `FROM x@${DIGEST}
+RUN --mount=type=cache,target=/tmp/cache curl -fSL https://example.com/a -o /tmp/a
+RUN ["curl", "-fSL", "-o", "/tmp/b", "https://example.com/b"]
+RUN <<EOF
+set -eu
+wget -O /tmp/c https://example.com/c
+EOF
+RUN echo done`;
+    expect(problems(text)).toEqual([
+      "2: `/tmp/a` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+      "3: `/tmp/b` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+      "4: `/tmp/c` is downloaded without a `sha256sum -c` check of that file in the same `RUN`",
+    ]);
+  });
+
+  it("resolves FROM with global ARGs only, whichever way a stage shadows them", () => {
+    const pinnedGlobal = `ARG BASE=alpine:3@${DIGEST}
+FROM node@${DIGEST} AS build
+ARG BASE=alpine:3
+FROM $BASE`;
+    expect(problems(pinnedGlobal)).toEqual([]);
+    const unpinnedGlobal = `ARG BASE=alpine:3
+FROM node@${DIGEST} AS build
+ARG BASE=alpine:3@${DIGEST}
+FROM $BASE`;
+    expect(problems(unpinnedGlobal)).toEqual([
+      "4: base image `alpine:3` has no digest",
+    ]);
+  });
+
+  it("gives a stage only the ARGs it declares", () => {
+    const text = `ARG V=1.2.3
+FROM node@${DIGEST}
+ARG V
+RUN bun install -g left-pad@$V
+FROM node@${DIGEST}
+RUN bun install -g left-pad@$V`;
+    expect(problems(text)).toEqual([
+      "6: global install of `left-pad@$V` without an exact version",
+    ]);
+  });
+
+  it("rejects ADD of a URL without a checksum, in either form", () => {
     expect(
-      problems(`FROM x@${DIGEST}\nADD https://example.com/x.tgz /tmp/`),
-    ).toEqual(["2: `ADD` of a URL without `--checksum`"]);
+      problems(`FROM x@${DIGEST}
+ADD https://example.com/x.tgz /tmp/
+ADD ["https://example.com/y.tgz", "/tmp/"]
+ADD --checksum=sha256:${SHA} ["https://example.com/z.tgz", "/tmp/"]`),
+    ).toEqual([
+      "2: `ADD` of a URL without `--checksum`",
+      "3: `ADD` of a URL without `--checksum`",
+    ]);
   });
 
   it("rejects npx and bunx that may download, and installs with no lockfile", () => {
