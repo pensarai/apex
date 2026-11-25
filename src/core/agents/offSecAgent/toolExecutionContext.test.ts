@@ -156,7 +156,7 @@ it.each([
       type: "tool-result",
       toolCallId: "stream-call",
       toolName: "probe",
-      output: "done",
+      output: { type: "text", value: "done" },
     },
   ]);
   expect(results).toEqual([

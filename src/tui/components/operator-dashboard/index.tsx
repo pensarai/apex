@@ -45,6 +45,27 @@ import {
   createOffensiveSecurityAgentClient,
   type RunAgentResult,
 } from "../../../core/api";
+import {
+  continuationMessage,
+  createFileGoalHost,
+  createGoal,
+  createUpdateGoalTool,
+  endGoal,
+  GOAL_LIMITS,
+  type Goal,
+  type GoalNext,
+  goalPromptSection,
+  goalStopCondition,
+  isGoalControlMessage,
+  kickoffMessage,
+  newGoalSchema,
+  readGoalFile,
+  scheduleGoalNext,
+  settleGoalTurn,
+  turnFactsFromMessages,
+  UPDATE_GOAL_TOOL_NAME,
+  writeGoalFile,
+} from "../../../core/goals";
 import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
 import {
   isSensitiveHeaderName,
@@ -109,6 +130,7 @@ import {
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  goalStatusLine,
   resolveAbortAction,
   resolveActiveFindingPolicy,
   resolveInputFocused,
@@ -301,6 +323,11 @@ export default function OperatorDashboard({
     typeof createOffensiveSecurityAgentClient
   > | null>(null);
   const generationRef = useRef(0);
+  // goal.json is the durable copy; this holds a goal set before the session exists.
+  const goalRef = useRef<Goal | null>(null);
+  const goalsEnabled = config.data?.goalsEnabled !== false;
+  const goalNextRef = useRef<GoalNext | null>(null);
+  const resumeGoalRef = useRef(false);
 
   // Two-stage abort: first Ctrl+C cancels the running command, second kills the agent.
   // The agent populates cancelHandle.cancel with the shell's cancel function.
@@ -503,6 +530,8 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          goalRef.current = readGoalFile(s.rootPath);
+          resumeGoalRef.current = goalRef.current?.status === "active";
           setLanceBudget(
             s.config?.operatorSettings?.lanceBudget ?? DEFAULT_LANCE_BUDGET,
           );
@@ -556,7 +585,14 @@ export default function OperatorDashboard({
                   sessions.getResumeMessages(modelMsgs),
                 );
 
-                const uiMsgs = convertModelMessagesToUI(modelMsgs);
+                const uiMsgs = convertModelMessagesToUI(modelMsgs).filter(
+                  (m: UIMessage) =>
+                    !(
+                      m.role === "user" &&
+                      typeof m.content === "string" &&
+                      isGoalControlMessage(m.content)
+                    ),
+                );
                 setMessages(
                   uiMsgs.map((m: UIMessage) => ({
                     role: m.role,
@@ -819,8 +855,31 @@ export default function OperatorDashboard({
   // Run agent
   // ---------------------------------------------------------------------------
 
+  const goalHost = useCallback(
+    (s: SessionInfo) =>
+      createFileGoalHost({
+        sessionRoot: s.rootPath,
+        scheduleTurn: (next) => {
+          void runAgentRef.current(next.message, { hidden: true });
+          return "scheduled";
+        },
+        report: (goal) => {
+          goalRef.current = goal;
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "system",
+              content: goalStatusLine(goal),
+              createdAt: new Date(),
+            },
+          ]);
+        },
+      }),
+    [setMessages],
+  );
+
   const runAgent = useCallback(
-    async (prompt: string | null) => {
+    async (prompt: string | null, opts: { hidden?: boolean } = {}) => {
       const gen = ++generationRef.current;
       displayEvents.finish();
       // Abort any previous run before starting a new one
@@ -845,10 +904,11 @@ export default function OperatorDashboard({
 
       let nextMessages: ModelMessage[];
       if (prompt !== null) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "user", content: prompt, createdAt: new Date() },
-        ]);
+        if (!opts.hidden)
+          setMessages((prev) => [
+            ...prev,
+            { role: "user", content: prompt, createdAt: new Date() },
+          ]);
 
         nextMessages = normalizeMessages([
           ...conversationRef.current,
@@ -957,6 +1017,13 @@ export default function OperatorDashboard({
         handlers: runEventProjections.handlers,
       });
 
+      const goalSession = sessionRef.current ?? session;
+      if (goalSession) goalRef.current = readGoalFile(goalSession.rootPath);
+      const activeGoal =
+        goalsEnabled && goalRef.current?.status === "active"
+          ? goalRef.current
+          : null;
+
       const skillsCatalog = lanceMode
         ? undefined
         : skillsRegistry.buildCatalog() || undefined;
@@ -968,11 +1035,16 @@ export default function OperatorDashboard({
         stopWhen: [
           stepCountIs(10000),
           hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
+          ...(activeGoal ? [goalStopCondition] : []),
         ],
+        ...(activeGoal
+          ? { extraTools: { [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool() } }
+          : {}),
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
           ...SKILL_TOOL_NAMES,
+          ...(activeGoal ? [UPDATE_GOAL_TOOL_NAME] : []),
         ] as string[],
         mode: agentMode,
         lance: lanceMode
@@ -993,6 +1065,10 @@ export default function OperatorDashboard({
         onStepFinish,
         eventBus,
         onSessionReady: (s: SessionInfo) => {
+          if (goalRef.current && goalRef.current.sessionId !== s.id) {
+            goalRef.current = { ...goalRef.current, sessionId: s.id };
+            writeGoalFile(s.rootPath, goalRef.current);
+          }
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
@@ -1010,7 +1086,7 @@ export default function OperatorDashboard({
       try {
         let agentResult: RunAgentResult;
 
-        const systemPrompt = lanceMode
+        const operatorPrompt = lanceMode
           ? undefined
           : buildOperatorSystemPrompt(
               initialConfig?.target,
@@ -1036,6 +1112,10 @@ export default function OperatorDashboard({
                 findingPolicy: activeFindingPolicy,
               },
             );
+        const systemPrompt =
+          operatorPrompt && activeGoal
+            ? `${operatorPrompt}\n\n${goalPromptSection(activeGoal)}`
+            : operatorPrompt;
 
         if (session) {
           agentResult = await agentClient.run({
@@ -1131,6 +1211,22 @@ export default function OperatorDashboard({
             }
           }
         }
+
+        if (gen === generationRef.current && activeGoal) {
+          const response = await agentResult.streamResult.response;
+          goalNextRef.current = await settleGoalTurn(
+            goalHost(agentResult.session),
+            agentResult.session.id,
+            turnFactsFromMessages(response.messages, {
+              outcome: "completed",
+              automatic: !!opts.hidden,
+              heldCallCount:
+                pendingToolCallIdRef.current || planSubmittedRef.current
+                  ? 1
+                  : 0,
+            }),
+          );
+        }
       } catch (e) {
         if (gen !== generationRef.current) return;
         displayEvents.finish();
@@ -1156,6 +1252,20 @@ export default function OperatorDashboard({
 
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
+          if (activeGoal && sessionRef.current) {
+            await settleGoalTurn(
+              goalHost(sessionRef.current),
+              sessionRef.current.id,
+              {
+                outcome: "error",
+                automatic: !!opts.hidden,
+                toolCallCount: 0,
+                heldCallCount: 0,
+                updateCall: null,
+                error: errorMsg,
+              },
+            );
+          }
           setMessages((prev) => [
             ...markInFlightToolsErrored(prev, errorMsg),
             {
@@ -1184,6 +1294,22 @@ export default function OperatorDashboard({
           if (planSubmittedRef.current) {
             planSubmittedRef.current = false;
             setShowPlanReview(true);
+          }
+
+          // Last, so the next run's status writes win. Queued operator messages take the turn instead.
+          const goalNext = goalNextRef.current;
+          goalNextRef.current = null;
+          const goalNextSession = sessionRef.current;
+          if (
+            goalNext &&
+            goalNextSession &&
+            queuedMessagesRef.current.length === 0
+          ) {
+            void scheduleGoalNext(
+              goalHost(goalNextSession),
+              goalNextSession.id,
+              goalNext,
+            );
           }
         }
       }
@@ -1218,6 +1344,8 @@ export default function OperatorDashboard({
       reasoning,
       usageStore,
       markExecuted,
+      goalHost,
+      goalsEnabled,
     ],
   );
 
@@ -1362,6 +1490,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     })();
   }, [loading, route.data, skillsRegistry]);
 
+  // Re-arm a goal that was still active when the session was last closed.
+  useEffect(() => {
+    if (loading || !resumeGoalRef.current) return;
+    resumeGoalRef.current = false;
+    if (!goalsEnabled) return;
+    runAgentRef.current(continuationMessage(), { hidden: true });
+  }, [loading, goalsEnabled]);
+
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
     if (status !== "idle") return;
@@ -1494,7 +1630,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
       if (
         lanceMode &&
-        ["run-skill", "show-plan", "execute-command"].includes(action.type)
+        ["run-skill", "show-plan", "execute-command", "goal"].includes(
+          action.type,
+        )
       ) {
         addSystemMessage(
           "Lance accepts direct objectives only. Start a new session to use production workflows.",
@@ -1505,6 +1643,69 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         case "show-models":
           showModelPicker();
           return;
+        case "goal": {
+          const { op } = action;
+          if (!goalsEnabled) {
+            addSystemMessage(
+              "Goals are turned off. Set goalsEnabled to true in ~/.pensar/config.json to use /goal.",
+            );
+            return;
+          }
+          const goalSession = sessionRef.current ?? session;
+          const current = goalSession
+            ? readGoalFile(goalSession.rootPath)
+            : goalRef.current;
+          if (op.kind === "invalid") {
+            addSystemMessage(`/goal: ${op.reason}`);
+            return;
+          }
+          if (op.kind === "status") {
+            addSystemMessage(
+              current
+                ? goalStatusLine(current)
+                : "No goal set. Use /goal <objective> [--rounds N].",
+            );
+            return;
+          }
+          if (op.kind === "clear") {
+            if (current?.status !== "active") {
+              addSystemMessage("No active goal.");
+              return;
+            }
+            const ended = endGoal(
+              current,
+              "cancelled",
+              "ended_by_operator",
+              null,
+            );
+            if (goalSession) writeGoalFile(goalSession.rootPath, ended);
+            goalRef.current = ended;
+            addSystemMessage(goalStatusLine(ended));
+            return;
+          }
+          if (status === "running") {
+            addSystemMessage(
+              "Stop or wait for the current turn before setting a goal.",
+            );
+            return;
+          }
+          const parsed = newGoalSchema.safeParse(op);
+          if (!parsed.success) {
+            addSystemMessage(
+              `/goal: --rounds must be a whole number from 1 to ${GOAL_LIMITS.maxRoundsCeiling}`,
+            );
+            return;
+          }
+          const goal = createGoal({
+            ...parsed.data,
+            sessionId: goalSession?.id ?? "pending",
+          });
+          if (goalSession) writeGoalFile(goalSession.rootPath, goal);
+          goalRef.current = goal;
+          addSystemMessage(goalStatusLine(goal));
+          runAgentRef.current(kickoffMessage(goal));
+          return;
+        }
         case "run-skill": {
           if (
             strikeMode &&
@@ -1586,6 +1787,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       handleHeadersSlash,
       strikeMode,
       lanceMode,
+      status,
+      session,
+      goalsEnabled,
     ],
   );
 

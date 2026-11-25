@@ -82,6 +82,8 @@ export interface Config {
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
   // Defaults to true when unset.
   surfaceIntegrationEnabled?: boolean;
+  // Persistent goals (/goal in the operator). Defaults to true when unset.
+  goalsEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -152,6 +154,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     surfaceIntegrationEnabled:
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
+    goalsEnabled:
+      parsedConfig.goalsEnabled ?? parseBoolEnv(process.env.PENSAR_GOALS),
     version,
     customProviders: loadCustomProviders(parsedConfig.customProviders),
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
