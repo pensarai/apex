@@ -65,10 +65,12 @@ describe("provider environment fallbacks", () => {
     expect(persisted.localModelName).toBe("manual");
     expect((await get()).ollama).toBeUndefined();
   });
-  it("discovers gateway deployments alongside an unrelated saved Baseten provider", async () => {
-    const deployment = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    vi.stubEnv("EVALGATE_INFERENCE_GATEWAY_URL", "https://gateway.test");
-    vi.stubEnv("EVALGATE_INFERENCE_TOKEN", "config-test");
+  it("discovers a dedicated Baseten endpoint alongside a saved custom provider", async () => {
+    vi.stubEnv(
+      "BASETEN_BASE_URL",
+      "https://model-test.api.baseten.co/deployment/example/sync/v1",
+    );
+    vi.stubEnv("BASETEN_API_KEY", "config-test");
     vi.stubEnv("HOONIFY_API_KEY", "");
     const saved = {
       baseUrl: "https://research.example/v1",
@@ -78,16 +80,12 @@ describe("provider environment fallbacks", () => {
     await update({ customProviders: { "baseten-research": saved } });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json({
-        data: [
-          { id: "nyx", deployment_id: deployment, context_length: 262144 },
-        ],
+        data: [{ id: "nyx", context_length: 262144 }],
       }),
     );
     const loaded = await get();
     expect(loaded.customProviders?.["baseten-research"]).toEqual(saved);
-    expect(
-      loaded.customProviders?.[`baseten-${deployment}`]?.models[0].id,
-    ).toBe("nyx");
+    expect(loaded.customProviders?.baseten?.models[0].id).toBe("nyx");
   });
   it("loads an Exa environment key and prefers a persisted key without saving the environment key", async () => {
     vi.stubEnv("EXA_API_KEY", "exa-env-key");

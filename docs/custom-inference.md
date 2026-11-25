@@ -138,12 +138,6 @@ Missing providers, undeclared models, and missing credential variables fail
 explicitly instead of routing to another provider. Child agents inherit the
 parent's inference configuration.
 
-An Evalgate worker must supply `APEX_CUSTOM_PROVIDERS`, `GLM_RESEARCH_API_KEY`, and
-`MODEL_ID=custom:glm-research:glm-5.3` to its Apex process. The local Evalgate CLI
-can pass the same ID with `--model`. Cloud launch catalog validation and container
-environment forwarding must also support this configuration in Evalgate; this
-Apex change does not alter Evalgate's deployment or launch API.
-
 ## Operator model picker
 
 Start Apex with the configuration and credential environment above. `/models`
@@ -173,5 +167,3 @@ before running the live test.
 With `BASETEN_API_KEY` set on a trusted workstation, the model picker discovers production vLLM deployments whose configuration declares an OpenAI chat route, served model name, and context length. Discovery reads management metadata and leaves sleeping GPUs asleep. Select the deployment in the picker or pass its displayed model ID to the CLI.
 
 For an invoke-only key or another OpenAI-compatible Baseten server, set `BASETEN_BASE_URL` to its API base, such as `https://model-<model-id>.api.baseten.co/deployment/<deployment-id>/sync/v1`. Apex reads the served models from that endpoint's `/models` route. Contacting a sleeping endpoint can wake it. When a Baseten request waits a second for its first text, reasoning, or tool output, Apex shows a pulsing diamond and the elapsed time since the request started. After a wait of five seconds or more, the main chat shows the measured time to first output.
-
-EvalGate supplies its own inference gateway and attempt-scoped access to hosted runs. Models appear with the same picker, streaming, tool-call, and usage handling. Keep personal Baseten keys out of untrusted execution environments.

@@ -21,11 +21,7 @@ export function usesBasetenEndpoint(
   return (
     url.protocol === "https:" &&
     (basetenHost.test(url.hostname) ||
-      (provider.apiKeyEnv === "EVALGATE_INFERENCE_TOKEN" &&
-        url.pathname.endsWith(
-          `/deployments/${id.providerId.slice("baseten-".length)}/v1`,
-        ) &&
-        id.providerId.startsWith("baseten-")))
+      /^Baseten(?:\s|$)/i.test(provider.name ?? ""))
   );
 }
 
@@ -35,7 +31,6 @@ const modelList = z.object({
     z.object({
       id: z.string().min(1),
       name: z.string().optional(),
-      deployment_id: z.uuid().optional(),
       context_length: z.number().int().positive().optional(),
       max_model_len: z.number().int().positive().optional(),
       max_output_tokens: z.number().int().positive().optional(),
@@ -122,44 +117,31 @@ function model(
   };
 }
 
-async function load(
-  key: string,
-  endpoint: string | undefined,
-  gateway: boolean,
-) {
+async function load(key: string, endpoint?: string) {
   const providers: CustomProviders = {};
-  const apiKeyEnv = gateway ? "EVALGATE_INFERENCE_TOKEN" : "BASETEN_API_KEY";
   if (endpoint) {
     const url = httpsUrl(endpoint);
-    if (!gateway && (url.port || !basetenHost.test(url.hostname)))
+    if (url.port || !basetenHost.test(url.hostname))
       throw new Error(
         "BASETEN_BASE_URL must point to a Baseten HTTPS endpoint.",
       );
     const base = url.href.replace(/\/+$/, "");
-    const list = modelList.parse(
-      await getJson(base + (gateway ? "/v1/models" : "/models"), key),
-    );
-    for (const m of list.data) {
-      if (gateway && !m.deployment_id)
-        throw new Error(
-          "The inference gateway returned a model without a deployment ID.",
-        );
-      const providerId = gateway ? `baseten-${m.deployment_id}` : "baseten";
-      providers[providerId] ??= {
+    const list = modelList.parse(await getJson(base + "/models", key));
+    if (list.data.length) {
+      providers.baseten = {
         name: "Baseten",
-        baseUrl: gateway ? `${base}/deployments/${m.deployment_id}/v1` : base,
-        apiKeyEnv,
+        baseUrl: base,
+        apiKeyEnv: "BASETEN_API_KEY",
         includeUsage: true,
-        models: [],
-      };
-      providers[providerId].models.push(
-        model(
-          m.id,
-          m.name ?? m.id,
-          m.context_length ?? m.max_model_len ?? 32_768,
-          m.max_output_tokens,
+        models: list.data.map((m) =>
+          model(
+            m.id,
+            m.name ?? m.id,
+            m.context_length ?? m.max_model_len ?? 32_768,
+            m.max_output_tokens,
+          ),
         ),
-      );
+      };
     }
   } else {
     const management = "https://api.baseten.co/v1/models";
@@ -194,7 +176,7 @@ async function load(
           providers[`baseten-${m.id}-${deployment}`] = {
             name: "Baseten",
             baseUrl: `https://model-${m.id}.api.baseten.co/deployment/${deployment}/sync/v1`,
-            apiKeyEnv,
+            apiKeyEnv: "BASETEN_API_KEY",
             includeUsage: true,
             models: [model(served, m.name, length)],
           };
@@ -209,35 +191,26 @@ let cached:
   | {
       key: string;
       endpoint?: string;
-      gateway: boolean;
       until: number;
       result: Promise<CustomProviders>;
     }
   | undefined;
 export async function discoverBaseten(): Promise<CustomProviders> {
-  const gatewayUrl = process.env.EVALGATE_INFERENCE_GATEWAY_URL?.trim();
-  const key = (
-    gatewayUrl
-      ? process.env.EVALGATE_INFERENCE_TOKEN
-      : process.env.BASETEN_API_KEY
-  )?.trim();
+  const key = process.env.BASETEN_API_KEY?.trim();
   if (!key) return {};
-  const endpoint = gatewayUrl || process.env.BASETEN_BASE_URL?.trim();
-  const gateway = Boolean(gatewayUrl);
+  const endpoint = process.env.BASETEN_BASE_URL?.trim();
   if (
     cached &&
     cached.key === key &&
     cached.endpoint === endpoint &&
-    cached.gateway === gateway &&
     cached.until > Date.now()
   )
     return cached.result;
   const entry = {
     key,
     endpoint,
-    gateway,
     until: Date.now() + 60_000,
-    result: load(key, endpoint, gateway),
+    result: load(key, endpoint),
   };
   cached = entry;
   try {
