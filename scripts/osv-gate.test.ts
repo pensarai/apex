@@ -711,7 +711,14 @@ describe("GATED_LOCKFILES", () => {
       readFileSync(join(import.meta.dirname, "..", path), "utf8"),
     );
     expect(locked.registry.size).toBeGreaterThan(0);
-    expect(locked.registry).toContain("camoufox-js@0.13.0");
+    const manifest = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "offsec-sandbox", "package.json"),
+        "utf8",
+      ),
+    ) as { dependencies: Record<string, string> };
+    for (const [name, version] of Object.entries(manifest.dependencies))
+      expect(locked.registry).toContain(`${name}@${version}`);
     expect(locked.other).toBe(0);
   });
 });
