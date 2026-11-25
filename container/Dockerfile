@@ -1,5 +1,14 @@
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS bun
 
+# Node.js 22.23.5 release tarballs, checked against the SHA-256s in that
+# release's SHASUMS256.txt. BuildKit verifies --checksum; the legacy builder
+# ignores it but cannot run the RUN --mount that uses them, so it fails instead.
+FROM scratch AS node
+ADD --checksum=sha256:cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 \
+    https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz /
+ADD --checksum=sha256:2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09 \
+    https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-arm64.tar.xz /
+
 # Kali is a rolling release with no version tags, so the digest is the pin.
 FROM kalilinux/kali-rolling:latest@sha256:69a9a33d98a584a537bd0f7144d20c3b6d23f3bafa9ffcf0cadf4c5f186d02ff
 
@@ -25,22 +34,16 @@ RUN apt-get update && apt-get dist-upgrade -y && \
       wireshark-common \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Node.js (required by @pensar/apex's pensar binary) from the official release
-# tarball, checked against the SHA-256 in that release's SHASUMS256.txt. The
-# version sits beside its hashes so neither changes without the other.
-ARG TARGETARCH
-RUN set -eu; \
-    node_version=22.23.5; \
-    case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
-      amd64) arch=x64; sha256=cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 ;; \
-      arm64) arch=arm64; sha256=2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09 ;; \
-      *) echo "unsupported architecture: ${TARGETARCH:-unknown}" >&2; exit 1 ;; \
+# Node.js (required by @pensar/apex's pensar binary), from the node stage above
+RUN --mount=type=bind,from=node,target=/node \
+    set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) arch=x64 ;; \
+      arm64) arch=arm64 ;; \
+      *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/node.tar.xz \
-      "https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-${arch}.tar.xz"; \
-    echo "${sha256}  /tmp/node.tar.xz" | sha256sum -c -; \
-    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --no-same-owner; \
-    rm /tmp/node.tar.xz; \
+    tar -xJf "/node/node-v22.23.5-linux-${arch}.tar.xz" -C /usr/local \
+      --strip-components=1 --no-same-owner; \
     node --version
 
 # bun system-wide (required for @pensar/apex), the same release as console's,
@@ -51,8 +54,7 @@ COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s bun /usr/local/bin/bunx && bun --version
 
 # Install @pensar/apex globally
-ARG APEX_VERSION=2.7.0
-RUN bun install -g "@pensar/apex@${APEX_VERSION}"
+RUN bun install -g @pensar/apex@2.7.0
 
 # Create non-root user for safety
 RUN groupadd -g ${GID} ${USER} || true \
