@@ -71,6 +71,19 @@ export function parseDockerfile(text: string): Instruction[] {
   return out;
 }
 
+/** An exec-form `RUN ["cmd", "arg"]` as space-separated words; shell form as is. */
+function execFormAsWords(args: string): string {
+  const exec = /^((?:--\S+\s+)*)(\[.*\])\s*$/s.exec(args);
+  if (!exec) return args;
+  try {
+    const words: unknown = JSON.parse(exec[2] ?? "");
+    if (Array.isArray(words)) return `${exec[1] ?? ""}${words.join(" ")}`;
+  } catch {
+    // Not a JSON array, so Docker runs it with a shell as written.
+  }
+  return args;
+}
+
 export function checkDockerfile(path: string, text: string): Violation[] {
   const violations: Violation[] = [];
   const report = (line: number, problem: string, fix: string) =>
@@ -160,20 +173,24 @@ export function checkDockerfile(path: string, text: string): Violation[] {
       const from = mount[1] ?? "";
       if (!/^\d+$/.test(from)) checkImage(line, from, "RUN --mount image");
     }
-    for (const call of args.matchAll(AUTO_INSTALL))
+    const command = execFormAsWords(args);
+    for (const call of command.matchAll(AUTO_INSTALL))
       report(
         line,
         `\`${call[1]}\` without \`--no-install\` can download a package`,
         `install it from a lockfile first and run \`${call[1]} --no-install\``,
       );
-    if (NPM_INSTALL.test(args))
+    if (NPM_INSTALL.test(command))
       report(
         line,
         "a package install with no lockfile",
         "commit a lockfile and install with `npm ci`",
       );
-    for (const global of args.matchAll(GLOBAL_INSTALL)) {
-      const pkgs = (global[1] ?? "").split(/\s+/).filter(Boolean);
+    for (const global of command.matchAll(GLOBAL_INSTALL)) {
+      const pkgs = (global[1] ?? "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((p) => p.replace(/^(["'])(.*)\1$/, "$2"));
       for (const pkg of pkgs.length ? pkgs : [""])
         if (!EXACT_PACKAGE.test(pkg))
           report(

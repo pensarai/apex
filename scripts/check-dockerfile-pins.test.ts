@@ -198,16 +198,33 @@ RUN npm init -y && npm install --save-exact camoufox-js@0.13.0`;
       ]);
     });
 
+    it("reads exec-form RUN as its words", () => {
+      const text = `FROM x@${DIGEST}
+RUN ["npx", "--no-install", "playwright-core", "install-deps", "firefox"]
+RUN ["npx", "--yes", "playwright", "install-deps", "firefox"]`;
+      expect(problems(text)).toEqual([
+        "3: `npx` without `--no-install` can download a package",
+      ]);
+    });
+
+    it("matches the words anywhere in a RUN, including quoted text", () => {
+      expect(
+        problems(
+          `FROM x@${DIGEST}\nRUN echo 'Install locally with npm install'`,
+        ),
+      ).toEqual(["2: a package install with no lockfile"]);
+    });
+
     it("requires a literal exact version on a global bun install", () => {
       const text = `FROM x@${DIGEST}
 RUN bun install -g @pensar/apex
 RUN bun add --global left-pad@^1.0.0
 RUN bun install -g "@pensar/apex@$APEX_VERSION"
-RUN bun install -g left-pad@1.3.0`;
+RUN bun install -g left-pad@1.3.0 "is-odd@3.0.1"`;
       expect(problems(text)).toEqual([
         "2: global install of `@pensar/apex` without a literal exact version",
         "3: global install of `left-pad@^1.0.0` without a literal exact version",
-        '4: global install of `"@pensar/apex@$APEX_VERSION"` without a literal exact version',
+        "4: global install of `@pensar/apex@$APEX_VERSION` without a literal exact version",
       ]);
     });
   });
