@@ -38,8 +38,7 @@ function httpsUrl(value: string) {
     url.username ||
     url.password ||
     url.search ||
-    url.hash ||
-    url.port
+    url.hash
   )
     throw new Error("Expected an HTTPS Baseten endpoint.");
   return url;
@@ -87,9 +86,10 @@ async function load(
     const url = httpsUrl(endpoint);
     if (
       !gateway &&
-      !/^(model-[a-zA-Z0-9_-]+\.api\.baseten\.co|inference\.baseten\.co)$/.test(
-        url.hostname,
-      )
+      (url.port ||
+        !/^(model-[a-zA-Z0-9_-]+\.api\.baseten\.co|inference\.baseten\.co)$/.test(
+          url.hostname,
+        ))
     )
       throw new Error(
         "BASETEN_BASE_URL must point to a Baseten HTTPS endpoint.",
