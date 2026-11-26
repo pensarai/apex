@@ -36,14 +36,13 @@ export function groupSubagents(
     ),
   );
   const byTool = new Map<string, OperatorSubagent[]>();
-  const unlinked: OperatorSubagent[] = [];
   for (const agent of agents) {
     if (agent.parentToolCallId && allCalls.has(agent.parentToolCallId)) {
       byTool.set(agent.parentToolCallId, [
         ...(byTool.get(agent.parentToolCallId) ?? []),
         agent,
       ]);
-    } else unlinked.push(agent);
+    }
   }
-  return { byTool, unlinked };
+  return { byTool };
 }

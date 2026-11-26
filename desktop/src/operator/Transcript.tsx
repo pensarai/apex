@@ -13,7 +13,6 @@ import type { OperatorActivity, OperatorMessage } from "./contract";
 import { MessageCopy } from "./MessageCopy";
 import { ReasoningMessage } from "./ReasoningMessage";
 import { StreamingMarkdown } from "./StreamingMarkdown";
-import { SubagentRows } from "./SubagentRows";
 import { groupSubagents, type OperatorSubagent } from "./subagent-presentation";
 import { ToolMessage } from "./ToolMessage";
 import { groupTranscript } from "./tool-presentation";
@@ -171,16 +170,6 @@ export function Transcript({
           </article>
         );
       })}
-      {!agentId && children.unlinked.length > 0 && onSelectSubagent && (
-        <section className="op-unlinked-subagents">
-          <h3>Subagents</h3>
-          <SubagentRows
-            agents={children.unlinked}
-            allAgents={subagents}
-            onSelect={onSelectSubagent}
-          />
-        </section>
-      )}
       {activity &&
         !(
           activity === "thinking" &&

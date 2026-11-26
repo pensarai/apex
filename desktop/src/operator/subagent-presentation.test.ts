@@ -39,9 +39,8 @@ describe("desktop subagent presentation", () => {
     );
     expect(grouped.byTool.get("first")).toEqual([first]);
     expect(grouped.byTool.get("second")).toEqual([second]);
-    expect(grouped.unlinked).toEqual([]);
   });
-  it("retains legacy and missing-parent workers without falsely attaching grandchildren", () => {
+  it("keeps grandchildren inline and ignores workers without matching parent calls", () => {
     const parent = agent("parent", {
       parentToolCallId: "root-call",
       messages: [tool("nested-call")],
@@ -54,7 +53,7 @@ describe("desktop subagent presentation", () => {
       [parent, nested, legacy, missing],
     );
     expect(grouped.byTool.get("nested-call")).toEqual([nested]);
-    expect(grouped.unlinked).toEqual([legacy, missing]);
+    expect([...grouped.byTool.keys()]).toEqual(["root-call", "nested-call"]);
     expect(subagentLabel(legacy, 2)).toBe("Subagent 3");
   });
   it("shows activity only for running workers and preserves failed/cancelled states", () => {
