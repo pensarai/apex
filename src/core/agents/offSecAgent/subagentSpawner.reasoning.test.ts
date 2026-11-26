@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReasoningSetting } from "../../ai";
 import type { SessionInfo } from "../../session";
 import {
+  createInProcessSubagentSpawner,
   inProcessSubagentSpawner,
   type SubagentSpec,
   type SubagentType,
 } from "./subagentSpawner";
+import type { PlaywrightMcpSession } from "./tools";
 import { delegateAuth } from "./tools/delegateAuth";
 import { runAttackSurface } from "./tools/runAttackSurface";
+import { spawnReconAgent } from "./tools/spawnReconAgent";
 import { generateThreatModelForEndpoint } from "./tools/threatModelGenerator";
 import type { ToolContext } from "./tools/types";
 
@@ -171,5 +174,78 @@ describe.each(
     });
     expect(result).not.toBeNull();
     expect(mocks.received.get("code")).toMatchObject(selection);
+  });
+});
+
+describe("shared browser inheritance", () => {
+  const browserSession = {
+    disconnect: vi.fn(),
+  } as unknown as PlaywrightMcpSession;
+  it.each(
+    Object.values(specs),
+  )("passes the live browser into $type", async (spec) => {
+    await inProcessSubagentSpawner.spawn({
+      spec,
+      runtime: {
+        session: { id: "root" } as SessionInfo,
+        model: "gpt-6.1-sol",
+        browserSession,
+      },
+    });
+    expect(mocks.received.get(spec.type)?.browserSession).toBe(browserSession);
+  });
+  it.each(
+    Object.values(specs),
+  )("reattaches $type through the browser provider", async (spec) => {
+    const forChild = vi.fn(() => browserSession);
+    await createInProcessSubagentSpawner({ browser: { forChild } }).spawn({
+      spec,
+      runtime: { session: { id: "root" } as SessionInfo, model: "gpt-6.1-sol" },
+      subagentId: "child",
+    });
+    expect(forChild).toHaveBeenCalledWith({
+      subagentId: "child",
+      subagentName: undefined,
+    });
+    expect(mocks.received.get(spec.type)?.browserSession).toBe(browserSession);
+  });
+  it.each([
+    false,
+    true,
+  ])("auth and recon tools inherit only local browsers (sandbox=%s)", async (remote) => {
+    const ctx = {
+      model: "gpt-6.1-sol",
+      session: {
+        id: "root",
+        rootPath: "/unused",
+        targets: ["https://example.test"],
+      } as SessionInfo,
+      subagentSpawner: inProcessSubagentSpawner,
+      browserSession,
+      sandbox: remote ? {} : undefined,
+    } as unknown as ToolContext;
+    const options = { toolCallId: "call-child", messages: [] };
+    await delegateAuth(ctx).execute?.(
+      {
+        target: "https://example.test",
+        reason: "Check existing sign-in",
+        toolCallDescription: "Check sign-in",
+      },
+      options,
+    );
+    await spawnReconAgent(ctx).execute?.(
+      {
+        tasks: [{ name: "inspect", goal: "Inspect current page" }],
+        toolCallDescription: "Inspect",
+      },
+      options,
+    );
+    for (const type of ["authentication", "recon-worker"]) {
+      expect(mocks.received.has(type)).toBe(true);
+      expect(mocks.received.get(type)?.browserSession).toBe(
+        remote ? undefined : browserSession,
+      );
+    }
+    expect(browserSession.disconnect).not.toHaveBeenCalled();
   });
 });

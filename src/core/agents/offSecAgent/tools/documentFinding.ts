@@ -626,6 +626,7 @@ async function runDocumentVulnerability(
         spec: { type: "finding-judge", judgeInput, target: ctx.target },
         runtime: {
           session: ctx.session,
+          browserSession: ctx.sandbox ? undefined : ctx.browserSession,
           ...getModelSettings(ctx),
           abortSignal: ctx.abortSignal,
           sandbox: ctx.sandbox,

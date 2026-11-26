@@ -140,7 +140,9 @@ export class SessionBrowser {
     const view: View = {
       id,
       url: `about:blank#apex-browser-${id}`,
-      partition: `persist:apex-session-${this.options.getSession().id}`,
+      // Electrobun 1.18 nests partitions too deeply for CEF Chrome profiles.
+      // Its app-specific profile root persists cookies and site storage.
+      partition: "persist:..",
     };
     this.views.set(id, view);
     const pending = new Promise<NativeTarget>((resolve, reject) => {
@@ -228,6 +230,8 @@ export class SessionBrowser {
     for (const view of this.views.values()) await this.connectView(view);
     this.proxy = createSessionCdpProxy({
       ...target,
+      ownsTarget: (targetId) =>
+        [...this.views.values()].some((view) => view.targetId === targetId),
       closeTarget: (targetId) => {
         const view = [...this.views.values()].find(
           (view) => view.targetId === targetId,

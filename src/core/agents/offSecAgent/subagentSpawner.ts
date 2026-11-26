@@ -129,6 +129,7 @@ export interface SpawnRuntime {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   sandbox?: UnifiedSandbox;
+  browserSession?: PlaywrightMcpSession;
   backends?: ToolBackends;
   /** The run's callback domain reader, inherited so workers can read callbacks. */
   callbacks?: CallbackBackend;
@@ -419,7 +420,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
     findingsRegistry: spec.findingsRegistry,
-    browserSession: spec.browserSession,
+    browserSession: spec.browserSession ?? ctx.browserSession,
     environmentVariables: ctx.environmentVariables,
     secretValues: ctx.secretValues,
     display: ctx.display,
@@ -464,6 +465,7 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
     sandbox: ctx.sandbox,
+    browserSession: ctx.browserSession,
     backends: ctx.backends,
     display: ctx.display,
     onStepFinish: ctx.onStepFinish,
@@ -495,6 +497,7 @@ const runReconWorkerChild: SubagentRunner<"recon-worker"> = async (
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
     sandbox: ctx.sandbox,
+    browserSession: ctx.browserSession,
     backends: ctx.backends,
     credentialManager: ctx.credentialManager,
     environmentVariables: ctx.environmentVariables,
@@ -532,6 +535,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
     sandbox: ctx.sandbox,
+    browserSession: ctx.browserSession,
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     toolProtocol: ctx.toolProtocol,
@@ -559,6 +563,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
     sandbox: ctx.sandbox,
+    browserSession: ctx.browserSession,
     backends: ctx.backends,
     languageModelMiddleware: ctx.languageModelMiddleware,
     toolProtocol: ctx.toolProtocol,
@@ -587,6 +592,7 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         subagentName: ctx.subagentName,
         environmentVariables: ctx.environmentVariables,
         secretValues: ctx.secretValues,
+        browserSession: ctx.browserSession,
         backends: ctx.backends,
         languageModelMiddleware: ctx.languageModelMiddleware,
         toolProtocol: ctx.toolProtocol,
@@ -610,6 +616,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         subagentId: ctx.subagentId,
         subagentName: ctx.subagentName,
         sandbox: ctx.sandbox,
+        browserSession: ctx.browserSession,
         backends: ctx.backends,
         callbacks: ctx.callbacks,
         target: spec.target,
@@ -721,22 +728,18 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       const childBus = new AgentEventBus();
       AgentEventBus.attachChild(childBus, opts.parentBus, childId);
 
-      const spec =
-        opts.spec.type === "pentest" &&
-        !opts.spec.browserSession &&
-        this.browser
-          ? {
-              ...opts.spec,
-              browserSession: this.browser.forChild({
-                subagentId: childId,
-                subagentName: opts.subagentName,
-              }),
-            }
-          : opts.spec;
-
+      const spec = opts.spec;
+      const browserSession =
+        (spec.type === "pentest" ? spec.browserSession : undefined) ??
+        opts.runtime.browserSession ??
+        this.browser?.forChild({
+          subagentId: childId,
+          subagentName: opts.subagentName,
+        });
       const runner = RUNNERS[spec.type] as unknown as AnyRunner;
       handle = await runner(spec, {
         ...opts.runtime,
+        browserSession,
         eventBus: childBus,
         subagentId: childId,
         subagentName: opts.subagentName,

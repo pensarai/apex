@@ -26,10 +26,11 @@ type Message = {
   error?: unknown;
 };
 
-// CEF exposes every partition on one endpoint; each agent must see only its own.
+// Conversations share a profile, but each agent may control only its own tabs.
 export function createSessionCdpProxy(options: {
   endpoint: string;
   contextId: string;
+  ownsTarget: (targetId: string) => boolean;
   createTarget: (url: string) => Promise<string>;
   closeTarget: (targetId: string) => void;
 }) {
@@ -98,8 +99,7 @@ export function createSessionCdpProxy(options: {
         } = client.data;
         connections.add(upstream);
         const owns = (target: TargetInfo) =>
-          target.browserContextId === options.contextId ||
-          targets.has(target.targetId);
+          options.ownsTarget(target.targetId) || targets.has(target.targetId);
         upstream.onmessage = (event) => {
           const message = JSON.parse(String(event.data)) as Message;
           const params = message.params;

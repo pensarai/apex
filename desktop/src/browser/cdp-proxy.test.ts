@@ -25,6 +25,8 @@ describe("session browser isolation", () => {
     const proxy = createSessionCdpProxy({
       endpoint: "ws://browser",
       contextId: "ours",
+      ownsTarget: (id) =>
+        ["mine", "new-native", "first", "second"].includes(id),
       createTarget,
       closeTarget,
     });
@@ -77,7 +79,7 @@ describe("session browser isolation", () => {
       result: {
         targetInfos: [
           { targetId: "mine", browserContextId: "ours", type: "page" },
-          { targetId: "other", browserContextId: "theirs", type: "page" },
+          { targetId: "other", browserContextId: "ours", type: "page" },
         ],
       },
     });
@@ -91,7 +93,7 @@ describe("session browser isolation", () => {
       params: {
         targetInfo: {
           targetId: "secret",
-          browserContextId: "theirs",
+          browserContextId: "ours",
           type: "page",
         },
       },

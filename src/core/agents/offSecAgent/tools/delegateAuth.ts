@@ -305,6 +305,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           runtime: {
             findingPolicy: ctx.findingPolicy,
             session: ctx.session,
+            browserSession: ctx.sandbox ? undefined : ctx.browserSession,
             ...getModelSettings(ctx),
             abortSignal: ctx.abortSignal,
             environmentVariables: ctx.environmentVariables,

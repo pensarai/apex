@@ -169,6 +169,7 @@ function reconSpawnOptions(
     },
     runtime: {
       session: ctx.session,
+      browserSession: ctx.sandbox ? undefined : ctx.browserSession,
       ...getModelSettings(ctx),
       toolProtocol: ctx.toolProtocol,
       abortSignal: ctx.abortSignal,

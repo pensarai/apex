@@ -375,6 +375,7 @@ export async function generateThreatModelForEndpoint(
         runtime: {
           findingPolicy: ctx.findingPolicy,
           session: ctx.session,
+          browserSession: ctx.sandbox ? undefined : ctx.browserSession,
           ...getModelSettings(ctx),
           abortSignal: childAbort.signal,
           backends: ctx.backends,

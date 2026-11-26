@@ -185,6 +185,7 @@ function codingSpawnOptions(
     runtime: {
       findingPolicy: ctx.findingPolicy,
       session: ctx.session,
+      browserSession: ctx.sandbox ? undefined : ctx.browserSession,
       ...getModelSettings(ctx),
       abortSignal: ctx.abortSignal,
       sandbox: ctx.sandbox,

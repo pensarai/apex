@@ -32,6 +32,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "abortSignal"
   | "eventBus"
   | "sandbox"
+  | "browserSession"
   | "backends"
   | "callbacks"
   | "target"
@@ -82,6 +83,7 @@ export async function judgeFinding(
       subagentId: ctx.subagentId,
       subagentName: ctx.subagentName,
       sandbox: ctx.sandbox,
+      browserSession: ctx.browserSession,
       backends: ctx.backends,
       callbacks: ctx.callbacks,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],

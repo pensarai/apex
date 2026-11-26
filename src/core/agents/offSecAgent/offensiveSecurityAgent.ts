@@ -372,36 +372,10 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Per-command executor for local-mode command execution; disposed on consume() completion. */
   private readonly commandShell?: PerCommandShell;
 
-  /**
-   * This agent's Playwright MCP browser session. Either constructed fresh
-   * by this agent (when no `browserSession` was passed in) or supplied by
-   * the caller (e.g. `spawn_pentest_agent` constructs a fresh, isolated
-   * session for each worker, seeds it with a snapshot of the orchestrator's
-   * cookies + localStorage, and hands the seeded session in here so this
-   * agent's browser tools operate against an authenticated-but-isolated
-   * Chromium).
-   *
-   * Exposed publicly so spawn tools can read this agent's session (e.g.
-   * the pentest orchestrator's `browserSession` is what `spawn_pentest_agent`
-   * snapshots when it builds the worker's seeded clone). The session
-   * object is NOT shared between agents at runtime — each agent gets its
-   * own isolated Chromium so a sub-agent can't clobber its parent's DOM,
-   * cookies, or navigation state.
-   *
-   * Only populated for non-sandbox (local MCP) mode. In sandbox mode,
-   * browser state is already shared via the sandbox's per-sandbox
-   * Playwright user-data directory, so no host-side session object is
-   * needed.
-   */
+  /** Local browser shared with child agents; sandbox browsers are managed remotely. */
   public readonly browserSession?: PlaywrightMcpSession;
 
-  /**
-   * True when this agent constructed its own {@link browserSession} (no
-   * `browserSession` was passed in). Only the owner disconnects it on
-   * `consume()` completion — an inherited session is torn down by whoever
-   * created it (e.g. `spawn_pentest_agent` for worker clones), so we must
-   * never disconnect a session we don't own.
-   */
+  /** Only the creator may disconnect a browser inherited by other agents. */
   private readonly ownsBrowserSession: boolean;
 
   /** Guards against double force-kill across the drain-finally and result-capture paths. */
@@ -1077,6 +1051,14 @@ export class OffensiveSecurityAgent<TResult = void> {
         baseSystemPrompt,
         codeModeInstructions,
       ].filter(Boolean);
+      if (
+        input.browserSession &&
+        canonicalActiveTools.some((name) => name.startsWith("browser_"))
+      ) {
+        sections.push(
+          "## Shared browser\nYou use the same live browser as the parent agent and user. Inspect its current state before navigating or signing in. Existing cookies and site storage are shared, and changes persist for other agents and the user. Do not clear data or log out unless the task requires it. Other agents may use this browser between your tool calls; recheck the page before interacting.",
+        );
+      }
       if (facts) {
         sections.push(
           buildRuntimeContextSection(facts, {
