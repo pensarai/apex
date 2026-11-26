@@ -495,6 +495,7 @@ export class PlaywrightMcpSession {
       Object.keys(headerPolicy.headers).length > 0
         ? {
             allowedHosts: [...headerPolicy.allowedHosts],
+            allowedPorts: [...headerPolicy.allowedPorts],
             headers: { ...headerPolicy.headers },
           }
         : undefined;

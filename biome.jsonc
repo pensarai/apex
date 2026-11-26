@@ -83,6 +83,10 @@
           "options": {
             "patterns": [
               {
+                "group": ["**/core/code-mode/*", "!**/core/code-mode/index"],
+                "message": "Import from the core/code-mode barrel (index), not its internals."
+              },
+              {
                 "group": ["**/core/ai/*", "!**/core/ai/index"],
                 "message": "Import from the core/ai barrel (index), not its internals."
               },

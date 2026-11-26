@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -15,8 +14,11 @@ import { z } from "zod";
 import type { AgentHooks } from "../agents/offSecAgent";
 import {
   inProcessSubagentSpawner,
+  type SpawnOptions,
   type SubagentSpawner,
+  spawnBatch,
 } from "../agents/offSecAgent/subagentSpawner";
+import { endpointAssetFileName } from "../agents/offSecAgent/tools/endpointAssetFileName";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
@@ -42,6 +44,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
@@ -138,11 +141,14 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
+  /** Exposes the local discovery agent's drain; the host owns aborting its input signal. */
+  registerOwnedAgentDrain?: (drain: () => Promise<void>) => void;
   eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
   enableThinking?: boolean;
   /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
@@ -195,7 +201,7 @@ interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
  * Explicit, serializable-by-the-caller input for {@link runWhiteboxAttackSurfaceApp}
  * — everything one app's Phase-2 worker reads, with no reads of
  * `runWhiteboxAttackSurfaceWorkflow`'s own local scope. A durable caller
- * rebuilds `hooks`, `seams`, `mintChildId` and `agentLimiter` on its own side
+ * rebuilds `hooks`, `seams` and `mintChildId` on its own side
  * and runs the app as a separate child workflow.
  */
 export interface WhiteboxAttackSurfaceAppInput {
@@ -209,6 +215,7 @@ export interface WhiteboxAttackSurfaceAppInput {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   projectThreatModel?: string;
@@ -220,8 +227,8 @@ export interface WhiteboxAttackSurfaceAppInput {
   umbrellaId: string;
   /** Mints IDs for discovery and per-endpoint documentation children. */
   mintChildId: (name: string) => string;
-  /** Bounds total concurrent CodeAgents across the whole workflow (Phase 1 + every app). */
-  agentLimiter: AgentConcurrencyLimiter;
+  /** In-process shared gate; durable spawners enforce their own batch concurrency. */
+  agentLimiter?: AgentConcurrencyLimiter;
   /** Fan-out spawner forwarded to `runAppEndpointDocumentation`'s own per-endpoint fan-out. */
   subagentSpawner?: SubagentSpawner;
   hooks: AgentHooks;
@@ -251,6 +258,7 @@ export async function runWhiteboxAttackSurfaceApp(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -272,92 +280,105 @@ export async function runWhiteboxAttackSurfaceApp(
   const hooksForApp = resolveItemHooks(sharedHooks, seams, app, appIndex);
   let failed = false;
 
-  const spawnDiscoveryAgent = async (
+  const discoveryRequest = (
     type: DiscoveryTaskType,
     objective: string,
-  ): Promise<void> => {
+  ): SpawnOptions<DiscoverySummary> => {
     const subagentId = mintChildId(TASK_TYPE_LABELS[type]);
 
     log.debug(
       `Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
     );
 
-    const spawner = subagentSpawner ?? inProcessSubagentSpawner;
+    return {
+      spec: {
+        type: "code",
+        codebasePath,
+        objective,
+        system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+        excludeTools: ["document_app"],
+        responseSchema: DiscoverySummarySchema,
+        projectThreatModel,
+        attackSurfaceRegistry,
+      },
+      runtime: {
+        findingPolicy: hooksForApp.findingPolicy,
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        enableThinking,
+        thinkingEffort,
+        openAIReasoningEffort,
+        reasoning,
+        onStepFinish,
+        onCacheMetrics,
+        backends: hooksForApp.backends,
+        sandbox: hooksForApp.sandbox,
+        languageModelMiddleware: hooksForApp.languageModelMiddleware,
+        usageRecorder: hooksForApp.usageRecorder,
+        toolExecutionContext: hooksForApp.toolExecutionContext,
+        streamIdFactory: hooksForApp.streamIdFactory,
+      },
+      subagentId,
+      subagentName: TASK_TYPE_LABELS[type],
+      parentBus: eventBus,
+      parentSubagentId: appNodeId,
+      lifecycleInput: { app: app.name, type },
+    };
+  };
 
-    try {
-      await agentLimiter(() =>
-        spawner.spawn<DiscoverySummary>({
-          spec: {
-            type: "code",
-            codebasePath,
-            objective,
-            system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-            excludeTools: ["document_app"],
-            responseSchema: DiscoverySummarySchema,
-            projectThreatModel,
-            attackSurfaceRegistry,
-          },
-          runtime: {
-            model,
-            session,
-            authConfig,
-            abortSignal,
-            enableThinking,
-            thinkingEffort,
-            openAIReasoningEffort,
-            onStepFinish,
-            onCacheMetrics,
-            backends: hooksForApp.backends,
-            sandbox: hooksForApp.sandbox,
-            languageModelMiddleware: hooksForApp.languageModelMiddleware,
-            usageRecorder: hooksForApp.usageRecorder,
-            streamIdFactory: hooksForApp.streamIdFactory,
-          },
-          subagentId,
-          subagentName: TASK_TYPE_LABELS[type],
-          parentBus: eventBus,
-          parentSubagentId: appNodeId,
-          lifecycleInput: { app: app.name, type },
-        }),
-      );
-
-      log.debug(`Phase 2: agent "${subagentId}" completed`);
-    } catch (error) {
-      log.error(
-        `Phase 2: agent "${subagentId}" FAILED`,
-        error instanceof Error ? error : undefined,
-        { error: String(error) },
-      );
-
-      failed = true;
+  const spawnDiscoveryAgents = async (
+    requests: SpawnOptions<DiscoverySummary>[],
+  ) => {
+    const results = await spawnBatch(
+      subagentSpawner ?? inProcessSubagentSpawner,
+      requests,
+      {
+        concurrency: requests.length,
+        abortSignal,
+      },
+      agentLimiter,
+    );
+    for (const [index, result] of results.entries()) {
+      const subagentId = requests[index]!.subagentId;
+      if (result.status === "rejected") {
+        failed = true;
+        log.error(
+          `Phase 2: agent "${subagentId}" FAILED`,
+          result.reason instanceof Error ? result.reason : undefined,
+          { error: String(result.reason) },
+        );
+      } else {
+        log.debug(`Phase 2: agent "${subagentId}" completed`);
+      }
     }
   };
 
-  const spawnPagesAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "pages",
-      buildPagesDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnApiEndpointsAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "apiEndpoints",
-      buildApiEndpointsDiscoveryObjective(codebasePath, app),
-    );
-
-  const spawnCloudResourceAgent = (): Promise<void> =>
-    spawnDiscoveryAgent(
-      "cloudResourceEndpoints",
-      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
-    );
+  const discoverPagesAndApi = () =>
+    spawnDiscoveryAgents([
+      discoveryRequest(
+        "pages",
+        buildPagesDiscoveryObjective(codebasePath, app),
+      ),
+      discoveryRequest(
+        "apiEndpoints",
+        buildApiEndpointsDiscoveryObjective(codebasePath, app),
+      ),
+    ]);
 
   try {
     if (NON_SERVICE_TYPES.includes(app.type)) {
       // Cloud resources: surface doesn't enumerate these — always fallback.
-      await spawnCloudResourceAgent();
+      await spawnDiscoveryAgents([
+        discoveryRequest(
+          "cloudResourceEndpoints",
+          buildCloudResourceEndpointsObjective(codebasePath, app, environments),
+        ),
+      ]);
     } else if (!surfaceIntegrationEnabled) {
       log.debug(`${app.name}: legacy (surfaceIntegrationEnabled=false)`);
-      await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+      await discoverPagesAndApi();
     } else {
       const surfaceResult = mapAppWithSurface(
         join(codebasePath, app.location),
@@ -383,6 +404,7 @@ export async function runWhiteboxAttackSurfaceApp(
           onStepFinish,
           onCacheMetrics,
           openAIReasoningEffort,
+          reasoning,
           enableThinking,
           thinkingEffort,
           projectThreatModel,
@@ -394,11 +416,16 @@ export async function runWhiteboxAttackSurfaceApp(
         });
       } else {
         log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
-        await Promise.all([spawnPagesAgent(), spawnApiEndpointsAgent()]);
+        await discoverPagesAndApi();
       }
     }
-  } catch {
+  } catch (error) {
     failed = true;
+    log.error(
+      `Phase 2: app "${app.name}" FAILED`,
+      error instanceof Error ? error : undefined,
+      { error: String(error), app: app.name },
+    );
   }
 
   eventBus?.emit("subagent-complete", {
@@ -444,6 +471,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     domains,
@@ -522,6 +550,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     responseSchema: input.incremental
@@ -537,6 +566,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       : {}),
     abortSignal,
   });
+  input.registerOwnedAgentDrain?.(() => appsAgent.abortAndDrain());
 
   log.info(
     `Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
@@ -548,7 +578,16 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     input: { codebasePath },
   });
 
-  const appsResult = await agentLimiter(() => appsAgent.consume());
+  let appsResult: AppsDiscoveryResult;
+  try {
+    appsResult = await agentLimiter(() => appsAgent.consume());
+  } catch (error) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "failed",
+    });
+    throw error;
+  }
 
   if (input.incremental) {
     if (!hooks?.backends)
@@ -671,6 +710,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    reasoning,
     enableThinking,
     thinkingEffort,
     projectThreatModel,
@@ -685,22 +725,30 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     seams,
   };
 
-  assertDepth(1, seams.limits);
-  await seams.fanOut.spawnMany(
-    appsResult.apps,
-    async (app, appIndex) => {
-      await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
+  try {
+    assertDepth(1, seams.limits);
+    await seams.fanOut.spawnMany(
+      appsResult.apps,
+      async (app, appIndex) => {
+        await runWhiteboxAttackSurfaceApp(app, appIndex, appWorkerInput);
 
-      completedAppCount++;
+        completedAppCount++;
 
-      eventBus?.emit("app-analysis-progress", {
-        totalApps,
-        completedApps: completedAppCount,
-        appName: app.name,
-      });
-    },
-    { concurrency: DEFAULT_CONCURRENCY },
-  );
+        eventBus?.emit("app-analysis-progress", {
+          totalApps,
+          completedApps: completedAppCount,
+          appName: app.name,
+        });
+      },
+      { concurrency: DEFAULT_CONCURRENCY },
+    );
+  } catch (error) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "failed",
+    });
+    throw error;
+  }
 
   eventBus?.emit("subagent-complete", {
     subagentId: WORKFLOW_UMBRELLA_ID,
@@ -1318,13 +1366,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     // Write endpoint assets
     for (const ep of [...app.pages, ...app.apiEndpoints]) {
       const isPage = app.pages.includes(ep);
-      const rawKey = `${app.name}__${ep.path}`.toLowerCase();
-      const hash = createHash("sha256")
-        .update(rawKey)
-        .digest("hex")
-        .slice(0, 8);
-      const sanitizedPath = sanitizeName(ep.path);
-      const filename = `asset_${sanitizedPath}_${hash}.json`;
+      const filename = endpointAssetFileName(app.name, ep.path);
 
       const { riskScore: _staleScore, threatModel, ...epWithoutMeta } = ep;
       const assetData: Record<string, unknown> = {
@@ -1403,6 +1445,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
+    reasoning: input.reasoning,
     enableThinking: input.enableThinking,
     thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,
@@ -1648,8 +1691,28 @@ async function readIncrementalReconAssets(
   const read = async (path: string): Promise<unknown> => {
     abortSignal?.throwIfAborted();
     const result = await fs.readRaw(path);
-    if (!result.success) throw new Error(`Recon artifact read failed: ${path}`);
-    return JSON.parse(result.content);
+    if (!result.success)
+      throw Object.assign(new Error("Recon artifact read failed"), { path });
+    try {
+      return JSON.parse(result.content);
+    } catch (cause) {
+      throw Object.assign(
+        new Error("Recon artifact is not valid JSON", { cause }),
+        { path },
+      );
+    }
+  };
+  const validate = <T extends z.ZodType>(
+    schema: T,
+    raw: unknown,
+    path: string,
+  ): z.output<T> => {
+    const parsed = schema.safeParse(raw);
+    if (parsed.success) return parsed.data;
+    throw Object.assign(
+      new Error("Recon artifact failed validation", { cause: parsed.error }),
+      { path, issueCount: parsed.error.issues.length },
+    );
   };
   const apps: App[] = [];
   for (const directory of await list(assetsPath)) {
@@ -1661,7 +1724,8 @@ async function readIncrementalReconAssets(
     )
       throw new Error("Invalid recon artifact directory");
     const appPath = join(assetsPath, directory);
-    const metadata = AppInfoSchema.parse(await read(join(appPath, "app.json")));
+    const appJson = join(appPath, "app.json");
+    const metadata = validate(AppInfoSchema, await read(appJson), appJson);
     const previousApp = existing.apps.find((app) => app.name === metadata.name);
     const app: App = {
       ...previousApp,
@@ -1673,14 +1737,17 @@ async function readIncrementalReconAssets(
       if (file === "app.json" || !file.endsWith(".json")) continue;
       if (file.includes("/") || file === "..")
         throw new Error("Invalid recon artifact filename");
-      const raw = await read(join(appPath, file));
-      const record = z
-        .object({
-          method: z.union([z.string(), z.array(z.string())]),
-          routePath: z.string(),
-        })
-        .passthrough()
-        .parse(raw) as DocumentedEndpointRecord;
+      const filePath = join(appPath, file);
+      const record = validate(
+        z
+          .object({
+            method: z.union([z.string(), z.array(z.string())]),
+            routePath: z.string(),
+          })
+          .passthrough(),
+        await read(filePath),
+        filePath,
+      ) as DocumentedEndpointRecord;
       const endpoint = assetRecordToEndpoint(record);
       if (!endpoint)
         throw new Error(`Invalid recon endpoint artifact: ${file}`);

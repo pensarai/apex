@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ModelMessage, ToolSet } from "ai";
+import { asSchema, jsonSchema, type ModelMessage, type ToolSet } from "ai";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -72,6 +72,26 @@ describe("estimateMessageTokens", () => {
 });
 
 describe("estimateToolsOverheadTokens", () => {
+  it("counts the provider JSON schema rather than Zod implementation fields", async () => {
+    const schema = z.object({
+      value: z.string().describe("A requested value"),
+    });
+    const wire = await asSchema(schema).jsonSchema;
+    const expected = Math.ceil(
+      ("read".length + "Read a value".length + JSON.stringify(wire).length) / 4,
+    );
+    expect(
+      estimateToolsOverheadTokens({
+        read: { description: "Read a value", inputSchema: schema },
+      }),
+    ).toBe(expected);
+    expect(
+      estimateToolsOverheadTokens({
+        read: { description: "Read a value", inputSchema: jsonSchema(wire) },
+      }),
+    ).toBe(expected);
+  });
+
   it("returns 0 when no tools provided", () => {
     expect(estimateToolsOverheadTokens(undefined)).toBe(0);
   });

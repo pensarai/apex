@@ -59,7 +59,7 @@ describe("scoreFindingWithCVSS hooks", () => {
       undefined,
       abortSignal,
       "ses_cvss",
-      { languageModelMiddleware, usageRecorder },
+      { languageModelMiddleware, usageRecorder, reasoning: "low" },
     );
 
     expect(mockedGenerate).toHaveBeenCalledOnce();
@@ -71,6 +71,7 @@ describe("scoreFindingWithCVSS hooks", () => {
         operation: "apex.finding.cvss",
         languageModelMiddleware,
         usageRecorder,
+        reasoning: "low",
       }),
     );
   });

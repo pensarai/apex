@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { INTERNAL_ID_PATTERN } from "../../../core/operator";
 import { useTheme } from "../../theme";
-import { CompactingIcon } from "../shared";
+import { CompactingIcon, ModelLoadingIcon } from "../shared";
 
 // Braille spinner frames for smooth animation
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -17,7 +17,42 @@ const SPINNER_INTERVAL = 80;
 const DOTS_FRAMES = ["", ".", "..", "..."];
 const DOTS_INTERVAL = 400;
 
+// throbber-widgets DIAMOND (MIT), rendered with OpenTUI like the model-loading icon.
+const DIAMOND = ["◇", "◈", "◆", "◈"];
+
+export function BasetenFirstTokenWait({ startedAt }: { startedAt: number }) {
+  const { colors } = useTheme();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 180);
+    return () => clearInterval(timer);
+  }, []);
+  const elapsed = Math.max(0, now - startedAt);
+  const seconds = Math.floor(elapsed / 1000);
+  const duration =
+    seconds < 60
+      ? `${seconds}s`
+      : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return (
+    <box
+      flexDirection="row"
+      marginTop={1}
+      marginLeft={2}
+      gap={1}
+      overflow="hidden"
+    >
+      <text fg={colors.primary} flexShrink={0}>
+        {DIAMOND[Math.floor(elapsed / 180) % DIAMOND.length]}
+      </text>
+      <text fg={colors.textMuted} flexShrink={1}>
+        Baseten · {duration} · Waiting for first token
+      </text>
+    </box>
+  );
+}
+
 export type LoadingState =
+  | "loading-model"
   | "thinking"
   | "compacting"
   | "executing"
@@ -48,7 +83,7 @@ export function LoadingIndicator({
 
   // Spinner animation
   useEffect(() => {
-    if (state === "compacting") return;
+    if (state === "compacting" || state === "loading-model") return;
     const interval = setInterval(() => {
       setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
     }, SPINNER_INTERVAL);
@@ -57,7 +92,7 @@ export function LoadingIndicator({
 
   // Dots animation
   useEffect(() => {
-    if (state === "compacting") return;
+    if (state === "compacting" || state === "loading-model") return;
     const interval = setInterval(() => {
       setDotsFrame((f) => (f + 1) % DOTS_FRAMES.length);
     }, DOTS_INTERVAL);
@@ -70,6 +105,8 @@ export function LoadingIndicator({
   // Build the message based on state
   const getMessage = () => {
     switch (state) {
+      case "loading-model":
+        return "Loading model weights";
       case "thinking":
         return `Thinking${dots}`;
       case "compacting":
@@ -106,6 +143,7 @@ export function LoadingIndicator({
       case "thinking":
         return colors.warning;
       case "compacting":
+      case "loading-model":
         return colors.primary;
       case "streaming":
         return colors.primary;
@@ -119,13 +157,23 @@ export function LoadingIndicator({
   };
 
   return (
-    <box flexDirection="row" marginTop={1} marginLeft={2} gap={1}>
-      {state === "compacting" ? (
+    <box
+      flexDirection="row"
+      marginTop={1}
+      marginLeft={2}
+      gap={1}
+      overflow="hidden"
+    >
+      {state === "loading-model" ? (
+        <ModelLoadingIcon fg={getColor()} />
+      ) : state === "compacting" ? (
         <CompactingIcon fg={getColor()} />
       ) : (
         <text fg={getColor()}>{spinner}</text>
       )}
-      <text fg={colors.textMuted}>{getMessage()}</text>
+      <text fg={colors.textMuted} flexShrink={1}>
+        {getMessage()}
+      </text>
     </box>
   );
 }

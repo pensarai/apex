@@ -1,7 +1,9 @@
 import {
   type AgentMode,
   buildBaseSystemPrompt,
+  type FindingPolicy,
 } from "../../../core/agents/offSecAgent";
+import type { Goal } from "../../../core/goals";
 import type {
   OperatorMode,
   OperatorSessionState,
@@ -14,6 +16,7 @@ import type { AutocompleteOption } from "../shared";
 
 const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/models",
+  "/effort",
   "/login",
   "/themes",
   "/new",
@@ -25,6 +28,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/obfuscate",
   "/headers",
   "/help",
+  "/goal",
 ]);
 
 export function filterOperatorAutocomplete(
@@ -39,10 +43,23 @@ export function filterOperatorAutocomplete(
 
 export type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
+export function shouldHandleQueuedMessageKey(
+  status: DashboardStatus,
+  queuedCount: number,
+  inputValue: string,
+  dialogOpen: boolean,
+): boolean {
+  return (
+    !dialogOpen && status === "running" && queuedCount > 0 && !inputValue.trim()
+  );
+}
+
 export function resolveOperatorAgentMode(
   operatorMode: OperatorMode,
   strikeMode: boolean,
+  lanceMode = false,
 ): AgentMode {
+  if (lanceMode) return "lance";
   if (operatorMode === "plan") return "plan";
   return strikeMode ? "fast-strike" : "default";
 }
@@ -62,6 +79,37 @@ export function resolveOperatorStrikeMode({
 }: StrikeModeResolutionInput): boolean {
   if (resuming) return savedSessionValue ?? false;
   return routeOverride ?? persistedDefault ?? false;
+}
+
+interface FindingPolicyResolutionInput {
+  resuming: boolean;
+  strikeMode: boolean;
+  lanceMode?: boolean;
+  savedSessionValue?: FindingPolicy;
+  routeOverride?: FindingPolicy;
+  persistedDefault?: FindingPolicy;
+}
+
+export function resolveOperatorFindingPolicy({
+  resuming,
+  strikeMode,
+  lanceMode,
+  savedSessionValue,
+  routeOverride,
+  persistedDefault,
+}: FindingPolicyResolutionInput): FindingPolicy {
+  if (!strikeMode && !lanceMode) return "native";
+  if (resuming) return savedSessionValue ?? "native";
+  return routeOverride ?? persistedDefault ?? "native";
+}
+
+export function resolveActiveFindingPolicy(
+  agentMode: AgentMode,
+  findingPolicy: FindingPolicy,
+): FindingPolicy {
+  return agentMode === "fast-strike" || agentMode === "lance"
+    ? findingPolicy
+    : "native";
 }
 
 export interface SubmitResult {
@@ -99,7 +147,46 @@ export type CommandAction =
   | { type: "open-session" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "headers"; op: HeadersOp }
+  | { type: "goal"; op: GoalOp }
   | { type: "execute-command"; command: string };
+
+export type GoalOp =
+  | { kind: "status" }
+  | { kind: "clear" }
+  | { kind: "set"; objective: string; maxRounds?: number }
+  | { kind: "invalid"; reason: string };
+
+export function goalStatusLine(goal: Goal): string {
+  const rounds = `${goal.rounds}/${goal.maxRounds} rounds`;
+  switch (goal.status) {
+    case "active":
+      return `Goal active (${rounds}): ${goal.objective}`;
+    case "complete":
+      return `Goal complete (${rounds}): ${goal.completion?.summary ?? ""}\nEvidence: ${goal.completion?.evidence.join(", ") ?? ""}`;
+    case "blocked":
+      return `Goal blocked: ${goal.reason}${goal.detail ? ` (${goal.detail})` : ""}`;
+    case "cancelled":
+      return "Goal ended.";
+  }
+}
+
+const GOAL_CLEAR_WORDS = new Set(["clear", "stop", "cancel", "off"]);
+
+export function parseGoalSlashCommand(rest: string): GoalOp {
+  const trimmed = rest.trim();
+  if (!trimmed) return { kind: "status" };
+  if (GOAL_CLEAR_WORDS.has(trimmed.toLowerCase())) return { kind: "clear" };
+  if (/(?:^|\s)--rounds=?$/.test(trimmed))
+    return { kind: "invalid", reason: "--rounds expects a whole number" };
+  const rounds = /(?:^|\s)--rounds(?:=|\s+)(\S+)/.exec(trimmed);
+  const objective = trimmed.replace(/(?:^|\s)--rounds(?:=|\s+)\S+/, "").trim();
+  if (!objective) return { kind: "invalid", reason: "expected an objective" };
+  if (!rounds) return { kind: "set", objective };
+  const maxRounds = Number(rounds[1]);
+  if (!Number.isInteger(maxRounds))
+    return { kind: "invalid", reason: "--rounds expects a whole number" };
+  return { kind: "set", objective, maxRounds };
+}
 
 function parseHeadersSlashCommand(rest: string): HeadersOp {
   const trimmed = rest.trim();
@@ -141,12 +228,20 @@ export function routeCommand(
   const stripped = command.trim().replace(/^\/+/, "");
   const commandLower = stripped.toLowerCase();
 
-  if (commandLower === "models" || commandLower === "model") {
+  if (
+    commandLower === "models" ||
+    commandLower === "model" ||
+    commandLower === "effort"
+  ) {
     return { type: "show-models" };
   }
 
   if (commandLower === "plan" || commandLower.startsWith("plan ")) {
     return { type: "show-plan" };
+  }
+
+  if (commandLower === "goal" || commandLower.startsWith("goal ")) {
+    return { type: "goal", op: parseGoalSlashCommand(stripped.slice(4)) };
   }
 
   if (commandLower === "open-session") {
@@ -286,6 +381,7 @@ export function buildOperatorSystemPrompt(
     existingPlanContent?: string | null;
     approvedPlanContent?: string | null;
     taskDriven?: boolean;
+    findingPolicy?: FindingPolicy;
   },
 ): string {
   const { skillsCatalog, activeSkillInstructions } = opts ?? {};
@@ -313,7 +409,7 @@ For each directive, run a tight loop:
 2. HYPOTHESIZE — choose the single most likely vulnerability or next pivot.
 3. ACT — use direct tools for quick probes, but treat the shell as a working environment rather than merely a way to issue one-off commands. When the work becomes stateful, repetitive, concurrent, protocol-heavy, or multi-stage, externalize it into an editable script in the session scratchpad directory identified in the Session Workspace or Working Directory section. Never create a scratchpad/ directory inside the target repository. Run the script, inspect the results, modify it, and rerun it as the attack develops.
 4. PRUNE — drop disproven leads instead of repeating them.
-5. EXPLOIT — preserve viable primitives and build on them. Prefer extending a working script into an end-to-end exploit over rebuilding the chain with repeated one-off tool calls or stopping at the next network or protocol boundary. Prove impact and document confirmed vulnerabilities.
+5. EXPLOIT — preserve viable primitives and build on them. Prefer extending a working script into an end-to-end exploit over rebuilding the chain with repeated one-off tool calls or stopping at the next network or protocol boundary. ${opts?.findingPolicy === "external" ? "Pursue the assigned objective and submit concise findings in the requested output format." : "Prove impact and document confirmed vulnerabilities."}
 
 Spend your reasoning on choosing techniques and interpreting evidence; use scripts for deterministic mechanics, iteration, and chain execution. Before stopping with the objective unmet, account for each viable primitive and pursue any concrete path that could still close it. Stop and summarize when the objective is met, credible leads are genuinely exhausted, or human input is needed. Stay in scope and never trade verification for speed.`;
     }
@@ -334,7 +430,7 @@ ${opts.approvedPlanContent}
   // Runtime execution facts and bundled assets are appended by the agent
   // harness after this persona (OffensiveSecurityAgent assembles the final
   // system prompt) — embedding them here would duplicate the blocks.
-  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode, findingPolicy: opts?.findingPolicy })}
 
 # Operator Mode
 

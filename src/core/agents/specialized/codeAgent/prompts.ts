@@ -46,3 +46,9 @@ Prefer catalog + code_query for sink-first work; use candidates to separate unve
 4. **Stay focused** — stick to your objective. Don't wander into unrelated areas of the codebase.
 5. **Be thorough** — don't stop at the first match. Make sure you've covered everything relevant to the objective.
 `;
+
+export const CODE_AGENT_EXTERNAL_SYSTEM_PROMPT =
+  CODE_AGENT_SYSTEM_PROMPT.replace(
+    "use candidates to separate unverified ideas from `document_vulnerability`",
+    "use candidates to separate unverified ideas from evidence-backed findings returned to the caller",
+  );

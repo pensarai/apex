@@ -82,6 +82,13 @@ export function withCachedSystemPrompt(
   messages: ModelMessage[],
   breakpoint: CacheBreakpoint | undefined,
 ): ModelMessage[] {
+  const first = messages[0];
+  if (first?.role === "system" && first.content === system) {
+    return [
+      ...withCachedLastMessage([first], breakpoint),
+      ...messages.slice(1),
+    ];
+  }
   return [
     {
       role: "system" as const,

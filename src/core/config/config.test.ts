@@ -8,7 +8,13 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { discoverOllama } from "../ollama";
 import { get, init, update } from "./config";
+
+vi.mock("../ollama", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ollama")>()),
+  discoverOllama: vi.fn(async () => undefined),
+}));
 
 let homeDirectory: string;
 const originalConcentrateAPIKey = process.env.CONCENTRATE_API_KEY;
@@ -30,6 +36,77 @@ afterEach(() => {
 });
 
 describe("provider environment fallbacks", () => {
+  it("loads Ollama at startup without persisting discovery or changing a manual local endpoint", async () => {
+    const ollama = {
+      baseURL: "http://127.0.0.1:11434",
+      models: [
+        {
+          id: "twil:8b",
+          contextLength: 32_768,
+          maxOutputTokens: 4096,
+          running: true,
+        },
+      ],
+    };
+    vi.mocked(discoverOllama).mockResolvedValueOnce(ollama);
+    await init();
+    await update({
+      localModelUrl: "http://localhost:1234/v1",
+      localModelName: "manual",
+    });
+    const loaded = await get();
+    expect(loaded.ollama).toEqual(ollama);
+    expect(loaded.localModelUrl).toBe("http://localhost:1234/v1");
+    await update({ selectedModelId: "ollama:twil:8b", ollama });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.ollama).toBeUndefined();
+    expect(persisted.localModelName).toBe("manual");
+    expect((await get()).ollama).toBeUndefined();
+  });
+  it("discovers a dedicated Baseten endpoint alongside a saved custom provider", async () => {
+    vi.stubEnv(
+      "BASETEN_BASE_URL",
+      "https://model-test.api.baseten.co/deployment/example/sync/v1",
+    );
+    vi.stubEnv("BASETEN_API_KEY", "config-test");
+    vi.stubEnv("HOONIFY_API_KEY", "");
+    const saved = {
+      baseUrl: "https://research.example/v1",
+      models: [{ id: "manual", contextLength: 4096, maxOutputTokens: 512 }],
+    };
+    await init();
+    await update({ customProviders: { "baseten-research": saved } });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        data: [{ id: "nyx", context_length: 262144 }],
+      }),
+    );
+    const loaded = await get();
+    expect(loaded.customProviders?.["baseten-research"]).toEqual(saved);
+    expect(loaded.customProviders?.baseten?.models[0].id).toBe("nyx");
+  });
+  it("loads an Exa environment key and prefers a persisted key without saving the environment key", async () => {
+    vi.stubEnv("EXA_API_KEY", "exa-env-key");
+    expect((await get()).exaAPIKey).toBe("exa-env-key");
+    await update({ selectedModelId: "test-model" });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.exaAPIKey).toBeUndefined();
+
+    await update({ exaAPIKey: "exa-saved-key" });
+    expect((await get()).exaAPIKey).toBe("exa-saved-key");
+  });
+
+  it("loads an Inference.net environment key and prefers a persisted key", async () => {
+    vi.stubEnv("INFERENCE_API_KEY", "inference-env-key");
+    expect((await get()).inferenceAPIKey).toBe("inference-env-key");
+    await update({ inferenceAPIKey: "inference-saved-key" });
+    expect((await get()).inferenceAPIKey).toBe("inference-saved-key");
+  });
+
   it("loads a Concentrate API key from the environment", async () => {
     process.env.CONCENTRATE_API_KEY = "sk-cn-env";
 
@@ -166,6 +243,41 @@ describe("Strike Mode config", () => {
       readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
     ) as { strikeMode?: boolean };
     expect(persisted.strikeMode).toBe(true);
+  });
+});
+
+describe("finding policy config", () => {
+  it("defaults to Apex finding review for new and legacy installations", async () => {
+    expect((await init()).findingPolicy).toBe("native");
+
+    writeFileSync(
+      path.join(homeDirectory, ".pensar", "config.json"),
+      JSON.stringify({ responsibleUseAccepted: true }),
+    );
+    expect((await get()).findingPolicy).toBe("native");
+  });
+
+  it("persists external evaluation across a fresh config load", async () => {
+    await init();
+    await update({ findingPolicy: "external" });
+
+    vi.resetModules();
+    const { get: getReloadedConfig } = await import("./config");
+    expect((await getReloadedConfig()).findingPolicy).toBe("external");
+
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    ) as { findingPolicy?: string };
+    expect(persisted.findingPolicy).toBe("external");
+  });
+
+  it("ignores an invalid stored policy", async () => {
+    await init();
+    writeFileSync(
+      path.join(homeDirectory, ".pensar", "config.json"),
+      JSON.stringify({ findingPolicy: "unknown" }),
+    );
+    expect((await get()).findingPolicy).toBe("native");
   });
 });
 

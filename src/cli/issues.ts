@@ -7,7 +7,9 @@
  *
  * Usage:
  *   pensar issues [filters]                       List issues in the workspace
- *   pensar issues get <issueId>                   Get issue details
+ *   pensar issues get <issueId> [--json]          Get issue details
+ *   pensar issues evidence <issueId> [--json]     Get finding evidence
+ *   pensar issues retests <issueId> [--json]      List retest history
  *   pensar issues update <issueId> [opts]         Update an issue
  *   pensar issues retest <issueId>                Retest an issue
  *   pensar issues link-pr <issueId> --url <url>   Link a pull request to an issue
@@ -21,9 +23,11 @@ import {
   CLOSED_DISPOSITIONS,
   createIssueComment,
   getIssue,
+  getIssueEvidence,
   linkPullRequest,
   listIssueComments,
   listIssuePullRequests,
+  listIssueRetests,
   listIssues,
   retestIssue,
   updateIssue,
@@ -42,7 +46,9 @@ All commands operate on the selected workspace (set via \`pensar login\`).
 
 Usage:
   pensar issues [filters]                        List issues in the workspace
-  pensar issues get <issueId>                    Get issue details
+  pensar issues get <issueId> [--json]           Get issue details
+  pensar issues evidence <issueId> [--json]      Get finding evidence
+  pensar issues retests <issueId> [--json]       List retest history
   pensar issues update <issueId> [options]       Update an issue
   pensar issues retest <issueId>                 Retest an issue
   pensar issues link-pr <issueId> --url <url>    Link a pull request to an issue
@@ -52,8 +58,8 @@ Usage:
 
 <issueId> accepts the issue UUID or its label (e.g. VULN-000123).
 
-Issue responses include "issueLabel" (e.g. VULN-000123, null for issues created
-before labels existed) and "url", a deep link to the issue in the Console.
+Issue details include "label" (e.g. VULN-000123) and "url", a deep link to the
+issue in the Console. Lists include the label as "issueLabel".
 
 List filters:
   --status <status>     Filter: open, closed, false-positive, in-review
@@ -86,7 +92,32 @@ Comments are returned oldest first. Posting requires a user login; a workspace
 API key has no author to attribute a comment to.
 
 Options:
+  --json                   Print the unchanged API JSON for get, evidence, retests
   -h, --help                Show this help message`);
+}
+
+function formatIssueRead(value: unknown, indent = ""): string {
+  if (value === null) return "None";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "None";
+    return value
+      .map(
+        (entry, index) =>
+          `${indent}${index + 1}. ${formatIssueRead(entry, `${indent}   `).trimStart()}`,
+      )
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, entry]) => {
+        const label = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+        const heading = label.charAt(0).toUpperCase() + label.slice(1);
+        const nested = entry !== null && typeof entry === "object";
+        return `${indent}${heading}:${nested ? "\n" : " "}${formatIssueRead(entry, nested ? `${indent}  ` : indent)}`;
+      })
+      .join("\n");
+  }
+  return String(value).replace(/\n/g, `\n${indent}`);
 }
 
 async function main(): Promise<void> {
@@ -101,15 +132,24 @@ async function main(): Promise<void> {
   }
 
   try {
-    if (sub === "get") {
+    if (sub === "get" || sub === "evidence" || sub === "retests") {
       const issueId = args[1];
-      if (!issueId) {
+      if (!issueId || issueId.startsWith("-")) {
         console.error("Error: issue ID is required");
-        console.error("Usage: pensar issues get <issueId>");
+        console.error(`Usage: pensar issues ${sub} <issueId> [--json]`);
         return markCommandFailed();
       }
-      const issue = await getIssue(issueId);
-      console.log(JSON.stringify(issue, null, 2));
+      const result =
+        sub === "get"
+          ? await getIssue(issueId)
+          : sub === "evidence"
+            ? await getIssueEvidence(issueId)
+            : await listIssueRetests(issueId);
+      console.log(
+        args.includes("--json")
+          ? JSON.stringify(result, null, 2)
+          : formatIssueRead(result),
+      );
     } else if (sub === "update") {
       const issueId = args[1];
       if (!issueId) {

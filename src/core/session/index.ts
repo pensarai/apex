@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ModelMessage } from "ai";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
+import { lanceBudgetSchema } from "../agents/lanceBudget";
 import type { AIAuthConfig, AIModel } from "../ai";
 import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
@@ -96,6 +97,9 @@ const OperatorSettingsObject = z.object({
   enableSuggestions: z.boolean().default(true),
   /** Run the top-level operator as a focused solo researcher without orchestration tools. */
   strikeMode: z.boolean().optional(),
+  lanceMode: z.boolean().optional(),
+  lanceBudget: lanceBudgetSchema.optional(),
+  findingPolicy: z.enum(["native", "external"]).optional(),
 });
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
@@ -216,6 +220,23 @@ function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
 }
 
 const SessionConfigObject = z.object({
+  modelReasoning: z
+    .object({
+      model: z.string(),
+      setting: z.enum([
+        "default",
+        "enabled",
+        "disabled",
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ]),
+    })
+    .optional(),
   /**
    * Custom HTTP headers for outbound target requests. Snapshotted from
    * `config.defaultHeaders` at create time; read via the resolver in
@@ -259,6 +280,22 @@ const SessionConfigObject = z.object({
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   codebasePath: z.string().optional(),
+  /**
+   * Repositories the owning workspace has connected. The generalized
+   * attack-surface agent's `clone_repository` tool only clones a repository
+   * present in this allowlist, so a target that serves attacker-controlled
+   * content cannot coerce the agent into cloning an arbitrary URL.
+   */
+  connectedRepositories: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        url: z.string(),
+        defaultBranch: z.string().optional(),
+      }),
+    )
+    .optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
   /** SMTP config for outbound email (direct SMTP or Resend via SMTP) */
@@ -989,6 +1026,7 @@ export async function updateOperatorSettings(
         requireApproval: true,
         enableSuggestions: true,
         strikeMode: false,
+        findingPolicy: "native",
       };
     }
 
@@ -1004,8 +1042,19 @@ export async function updateOperatorSettings(
       session.config.operatorSettings.enableSuggestions =
         settings.enableSuggestions;
     }
+    if (settings.lanceBudget !== undefined) {
+      session.config.operatorSettings.lanceBudget = lanceBudgetSchema.parse(
+        settings.lanceBudget,
+      );
+    }
+    if (settings.lanceMode !== undefined) {
+      session.config.operatorSettings.lanceMode = settings.lanceMode;
+    }
     if (settings.strikeMode !== undefined) {
       session.config.operatorSettings.strikeMode = settings.strikeMode;
+    }
+    if (settings.findingPolicy !== undefined) {
+      session.config.operatorSettings.findingPolicy = settings.findingPolicy;
     }
   });
 }
@@ -1082,4 +1131,16 @@ export const sessions = {
   getResumeMessages,
   updateOperatorSettings,
   updateSessionHeaders,
+  updateModelReasoning,
 };
+
+export async function updateModelReasoning(
+  id: string,
+  model: string,
+  setting: NonNullable<SessionConfig["modelReasoning"]>["setting"],
+): Promise<SessionInfo> {
+  return update(id, (session) => {
+    session.config ??= {};
+    session.config.modelReasoning = { model, setting };
+  });
+}

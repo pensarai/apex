@@ -1,8 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { type LanceBudget, lanceBudgetSchema } from "../agents/lanceBudget";
+import type { FindingPolicy } from "../agents/offSecAgent";
+import type { ReasoningSetting } from "../ai";
 import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
+import { discoverOllama, type OllamaCatalog } from "../ollama";
+import { discoverBaseten } from "./baseten";
 import {
   type CustomProviders,
   loadCustomProviders,
@@ -13,6 +18,8 @@ const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
   defaultHeaders: { "User-Agent": "pensar-apex" },
   strikeMode: false,
+  lanceMode: false,
+  findingPolicy: "native",
 };
 
 export interface Config {
@@ -22,11 +29,13 @@ export interface Config {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
+  inferenceAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   hoonifyAPIKey?: string | null;
   /** Runtime catalog; fetched using the current key and never persisted. */
   hoonifyModels?: HoonifyModel[];
   hoonifyCatalogError?: string;
+  basetenCatalogError?: string;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
   customProviders?: CustomProviders;
@@ -37,9 +46,12 @@ export interface Config {
   runloopAPIKey?: string | null;
   // Direct search
   braveAPIKey?: string | null;
+  exaAPIKey?: string | null;
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
+  /** Discovered on this machine; never persisted. */
+  ollama?: OllamaCatalog;
   // Theme preferences
   theme?: string;
   themeMode?: "dark" | "light" | "auto";
@@ -50,8 +62,10 @@ export interface Config {
   recentModelIds?: string[];
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
+  modelReasoning?: Record<string, ReasoningSetting>;
   openAIReasoningEffort?:
     | "none"
+    | "minimal"
     | "low"
     | "medium"
     | "high"
@@ -61,10 +75,15 @@ export interface Config {
     | null;
   // Default workflow for newly created TUI operator sessions.
   strikeMode?: boolean;
+  lanceMode?: boolean;
+  lanceBudget?: LanceBudget;
+  findingPolicy?: FindingPolicy;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
   // Defaults to true when unset.
   surfaceIntegrationEnabled?: boolean;
+  // Persistent goals (/goal in the operator). Defaults to true when unset.
+  goalsEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -125,9 +144,18 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     defaultHeaders:
       parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     strikeMode: parsedConfig.strikeMode ?? DEFAULT_CONFIG.strikeMode,
+    lanceMode: parsedConfig.lanceMode === true,
+    lanceBudget:
+      parsedConfig.lanceBudget === undefined
+        ? undefined
+        : lanceBudgetSchema.parse(parsedConfig.lanceBudget),
+    findingPolicy:
+      parsedConfig.findingPolicy === "external" ? "external" : "native",
     surfaceIntegrationEnabled:
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
+    goalsEnabled:
+      parsedConfig.goalsEnabled ?? parseBoolEnv(process.env.PENSAR_GOALS),
     version,
     customProviders: loadCustomProviders(parsedConfig.customProviders),
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
@@ -139,10 +167,13 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
     concentrateAPIKey:
       parsedConfig.concentrateAPIKey ?? process.env.CONCENTRATE_API_KEY,
+    inferenceAPIKey:
+      parsedConfig.inferenceAPIKey ?? process.env.INFERENCE_API_KEY,
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     hoonifyAPIKey: parsedConfig.hoonifyAPIKey ?? process.env.HOONIFY_API_KEY,
     hoonifyModels: undefined,
+    ollama: undefined,
     hoonifyCatalogError: undefined,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,
     pensarAPIKey: parsedConfig.pensarAPIKey ?? process.env.PENSAR_API_KEY,
@@ -150,6 +181,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     daytonaOrgId: parsedConfig.daytonaOrgId ?? process.env.DAYTONA_ORG_ID,
     runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
     braveAPIKey: parsedConfig.braveAPIKey ?? process.env.BRAVE_API_KEY,
+    exaAPIKey: parsedConfig.exaAPIKey ?? process.env.EXA_API_KEY,
   };
 }
 
@@ -175,6 +207,18 @@ export async function get(): Promise<Config> {
           : "Could not load Hoonify models.";
     }
   }
+  try {
+    loaded.customProviders = {
+      ...(await discoverBaseten()),
+      ...loaded.customProviders,
+    };
+  } catch (error) {
+    loaded.basetenCatalogError =
+      error instanceof Error
+        ? error.message
+        : "Could not discover Baseten models.";
+  }
+  loaded.ollama = await discoverOllama();
   return loaded;
 }
 
@@ -195,7 +239,9 @@ export async function update(config: Partial<Config>) {
     ? JSON.parse(await fs.readFile(file, "utf8"))
     : DEFAULT_CONFIG;
   const newConfig = { ...currentConfig, ...config };
+  delete newConfig.ollama;
   delete newConfig.hoonifyModels;
   delete newConfig.hoonifyCatalogError;
+  delete newConfig.basetenCatalogError;
   await fs.writeFile(file, JSON.stringify(newConfig));
 }

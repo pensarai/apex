@@ -220,6 +220,11 @@ export function planRunRecovery(input: RecoveryPlanInput): RecoveryPlan {
         "execute_command was used by this run; shell/background state cannot be reconciled",
       );
     }
+    if (op.toolName === "exec" || op.toolName === "wait") {
+      blockers.push(
+        "Code-mode cells and stored state cannot be restored after a process restart",
+      );
+    }
     if (
       op.context.epoch > context.epoch ||
       op.context.revision > context.revision

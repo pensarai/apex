@@ -17,7 +17,7 @@ describe("cacheBreakpointFor", () => {
     "global.anthropic.claude-opus-4-6-v1",
     "global.anthropic.claude-opus-4-8",
     "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "anthropic.claude-sonnet-4-6-v1",
+    "anthropic.claude-sonnet-4-6",
   ])("uses the bedrock cachePoint namespace for %s", (model) => {
     expect(cacheBreakpointFor(model)).toEqual(BEDROCK_BREAKPOINT);
   });
@@ -114,6 +114,49 @@ describe("withCachedSystemPrompt", () => {
   it("omits providerOptions when the model has no breakpoint", () => {
     const result = withCachedSystemPrompt("be helpful", messages, undefined);
     expect(result[0]).not.toHaveProperty("providerOptions");
+  });
+});
+
+describe("cached system recovery", () => {
+  it.each([
+    ANTHROPIC_BREAKPOINT,
+    BEDROCK_BREAKPOINT,
+  ])("reuses the system boundary and preserves provider siblings", (breakpoint) => {
+    const messages: ModelMessage[] = [
+      {
+        role: "system",
+        content: "same system",
+        providerOptions: { bedrock: { citations: { enabled: true } } },
+      },
+      { role: "user", content: "history" },
+    ];
+    const original = structuredClone(messages);
+    let result = messages;
+    for (let i = 0; i < 5; i++) {
+      result = withCachedSystemPrompt("same system", result, breakpoint);
+    }
+    expect(result).toHaveLength(2);
+    expect(result[0].providerOptions?.bedrock?.citations).toEqual({
+      enabled: true,
+    });
+    expect(result[0].providerOptions).toMatchObject(breakpoint);
+    expect(result[1]).toBe(messages[1]);
+    expect(messages).toEqual(original);
+  });
+
+  it("preserves a different leading system instruction", () => {
+    const messages: ModelMessage[] = [
+      { role: "system", content: "other instruction" },
+    ];
+    const result = withCachedSystemPrompt(
+      "system",
+      messages,
+      BEDROCK_BREAKPOINT,
+    );
+    expect(result.map((message) => message.content)).toEqual([
+      "system",
+      "other instruction",
+    ]);
   });
 });
 

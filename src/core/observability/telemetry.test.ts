@@ -31,47 +31,87 @@ const { requireSpan, startOtelTestHarness } = await import("./testkit");
 
 const MODEL = "claude-haiku-4-5";
 
+// Compaction streams now, so the summarizer answers on doStream alongside the
+// resumed agent turn; its request carries the compaction instruction.
+function isSummaryCall(options: { prompt: unknown }): boolean {
+  return JSON.stringify(options.prompt).includes("Compact this conversation");
+}
+
+function summaryStream(
+  text: string,
+  usage: unknown,
+  providerMetadata?: Record<string, unknown>,
+) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start", warnings: [] },
+        { type: "text-start", id: "s" },
+        { type: "text-delta", id: "s", delta: text },
+        { type: "text-end", id: "s" },
+        {
+          type: "finish",
+          finishReason: { unified: "stop", raw: "stop" },
+          usage,
+          providerMetadata,
+        },
+      ] as unknown as Array<LanguageModelV3StreamPart>,
+    }),
+  };
+}
+
+function summarySpan<
+  T extends { name: string; attributes: Record<string, unknown> },
+>(spans: readonly T[]): T {
+  const span = spans.find(
+    (s) =>
+      s.name.endsWith(".doStream") &&
+      s.attributes["ai.telemetry.functionId"] === "apex.context.summarize",
+  );
+  if (!span) throw new Error("no summarizer model span");
+  return span;
+}
+
 function oneStepTextModel(): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     provider: "mock-anthropic",
     modelId: MODEL,
-    doGenerate: async () => ({
-      content: [{ type: "text", text: "summary" }],
-      finishReason: { unified: "stop", raw: "stop" },
-      warnings: [],
-      usage: {
-        inputTokens: {
-          total: 500,
-          noCache: 500,
-          cacheRead: 0,
-          cacheWrite: 0,
-        },
-        outputTokens: { total: 20, text: 20, reasoning: undefined },
-      },
-    }),
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          { type: "stream-start", warnings: [] },
-          { type: "text-start", id: "t" },
-          { type: "text-delta", id: "t", delta: "hello" },
-          { type: "text-end", id: "t" },
-          {
-            type: "finish",
-            finishReason: { unified: "stop", raw: "stop" },
-            usage: {
-              inputTokens: {
-                total: 1000,
-                noCache: 100,
-                cacheRead: 900,
-                cacheWrite: 0,
-              },
-              outputTokens: { total: 20, text: 20, reasoning: undefined },
-            },
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        return summaryStream("summary", {
+          inputTokens: {
+            total: 500,
+            noCache: 500,
+            cacheRead: 0,
+            cacheWrite: 0,
           },
-        ] as unknown as Array<LanguageModelV3StreamPart>,
-      }),
-    }),
+          outputTokens: { total: 20, text: 20, reasoning: undefined },
+        });
+      }
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "stream-start", warnings: [] },
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "hello" },
+            { type: "text-end", id: "t" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage: {
+                inputTokens: {
+                  total: 1000,
+                  noCache: 100,
+                  cacheRead: 900,
+                  cacheWrite: 0,
+                },
+                outputTokens: { total: 20, text: 20, reasoning: undefined },
+              },
+            },
+          ] as unknown as Array<LanguageModelV3StreamPart>,
+        }),
+      };
+    },
   });
 }
 
@@ -333,10 +373,7 @@ describe("model-call helpers", () => {
     );
     await drain(stream);
 
-    const span = requireSpan(
-      otel.getFinishedSpans(),
-      "ai.generateText.doGenerate",
-    );
+    const span = summarySpan(otel.getFinishedSpans());
     expect(span.attributes["ai.telemetry.functionId"]).toBe(
       "apex.context.summarize",
     );
@@ -350,14 +387,18 @@ describe("model-call helpers", () => {
       {
         prompt: "resume",
         model: "z-ai/glm-5.3",
+        reasoning: "low",
         silent: true,
       },
       mockState.model,
     );
     await drain(stream);
 
-    expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
+    expect(
+      mockState.model.doStreamCalls.find(isSummaryCall)?.providerOptions,
+    ).toEqual({
       openrouter: {
+        reasoning: { effort: "low", enabled: true },
         provider: {
           only: ["z-ai"],
           allow_fallbacks: false,
@@ -396,11 +437,17 @@ describe("model-call helpers", () => {
   it("keeps GLM streaming pinned to Z.ai", async () => {
     mockState.model = oneStepTextModel();
     await drain(
-      streamResponse({ prompt: "hi", model: "z-ai/glm-5.2", silent: true }),
+      streamResponse({
+        prompt: "hi",
+        model: "z-ai/glm-5.2",
+        reasoning: "xhigh",
+        silent: true,
+      }),
     );
 
     expect(mockState.model.doStreamCalls[0]?.providerOptions).toEqual({
       openrouter: {
+        reasoning: { effort: "xhigh", enabled: true },
         provider: {
           only: ["z-ai"],
           allow_fallbacks: false,
@@ -413,12 +460,14 @@ describe("model-call helpers", () => {
     mockState.model = generateModel();
     await generateObjectResponse({
       model: "z-ai/glm-5.2",
+      reasoning: "xhigh",
       schema: z.object({ result: z.string() }),
       prompt: "hi",
     });
 
     expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
       openrouter: {
+        reasoning: { effort: "xhigh", enabled: true },
         provider: {
           order: ["z-ai"],
           allow_fallbacks: true,
@@ -434,6 +483,7 @@ describe("model-call helpers", () => {
       streamResponse({
         prompt: "hi",
         model: "z-ai/glm-5.3",
+        reasoning: "low",
         silent: true,
         tools: {
           probe: {
@@ -448,6 +498,7 @@ describe("model-call helpers", () => {
 
     expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
       openrouter: {
+        reasoning: { effort: "low", enabled: true },
         provider: {
           only: ["z-ai"],
           allow_fallbacks: false,
@@ -597,44 +648,46 @@ function generateAndStreamModel(): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     provider: "mock-anthropic",
     modelId: MODEL,
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          { type: "stream-start", warnings: [] },
-          { type: "text-start", id: "t" },
-          { type: "text-delta", id: "t", delta: "resumed" },
-          { type: "text-end", id: "t" },
+    doStream: async (options) => {
+      if (isSummaryCall(options)) {
+        return summaryStream(
+          "summary text",
           {
-            type: "finish",
-            finishReason: { unified: "stop", raw: "stop" },
-            usage: {
-              inputTokens: {
-                total: 100,
-                noCache: 100,
-                cacheRead: 0,
-                cacheWrite: 0,
-              },
-              outputTokens: { total: 5, text: 5, reasoning: undefined },
+            inputTokens: {
+              total: 500,
+              noCache: 100,
+              cacheRead: 400,
+              cacheWrite: 7,
             },
+            outputTokens: { total: 40, text: 40, reasoning: undefined },
           },
-        ] as unknown as Array<LanguageModelV3StreamPart>,
-      }),
-    }),
-    doGenerate: async () => ({
-      content: [{ type: "text", text: "summary text" }],
-      finishReason: { unified: "stop", raw: "stop" },
-      warnings: [],
-      usage: {
-        inputTokens: {
-          total: 500,
-          noCache: 100,
-          cacheRead: 400,
-          cacheWrite: 7,
-        },
-        outputTokens: { total: 40, text: 40, reasoning: undefined },
-      },
-      providerMetadata: { anthropic: { cacheReadInputTokens: 400 } },
-    }),
+          { anthropic: { cacheReadInputTokens: 400 } },
+        );
+      }
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "stream-start", warnings: [] },
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "resumed" },
+            { type: "text-end", id: "t" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage: {
+                inputTokens: {
+                  total: 100,
+                  noCache: 100,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
+                outputTokens: { total: 5, text: 5, reasoning: undefined },
+              },
+            },
+          ] as unknown as Array<LanguageModelV3StreamPart>,
+        }),
+      };
+    },
   });
 }
 

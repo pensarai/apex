@@ -312,6 +312,19 @@ describe("resolveItemHooks recorder scope", () => {
   });
 });
 
+it("does not let a per-item hook re-enable native finding judging under an external run", () => {
+  const seams = inProcessSeams({
+    hooksForItem: () => ({ findingPolicy: "native" }),
+  });
+  const child = resolveItemHooks(
+    { findingPolicy: "external" },
+    seams,
+    "target",
+    0,
+  );
+  expect(child.findingPolicy).toBe("external");
+});
+
 it("requires a child inference binding instead of inheriting the parent's journal", () => {
   const recorder: InferenceRecorder = {
     runId: "parent",

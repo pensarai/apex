@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { CreateAgentInput } from "../agents/offSecAgent";
+import { sessions } from "../session";
 import {
   createOffensiveSecurityAgentClient,
   type OffensiveSecurityAgentClientInput,
@@ -80,6 +81,7 @@ function existingSessionInput(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   Fake.order.length = 0;
   Fake.instances.length = 0;
   Fake.createGate = null;
@@ -88,6 +90,55 @@ beforeEach(() => {
 });
 
 describe("runOffensiveSecurityAgent", () => {
+  it("restores the session's effort only for the matching model", async () => {
+    const session = {
+      id: "ses_existing",
+      config: { modelReasoning: { model: "gpt-6.1-sol", setting: "low" } },
+    };
+    await runOffensiveSecurityAgent(
+      existingSessionInput({ model: "gpt-6.1-sol", session }) as never,
+    );
+    expect(Fake.instances[0].input.reasoning).toBe("low");
+    await runOffensiveSecurityAgent(
+      existingSessionInput({ model: "gemini-3-pro-preview", session }) as never,
+    );
+    expect(Fake.instances[1].input.reasoning).toBeUndefined();
+  });
+
+  it("persists an explicit override before starting the resumed agent", async () => {
+    const session = {
+      id: "ses_existing",
+      config: { modelReasoning: { model: "gpt-6.1-sol", setting: "low" } },
+    };
+    const update = vi
+      .spyOn(sessions, "updateModelReasoning")
+      .mockResolvedValue({
+        ...session,
+        config: { modelReasoning: { model: "gpt-6.1-sol", setting: "high" } },
+      } as never);
+    await runOffensiveSecurityAgent(
+      existingSessionInput({
+        model: "gpt-6.1-sol",
+        session,
+        reasoning: "high",
+      }) as never,
+    );
+    expect(update).toHaveBeenCalledWith("ses_existing", "gpt-6.1-sol", "high");
+    expect(Fake.instances[0].input.reasoning).toBe("high");
+  });
+
+  it("rejects unsupported explicit effort before constructing an agent", async () => {
+    await expect(
+      runOffensiveSecurityAgent(
+        existingSessionInput({
+          model: "gemini-3-pro-preview",
+          reasoning: "max",
+        }) as never,
+      ),
+    ).rejects.toThrow("not supported");
+    expect(Fake.instances).toHaveLength(0);
+  });
+
   it("constructs synchronously for a pre-existing session and fires onSessionReady before consume", async () => {
     const onSessionReady = vi.fn(() => Fake.order.push("onSessionReady"));
     const running = runOffensiveSecurityAgent(

@@ -1,3 +1,10 @@
+import {
+  DEFAULT_LANCE_BUDGET,
+  type LanceBudget,
+} from "../../../core/agents/lanceBudget";
+import { getSavedReasoning } from "../../../core/cli/reasoning";
+import type { PendingModelLoad } from "../../../core/eventBus";
+import { useToast } from "../../context/toast";
 /**
  * Operator Dashboard
  *
@@ -29,20 +36,36 @@ import {
   type AgentMode,
   ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
+  type FindingPolicy,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../core/agents/offSecAgent";
-import {
-  buildAuthConfig,
-  getContextWindow,
-  modelSupportsOpenAIReasoning,
-  modelSupportsThinking,
-  normalizeStepUsage,
-} from "../../../core/ai";
+import { buildAuthConfig, normalizeStepUsage } from "../../../core/ai";
 import {
   createOffensiveSecurityAgentClient,
   type RunAgentResult,
 } from "../../../core/api";
+import {
+  continuationMessage,
+  createFileGoalHost,
+  createGoal,
+  createUpdateGoalTool,
+  endGoal,
+  GOAL_LIMITS,
+  type Goal,
+  type GoalNext,
+  goalPromptSection,
+  goalStopCondition,
+  isGoalControlMessage,
+  kickoffMessage,
+  newGoalSchema,
+  readGoalFile,
+  scheduleGoalNext,
+  settleGoalTurn,
+  turnFactsFromMessages,
+  UPDATE_GOAL_TOOL_NAME,
+  writeGoalFile,
+} from "../../../core/goals";
 import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
 import {
   isSensitiveHeaderName,
@@ -107,13 +130,17 @@ import {
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  goalStatusLine,
   resolveAbortAction,
+  resolveActiveFindingPolicy,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveOperatorAgentMode,
+  resolveOperatorFindingPolicy,
   resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
+  shouldHandleQueuedMessageKey,
 } from "./logic";
 import {
   createQueuedMessage,
@@ -159,6 +186,9 @@ export default function OperatorDashboard({
     target?: string;
     operatorMode?: OperatorMode;
     strikeMode?: boolean;
+    lanceMode?: boolean;
+    lanceBudget?: LanceBudget;
+    findingPolicy?: FindingPolicy;
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
@@ -166,6 +196,10 @@ export default function OperatorDashboard({
   };
 }) {
   const { colors } = useTheme();
+  const { toast } = useToast();
+  const [modelLoading, setModelLoading] = useState<PendingModelLoad | null>(
+    null,
+  );
   const route = useRoute();
   const config = useConfig();
   const {
@@ -177,8 +211,8 @@ export default function OperatorDashboard({
     usageStore,
     markExecuted,
     setSessionCwd,
-    reasoningEnabled,
-    openAIReasoningEffort,
+    reasoning: preferredReasoning,
+    setReasoning,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -198,6 +232,16 @@ export default function OperatorDashboard({
   const { refocusPromptIfNoActiveEditor } = useFocus();
   const herdr = useHerdr();
   const { enabled: obfuscateEnabled } = useObfuscation();
+  const [lanceBudget, setLanceBudget] = useState(
+    initialConfig?.lanceBudget ??
+      config.data.lanceBudget ??
+      DEFAULT_LANCE_BUDGET,
+  );
+  const [lanceMode, setLanceMode] = useState(
+    sessionId
+      ? false
+      : (initialConfig?.lanceMode ?? config.data.lanceMode ?? false),
+  );
   const initialStrikeModeRef = useRef(
     resolveOperatorStrikeMode({
       resuming: !!sessionId,
@@ -206,18 +250,36 @@ export default function OperatorDashboard({
     }),
   );
   const [strikeMode, setStrikeMode] = useState(initialStrikeModeRef.current);
+  const initialFindingPolicyRef = useRef(
+    resolveOperatorFindingPolicy({
+      resuming: !!sessionId,
+      strikeMode: initialStrikeModeRef.current,
+      lanceMode,
+      routeOverride: initialConfig?.findingPolicy,
+      persistedDefault: config.data.findingPolicy,
+    }),
+  );
+  const [findingPolicy, setFindingPolicy] = useState(
+    initialFindingPolicyRef.current,
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(
       allAutocompleteOptions,
-    ).filter((option) => !strikeMode || option.value !== "/pentest");
+    ).filter(
+      (option) =>
+        (!strikeMode || option.value !== "/pentest") &&
+        (!lanceMode ||
+          !["/pentest", "/plan", "/skills"].includes(option.value)),
+    );
     const skillOptions = skillsRegistry
       .list()
       .filter(
         (skill) =>
-          !strikeMode ||
-          (skill.slug !== "pentest" && skill.slug !== "threat-model"),
+          !lanceMode &&
+          (!strikeMode ||
+            (skill.slug !== "pentest" && skill.slug !== "threat-model")),
       )
       .map((skill) => {
         const slug = `/${skill.slug}`;
@@ -235,7 +297,13 @@ export default function OperatorDashboard({
       },
     ];
     return [...commandOptions, ...operatorOnlyOptions, ...skillOptions];
-  }, [allAutocompleteOptions, skillsRegistry, skillsVersion, strikeMode]);
+  }, [
+    allAutocompleteOptions,
+    skillsRegistry,
+    skillsVersion,
+    strikeMode,
+    lanceMode,
+  ]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -255,6 +323,11 @@ export default function OperatorDashboard({
     typeof createOffensiveSecurityAgentClient
   > | null>(null);
   const generationRef = useRef(0);
+  // goal.json is the durable copy; this holds a goal set before the session exists.
+  const goalRef = useRef<Goal | null>(null);
+  const goalsEnabled = config.data?.goalsEnabled !== false;
+  const goalNextRef = useRef<GoalNext | null>(null);
+  const resumeGoalRef = useRef(false);
 
   // Two-stage abort: first Ctrl+C cancels the running command, second kills the agent.
   // The agent populates cancelHandle.cancel with the shell's cancel function.
@@ -360,6 +433,11 @@ export default function OperatorDashboard({
   const agentMode: AgentMode = resolveOperatorAgentMode(
     operatorMode,
     strikeMode,
+    lanceMode,
+  );
+  const activeFindingPolicy = resolveActiveFindingPolicy(
+    agentMode,
+    findingPolicy,
   );
   const requireApproval = operatorMode === "manual";
   // Plan mode review state
@@ -418,6 +496,32 @@ export default function OperatorDashboard({
     };
   }, []);
 
+  const restoredReasoningSession = useRef<string | null>(null);
+  const savedReasoning = session?.config?.modelReasoning;
+  const restoredPreference =
+    savedReasoning?.model === model.id
+      ? getSavedReasoning(model.id, {
+          customProviders: config.data.customProviders,
+          modelReasoning: { [model.id]: savedReasoning.setting },
+        })
+      : undefined;
+  // An auto-started resumed turn can precede the preference write completing.
+  const reasoning =
+    session && restoredReasoningSession.current !== session.id
+      ? (restoredPreference ?? preferredReasoning)
+      : preferredReasoning;
+  useEffect(() => {
+    if (!session || restoredReasoningSession.current === session.id) return;
+    if (
+      restoredPreference !== undefined &&
+      restoredPreference !== preferredReasoning
+    ) {
+      setReasoning(restoredPreference);
+    } else {
+      restoredReasoningSession.current = session.id;
+    }
+  }, [session, restoredPreference, preferredReasoning, setReasoning]);
+
   // Load existing session or initialise operator state for a new one.
   // New sessions are created lazily by the agent on the first runAgent call.
   useEffect(() => {
@@ -426,11 +530,27 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          goalRef.current = readGoalFile(s.rootPath);
+          resumeGoalRef.current = goalRef.current?.status === "active";
+          setLanceBudget(
+            s.config?.operatorSettings?.lanceBudget ?? DEFAULT_LANCE_BUDGET,
+          );
+          setLanceMode(
+            existsSync(join(s.rootPath, "lance-result.json")) ||
+              (s.config?.operatorSettings?.lanceMode ?? false),
+          );
           setSessionCwd(s.rootPath);
-          setStrikeMode(
-            resolveOperatorStrikeMode({
+          const resumedStrikeMode = resolveOperatorStrikeMode({
+            resuming: true,
+            savedSessionValue: s.config?.operatorSettings?.strikeMode,
+          });
+          setStrikeMode(resumedStrikeMode);
+          setFindingPolicy(
+            resolveOperatorFindingPolicy({
               resuming: true,
-              savedSessionValue: s.config?.operatorSettings?.strikeMode,
+              strikeMode: resumedStrikeMode,
+              lanceMode: s.config?.operatorSettings?.lanceMode,
+              savedSessionValue: s.config?.operatorSettings?.findingPolicy,
             }),
           );
 
@@ -465,7 +585,14 @@ export default function OperatorDashboard({
                   sessions.getResumeMessages(modelMsgs),
                 );
 
-                const uiMsgs = convertModelMessagesToUI(modelMsgs);
+                const uiMsgs = convertModelMessagesToUI(modelMsgs).filter(
+                  (m: UIMessage) =>
+                    !(
+                      m.role === "user" &&
+                      typeof m.content === "string" &&
+                      isGoalControlMessage(m.content)
+                    ),
+                );
                 setMessages(
                   uiMsgs.map((m: UIMessage) => ({
                     role: m.role,
@@ -516,6 +643,7 @@ export default function OperatorDashboard({
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           setStrikeMode(initialStrikeModeRef.current);
+          setFindingPolicy(initialFindingPolicyRef.current);
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
           const requireApproval = newMode === "manual";
@@ -659,6 +787,17 @@ export default function OperatorDashboard({
   const runEventProjections = useMemo(
     () =>
       createRunEventProjections({
+        onModelLoading: (event) => {
+          setModelLoading(event.status === "loading" ? event : null);
+          if (
+            event.status === "ready" &&
+            event.firstTokenStartedAt != null &&
+            event.elapsedMs >= 5000
+          )
+            toast(
+              `Baseten returned its first token in ${Math.round(event.elapsedMs / 1000)}s`,
+            );
+        },
         display: displayEvents,
         subagents: subagentHelpers,
         updateWorkflowData,
@@ -681,7 +820,7 @@ export default function OperatorDashboard({
           planGateBypassedOnResumeRef.current = false;
         },
       }),
-    [displayEvents, subagentHelpers, updateWorkflowData, subagentStore],
+    [toast, displayEvents, subagentHelpers, updateWorkflowData, subagentStore],
   );
 
   // ---------------------------------------------------------------------------
@@ -716,8 +855,31 @@ export default function OperatorDashboard({
   // Run agent
   // ---------------------------------------------------------------------------
 
+  const goalHost = useCallback(
+    (s: SessionInfo) =>
+      createFileGoalHost({
+        sessionRoot: s.rootPath,
+        scheduleTurn: (next) => {
+          void runAgentRef.current(next.message, { hidden: true });
+          return "scheduled";
+        },
+        report: (goal) => {
+          goalRef.current = goal;
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "system",
+              content: goalStatusLine(goal),
+              createdAt: new Date(),
+            },
+          ]);
+        },
+      }),
+    [setMessages],
+  );
+
   const runAgent = useCallback(
-    async (prompt: string | null) => {
+    async (prompt: string | null, opts: { hidden?: boolean } = {}) => {
       const gen = ++generationRef.current;
       displayEvents.finish();
       // Abort any previous run before starting a new one
@@ -729,6 +891,7 @@ export default function OperatorDashboard({
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
+      setModelLoading(null);
       setThinking(true);
       setIsExecuting(true);
       setError(null);
@@ -741,10 +904,11 @@ export default function OperatorDashboard({
 
       let nextMessages: ModelMessage[];
       if (prompt !== null) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "user", content: prompt, createdAt: new Date() },
-        ]);
+        if (!opts.hidden)
+          setMessages((prev) => [
+            ...prev,
+            { role: "user", content: prompt, createdAt: new Date() },
+          ]);
 
         nextMessages = normalizeMessages([
           ...conversationRef.current,
@@ -803,6 +967,7 @@ export default function OperatorDashboard({
       // from the model this run actually used.
       const runModelId = model.id;
       const recordRootStepUsage = (event: {
+        contextWindow?: number;
         usage?: {
           inputTokens?: number;
           outputTokens?: number;
@@ -814,14 +979,10 @@ export default function OperatorDashboard({
         providerMetadata?: unknown;
       }) => {
         const stepUsage = normalizeStepUsage(event);
-        if (stepUsage.inputTokens > 0) {
+        if (stepUsage.inputTokens > 0 && event.contextWindow !== undefined) {
           usageStore.setRootContext(runSessionIdRef.current, {
             usedTokens: stepUsage.inputTokens,
-            contextLimit: getContextWindow(
-              runModelId,
-              config.data.customProviders,
-              config.data.hoonifyModels,
-            ),
+            contextLimit: event.contextWindow,
             modelId: runModelId,
           });
         }
@@ -834,6 +995,7 @@ export default function OperatorDashboard({
       };
 
       const onStepFinish = (event: {
+        contextWindow?: number;
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
         recordRootStepUsage(event);
@@ -855,7 +1017,16 @@ export default function OperatorDashboard({
         handlers: runEventProjections.handlers,
       });
 
-      const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
+      const goalSession = sessionRef.current ?? session;
+      if (goalSession) goalRef.current = readGoalFile(goalSession.rootPath);
+      const activeGoal =
+        goalsEnabled && goalRef.current?.status === "active"
+          ? goalRef.current
+          : null;
+
+      const skillsCatalog = lanceMode
+        ? undefined
+        : skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
         prompt: prompt ?? "",
@@ -864,21 +1035,27 @@ export default function OperatorDashboard({
         stopWhen: [
           stepCountIs(10000),
           hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
+          ...(activeGoal ? [goalStopCondition] : []),
         ],
+        ...(activeGoal
+          ? { extraTools: { [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool() } }
+          : {}),
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
           ...SKILL_TOOL_NAMES,
+          ...(activeGoal ? [UPDATE_GOAL_TOOL_NAME] : []),
         ] as string[],
         mode: agentMode,
+        lance: lanceMode
+          ? { interactive: true, budget: lanceBudget }
+          : undefined,
+        findingPolicy: activeFindingPolicy,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
-        enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
-        openAIReasoningEffort: modelSupportsOpenAIReasoning(model.id)
-          ? openAIReasoningEffort
-          : undefined,
+        reasoning,
         surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         promptInjectionLibrarySource:
           initialConfig?.promptInjectionLibrarySource ??
@@ -888,6 +1065,10 @@ export default function OperatorDashboard({
         onStepFinish,
         eventBus,
         onSessionReady: (s: SessionInfo) => {
+          if (goalRef.current && goalRef.current.sessionId !== s.id) {
+            goalRef.current = { ...goalRef.current, sessionId: s.id };
+            writeGoalFile(s.rootPath, goalRef.current);
+          }
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
@@ -905,34 +1086,41 @@ export default function OperatorDashboard({
       try {
         let agentResult: RunAgentResult;
 
-        const systemPrompt = buildOperatorSystemPrompt(
-          initialConfig?.target,
-          operatorState,
-          agentMode,
-          {
-            requireApproval,
-            sandboxMode: !!initialConfig?.sandbox,
-            skillsCatalog,
-            planFilePath: sessionRef.current
-              ? getPlanFilePath(sessionRef.current.rootPath)
-              : undefined,
-            existingPlanContent:
-              agentMode === "plan" &&
-              planRejectedRef.current &&
-              sessionRef.current
-                ? readPlan(sessionRef.current.rootPath)
-                : null,
-            approvedPlanContent:
-              agentMode !== "plan" ? approvedPlanRef.current : null,
-            taskDriven:
-              session?.config?.taskDriven ?? initialConfig?.taskDriven,
-          },
-        );
+        const operatorPrompt = lanceMode
+          ? undefined
+          : buildOperatorSystemPrompt(
+              initialConfig?.target,
+              operatorState,
+              agentMode,
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+                planFilePath: sessionRef.current
+                  ? getPlanFilePath(sessionRef.current.rootPath)
+                  : undefined,
+                existingPlanContent:
+                  agentMode === "plan" &&
+                  planRejectedRef.current &&
+                  sessionRef.current
+                    ? readPlan(sessionRef.current.rootPath)
+                    : null,
+                approvedPlanContent:
+                  agentMode !== "plan" ? approvedPlanRef.current : null,
+                taskDriven:
+                  session?.config?.taskDriven ?? initialConfig?.taskDriven,
+                findingPolicy: activeFindingPolicy,
+              },
+            );
+        const systemPrompt =
+          operatorPrompt && activeGoal
+            ? `${operatorPrompt}\n\n${goalPromptSection(activeGoal)}`
+            : operatorPrompt;
 
         if (session) {
           agentResult = await agentClient.run({
             ...commonInput,
-            system: systemPrompt,
+            ...(lanceMode ? {} : { system: systemPrompt }),
             session,
           });
         } else {
@@ -945,6 +1133,9 @@ export default function OperatorDashboard({
               requireApproval,
               enableSuggestions: true,
               strikeMode,
+              lanceMode,
+              lanceBudget,
+              findingPolicy,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -960,7 +1151,7 @@ export default function OperatorDashboard({
           };
           agentResult = await agentClient.run({
             ...commonInput,
-            system: systemPrompt,
+            ...(lanceMode ? {} : { system: systemPrompt }),
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
@@ -975,6 +1166,18 @@ export default function OperatorDashboard({
           }
           setSession(created);
           setSessionCwd(created.rootPath);
+        }
+
+        const lanceResult = agentResult.lance;
+        if (lanceResult && lanceResult.outcome !== "awaiting_input") {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "system",
+              content: `Lance: ${lanceResult.outcome}. ${lanceResult.reason}`,
+              createdAt: new Date(),
+            },
+          ]);
         }
 
         // Sync conversationRef from the agent's persisted state.
@@ -1008,6 +1211,22 @@ export default function OperatorDashboard({
             }
           }
         }
+
+        if (gen === generationRef.current && activeGoal) {
+          const response = await agentResult.streamResult.response;
+          goalNextRef.current = await settleGoalTurn(
+            goalHost(agentResult.session),
+            agentResult.session.id,
+            turnFactsFromMessages(response.messages, {
+              outcome: "completed",
+              automatic: !!opts.hidden,
+              heldCallCount:
+                pendingToolCallIdRef.current || planSubmittedRef.current
+                  ? 1
+                  : 0,
+            }),
+          );
+        }
       } catch (e) {
         if (gen !== generationRef.current) return;
         displayEvents.finish();
@@ -1033,6 +1252,20 @@ export default function OperatorDashboard({
 
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
+          if (activeGoal && sessionRef.current) {
+            await settleGoalTurn(
+              goalHost(sessionRef.current),
+              sessionRef.current.id,
+              {
+                outcome: "error",
+                automatic: !!opts.hidden,
+                toolCallCount: 0,
+                heldCallCount: 0,
+                updateCall: null,
+                error: errorMsg,
+              },
+            );
+          }
           setMessages((prev) => [
             ...markInFlightToolsErrored(prev, errorMsg),
             {
@@ -1051,6 +1284,7 @@ export default function OperatorDashboard({
         // (abort, error, success).
         await runTrace.cleanupRun();
         if (gen === generationRef.current) {
+          setModelLoading(null);
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
@@ -1060,6 +1294,22 @@ export default function OperatorDashboard({
           if (planSubmittedRef.current) {
             planSubmittedRef.current = false;
             setShowPlanReview(true);
+          }
+
+          // Last, so the next run's status writes win. Queued operator messages take the turn instead.
+          const goalNext = goalNextRef.current;
+          goalNextRef.current = null;
+          const goalNextSession = sessionRef.current;
+          if (
+            goalNext &&
+            goalNextSession &&
+            queuedMessagesRef.current.length === 0
+          ) {
+            void scheduleGoalNext(
+              goalHost(goalNextSession),
+              goalNextSession.id,
+              goalNext,
+            );
           }
         }
       }
@@ -1082,15 +1332,20 @@ export default function OperatorDashboard({
       initialConfig?.headers,
       initialConfig?.promptInjectionLibrarySource,
       strikeMode,
+      lanceMode,
+      lanceBudget,
+      findingPolicy,
+      activeFindingPolicy,
       route.data,
       setSessionCwd,
       skillsRegistry.buildCatalog,
       requireApproval,
       skillsRegistry,
-      reasoningEnabled,
-      openAIReasoningEffort,
+      reasoning,
       usageStore,
       markExecuted,
+      goalHost,
+      goalsEnabled,
     ],
   );
 
@@ -1235,6 +1490,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     })();
   }, [loading, route.data, skillsRegistry]);
 
+  // Re-arm a goal that was still active when the session was last closed.
+  useEffect(() => {
+    if (loading || !resumeGoalRef.current) return;
+    resumeGoalRef.current = false;
+    if (!goalsEnabled) return;
+    runAgentRef.current(continuationMessage(), { hidden: true });
+  }, [loading, goalsEnabled]);
+
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
     if (status !== "idle") return;
@@ -1365,10 +1628,84 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     async (command: string) => {
       const action = routeCommand(command, resolveSkillContent);
 
+      if (
+        lanceMode &&
+        ["run-skill", "show-plan", "execute-command", "goal"].includes(
+          action.type,
+        )
+      ) {
+        addSystemMessage(
+          "Lance accepts direct objectives only. Start a new session to use production workflows.",
+        );
+        return;
+      }
       switch (action.type) {
         case "show-models":
           showModelPicker();
           return;
+        case "goal": {
+          const { op } = action;
+          if (!goalsEnabled) {
+            addSystemMessage(
+              "Goals are turned off. Set goalsEnabled to true in ~/.pensar/config.json to use /goal.",
+            );
+            return;
+          }
+          const goalSession = sessionRef.current ?? session;
+          const current = goalSession
+            ? readGoalFile(goalSession.rootPath)
+            : goalRef.current;
+          if (op.kind === "invalid") {
+            addSystemMessage(`/goal: ${op.reason}`);
+            return;
+          }
+          if (op.kind === "status") {
+            addSystemMessage(
+              current
+                ? goalStatusLine(current)
+                : "No goal set. Use /goal <objective> [--rounds N].",
+            );
+            return;
+          }
+          if (op.kind === "clear") {
+            if (current?.status !== "active") {
+              addSystemMessage("No active goal.");
+              return;
+            }
+            const ended = endGoal(
+              current,
+              "cancelled",
+              "ended_by_operator",
+              null,
+            );
+            if (goalSession) writeGoalFile(goalSession.rootPath, ended);
+            goalRef.current = ended;
+            addSystemMessage(goalStatusLine(ended));
+            return;
+          }
+          if (status === "running") {
+            addSystemMessage(
+              "Stop or wait for the current turn before setting a goal.",
+            );
+            return;
+          }
+          const parsed = newGoalSchema.safeParse(op);
+          if (!parsed.success) {
+            addSystemMessage(
+              `/goal: --rounds must be a whole number from 1 to ${GOAL_LIMITS.maxRoundsCeiling}`,
+            );
+            return;
+          }
+          const goal = createGoal({
+            ...parsed.data,
+            sessionId: goalSession?.id ?? "pending",
+          });
+          if (goalSession) writeGoalFile(goalSession.rootPath, goal);
+          goalRef.current = goal;
+          addSystemMessage(goalStatusLine(goal));
+          runAgentRef.current(kickoffMessage(goal));
+          return;
+        }
         case "run-skill": {
           if (
             strikeMode &&
@@ -1449,6 +1786,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       addSystemMessage,
       handleHeadersSlash,
       strikeMode,
+      lanceMode,
+      status,
+      session,
+      goalsEnabled,
     ],
   );
 
@@ -1493,6 +1834,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     approvalGateRef.current.denyAll();
 
     setStatus("idle");
+    setModelLoading(null);
     setThinking(false);
     setIsExecuting(false);
 
@@ -1634,11 +1976,16 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    const dialogOpen =
+      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
     // Queue navigation: handle before general shortcuts
     if (
-      status === "running" &&
-      queuedMessages.length > 0 &&
-      !inputValue.trim()
+      shouldHandleQueuedMessageKey(
+        status,
+        queuedMessages.length,
+        inputValue,
+        dialogOpen,
+      )
     ) {
       if (key.name === "up") {
         key.preventDefault?.();
@@ -1765,9 +2112,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
     // Treat the questions form as a dialog so that dashboard-level shortcuts
     // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
-    const dialogOpen =
-      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
-
     // Ctrl+A to open subagent dialog (skip if another dialog is open)
     if (
       key.ctrl &&
@@ -1925,7 +2269,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       >
         <box flexDirection="row" gap={2}>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
-          {strikeMode && <text fg={colors.warning}>STRIKE</text>}
+          {lanceMode ? (
+            <text fg={colors.warning}>LANCE</text>
+          ) : (
+            strikeMode && <text fg={colors.warning}>STRIKE</text>
+          )}
+          {activeFindingPolicy === "external" && (
+            <text fg={colors.textMuted}>JUDGE OFF</text>
+          )}
           {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>
@@ -1954,6 +2305,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       >
         <MessageList
           messages={messages}
+          modelLoading={modelLoading}
           isRunning={
             (status === "running" || status === "waiting") && !pendingQuestions
           }

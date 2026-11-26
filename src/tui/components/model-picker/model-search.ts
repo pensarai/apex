@@ -6,6 +6,7 @@ const PROVIDER_DISPLAY_NAMES: Record<AIModelProvider, string> = {
   google: "Google",
   openrouter: "OpenRouter",
   concentrate: "Concentrate",
+  inference: "Inference.net",
   bedrock: "AWS Bedrock",
   "bedrock-mantle": "Bedrock Mantle",
   pensar: "Pensar",
@@ -13,6 +14,7 @@ const PROVIDER_DISPLAY_NAMES: Record<AIModelProvider, string> = {
   hoonify: "Hoonify",
   custom: "Custom endpoints",
   local: "Local LLM",
+  ollama: "Ollama (local)",
 };
 
 export function getProviderDisplayName(provider: AIModelProvider): string {

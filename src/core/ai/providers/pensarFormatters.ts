@@ -12,8 +12,7 @@ export function convertToBedrockFormat(
   modelId: string,
   options: LanguageModelV3CallOptions,
 ): Record<string, unknown> {
-  // GPT-5.x on Bedrock Mantle speaks the OpenAI Responses API, which has a
-  // different request shape than Anthropic Messages.
+  // Mantle GPT routes need Responses formatting rather than Anthropic Messages.
   if (isMantleResponsesModelId(modelId)) {
     return convertToResponsesFormat(modelId, options);
   }
@@ -114,6 +113,9 @@ function convertToResponsesFormat(
     max_output_tokens: options.maxOutputTokens ?? getMaxOutputTokens(modelId),
     stream: true,
   };
+
+  const reasoningEffort = options.providerOptions?.openai?.reasoningEffort;
+  if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
 
   if (instructions) {
     body.instructions = instructions;
@@ -381,9 +383,13 @@ function convertToAnthropicFormat(
     // Anthropic rejects temperature when thinking is enabled
     delete body.temperature;
   } else if (thinking?.type === "adaptive") {
-    body.thinking = { type: "adaptive" };
+    body.thinking = { type: "adaptive", display: "summarized" };
     delete body.temperature;
+  } else if (thinking?.type === "disabled") {
+    body.thinking = { type: "disabled" };
   }
+  if (anthropicOpts?.effort)
+    body.output_config = { effort: anthropicOpts.effort };
 
   // Convert tool choice
   if (options.toolChoice) {

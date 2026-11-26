@@ -2,7 +2,7 @@ import type { LanguageModelMiddleware, ToolSet } from "ai";
 import type { InferenceRecorder, UsageRecorder } from "../ai";
 import type { RunContextRecorder } from "../runtime/runContext";
 import type { ToolExecutionRecorder } from "../runtime/runToolStore";
-import type { ToolBackends } from "../tools/backends/types";
+import type { CallbackBackend, ToolBackends } from "../tools/backends/types";
 import type { AgentDefinition } from "./defineAgent";
 import {
   type AgentHooks,
@@ -13,7 +13,7 @@ import type { SubagentSpawner } from "./offSecAgent/subagentSpawner";
 import type { EmailAdapterResolver } from "./offSecAgent/tools/email/adapters";
 import type { UnifiedSandbox } from "./offSecAgent/tools/sandbox";
 import type { SmsInbox } from "./offSecAgent/tools/smsInbox";
-import type { StreamIdFactory } from "./offSecAgent/types";
+import type { FindingPolicy, StreamIdFactory } from "./offSecAgent/types";
 
 /**
  * {@link AgentHooks} with every key required (value types keep their
@@ -23,6 +23,12 @@ import type { StreamIdFactory } from "./offSecAgent/types";
  * "dropping a hook is a type error".
  */
 export interface RequiredAgentHooks {
+  findingPolicy: FindingPolicy | undefined;
+  toolExecutionContext: AgentHooks["toolExecutionContext"];
+  toolProtocol: AgentHooks["toolProtocol"];
+  directTools: AgentHooks["directTools"];
+  nestedTools: AgentHooks["nestedTools"];
+  onCodeCellComplete: AgentHooks["onCodeCellComplete"];
   backends: ToolBackends | undefined;
   subagentSpawner: SubagentSpawner | undefined;
   languageModelMiddleware:
@@ -36,6 +42,7 @@ export interface RequiredAgentHooks {
   streamIdFactory: StreamIdFactory | undefined;
   smsInbox: SmsInbox | undefined;
   emailAdapterFor: EmailAdapterResolver | undefined;
+  callbacks: CallbackBackend | undefined;
   abortSignal: AbortSignal | undefined;
   extraTools: ToolSet | undefined;
   sandbox: UnifiedSandbox | undefined;
@@ -51,6 +58,12 @@ export interface RequiredAgentHooks {
  */
 export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
   return {
+    findingPolicy: opts.findingPolicy,
+    toolExecutionContext: opts.toolExecutionContext,
+    toolProtocol: opts.toolProtocol,
+    directTools: opts.directTools,
+    nestedTools: opts.nestedTools,
+    onCodeCellComplete: opts.onCodeCellComplete,
     backends: opts.backends,
     subagentSpawner: opts.subagentSpawner,
     languageModelMiddleware: opts.languageModelMiddleware,
@@ -61,6 +74,7 @@ export function assembleAgentHooks(opts: AgentHooks): RequiredAgentHooks {
     streamIdFactory: opts.streamIdFactory,
     smsInbox: opts.smsInbox,
     emailAdapterFor: opts.emailAdapterFor,
+    callbacks: opts.callbacks,
     abortSignal: opts.abortSignal,
     extraTools: opts.extraTools,
     sandbox: opts.sandbox,
@@ -101,7 +115,8 @@ export class AgentRuntime<
         definition.extraTools?.(opts, state),
       ),
       resolveResult: resolveResult
-        ? (streamResult) => resolveResult(opts, state, streamResult)
+        ? (streamResult, validatedResponse) =>
+            resolveResult(opts, state, streamResult, validatedResponse)
         : undefined,
       target: definition.target?.(opts, state) ?? opts.target,
       grpc: definition.grpc?.(opts, state) ?? opts.grpc,

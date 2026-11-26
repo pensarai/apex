@@ -37,6 +37,18 @@ describe("advanced settings command", () => {
   });
 });
 
+describe("model picker commands", () => {
+  it.each(["models", "effort"])("/%s opens the model picker", async (name) => {
+    const openModelDialog = vi.fn();
+    const context = createContext({ openModelDialog });
+
+    await getCommand(name).handler([], context);
+
+    expect(openModelDialog).toHaveBeenCalledOnce();
+    expect(context.navigate).not.toHaveBeenCalled();
+  });
+});
+
 describe("exit command", () => {
   it("uses the graceful application exit path", async () => {
     const exitApplication = vi.fn(async () => {});

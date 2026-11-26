@@ -3,7 +3,6 @@ import type {
   ModelMessage,
   StopCondition,
   StreamTextOnFinishCallback,
-  StreamTextOnStepFinishCallback,
   StreamTextResult,
   ToolChoice,
   ToolSet,
@@ -16,14 +15,19 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentHarness,
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
   InferenceRecorder,
   OpenAIReasoningEffort,
+  ReasoningSetting,
+  StreamResponseOpts,
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
+import type { CodeCellResult } from "../../code-mode";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -34,7 +38,7 @@ import type { RunContextRecorder } from "../../runtime/runContext";
 import type { ToolExecutionRecorder } from "../../runtime/runToolStore";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
-import type { ToolBackends } from "../../tools/backends/types";
+import type { CallbackBackend, ToolBackends } from "../../tools/backends/types";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type {
@@ -105,7 +109,10 @@ export type Finding = Omit<
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 /** Agent operating mode that controls which tools are available. */
-export type AgentMode = "default" | "plan" | "fast-strike";
+export type AgentMode = "default" | "plan" | "fast-strike" | "lance";
+
+/** Selects Apex's native finding judge or a caller-owned evaluation boundary. */
+export type FindingPolicy = "native" | "external";
 
 /** Structured authorization envelope for a multi-application System pentest. */
 export type SystemPentestScope = {
@@ -117,7 +124,8 @@ export type SystemPentestScope = {
 export type StreamIdFactoryContext =
   | { kind: "message"; stepIndex: number }
   | { kind: "text-part"; stepIndex: number; textPartIndex: number }
-  | { kind: "tool-part"; toolCallId: string };
+  | { kind: "tool-part"; toolCallId: string }
+  | { kind: "compaction-part"; stepIndex: number };
 
 /**
  * Mints message/part ids for streamed events. Defaults to random ULIDs
@@ -134,7 +142,27 @@ export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
  * re-declaring the fields, so a specialized agent can no longer drop a hook
  * by forgetting to list it in a hand-written constructor.
  */
+export interface ToolExecutionContext {
+  run<T>(
+    call: { toolCallId: string; toolName: string },
+    execute: () => Promise<T>,
+  ): Promise<T>;
+  finish?(call: { toolCallId: string; toolName: string }): Promise<void>;
+}
+
 export interface AgentHooks {
+  /** External grading omits Apex's finding tool and leaves acceptance to the caller. */
+  findingPolicy?: FindingPolicy;
+
+  toolExecutionContext?: ToolExecutionContext;
+  /** Defaults to auto; APEX_CODE_MODE can select a process-wide default. */
+  toolProtocol?: AgentToolProtocolPreference;
+  /** Restrict these active capabilities to direct calls, excluding the exec bridge. */
+  directTools?: string[];
+  /** Also allow injected tools inside exec; lifecycle contracts always remain direct. */
+  nestedTools?: string[];
+  onCodeCellComplete?: (result: CodeCellResult) => void;
+
   /** Opt-in shared backend directory for incremental recon endpoint artifacts. */
   attackSurfaceArtifactsPath?: string;
 
@@ -167,6 +195,9 @@ export interface AgentHooks {
 
   /** Supplies an adapter for a `pensar-managed` inbox. Unset → the config-driven factory. */
   emailAdapterFor?: EmailAdapterResolver;
+
+  /** Reads the run's callback domain; forwarded into the ToolContext like `emailAdapterFor`. */
+  callbacks?: CallbackBackend;
 
   /** AbortSignal to cancel the agent mid-run. */
   abortSignal?: AbortSignal;
@@ -204,6 +235,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    * @default "default"
    */
   mode?: AgentMode;
+  /** Opts into the general agent harness's compaction and step-cap handling. */
+  harness?: AgentHarness;
+  lance?: import("../lance").LanceOptions;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -266,7 +300,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
   toolChoice?: ToolChoice<ToolSet>;
 
   /** Callback fired after each agent step completes */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: StreamResponseOpts["onStepFinish"];
 
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
@@ -326,6 +360,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    */
   emailAdapterFor?: EmailAdapterResolver;
 
+  /** Reads the run's callback domain; forwarded into the ToolContext like `emailAdapterFor`. */
+  callbacks?: CallbackBackend;
+
   /**
    * Shared findings registry for cross-agent dedup.
    * When present, `document_vulnerability` checks for duplicates before writing.
@@ -351,11 +388,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
    *
    * Receives the completed `StreamTextResult` — at this point all lazy
    * properties (`.steps`, `.text`, `.response`, etc.) are resolved.
+   * When the response tool executes, the optional second argument is its
+   * schema-validated result. It is absent if no response was submitted.
    *
    * If omitted, `consume()` returns `void`.
    */
   resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
+    validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
   /** The subagent ID if this agent is a subagent */
@@ -463,6 +503,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
@@ -520,6 +561,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
  */
 export type CommandCancelHandle = {
   cancel: () => boolean;
+  cancelBackground?: (jobId: string) => Promise<void>;
 };
 
 /**
@@ -549,7 +591,7 @@ export interface SpecializedAgentInput extends AgentHooks {
   messages?: Array<ModelMessage>;
 
   /** Callback fired after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onStepFinish?: StreamResponseOpts["onStepFinish"];
 
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
@@ -595,6 +637,7 @@ export interface SpecializedAgentInput extends AgentHooks {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for

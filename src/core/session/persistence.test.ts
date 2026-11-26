@@ -18,6 +18,7 @@ import {
   convertModelMessagesToUI,
   finalizeManifest,
   getCompletedAgentIds,
+  loadSubagentObjectiveResults,
   loadSubagents,
   readAgentManifest,
   reconcileManifestOnResume,
@@ -236,6 +237,67 @@ describe("saveSubagentData + loadSubagents roundtrip", () => {
   it("returns empty array when subagents directory does not exist", () => {
     const loaded = loadSubagents(tmpDir);
     expect(loaded).toEqual([]);
+  });
+});
+
+describe("loadSubagentObjectiveResults", () => {
+  it("roundtrips completed objective coverage, including an empty result", () => {
+    const session = makeSession();
+    const objectiveResults = [
+      { objective: "Test authorization", completed: true, result: "No bypass" },
+      { objective: "Test injection", completed: false },
+    ];
+    saveSubagentData(session, {
+      agentName: "pentest-agent-1",
+      target: "http://localhost:8080",
+      status: "completed",
+      reportedFindings: [],
+      objectiveResults,
+      messages: [],
+    });
+
+    expect(loadSubagentObjectiveResults(session, "pentest-agent-1")).toEqual(
+      objectiveResults,
+    );
+
+    saveSubagentData(session, {
+      agentName: "pentest-agent-1",
+      target: "http://localhost:8080",
+      status: "completed",
+      reportedFindings: [],
+      objectiveResults: [],
+      messages: [],
+    });
+    expect(loadSubagentObjectiveResults(session, "pentest-agent-1")).toEqual(
+      [],
+    );
+  });
+
+  it("rejects missing, failed, and malformed objective coverage", () => {
+    const session = makeSession();
+    const key = "pentest-agent-1";
+    const snapshotPath = join(tmpDir, "subagents", `${key}.json`);
+    expect(loadSubagentObjectiveResults(session, key)).toBeNull();
+    mkdirSync(join(tmpDir, "subagents"));
+
+    const invalidSnapshots = [
+      { status: "failed", objectiveResults: [] },
+      { status: "completed" },
+      { status: "completed", objectiveResults: null },
+      { status: "completed", objectiveResults: [{ objective: "Test" }] },
+      {
+        status: "completed",
+        objectiveResults: [{ objective: "Test", completed: "true" }],
+      },
+      {
+        status: "completed",
+        objectiveResults: [{ objective: "Test", completed: true, result: 42 }],
+      },
+    ];
+    for (const snapshot of invalidSnapshots) {
+      writeFileSync(snapshotPath, JSON.stringify(snapshot));
+      expect(loadSubagentObjectiveResults(session, key)).toBeNull();
+    }
   });
 });
 

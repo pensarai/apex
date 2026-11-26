@@ -29,6 +29,123 @@ async function collect(
 }
 
 describe("parseResponsesSSE", () => {
+  it.each([
+    {
+      name: "disconnect",
+      terminal: undefined,
+      reason: undefined,
+      unified: "other",
+      raw: undefined,
+    },
+    {
+      name: "content filter",
+      terminal: "response.incomplete",
+      reason: "content_filter",
+      unified: "content-filter",
+      raw: "content_filter",
+    },
+    {
+      name: "output cap",
+      terminal: "response.incomplete",
+      reason: "max_output_tokens",
+      unified: "length",
+      raw: "max_output_tokens",
+    },
+    {
+      name: "unknown incomplete reason",
+      terminal: "response.incomplete",
+      reason: "unknown_reason",
+      unified: "other",
+      raw: "unknown_reason",
+    },
+    {
+      name: "missing incomplete reason",
+      terminal: "response.incomplete",
+      reason: undefined,
+      unified: "other",
+      raw: "incomplete",
+    },
+    {
+      name: "refusal reason",
+      terminal: "response.incomplete",
+      reason: "refusal",
+      unified: "other",
+      raw: "refusal",
+    },
+    {
+      name: "genuine completion",
+      terminal: "response.completed",
+      reason: undefined,
+      unified: "stop",
+      raw: "completed",
+    },
+  ])("maps $name to $unified", async ({ terminal, reason, unified, raw }) => {
+    const events = [
+      {
+        event: "response.output_text.delta",
+        data: { type: "response.output_text.delta", delta: "A summary" },
+      },
+    ];
+    const sse = sseStreamFrom([
+      ...events,
+      ...(terminal
+        ? [
+            {
+              event: terminal,
+              data: {
+                type: terminal,
+                response: {
+                  status:
+                    terminal === "response.completed"
+                      ? "completed"
+                      : "incomplete",
+                  ...(reason ? { incomplete_details: { reason } } : {}),
+                },
+              },
+            },
+          ]
+        : []),
+    ]);
+    const parts = await collect(
+      parseResponsesSSE(sse, { idleTimeoutMs: 5_000 }),
+    );
+    expect(parts).toContainEqual(
+      expect.objectContaining({ type: "text-delta", delta: "A summary" }),
+    );
+    expect(parts.find((part) => part.type === "finish")?.finishReason).toEqual({
+      unified,
+      raw,
+    });
+  });
+
+  it.each([
+    "response.refusal.delta",
+    "response.refusal.done",
+  ])("does not accept a completed response containing %s", async (type) => {
+    const parts = await collect(
+      parseResponsesSSE(
+        sseStreamFrom([
+          {
+            event: type,
+            data: { type, delta: "Cannot comply", refusal: "Cannot comply" },
+          },
+          {
+            event: "response.completed",
+            data: {
+              type: "response.completed",
+              response: { status: "completed" },
+            },
+          },
+        ]),
+        { idleTimeoutMs: 5_000 },
+      ),
+    );
+    expect(parts.find((part) => part.type === "finish")?.finishReason).toEqual({
+      unified: "content-filter",
+      raw: "refusal",
+    });
+  });
+
   it("parses text, tool calls, and final usage from Responses events", async () => {
     const sse = sseStreamFrom([
       {

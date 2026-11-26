@@ -95,6 +95,12 @@ function streamOf(chunks: unknown[]): LanguageModelV3StreamResult {
   } as LanguageModelV3StreamResult;
 }
 
+// Compaction streams now, so the summarizer answers on doStream alongside the
+// resumed agent turn; its request carries the compaction instruction.
+function isSummaryCall(options: { prompt: unknown }): boolean {
+  return JSON.stringify(options.prompt).includes("Compact this conversation");
+}
+
 async function drain(stream: { fullStream: AsyncIterable<unknown> }) {
   for await (const _part of stream.fullStream) {
     /* consume the SDK lifecycle */
@@ -415,6 +421,32 @@ describe("cached system prompt (Claude) (real SDK)", () => {
       }
     }
   });
+
+  it("does not trigger the SDK system-in-messages warning", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      state.model = new MockLanguageModelV3({
+        modelId: "claude-sonnet-4-5",
+        doStream: async () =>
+          streamOf([...textStepChunks("t0", "ok"), finishChunk()]),
+      });
+      await drain(
+        streamResponse({
+          model: "claude-sonnet-4-5",
+          prompt: "hello",
+          system: "You are a test.",
+          silent: true,
+        }),
+      );
+      expect(
+        warn.mock.calls.some((args) =>
+          String(args[0]).includes("System messages in the prompt or messages"),
+        ),
+      ).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe("critical failure modes (real SDK)", () => {
@@ -424,14 +456,15 @@ describe("critical failure modes (real SDK)", () => {
     const { recorder, checkpoints } = fakeRecorder();
     state.model = new MockLanguageModelV3({
       modelId: MODEL,
-      // summarizeConversation runs generateText (doGenerate) for the summary.
-      doGenerate: async () => ({
-        content: [{ type: "text", text: "A compact summary" }],
-        finishReason: { unified: "stop", raw: "stop" },
-        usage,
-        warnings: [],
-      }),
-      doStream: async () => {
+      doStream: async (options) => {
+        if (isSummaryCall(options)) {
+          return streamOf([
+            { type: "text-start", id: "s" },
+            { type: "text-delta", id: "s", delta: "A compact summary" },
+            { type: "text-end", id: "s" },
+            finishChunk(),
+          ]);
+        }
         call++;
         if (call === 1) {
           const err = new Error(

@@ -6,23 +6,9 @@
  * Endpoint paths are intentionally NOT checked — the guard only restricts
  * the domain, not which paths the agent visits on that domain.
  *
- * Allowed domains are derived from:
- *  1. `ctx.target` (the primary target URL)
- *  2. `ctx.session.targets` (all session target URLs)
- *  3. `ctx.session.config.scopeConstraints.allowedHosts` (explicit list)
- *
- * Scope expansion: hosts derived from session targets are expanded to
- * their registrable domain (eTLD+1) via the Public Suffix List. So a
- * target of `web.dev.example.com` produces an allowed host of
- * `example.com`, which in turn permits any subdomain under it
- * (`auth.dev.example.com`, `api.example.com`, etc.). Other registrable
- * domains stay out of scope.
- *
- * Hosts in `scopeConstraints.allowedHosts` are used verbatim (not
- * expanded), so operators can narrow scope explicitly when needed.
- *
- * Subdomain matching: if `example.com` is allowed, `api.example.com` is
- * also allowed (suffix match on the hostname).
+ * An explicit `scopeConstraints.allowedHosts` list is authoritative. Without
+ * one, exact hosts are derived from `ctx.target` and `session.targets`.
+ * Subdomains are permitted only by an explicit `*.example.com` entry.
  */
 
 import { parseTargetUrl } from "../../../../util/url";
@@ -30,8 +16,12 @@ import type { ResolverSession } from "../../../http/targetHeaders";
 import {
   getRegistrableDomain,
   getSessionAllowedHosts,
+  getSessionAllowedPorts,
+  getUrlPort,
+  isCallbackHost,
   isHostInScope,
 } from "../../../http/targetScope";
+import { callbackDomains } from "../../../tools/backends/callbacks";
 import type { ToolContext } from "./types";
 
 export { getRegistrableDomain };
@@ -40,10 +30,14 @@ export class ScopeViolationError extends Error {
   constructor(
     public readonly hostname: string,
     public readonly allowedHosts: string[],
+    public readonly port?: number,
+    public readonly allowedPorts: number[] = [],
   ) {
     super(
-      `Scope violation: "${hostname}" is not in the list of allowed target domains [${allowedHosts.join(", ")}]. ` +
-        `Only the target host and its subdomains are permitted.`,
+      port !== undefined && allowedPorts.length > 0
+        ? `Scope violation: port ${port} on "${hostname}" is not in the list of allowed target ports [${allowedPorts.join(", ")}].`
+        : `Scope violation: "${hostname}" is not in the list of allowed target domains [${allowedHosts.join(", ")}]. ` +
+            `Only exact hosts and explicit wildcard grants are permitted.`,
     );
     this.name = "ScopeViolationError";
   }
@@ -53,12 +47,17 @@ export class ScopeViolationError extends Error {
 // commands (where `ctx.target` isn't in `session.targets`) don't get
 // classified as out-of-scope and silently dropped from header resolution.
 export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
-  if (!ctx.target) return ctx.session;
   const existing = ctx.session.targets ?? [];
-  if (existing.includes(ctx.target)) return ctx.session;
+  const targets =
+    ctx.target && !existing.includes(ctx.target)
+      ? [...existing, ctx.target]
+      : existing;
+  const domains = callbackDomains(ctx);
+  if (targets === existing && domains.length === 0) return ctx.session;
   return {
     ...ctx.session,
-    targets: [...existing, ctx.target],
+    targets,
+    ...(domains.length > 0 ? { callbackDomains: domains } : {}),
   };
 }
 
@@ -68,6 +67,10 @@ export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
  */
 export function getAllowedHosts(ctx: ToolContext): string[] {
   return getSessionAllowedHosts(resolverSessionFromCtx(ctx));
+}
+
+export function getAllowedPorts(ctx: ToolContext): number[] {
+  return getSessionAllowedPorts(resolverSessionFromCtx(ctx));
 }
 
 /**
@@ -83,8 +86,11 @@ export function isHostAllowed(
   hostname: string,
   allowedHosts: string[],
 ): boolean {
-  if (allowedHosts.length === 0) return true;
   return isHostInScope(hostname, allowedHosts);
+}
+
+function strictScope(ctx: ToolContext): boolean {
+  return ctx.session.config?.scopeConstraints?.strictScope === true;
 }
 
 /**
@@ -103,7 +109,14 @@ export function extractHostname(url: string): string | null {
  */
 export function assertUrlInScope(url: string, ctx: ToolContext): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0) return;
+  const allowedPorts = getAllowedPorts(ctx);
+  if (
+    allowedHosts.length === 0 &&
+    allowedPorts.length === 0 &&
+    !strictScope(ctx)
+  ) {
+    return;
+  }
 
   const hostname = extractHostname(url);
   if (!hostname) {
@@ -113,6 +126,30 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
   if (!isHostAllowed(hostname, allowedHosts)) {
     throw new ScopeViolationError(hostname, allowedHosts);
   }
+
+  const port = getUrlPort(url);
+  if (
+    allowedPorts.length > 0 &&
+    (port === null || !allowedPorts.includes(port))
+  ) {
+    throw new ScopeViolationError(
+      hostname,
+      allowedHosts,
+      port ?? undefined,
+      allowedPorts,
+    );
+  }
+}
+
+/**
+ * {@link assertUrlInScope} for a plain request destination, which may also be
+ * one of the session's test domains. Never use it where the URL becomes a
+ * target (findings, subagent targets, auth flows): test domains are not.
+ */
+export function assertRequestInScope(url: string, ctx: ToolContext): void {
+  const hostname = extractHostname(url);
+  if (hostname && isCallbackHost(hostname, resolverSessionFromCtx(ctx))) return;
+  assertUrlInScope(url, ctx);
 }
 
 /**
@@ -131,19 +168,20 @@ export function assertFindingEndpointInScope(
   ctx: ToolContext,
 ): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0) return;
+  const allowedPorts = getAllowedPorts(ctx);
+  if (
+    allowedHosts.length === 0 &&
+    allowedPorts.length === 0 &&
+    !strictScope(ctx)
+  ) {
+    return;
+  }
 
   // Only absolute http(s) URLs name their own host; anything else (a path,
   // "host:port", a scheme-less token) is treated as relative to the in-scope
   // target and left to the existing deterministic target boundary.
   if (!/^https?:\/\//i.test(endpoint.trim())) return;
-
-  const hostname = extractHostname(endpoint);
-  if (!hostname) return;
-
-  if (!isHostAllowed(hostname, allowedHosts)) {
-    throw new ScopeViolationError(hostname, allowedHosts);
-  }
+  assertUrlInScope(endpoint, ctx);
 }
 
 /**
@@ -305,11 +343,14 @@ export function extractHostsFromCommand(command: string): string[] {
  */
 export function assertCommandInScope(command: string, ctx: ToolContext): void {
   const allowedHosts = getAllowedHosts(ctx);
-  if (allowedHosts.length === 0) return;
+  if (allowedHosts.length === 0 && !strictScope(ctx)) return;
 
   const commandHosts = extractHostsFromCommand(command);
+  const scope = resolverSessionFromCtx(ctx);
 
   for (const hostname of commandHosts) {
+    // Test domains appear in payloads (and self-checks) without being targets.
+    if (isCallbackHost(hostname, scope)) continue;
     if (!isHostAllowed(hostname, allowedHosts)) {
       throw new ScopeViolationError(hostname, allowedHosts);
     }

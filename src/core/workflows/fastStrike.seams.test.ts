@@ -61,6 +61,7 @@ let rootPath: string;
 let session: SessionInfo;
 
 beforeEach(() => {
+  mocks.registry.groupByRootCause.mockClear();
   rootPath = mkdtempSync(join(tmpdir(), "faststrike-seams-"));
   session = {
     id: "ses_faststrike_seams",
@@ -214,4 +215,152 @@ it("forwards canonical hooks and legacy fields to the fast-strike operator", asy
     hooks,
   });
   expect(mocks.fastStrikeInputs[0]).toMatchObject({ ...hooks, usageRecorder });
+});
+
+describe("external Fast Strike", () => {
+  it("keeps exfiltration mode explicit and returns the extracted result", async () => {
+    session.config = { exfilMode: true };
+    mocks.consumeImpl = async () => ({
+      solved: true,
+      summary: "Extracted FLAG{example}",
+      reportedFindings: ["Confirmed scoped weakness"],
+      submissionJson: "",
+    });
+
+    const result = await runFastStrike({
+      target: "https://example.com",
+      model: {} as PentestWorkflowInput["model"],
+      session,
+      findingPolicy: "external",
+    });
+
+    expect(String(mocks.fastStrikeInputs.at(-1)?.prompt)).toContain(
+      "Exfiltration goal: locate and extract FLAG{...}",
+    );
+    expect(result).toMatchObject({
+      solved: true,
+      summary: "Extracted FLAG{example}",
+    });
+  });
+
+  it("returns exact submission JSON and skips native finding aggregation", async () => {
+    const submissionJson = JSON.stringify({
+      schema_version: "penbench-finding/v1",
+      status: "finding",
+      surfaces: ["GET /private"],
+      root_cause: "Tenant scope is not enforced",
+      impact: "Cross-tenant read",
+    });
+    mocks.consumeImpl = async () => ({
+      solved: true,
+      summary: "Cross-tenant read found",
+      reportedFindings: ["GET /private reads another tenant's data"],
+      submissionJson,
+    });
+
+    const result = await runFastStrike({
+      target: "https://example.com",
+      model: {} as PentestWorkflowInput["model"],
+      session,
+      findingPolicy: "external",
+      enableThinking: true,
+      thinkingEffort: "high",
+    });
+
+    expect(result).toMatchObject({
+      findings: [],
+      reportedFindings: ["GET /private reads another tenant's data"],
+      submissionJson,
+      solved: true,
+      summary: "Cross-tenant read found",
+      reportPath: null,
+    });
+    expect(mocks.registry.groupByRootCause).not.toHaveBeenCalled();
+    const input = mocks.fastStrikeInputs.at(-1);
+    expect(input).toMatchObject({
+      findingPolicy: "external",
+      enableThinking: true,
+      thinkingEffort: "high",
+    });
+    expect(String(input?.system)).not.toContain("document_vulnerability");
+    const responseSchema = input?.responseSchema as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+    expect(
+      responseSchema.safeParse({
+        solved: true,
+        summary: "Found it",
+        reportedFindings: [],
+        submissionJson,
+      }).success,
+    ).toBe(true);
+    expect(
+      responseSchema.safeParse({ solved: true, summary: "Found it" }).success,
+    ).toBe(false);
+  });
+
+  it("fails closed when the external response omits the submission", async () => {
+    mocks.consumeImpl = async () => ({
+      solved: true,
+      summary: "Found it",
+      reportedFindings: ["finding"],
+    });
+    await expect(
+      runFastStrike({
+        target: "https://example.com",
+        model: {} as PentestWorkflowInput["model"],
+        session,
+        findingPolicy: "external",
+      }),
+    ).rejects.toThrow("without a structured findings response");
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["null", null],
+    [
+      "wrong field types",
+      {
+        solved: true,
+        summary: "claimed",
+        reportedFindings: "claimed",
+        submissionJson: "{}",
+      },
+    ],
+  ])("marks a %s external response as failed before completion hooks", async (_label, outcome) => {
+    mocks.consumeImpl = async () => outcome;
+    const emit = vi.fn();
+    const onEndpointDone = vi.fn();
+    const onEndpointFailed = vi.fn();
+
+    await expect(
+      runFastStrike({
+        target: "https://example.com",
+        model: {} as PentestWorkflowInput["model"],
+        session,
+        findingPolicy: "external",
+        eventBus: { emit } as unknown as NonNullable<
+          PentestWorkflowInput["eventBus"]
+        >,
+        seams: inProcessSeams({
+          hooks: { onEndpointDone, onEndpointFailed },
+          registries: {
+            findings: () => mocks.registry,
+            attackSurface: () => ({}) as never,
+          },
+        }),
+      }),
+    ).rejects.toThrow("without a structured findings response");
+
+    expect(onEndpointDone).not.toHaveBeenCalled();
+    expect(onEndpointFailed).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith("subagent-complete", {
+      subagentId: "fast-strike",
+      status: "failed",
+    });
+    expect(emit).not.toHaveBeenCalledWith("subagent-complete", {
+      subagentId: "fast-strike",
+      status: "completed",
+    });
+  });
 });

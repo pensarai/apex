@@ -116,7 +116,12 @@ function makeStore(script?: {
 
 function makeRecorder(
   store: RunToolStore,
-  collectEvidence = vi.fn(async () => ({ rootPath: "/session", files: [] })),
+  collectEvidence: Parameters<
+    typeof createRunToolRecorder
+  >[0]["collectEvidence"] = vi.fn(async () => ({
+    rootPath: "/session",
+    files: [],
+  })),
 ) {
   return createRunToolRecorder({
     runId: "run_1",
@@ -144,6 +149,8 @@ describe("tool policy classification", () => {
     ["list_tasks", "read_only"],
     ["http_request", "external_effect"],
     ["execute_command", "shell_state"],
+    ["exec", "shell_state"],
+    ["wait", "shell_state"],
     ["document_vulnerability", "local_mutation"],
     ["write_plan", "local_mutation"],
     ["create_task", "local_mutation"],

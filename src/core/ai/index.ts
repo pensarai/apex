@@ -1,7 +1,9 @@
 export type {
+  AgentHarness,
   AIModel,
   AIModelProvider,
   CacheMetrics,
+  ContextCompaction,
   GenerateObjectOpts,
   ModelInfo,
   NormalizedStepUsage,
@@ -30,6 +32,8 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export { compactedHistoryNotice } from "./compactionPrompts";
+export { IncompleteModelStreamError } from "./incompleteModelStream";
 export type {
   InferenceAttempt,
   InferenceRecorder,
@@ -47,9 +51,17 @@ export {
   getRecentModels,
   MAX_RECENT_MODELS,
 } from "./model-history";
+export type {
+  AgentToolProtocol,
+  AgentToolProtocolPreference,
+  ModelRuntimeProfile,
+} from "./modelRuntime";
+export { resolveModelRuntimeProfile } from "./modelRuntime";
+export { ModelStreamDrainError } from "./modelStreamDrain";
 export {
   AVAILABLE_MODELS,
   getClaudeCapabilities,
+  getMaxOutputTokens,
   getModelInfo,
 } from "./models";
 export type {
@@ -69,5 +81,16 @@ export {
   stringifyCanonicalJson,
   toJsonValue,
 } from "./native-rollout-evidence";
+export {
+  getModelSettings,
+  getReasoningCapabilities,
+  getReasoningChoices,
+  REASONING_SETTINGS,
+  type ReasoningCapabilities,
+  type ReasoningEffort,
+  type ReasoningSetting,
+  resolveReasoningSetting,
+  validateReasoningSetting,
+} from "./reasoning";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";

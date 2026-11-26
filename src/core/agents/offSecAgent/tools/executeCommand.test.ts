@@ -13,6 +13,7 @@ import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import { LocalBackends } from "../../../tools/backends/local";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { acceptedTypes, type WireSchemaProperty } from "./__tests__/wireSchema";
 import {
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
   type ExecuteCommandInput,
@@ -522,7 +523,7 @@ describe("executeCommand deadlines", () => {
 
       expect(result.success).toBe(true);
       expect(result.stdout).toContain("x".repeat(60_000));
-      const projected = await toolOutputForModel(ctx, result);
+      const projected = await toolOutputForModel(ctx, "command-output", result);
       expect(projected.type).toBe("text");
       const text = String(projected.value);
       expect(text).toContain("Failed to save captured result");
@@ -818,18 +819,12 @@ describe("execute_command timeout fields (canonical timeoutSeconds)", () => {
 
   it("serializes both spellings as nullable optional seconds in the wire schema", () => {
     const json = wireSchema().jsonSchema as {
-      properties: Record<
-        string,
-        { anyOf?: { type: string }[]; description?: string } | undefined
-      >;
+      properties: Record<string, WireSchemaProperty | undefined>;
       required?: string[];
       additionalProperties?: boolean;
     };
     for (const field of ["timeoutSeconds", "timeout"]) {
-      expect(json.properties[field]?.anyOf?.map((t) => t.type)).toEqual([
-        "number",
-        "null",
-      ]);
+      expect(acceptedTypes(json.properties[field])).toEqual(["number", "null"]);
     }
     expect(json.required ?? []).not.toContain("timeoutSeconds");
     expect(json.required ?? []).not.toContain("timeout");
@@ -1072,7 +1067,8 @@ describe("required-header policy on redirected shell commands", () => {
     expect(result.success).toBe(true);
     expect(captured).toContain(`-H "X-API-Key: abc"`);
     // Everything except the injected flags must survive byte-for-byte.
-    expect(captured.endsWith("-s https://example.com/api 2>&1")).toBe(true);
+    expect(captured).toContain("-s https://example.com/api 2>&1");
+    expect(captured).toMatch(/--max-redirs 0$/);
   });
 
   it("rejection message offers the supported literal 2>&1 form", async () => {

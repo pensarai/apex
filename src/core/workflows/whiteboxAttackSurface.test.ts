@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentHooks } from "../agents/offSecAgent";
 import type { AppInfo } from "../agents/specialized/whiteboxAttackSurface";
 import type { AIModel } from "../ai";
+import { AgentEventBus } from "../eventBus";
 import * as idModule from "../id/id";
 import * as surfaceModule from "../integrations/surface";
 import type { SessionInfo } from "../session";
@@ -18,11 +19,24 @@ import {
 } from "./seams";
 
 const mocks = vi.hoisted(() => ({
+  errorLog: vi.fn(),
   codeAgentInputs: [] as Array<Record<string, unknown>>,
   consumeImpl: null as
     | ((input: Record<string, unknown>) => Promise<unknown>)
     | null,
 }));
+
+vi.mock("../logger/structured", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../logger/structured")>();
+  return {
+    ...actual,
+    createLogger: (...args: Parameters<typeof actual.createLogger>) => {
+      const logger = actual.createLogger(...args);
+      logger.error = mocks.errorLog;
+      return logger;
+    },
+  };
+});
 
 vi.mock("../agents/specialized/codeAgent/agent", () => ({
   CodeAgent: class {
@@ -105,7 +119,7 @@ afterEach(() => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical", () => {
-  it("fans out per-app work through the same runWithBoundedConcurrency pool, once", async () => {
+  it("bounds per-app work and batches each app’s discovery children", async () => {
     const spy = vi.spyOn(concurrencyModule, "runWithBoundedConcurrency");
 
     await runWhiteboxAttackSurfaceWorkflow({
@@ -115,7 +129,9 @@ describe("runWhiteboxAttackSurfaceWorkflow — default seams are byte-identical"
       surfaceIntegrationEnabled: false,
     });
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls[1][0]).toHaveLength(2);
+    expect(spy.mock.calls[1][1]).toBe(2);
     const [items, concurrency] = spy.mock.calls[0];
     expect(items).toHaveLength(1);
     expect(concurrency).toBe(5);
@@ -193,6 +209,36 @@ describe("runWhiteboxAttackSurfaceWorkflow — custom seams", () => {
 });
 
 describe("runWhiteboxAttackSurfaceWorkflow — AgentHooks", () => {
+  it("inherits tool execution context in discovery child descriptors", async () => {
+    const sharedContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const appContext: NonNullable<AgentHooks["toolExecutionContext"]> = {
+      run: (_call, execute) => execute(),
+    };
+    const childContexts: AgentHooks["toolExecutionContext"][] = [];
+    await runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: "test-model",
+      session,
+      surfaceIntegrationEnabled: false,
+      subagentSpawner: {
+        ...codeSpawner,
+        spawn: (request) => {
+          childContexts.push(request.runtime.toolExecutionContext);
+          return codeSpawner.spawn(request);
+        },
+      },
+      hooks: { toolExecutionContext: sharedContext },
+      seams: inProcessSeams({
+        hooksForItem: () => ({ toolExecutionContext: appContext }),
+      }),
+    });
+    expect(childContexts).toHaveLength(2);
+    expect(mocks.codeAgentInputs[0]?.toolExecutionContext).toBe(sharedContext);
+    expect(childContexts).toEqual([appContext, appContext]);
+  });
+
   it("reaches the Phase 1 apps-discovery agent with the caller's own AgentHooks object", async () => {
     const backends = {
       __sentinel: "backends",
@@ -276,6 +322,33 @@ describe("runWhiteboxAttackSurfaceApp — standalone, no runWhiteboxAttackSurfac
     expect(mocks.codeAgentInputs).toHaveLength(2);
     expect(mocks.codeAgentInputs[0]?.backends).toBe(backends);
     expect(mocks.codeAgentInputs[1]?.backends).toBe(backends);
+  });
+
+  it("logs the original batch admission error while preserving the failure result", async () => {
+    const failure = new Error("batch admission failed");
+    const failed = await runWhiteboxAttackSurfaceApp(app, 0, {
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      surfaceIntegrationEnabled: false,
+      isSingleAppRepo: true,
+      umbrellaId: "umbrella",
+      mintChildId: (name) => name,
+      hooks: {},
+      subagentSpawner: {
+        ...codeSpawner,
+        spawnBatch: async () => {
+          throw failure;
+        },
+      },
+      seams: inProcessSeams(),
+    });
+    expect(failed).toBe(true);
+    expect(mocks.errorLog).toHaveBeenCalledWith(
+      'Phase 2: app "web" FAILED',
+      failure,
+      { error: String(failure), app: "web" },
+    );
   });
 
   it("reports failure when a discovery agent throws, without throwing itself", async () => {
@@ -649,6 +722,72 @@ it.each([
   ).rejects.toThrow(/enumeration|pagination/);
 });
 
+it.each([
+  ["unreadable", undefined, "Recon artifact read failed"],
+  [
+    "invalid",
+    JSON.stringify({ routePath: 1 }),
+    "Recon artifact failed validation",
+  ],
+])("reports a %s incremental asset with a static message and the path as a property", async (_name, content, message) => {
+  const { LocalBackends } = await import("../tools/backends/local");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const ownedRoot = join(rootPath, "owned-sandbox-bad-asset");
+  const assetsPath = join(ownedRoot, "assets");
+  mkdirSync(join(assetsPath, "api"), { recursive: true });
+  writeFileSync(
+    join(assetsPath, "api", "app.json"),
+    JSON.stringify({
+      name: "API",
+      type: "api",
+      framework: "Express",
+      description: "app",
+      location: "api",
+    }),
+  );
+  const assetPath = join(assetsPath, "api", "asset_0.json");
+  const backends = LocalBackends({
+    session,
+    agentCwd: ownedRoot,
+    fileWorkspaceRoot: ownedRoot,
+    subagentSpawner: codeSpawner,
+  });
+  if (content === undefined) {
+    const readRaw = backends.fs.readRaw.bind(backends.fs);
+    vi.spyOn(backends.fs, "readRaw").mockImplementation(async (path) =>
+      path.endsWith("asset_0.json")
+        ? ({ success: false, error: "denied", content: "" } as never)
+        : readRaw(path),
+    );
+  }
+  writeFileSync(assetPath, content ?? "{}");
+  mocks.consumeImpl = async () => ({ changedApps: [] });
+  const error = await runWhiteboxAttackSurfaceWorkflow({
+    codebasePath: ownedRoot,
+    model: {} as AIModel,
+    session,
+    hooks: { backends },
+    incremental: {
+      assetsPath,
+      diffPath: join(ownedRoot, "diff"),
+      existingResult: {
+        repoType: "single-app",
+        packageManager: "bun",
+        apps: [],
+        summary: {
+          totalApps: 0,
+          totalPages: 0,
+          totalApiEndpoints: 0,
+          totalPentestObjectives: 0,
+        },
+      },
+    },
+  }).catch((e: unknown) => e as Error & { path?: string });
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toBe(message);
+  expect((error as Error & { path?: string }).path).toBe(assetPath);
+});
+
 it("uses the injected ID factory for surface endpoint children in dispatch order", async () => {
   vi.spyOn(surfaceModule, "mapAppWithSurface").mockReturnValue({
     mode: "surface",
@@ -692,4 +831,105 @@ it("uses the injected ID factory for surface endpoint children in dispatch order
     "web: GET /second:2",
   ]);
   expect(randomId).not.toHaveBeenCalled();
+});
+
+describe("whitebox discovery umbrella lifecycle", () => {
+  it("completes the umbrella once when Phase 2 fan-out rejects and preserves the cause", async () => {
+    const failure = new Error("All whitebox recon app children failed");
+    const eventBus = new AgentEventBus();
+    const completions: { subagentId: string; status: string }[] = [];
+    const errors: unknown[] = [];
+    eventBus.on("error", ({ error }) => {
+      errors.push(error);
+    });
+    eventBus.on("subagent-complete", (event) => {
+      completions.push(event);
+    });
+    await expect(
+      runWhiteboxAttackSurfaceWorkflow({
+        codebasePath: "/repo",
+        model: {} as AIModel,
+        session,
+        eventBus,
+        surfaceIntegrationEnabled: false,
+        seams: inProcessSeams({
+          ids: { newSessionId: () => "ses_discovery_umbrella" },
+          fanOut: {
+            spawnMany: async () => {
+              eventBus.emit("error", {
+                error: failure,
+                subagentId: "ses_pages_child",
+              });
+              throw failure;
+            },
+          },
+        }),
+      }),
+    ).rejects.toBe(failure);
+    expect(completions).toEqual([
+      { subagentId: "ses_discovery_umbrella", status: "failed" },
+    ]);
+    expect(errors).toEqual([failure]);
+  });
+  it("completes the umbrella once when Phase 2 is cancelled without replacing the abort reason", async () => {
+    const controller = new AbortController();
+    const failure = new DOMException("cancelled", "AbortError");
+    const eventBus = new AgentEventBus();
+    const completions: { subagentId: string; status: string }[] = [];
+    eventBus.on("subagent-complete", (event) => {
+      completions.push(event);
+    });
+    let cancel!: (reason: unknown) => void;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pending = runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      eventBus,
+      abortSignal: controller.signal,
+      surfaceIntegrationEnabled: false,
+      seams: inProcessSeams({
+        ids: { newSessionId: () => "ses_cancelled_umbrella" },
+        fanOut: {
+          spawnMany: () =>
+            new Promise<never>((_resolve, reject) => {
+              cancel = reject;
+              started();
+            }),
+        },
+      }),
+    });
+    await entered;
+    const rejected = expect(pending).rejects.toBe(failure);
+    controller.abort(failure);
+    cancel(controller.signal.reason);
+    await rejected;
+    expect(completions).toEqual([
+      { subagentId: "ses_cancelled_umbrella", status: "failed" },
+    ]);
+  });
+
+  it("keeps exactly one successful umbrella completion on the existing success path", async () => {
+    const eventBus = new AgentEventBus();
+    const completions: { subagentId: string; status: string }[] = [];
+    eventBus.on("subagent-complete", (event) => {
+      completions.push(event);
+    });
+    await runWhiteboxAttackSurfaceWorkflow({
+      codebasePath: "/repo",
+      model: {} as AIModel,
+      session,
+      eventBus,
+      surfaceIntegrationEnabled: false,
+      seams: inProcessSeams({
+        ids: { newSessionId: (_name, ordinal) => `ses_success_${ordinal}` },
+      }),
+    });
+    expect(
+      completions.filter((event) => event.subagentId === "ses_success_0"),
+    ).toEqual([{ subagentId: "ses_success_0", status: "completed" }]);
+  });
 });

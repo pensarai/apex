@@ -582,6 +582,27 @@ describe("synchronous dispatch gates", () => {
 
       // Ungated tool passes with no approval record.
       control.assertToolApproved(runId, "execute_command", "tc_x", input);
+      control.assertToolApproved(runId, "exec", "tc_exec", { code: "text(1)" });
+      control.assertToolApproved(runId, "wait", "tc_wait", {
+        cell_id: "cell_1",
+      });
+
+      expect(() =>
+        control.assertToolApproved(
+          runId,
+          "http_request",
+          "tc_exec:nested:1",
+          input,
+        ),
+      ).toThrowError(RunControlInterruption);
+      expect(() =>
+        control.assertToolApproved(
+          runId,
+          "document_vulnerability",
+          "tc_exec:nested:2",
+          input,
+        ),
+      ).toThrow(/active tool allowlist/);
 
       // Not admitted to the run at all.
       expect(() =>

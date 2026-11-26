@@ -47,12 +47,15 @@ const CandidateStateSchema = z.enum([
 ]);
 
 export function createWhiteboxCandidate(ctx: ToolContext) {
+  const candidateGuidance =
+    ctx.findingPolicy === "external"
+      ? "for the caller's final evaluation. Candidates keep hypotheses, source-to-sink traces, scanner artifacts, fuzzing logs, and verification status separate from reported findings."
+      : "for document_vulnerability. Candidates keep hypotheses, source-to-sink traces,\nscanner artifacts, fuzzing logs, and verification status out of official findings.";
   return tool({
     description: `Create a whitebox vulnerability candidate.
 
 Use this for plausible source-code findings that are not yet confirmed enough
-for document_vulnerability. Candidates keep hypotheses, source-to-sink traces,
-scanner artifacts, fuzzing logs, and verification status out of official findings.`,
+${candidateGuidance}`,
     inputSchema: z.object({
       title: z.string(),
       vulnerabilityClass: z.string(),
@@ -81,7 +84,9 @@ scanner artifacts, fuzzing logs, and verification status out of official finding
         artifactPaths: candidate.artifacts.map((artifact) => artifact.path),
         nextActions: [
           "Move candidate to investigating after reading source context.",
-          "Attempt a reproducer or dynamic verification before document_vulnerability.",
+          ctx.findingPolicy === "external"
+            ? "Gather the evidence required by the caller before reporting this candidate."
+            : "Attempt a reproducer or dynamic verification before document_vulnerability.",
         ],
         truncated: false,
       };
@@ -132,7 +137,9 @@ State machine: hypothesis -> investigating -> repro_attempted -> confirmed (requ
           nextActions:
             candidate.state === "confirmed"
               ? [
-                  "Use document_vulnerability only if the proof demonstrates exploitability.",
+                  ctx.findingPolicy === "external"
+                    ? "Report only the evidence-backed conclusion to the caller."
+                    : "Use document_vulnerability only if the proof demonstrates exploitability.",
                 ]
               : [
                   "Continue tracing or verification based on the candidate state.",

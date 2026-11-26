@@ -8,6 +8,19 @@
 //    eliminate the split. The lint rule for module barriers exempts this.
 
 export type {
+  LanceMetrics,
+  LanceOptions,
+  ObjectiveCandidate,
+  ObjectiveVerification,
+} from "../agents/lance";
+export { LANCE_CONFIG, LANCE_DESCRIPTION } from "../agents/lance";
+export type { LanceBudget } from "../agents/lanceBudget";
+export type {
+  FindingPolicy,
+  OffensiveSecurityAgentInput,
+} from "../agents/offSecAgent";
+export { EXTERNAL_FINDING_POLICY_CAPABILITY } from "../agents/offSecAgent";
+export type {
   CreateNativeRolloutEvidenceCaptureInput,
   NativeRolloutCaptureLimits,
   NativeRolloutCaptureReportV1,
@@ -46,6 +59,10 @@ export type {
   RunToolStore,
 } from "../runtime/runToolStore";
 export { openSqliteRunStore } from "../runtime/sqliteRunStore";
+export type {
+  PentestWorkflowInput,
+  PentestWorkflowResult,
+} from "../workflows/pentest";
 export type {
   AppDetail,
   ApplicationType,
@@ -107,6 +124,21 @@ export { createDomain, listDomains } from "./domains";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {
+  IncidentDetail,
+  IncidentEventPage,
+  IncidentListOptions,
+  IncidentLogPage,
+  IncidentPage,
+  IncidentSummary,
+} from "./incidents";
+export {
+  getIncident,
+  getIncidentLogAttachment,
+  listIncidentEvents,
+  listIncidentLogs,
+  listIncidents,
+} from "./incidents";
+export type {
   AgentLogEntry,
   ClosedDisposition,
   CommentAuthor,
@@ -117,6 +149,8 @@ export type {
   IssueCommentPage,
   IssueCommentSummary,
   IssueDetail,
+  IssueEvidence,
+  IssueRetest,
   IssueSummary,
   LinkPullRequestResult,
   ListAgentLogsResult,
@@ -136,12 +170,14 @@ export {
   dispatchPentest,
   getFix,
   getIssue,
+  getIssueEvidence,
   getScan,
   linkPullRequest,
   listAgentLogs,
   listFixes,
   listIssueComments,
   listIssuePullRequests,
+  listIssueRetests,
   listIssues,
   listPentestTargets,
   listScans,
@@ -166,6 +202,7 @@ export {
   listKnowledge,
   updateKnowledge,
 } from "./knowledge";
+export { type RunLanceInput, runLance } from "./lance";
 export { serveLocalRunWorker } from "./localWorker";
 export type {
   OffensiveSecurityAgentClientInput,
@@ -187,6 +224,21 @@ export {
   resumeRecordedAgent,
   runRecordedAgent,
 } from "./recordedRun";
+export type {
+  SiemAlertEvidence,
+  SiemLogEvent,
+  SiemLogSearch,
+  SiemLogSearchQuery,
+  SiemLogSearchResult,
+  SiemTriageAgentInput,
+  SiemTriageResult,
+} from "./siemTriage";
+export {
+  runSiemTriageAgent,
+  SiemTriageResultSchema,
+  SiemTriageSeveritySchema,
+  SiemTriageVerdictSchema,
+} from "./siemTriage";
 export { runTargetedPentestAgent } from "./targetedPentest";
 export type {
   ThreatModelWorkflowInput,

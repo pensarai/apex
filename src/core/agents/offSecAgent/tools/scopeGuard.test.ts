@@ -1,15 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import { describe, expect, it, vi } from "vitest";
+import {
+  applyHeadersToShellCommand,
+  resolveEffectiveHeaders,
+} from "../../../http/targetHeaders";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   assertCommandInScope,
   assertFindingEndpointInScope,
+  assertRequestInScope,
   assertUrlInScope,
   extractHostname,
   extractHostsFromCommand,
   getAllowedHosts,
-  getRegistrableDomain,
+  getAllowedPorts,
   isHostAllowed,
   resolverSessionFromCtx,
   ScopeViolationError,
@@ -53,7 +57,7 @@ describe("getAllowedHosts", () => {
     const ctx = makeCtx();
     ctx.session.targets = ["https://api.example.com", "https://other.dev"];
     const hosts = getAllowedHosts(ctx);
-    expect(hosts).toContain("example.com");
+    expect(hosts).toContain("api.example.com");
     expect(hosts).toContain("other.dev");
   });
 
@@ -82,22 +86,21 @@ describe("getAllowedHosts", () => {
       scopeConstraints: { allowedHosts: ["OTHER.Dev"] },
     };
     const hosts = getAllowedHosts(ctx);
-    expect(hosts).toContain("example.com");
-    expect(hosts).toContain("other.dev");
+    expect(hosts).toEqual(["other.dev"]);
   });
 
-  it("expands target hosts to the registrable domain (eTLD+1)", () => {
+  it("keeps target hosts exact", () => {
     const hosts = getAllowedHosts(
       makeCtx({ target: "https://web.dev.diracinc.com" }),
     );
-    expect(hosts).toEqual(["diracinc.com"]);
+    expect(hosts).toEqual(["web.dev.diracinc.com"]);
   });
 
   it("handles multi-label public suffixes (e.g. .co.uk)", () => {
     const ctx = makeCtx({ target: "https://api.foo.co.uk" });
     const hosts = getAllowedHosts(ctx);
-    expect(hosts).toContain("foo.co.uk");
-    expect(hosts).not.toContain("co.uk");
+    expect(hosts).toContain("api.foo.co.uk");
+    expect(hosts).not.toContain("foo.co.uk");
   });
 
   it("leaves IP address targets unchanged (no PSL expansion)", () => {
@@ -117,6 +120,34 @@ describe("getAllowedHosts", () => {
     };
     const hosts = getAllowedHosts(ctx);
     expect(hosts).toEqual(["api.example.com"]);
+  });
+
+  it("falls back to target hosts when allowedHosts is an empty list", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session.config = {
+      scopeConstraints: { allowedHosts: [] },
+    };
+    expect(getAllowedHosts(ctx)).toEqual(["example.com"]);
+  });
+});
+
+describe("getAllowedPorts", () => {
+  it("returns the configured port allowlist", () => {
+    const ctx = makeCtx({ target: "https://example.com:8443" });
+    ctx.session.config = {
+      scopeConstraints: { allowedPorts: [8443, 9443] },
+    };
+    expect(getAllowedPorts(ctx)).toEqual([8443, 9443]);
+  });
+
+  it("deduplicates and rejects invalid structural values", () => {
+    const ctx = makeCtx();
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedPorts: [443, 443, 0, 65536],
+      },
+    };
+    expect(getAllowedPorts(ctx)).toEqual([443]);
   });
 });
 
@@ -184,17 +215,18 @@ describe("resolverSessionFromCtx", () => {
 // ---------------------------------------------------------------------------
 
 describe("isHostAllowed", () => {
-  it("allows everything when allowedHosts is empty", () => {
-    expect(isHostAllowed("anything.com", [])).toBe(true);
+  it("allows nothing when allowedHosts is empty", () => {
+    expect(isHostAllowed("anything.com", [])).toBe(false);
   });
 
   it("matches exact hostname", () => {
     expect(isHostAllowed("example.com", ["example.com"])).toBe(true);
   });
 
-  it("matches subdomain of allowed host", () => {
-    expect(isHostAllowed("api.example.com", ["example.com"])).toBe(true);
-    expect(isHostAllowed("deep.sub.example.com", ["example.com"])).toBe(true);
+  it("matches subdomains only for an explicit wildcard", () => {
+    expect(isHostAllowed("api.example.com", ["example.com"])).toBe(false);
+    expect(isHostAllowed("api.example.com", ["*.example.com"])).toBe(true);
+    expect(isHostAllowed("deep.sub.example.com", ["*.example.com"])).toBe(true);
   });
 
   it("rejects unrelated domains", () => {
@@ -206,11 +238,11 @@ describe("isHostAllowed", () => {
   });
 
   it("is case-insensitive", () => {
-    expect(isHostAllowed("API.EXAMPLE.COM", ["example.com"])).toBe(true);
+    expect(isHostAllowed("API.EXAMPLE.COM", ["api.example.com"])).toBe(true);
   });
 
   it("is case-insensitive on allowedHosts side", () => {
-    expect(isHostAllowed("api.example.com", ["EXAMPLE.COM"])).toBe(true);
+    expect(isHostAllowed("api.example.com", ["*.EXAMPLE.COM"])).toBe(true);
     expect(isHostAllowed("example.com", ["Example.Com"])).toBe(true);
   });
 
@@ -261,9 +293,33 @@ describe("assertUrlInScope", () => {
     expect(() =>
       assertUrlInScope("https://example.com/login", ctx),
     ).not.toThrow();
+    expect(() => assertUrlInScope("https://api.example.com/v1", ctx)).toThrow(
+      ScopeViolationError,
+    );
+  });
+
+  it("enforces configured ports, including protocol defaults", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session.config = {
+      scopeConstraints: {
+        allowedHosts: ["example.com"],
+        allowedPorts: [443, 8443],
+        strictScope: true,
+      },
+    };
+
     expect(() =>
-      assertUrlInScope("https://api.example.com/v1", ctx),
+      assertUrlInScope("https://example.com/login", ctx),
     ).not.toThrow();
+    expect(() =>
+      assertUrlInScope("https://example.com:8443/login", ctx),
+    ).not.toThrow();
+    expect(() => assertUrlInScope("http://example.com/login", ctx)).toThrow(
+      /port 80.*allowed target ports \[443, 8443\]/,
+    );
+    expect(() =>
+      assertUrlInScope("https://example.com:9443/login", ctx),
+    ).toThrow(/port 9443.*allowed target ports \[443, 8443\]/);
   });
 
   it("blocks out-of-scope URLs", () => {
@@ -306,15 +362,17 @@ describe("assertUrlInScope", () => {
     expect(() => assertUrlInScope("   ", makeCtx())).not.toThrow();
   });
 
-  it("allows sibling subdomains under the same registrable domain", () => {
+  it("blocks sibling subdomains unless explicitly authorized", () => {
     const ctx = makeCtx({ target: "https://web.dev.diracinc.com" });
     expect(() =>
       assertUrlInScope("https://auth.dev.diracinc.com/login", ctx),
-    ).not.toThrow();
-    expect(() =>
-      assertUrlInScope("https://api.diracinc.com/v1", ctx),
-    ).not.toThrow();
-    expect(() => assertUrlInScope("https://diracinc.com", ctx)).not.toThrow();
+    ).toThrow(ScopeViolationError);
+    expect(() => assertUrlInScope("https://api.diracinc.com/v1", ctx)).toThrow(
+      ScopeViolationError,
+    );
+    expect(() => assertUrlInScope("https://diracinc.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
   });
 
   it("blocks other registrable domains", () => {
@@ -325,6 +383,49 @@ describe("assertUrlInScope", () => {
     expect(() =>
       assertUrlInScope("https://diracinc.com.evil.com", ctx),
     ).toThrow(ScopeViolationError);
+  });
+
+  it("treats explicit hosts as authoritative and supports explicit wildcards", () => {
+    const ctx = makeCtx({ target: "https://staging.example.com" });
+    ctx.session.config = {
+      scopeConstraints: {
+        strictScope: true,
+        allowedHosts: ["staging.example.com", "*.assets.example.com"],
+      },
+    };
+
+    expect(() =>
+      assertUrlInScope("https://staging.example.com", ctx),
+    ).not.toThrow();
+    expect(() =>
+      assertUrlInScope("https://cdn.assets.example.com", ctx),
+    ).not.toThrow();
+    expect(() => assertUrlInScope("https://prod.example.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
+  });
+
+  it("fails closed when strict scope has no allowed hosts", () => {
+    const ctx = makeCtx();
+    ctx.session.config = {
+      scopeConstraints: { strictScope: true, allowedHosts: [] },
+    };
+    expect(() => assertUrlInScope("https://example.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
+  });
+
+  it("still scopes to the target when allowedHosts is an empty default list", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session.config = {
+      scopeConstraints: { allowedHosts: [] },
+    };
+    expect(() =>
+      assertUrlInScope("https://example.com/login", ctx),
+    ).not.toThrow();
+    expect(() => assertUrlInScope("https://evil.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
   });
 });
 
@@ -342,7 +443,7 @@ describe("assertFindingEndpointInScope", () => {
   it("allows an in-scope absolute endpoint", () => {
     const ctx = makeCtx({ target: "https://example.com" });
     expect(() =>
-      assertFindingEndpointInScope("https://api.example.com/v1/users", ctx),
+      assertFindingEndpointInScope("https://example.com/v1/users", ctx),
     ).not.toThrow();
   });
 
@@ -362,34 +463,6 @@ describe("assertFindingEndpointInScope", () => {
     expect(() =>
       assertFindingEndpointInScope("https://evil.example.net/x", ctx),
     ).toThrow(ScopeViolationError);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getRegistrableDomain
-// ---------------------------------------------------------------------------
-
-describe("getRegistrableDomain", () => {
-  it("returns eTLD+1 for deep subdomains", () => {
-    expect(getRegistrableDomain("web.dev.example.com")).toBe("example.com");
-    expect(getRegistrableDomain("a.b.c.d.example.com")).toBe("example.com");
-  });
-
-  it("handles multi-label public suffixes", () => {
-    expect(getRegistrableDomain("api.foo.co.uk")).toBe("foo.co.uk");
-  });
-
-  it("is case-insensitive", () => {
-    expect(getRegistrableDomain("API.EXAMPLE.COM")).toBe("example.com");
-  });
-
-  it("returns the input unchanged for IPs", () => {
-    expect(getRegistrableDomain("192.168.1.1")).toBe("192.168.1.1");
-  });
-
-  it("returns the input unchanged for localhost/bare labels", () => {
-    expect(getRegistrableDomain("localhost")).toBe("localhost");
-    expect(getRegistrableDomain("internal")).toBe("internal");
   });
 });
 
@@ -536,7 +609,7 @@ describe("assertCommandInScope", () => {
       assertCommandInScope("nmap -sV example.com", ctx),
     ).not.toThrow();
     expect(() =>
-      assertCommandInScope("curl https://api.example.com/v1", ctx),
+      assertCommandInScope("curl https://example.com/v1", ctx),
     ).not.toThrow();
   });
 
@@ -570,5 +643,76 @@ describe("assertCommandInScope", () => {
     expect(() =>
       assertCommandInScope("grep -r 'password' /var/log", ctx),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test domains: reachable destinations, never targets
+// ---------------------------------------------------------------------------
+
+describe("session test domains", () => {
+  const CB = "3f2b8c1e.cb.example.net";
+
+  function withTestDomain(): ToolContext {
+    const ctx = makeCtx({ target: "https://app.example.com" });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://app.example.com"],
+      config: { headers: { "X-API-Key": "secret" } },
+    } as typeof ctx.session;
+    ctx.callbacks = { domains: [CB], readHits: vi.fn() };
+    return ctx;
+  }
+
+  it("lets a command carry a test-domain URL in its payload", () => {
+    const ctx = withTestDomain();
+    expect(() =>
+      assertCommandInScope(
+        `curl -X POST https://app.example.com/import -d 'url=https://${CB}/ssrf-1'`,
+        ctx,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertCommandInScope(
+        "curl https://app.example.com/ -d 'url=https://evil.example.org/'",
+        ctx,
+      ),
+    ).toThrow(ScopeViolationError);
+  });
+
+  it("allows a request to a test domain but keeps it out of target-only checks", () => {
+    const ctx = withTestDomain();
+    expect(() =>
+      assertRequestInScope(`https://${CB}/self-check`, ctx),
+    ).not.toThrow();
+    expect(() =>
+      assertRequestInScope("https://evil.example.org/", ctx),
+    ).toThrow(ScopeViolationError);
+    expect(() => assertUrlInScope(`https://${CB}/`, ctx)).toThrow(
+      ScopeViolationError,
+    );
+    expect(() =>
+      assertFindingEndpointInScope(`https://${CB}/ssrf-1`, ctx),
+    ).toThrow(ScopeViolationError);
+  });
+
+  it("never sends session or credential headers to a test domain", () => {
+    const ctx = withTestDomain();
+    expect(
+      resolveEffectiveHeaders(resolverSessionFromCtx(ctx), `https://${CB}/x`),
+    ).toEqual({});
+    expect(
+      resolveEffectiveHeaders(
+        resolverSessionFromCtx(ctx),
+        "https://app.example.com/x",
+      ),
+    ).toEqual({ "X-API-Key": "secret" });
+    expect(
+      applyHeadersToShellCommand(
+        `curl https://${CB}/x`,
+        resolverSessionFromCtx(ctx),
+        [CB],
+      ).status,
+    ).not.toBe("injected");
   });
 });

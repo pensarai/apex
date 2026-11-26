@@ -70,3 +70,65 @@ describe("buildBaseSystemPrompt workspace management", () => {
     );
   });
 });
+
+describe("finding PoC guidance", () => {
+  it("routes PoCs that send URLs as data to HTTP PoCs", () => {
+    const prompt = buildBaseSystemPrompt();
+    expect(prompt).toContain(
+      'use `pocType: "http"` with `pocRequests` instead of a script',
+    );
+    expect(prompt).toContain("Only each request's `url` is scope-checked");
+  });
+
+  it("leaves the HTTP PoC rule out when findings go to the caller", () => {
+    expect(buildBaseSystemPrompt({ findingPolicy: "external" })).not.toContain(
+      "pocRequests",
+    );
+  });
+});
+
+describe("external finding policy prompts", () => {
+  const session = {
+    rootPath: "/tmp/apex-external-prompt",
+    findingsPath: "/tmp/apex-external-prompt/findings",
+    pocsPath: "/tmp/apex-external-prompt/pocs",
+    scratchpadPath: "/tmp/apex-external-prompt/scratchpad",
+    logsPath: "/tmp/apex-external-prompt/logs",
+  };
+
+  it("keeps exploration guidance without directing an unavailable finding tool", () => {
+    const prompt = buildBaseSystemPrompt({ findingPolicy: "external" });
+    expect(prompt).toContain("Source code analysis");
+    expect(prompt).toContain("caller grades them after the run");
+    expect(prompt).not.toContain("document_vulnerability");
+    expect(prompt).not.toContain("published PoCs");
+  });
+
+  it.each([
+    [session.rootPath, undefined],
+    ["/project", undefined],
+    ["/project", "/tmp/apex-external-prompt/helpers"],
+  ])("uses the caller's finding contract for cwd %s", (cwd, fileWorkspaceRoot) => {
+    const prompt = buildSessionWorkspaceSection(
+      session,
+      cwd,
+      ["execute_command", "read_file"],
+      fileWorkspaceRoot,
+      "external",
+    );
+    expect(prompt).toContain("caller's output contract");
+    expect(prompt).not.toContain("document_vulnerability");
+  });
+
+  it("keeps source guidance policy-safe even when tool names are not supplied", () => {
+    const prompt = buildSessionWorkspaceSection(
+      { ...session, config: { codebasePath: "/project" } },
+      "/project",
+      undefined,
+      undefined,
+      "external",
+    );
+    expect(prompt).toContain("Source Code Assessment");
+    expect(prompt).not.toContain("document_vulnerability");
+  });
+});

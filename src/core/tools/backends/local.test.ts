@@ -1,4 +1,5 @@
-import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import { PerCommandShell } from "../../agents/offSecAgent/tools/perCommandShell"
 import type { ReadFileResult } from "../../agents/offSecAgent/tools/readFile";
 import { readFile as readFileTool } from "../../agents/offSecAgent/tools/readFile";
 import type { ToolContext } from "../../agents/offSecAgent/tools/types";
+import { createLocalResearchFetchToken } from "../../http/researchFetchToken";
 import { LocalBackends, runLocalProgram } from "./local";
 import type { CommandEvent } from "./types";
 
@@ -217,6 +219,17 @@ describe("LocalBackends.command streaming", () => {
   });
 });
 
+describe("LocalBackends.callbacks", () => {
+  it("exposes the host's callbacks backend, and nothing without one", () => {
+    const callbacks = {
+      domains: ["probe.cb.example.net"],
+      readHits: vi.fn(),
+    };
+    expect(LocalBackends(makeCtx({ callbacks })).callbacks).toBe(callbacks);
+    expect(LocalBackends(makeCtx({})).callbacks).toBeUndefined();
+  });
+});
+
 describe("LocalBackends.http destructive guard", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -238,6 +251,131 @@ describe("LocalBackends.http destructive guard", () => {
       }),
     ).rejects.toThrow();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("LocalBackends local research capabilities", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("redeems a URL-bound Brave result without forwarding target credentials", async () => {
+    const externalUrl = "https://research.example/advisory";
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("<html><body>Advisory</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = makeCtx({ target: "https://target.example" });
+    ctx.session.config = {
+      headers: { Authorization: "Bearer target-secret" },
+      scopeConstraints: {
+        allowedHosts: ["target.example"],
+        strictScope: true,
+      },
+    };
+
+    const result = await LocalBackends(ctx).http.request({
+      url: externalUrl,
+      method: "GET",
+      extract: "readability",
+      fetchToken: createLocalResearchFetchToken(externalUrl),
+    });
+
+    expect(result).toMatchObject({ success: true, url: externalUrl });
+    expect(fetchMock).toHaveBeenCalledWith(externalUrl, {
+      method: "GET",
+      redirect: "manual",
+      signal: expect.any(AbortSignal),
+    });
+  });
+});
+
+describe("LocalBackends.http redirect policy", () => {
+  it("blocks an out-of-scope sandbox redirect before a second request", async () => {
+    const execute = vi.fn(async (command: string) => {
+      const nonce = command.match(/__APEX_([0-9a-f]+)_CURL_EXIT_/)?.[1];
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: Buffer.from(
+          `HTTP/1.1 302 Found\r\nLocation: https://outside.example/admin\r\n\r\n\n__APEX_${nonce}_CURL_EXIT_0\n`,
+        ).toString("base64"),
+        stderr: "",
+      };
+    });
+    const ctx = makeCtx({
+      target: "https://target.example",
+      sandbox: {
+        type: "linux",
+        execute,
+      } as unknown as NonNullable<ToolContext["sandbox"]>,
+    });
+
+    const result = await LocalBackends(ctx).http.request({
+      url: "https://target.example/start",
+      method: "GET",
+      followRedirects: true,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/scope violation/i),
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { status: 303, method: "HEAD", expected: "HEAD", body: undefined },
+    { status: 301, method: "PUT", expected: "PUT", body: "put-body" },
+    {
+      status: 302,
+      method: "PATCH",
+      expected: "PATCH",
+      body: "patch-body",
+    },
+  ] as const)("preserves $method across $status like the shared redirect primitive", async ({
+    status,
+    method,
+    expected,
+    body,
+  }) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status,
+          headers: { location: "https://target.example/final" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = makeCtx({ target: "https://target.example" });
+    ctx.session.config = {
+      allowDestructiveActions: true,
+      scopeConstraints: {
+        allowedHosts: ["target.example"],
+        allowedPorts: [443],
+        strictScope: true,
+      },
+    };
+
+    try {
+      await LocalBackends(ctx).http.request({
+        url: "https://target.example/start",
+        method,
+        body,
+        followRedirects: true,
+      });
+
+      const redirectedInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+      expect(redirectedInit.method).toBe(expected);
+      expect(redirectedInit.body).toBe(body);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -303,5 +441,77 @@ it("preserves UTF-8 codepoints split across streamed stdout chunks", async () =>
     type: "end",
     exitCode: 0,
     timedOut: false,
+  });
+});
+
+describe("LocalBackends.repoClone", () => {
+  let shell: PerCommandShell | undefined;
+
+  afterEach(() => {
+    shell?.dispose();
+    shell = undefined;
+  });
+
+  function sourceRepo(): string {
+    const repo = tmp("apex-repo-src-");
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: repo, stdio: "pipe" });
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.test");
+    writeFileSync(join(repo, "marker"), "main");
+    git("add", ".");
+    git("commit", "-m", "main");
+    git("checkout", "-b", "release");
+    writeFileSync(join(repo, "marker"), "release");
+    git("commit", "-am", "release");
+    git("checkout", "main");
+    return repo;
+  }
+
+  function cloner(root: string) {
+    shell = new PerCommandShell({ cwd: root });
+    const { repoClone } = LocalBackends(
+      makeCtx({ agentCwd: root, commandShell: shell }),
+    );
+    if (!repoClone) throw new Error("LocalBackends must provide repoClone");
+    return repoClone;
+  }
+
+  it("clones a connected repo at the requested branch under the workspace", async () => {
+    const root = tmp("apex-be-");
+    const repoClone = cloner(root);
+    const result = await repoClone.clone({
+      repoUrl: sourceRepo(),
+      ref: "release",
+      dest: "repos/fixture",
+    });
+    expect(result).toEqual({
+      success: true,
+      path: join(root, "repos/fixture"),
+    });
+    expect(readFileSync(join(root, "repos/fixture/marker"), "utf8")).toBe(
+      "release",
+    );
+  });
+
+  it("reuses an existing clone instead of failing on a second call", async () => {
+    const root = tmp("apex-be-");
+    const repoClone = cloner(root);
+    const repoUrl = sourceRepo();
+    const request = { repoUrl, dest: "repos/fixture" };
+    expect((await repoClone.clone(request)).success).toBe(true);
+    expect((await repoClone.clone(request)).success).toBe(true);
+  });
+
+  it("reports a failed clone as a structured error", async () => {
+    const root = tmp("apex-be-");
+    const repoClone = cloner(root);
+    const result = await repoClone.clone({
+      repoUrl: join(root, "does-not-exist"),
+      dest: "repos/missing",
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
   });
 });

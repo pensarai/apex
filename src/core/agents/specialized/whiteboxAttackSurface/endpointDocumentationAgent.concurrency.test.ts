@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 import type { SessionInfo } from "../../../session";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
-import type { SubagentSpawner } from "../../offSecAgent/subagentSpawner";
+import {
+  type SubagentSpawner,
+  spawnBatch,
+} from "../../offSecAgent/subagentSpawner";
 import type { AppInfo } from "./types";
 
 // Tracks how many mocked CodeAgent runs are executing at once so we can assert
@@ -58,6 +61,25 @@ const codeSpawner = {
   ) => runWithBoundedConcurrency(items, opts.concurrency, worker),
 } as unknown as SubagentSpawner;
 
+const nativeSpawner: SubagentSpawner = {
+  ...codeSpawner,
+  supportsBatchLimiter: true,
+  spawnBatch(requests, opts) {
+    const slots = pLimit(opts.concurrency);
+    return Promise.allSettled(
+      requests.map((request) =>
+        slots(() => {
+          const run = () => {
+            opts.abortSignal?.throwIfAborted();
+            return codeSpawner.spawn(request);
+          };
+          return opts.limiter ? opts.limiter(run) : run();
+        }),
+      ),
+    );
+  },
+};
+
 const NUM_APPS = 50;
 const ENDPOINTS_PER_APP = 100;
 const CAP = 12;
@@ -92,6 +114,7 @@ function makeEndpoints(n: number, appName: string): ConsolidatedEndpoint[] {
 
 async function runAllApps(
   agentLimiter?: <T>(fn: () => Promise<T>) => Promise<T>,
+  spawner = codeSpawner,
 ): Promise<void> {
   const apps = Array.from({ length: NUM_APPS }, (_, a) => `app${a}`);
   // Same two-level nesting the workflow uses: up to APP_CONCURRENCY apps run at
@@ -106,7 +129,7 @@ async function runAllApps(
       model: "test-model",
       session: {} as unknown as SessionInfo,
       agentLimiter,
-      subagentSpawner: codeSpawner,
+      subagentSpawner: spawner,
     }),
   );
 }
@@ -134,5 +157,39 @@ describe("endpoint documentation concurrency (50 apps x 100 endpoints)", () => {
     // (10) = ~50, independent of how many endpoints — and it grows with more
     // apps allowed in flight. Well above the bounded cap.
     expect(tracker.peak).toBeGreaterThanOrEqual(APP_CONCURRENCY * 8);
+  });
+});
+
+it("bounds native batches across apps without losing any child descriptors", async () => {
+  tracker.reset();
+  await runAllApps(pLimit(CAP), nativeSpawner);
+  expect(tracker.total).toBe(NUM_APPS * ENDPOINTS_PER_APP);
+  expect(tracker.peak).toBeLessThanOrEqual(CAP);
+});
+
+it("rejects an unsupported native scheduler before it can launch children", async () => {
+  const nativeBatch = vi.fn();
+  await expect(
+    spawnBatch(
+      { ...codeSpawner, spawnBatch: nativeBatch },
+      [],
+      { concurrency: 2 },
+      pLimit(1),
+    ),
+  ).rejects.toThrow("must support the shared child limiter");
+  expect(nativeBatch).not.toHaveBeenCalled();
+});
+
+it("keeps native batching available without a shared budget", async () => {
+  const nativeBatch = vi.fn(async () => []);
+  const requests: [] = [];
+  await expect(
+    spawnBatch({ ...codeSpawner, spawnBatch: nativeBatch }, requests, {
+      concurrency: 2,
+    }),
+  ).resolves.toEqual([]);
+  expect(nativeBatch).toHaveBeenCalledWith(requests, {
+    concurrency: 2,
+    limiter: undefined,
   });
 });

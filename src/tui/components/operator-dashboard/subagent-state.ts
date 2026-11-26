@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import type { PendingModelLoad } from "../../../core/eventBus";
 import { loadSubagents } from "../../../core/session/persistence";
 import type { DisplayMessage } from "../agent-display";
 // Importing through the shared barrel pulls in opentui/ink-using components
@@ -28,6 +29,7 @@ export interface SubagentSession {
   completedAt?: Date;
   input: unknown;
   messages: DisplayMessage[];
+  modelLoading?: PendingModelLoad | null;
   parentToolCallId?: string;
 }
 
@@ -168,6 +170,7 @@ export function markSubagentsInterrupted(
     next.set(id, {
       ...session,
       status: session.status === "running" ? "cancelled" : session.status,
+      modelLoading: null,
       messages: session.messages.map((m) =>
         m.role === "tool" &&
         (m.status === "pending" || m.status === "streaming")
@@ -361,6 +364,16 @@ export function createSubagentSessionHelpers(setState: SetState) {
     });
   };
 
+  const setModelLoading = (id: string, model: PendingModelLoad | null) => {
+    setState((prev) => {
+      const session = prev.get(id);
+      if (!session || session.status !== "running") return prev;
+      const next = new Map(prev);
+      next.set(id, { ...session, modelLoading: model });
+      return next;
+    });
+  };
+
   const completeSession = (id: string, status: "completed" | "failed") => {
     setState((prev) => {
       const session = prev.get(id);
@@ -385,6 +398,7 @@ export function createSubagentSessionHelpers(setState: SetState) {
       next.set(id, {
         ...session,
         status,
+        modelLoading: null,
         completedAt: new Date(),
         messages,
       });
@@ -400,5 +414,6 @@ export function createSubagentSessionHelpers(setState: SetState) {
     addToolCall,
     updateToolResult,
     completeSession,
+    setModelLoading,
   };
 }

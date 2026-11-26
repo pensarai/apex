@@ -20,6 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { compactedHistoryNotice } from "../ai";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
 import { getSessionRoot, normalizeMessages, type SessionInfo } from "./index";
@@ -28,6 +29,7 @@ export type { SessionInfo };
 
 import type { ModelMessage } from "ai";
 import type { GrpcPentestContext } from "../agents/specialized/attackSurface/grpcSchema";
+import type { ObjectiveResult } from "../agents/specialized/pentest/agent";
 import { newSessionId, type SessionID } from "../id/id";
 import type { AuthenticationInfo } from "./types";
 
@@ -56,6 +58,8 @@ interface SavedSubagentData {
   toolCallCount?: number;
   stepCount?: number;
   findingsCount?: number;
+  reportedFindings?: string[];
+  objectiveResults?: ObjectiveResult[];
   status?: string;
   error?: string;
   messages?: ModelMessage[];
@@ -115,6 +119,8 @@ export interface SubagentSaveInput {
   status: string;
   error?: string;
   findingsCount?: number;
+  reportedFindings?: string[];
+  objectiveResults?: ObjectiveResult[];
   /** Raw AI SDK messages from onStepFinish (e.response.messages) */
   messages: ModelMessage[];
   /** System prompt used for this agent (for training data export) */
@@ -150,6 +156,55 @@ export function loadSubagentMessages(
   }
 }
 
+/** Read external findings from a completed swarm target on resume. */
+export function loadSubagentReportedFindings(
+  session: SessionInfo,
+  key: string,
+): string[] | null {
+  const snapshotPath = join(session.rootPath, SUBAGENTS_DIR, `${key}.json`);
+  if (!existsSync(snapshotPath)) return null;
+  try {
+    const data = JSON.parse(
+      readFileSync(snapshotPath, "utf-8"),
+    ) as SavedSubagentData;
+    return data.status === "completed" &&
+      Array.isArray(data.reportedFindings) &&
+      data.reportedFindings.every((finding) => typeof finding === "string")
+      ? data.reportedFindings
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read completed objective coverage from a swarm target on resume. */
+export function loadSubagentObjectiveResults(
+  session: SessionInfo,
+  key: string,
+): ObjectiveResult[] | null {
+  const snapshotPath = join(session.rootPath, SUBAGENTS_DIR, `${key}.json`);
+  if (!existsSync(snapshotPath)) return null;
+  try {
+    const data = JSON.parse(
+      readFileSync(snapshotPath, "utf-8"),
+    ) as SavedSubagentData;
+    return data.status === "completed" &&
+      Array.isArray(data.objectiveResults) &&
+      data.objectiveResults.every(
+        (result) =>
+          result !== null &&
+          typeof result === "object" &&
+          typeof result.objective === "string" &&
+          typeof result.completed === "boolean" &&
+          (result.result === undefined || typeof result.result === "string"),
+      )
+      ? data.objectiveResults
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`. */
 export function saveSubagentData(
   session: SessionInfo,
@@ -181,6 +236,8 @@ export function saveSubagentData(
     toolCallCount,
     stepCount,
     findingsCount: data.findingsCount ?? 0,
+    reportedFindings: data.reportedFindings,
+    objectiveResults: data.objectiveResults,
     status: data.status,
     error: data.error,
     messages: data.messages,
@@ -801,7 +858,7 @@ export interface ConsolePartRow {
   messageId: string;
   sessionId: string;
   index: number;
-  type: "text" | "tool" | "file" | "subagent_ref";
+  type: "text" | "tool" | "file" | "subagent_ref" | "compaction";
   toolCallId: string | null;
   s3Key: string | null;
   data: unknown;
@@ -864,6 +921,11 @@ interface ToolPartData {
   toolCallId: string;
   tool: string;
   state: ToolState;
+}
+interface CompactionPartData {
+  kind: "summary" | "reset";
+  summary: string;
+  pinnedToolCallIds: string[];
 }
 
 /** Resolve a tool output blob to the AI-SDK structured tool-result `output`. */
@@ -945,7 +1007,59 @@ function consoleMessageToModelMessages(
   return out;
 }
 
-/** Convert a whole Console session node (root or descendant) to ModelMessages. */
+function latestCompaction(
+  messages: ConsoleMessageRow[],
+  partsByMessage: Map<string, ConsolePartRow[]>,
+): { sequence: number; data: CompactionPartData } | undefined {
+  for (const message of [...messages].reverse()) {
+    const part = (partsByMessage.get(message.id) ?? [])
+      .filter((p) => p.type === "compaction")
+      .sort((a, b) => b.index - a.index)[0];
+    if (part)
+      return {
+        sequence: message.sequence,
+        data: part.data as CompactionPartData,
+      };
+  }
+  return undefined;
+}
+
+function compactionNotice(data: CompactionPartData): ModelMessage {
+  return {
+    role: "user",
+    content:
+      data.kind === "summary"
+        ? compactedHistoryNotice(data.summary)
+        : "The conversation before this point was discarded to fit the context window.",
+  };
+}
+
+/** What a compaction keeps verbatim: its message onward, the user message it replayed, and the calls it replayed. */
+function retainedAfterCompaction(
+  messages: ConsoleMessageRow[],
+  partsByMessage: Map<string, ConsolePartRow[]>,
+  boundary: { sequence: number; data: CompactionPartData },
+): ConsoleMessageRow[] {
+  const pinned = new Set(boundary.data.pinnedToolCallIds);
+  // A general-harness summary stands in for this message instead of summarizing it, so later turns need it verbatim.
+  const replayedUser = messages.findLast(
+    (message) =>
+      message.role === "user" && message.sequence < boundary.sequence,
+  );
+  return messages.filter(
+    (message) =>
+      message.sequence >= boundary.sequence ||
+      message === replayedUser ||
+      (partsByMessage.get(message.id) ?? []).some(
+        (part) => part.toolCallId !== null && pinned.has(part.toolCallId),
+      ),
+  );
+}
+
+/**
+ * Convert a whole Console session node (root or descendant) to ModelMessages,
+ * starting from its latest compaction when it has one.
+ */
 function nodeToModelMessages(node: ConsoleSessionNode): ModelMessage[] {
   const partsByMessage = new Map<string, ConsolePartRow[]>();
   for (const part of node.parts) {
@@ -955,8 +1069,11 @@ function nodeToModelMessages(node: ConsoleSessionNode): ModelMessage[] {
   }
 
   const messages = [...node.messages].sort((a, b) => a.sequence - b.sequence);
-  const out: ModelMessage[] = [];
-  for (const message of messages) {
+  const boundary = latestCompaction(messages, partsByMessage);
+  const out: ModelMessage[] = boundary ? [compactionNotice(boundary.data)] : [];
+  for (const message of boundary
+    ? retainedAfterCompaction(messages, partsByMessage, boundary)
+    : messages) {
     out.push(
       ...consoleMessageToModelMessages(
         message,

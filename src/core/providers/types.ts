@@ -5,6 +5,7 @@ export type ProviderType =
   | "bedrock"
   | "openrouter"
   | "concentrate"
+  | "inference"
   | "inception"
   | "hoonify"
   | "pensar"
@@ -52,6 +53,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "concentrate",
     name: "Concentrate",
     description: "Access multiple AI models through one API",
+    requiresAPIKey: true,
+  },
+  {
+    id: "inference",
+    name: "Inference.net",
+    description: "DeepSeek V4.1 Flash 1017 Cyber (approved access required)",
     requiresAPIKey: true,
   },
   {

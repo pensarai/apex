@@ -47,7 +47,8 @@ vi.mock("zod", () => {
   return { z, default: z };
 });
 
-vi.mock("./tools", () => ({
+vi.mock("./tools", async () => ({
+  BackgroundJobs: (await import("./tools/backgroundJobs")).BackgroundJobs,
   // The agent constructs via the selective entrypoint; record the tool
   // context there (createAllTools kept for any direct legacy callers).
   createToolsForNames: (
@@ -71,6 +72,7 @@ vi.mock("./tools", () => ({
   FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
+  REPORT_ERROR_TOOL_NAME: "report_error",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
   WORKSPACE_TOOL_NAMES: [
     "list_workspace_domains",
@@ -103,9 +105,14 @@ vi.mock("./tools", () => ({
   },
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
-  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
+  resolveBrowserHeaderPolicy: () => ({
+    allowedHosts: [],
+    allowedPorts: [],
+    headers: {},
+  }),
 }));
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: Record<string, unknown>) => {
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };
@@ -169,6 +176,39 @@ import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
+
+describe("compaction retained-output ownership", () => {
+  it.each([
+    undefined,
+    "worker",
+  ])("ignores a custom message directory for owner %s", (subagentId) => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-compaction-owner-"));
+    streamResponseCalls.length = 0;
+    try {
+      const messagesDir = join(rootPath, "custom-transcript");
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: {
+          id: "ses_compaction_owner",
+          rootPath,
+          logsPath: join(rootPath, "logs"),
+          scratchpadPath: join(rootPath, "scratchpad"),
+        },
+        messagesDir,
+        subagentId,
+        activeTools: [],
+      } as never);
+      void agent.streamResult;
+      expect(streamResponseCalls[0].sessionPath).toBe(
+        subagentId ? join(rootPath, "subagents", subagentId) : rootPath,
+      );
+      expect(agent["messagesPath"]).toBe(join(messagesDir, "messages.json"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("assembled file-workspace instructions", () => {
   it("does not treat Fast Strike helper tools as permission to edit target source", () => {

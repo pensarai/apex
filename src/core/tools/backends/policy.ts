@@ -14,6 +14,7 @@ import {
 } from "../../agents/offSecAgent/tools/destructiveGuard";
 import {
   assertCommandInScope,
+  assertRequestInScope,
   assertUrlInScope,
   ScopeViolationError,
 } from "../../agents/offSecAgent/tools/scopeGuard";
@@ -55,8 +56,12 @@ interface HttpPolicyArgs {
   url: string;
   body?: string;
   headers?: Record<string, string>;
-  /** `get_page`'s readability fetch: never scope- or destructive-checked. */
   extract?: "readability";
+  fetchToken?: string;
+}
+
+interface BrowserNavigatePolicyArgs {
+  url: string;
 }
 
 interface BrowserNavigatePolicyArgs {
@@ -93,11 +98,12 @@ export const defaultPolicy: ToolPolicy = {
     }
 
     if (call.backend === "http" && call.op === "request") {
-      const { method, url, body, headers, extract } =
+      const { method, url, body, headers, extract, fetchToken } =
         call.args as HttpPolicyArgs;
-      if (extract === "readability") return ALLOW;
       try {
-        assertUrlInScope(url, ctx);
+        if (!(extract === "readability" && fetchToken)) {
+          assertRequestInScope(url, ctx);
+        }
         assertHttpActionAllowed({ method, url, body, headers }, ctx);
       } catch (e) {
         if (

@@ -79,6 +79,37 @@ describe("createConcentrateModel", () => {
     });
   });
 
+  it.each([
+    "mimo-v2.6-pro",
+    "kimi-k3",
+    "qwen3.8-max",
+    "qwen3.8-27b",
+    "deepseek-v4-1-flash",
+    "deepseek-v4-1-flash-1017",
+    "deepseek-v4-pro-0813",
+  ])("forces reasoning on the %s Responses request", async (slug) => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        completedResponse(),
+    );
+    const model = createConcentrateModel(`concentrate:${slug}`, {
+      apiKey: "sk-cn-test",
+      fetch: fetchMock,
+    });
+
+    await model.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Say ok" }] }],
+      providerOptions: { openai: { reasoningEffort: "max" } },
+    } satisfies LanguageModelV3CallOptions);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({
+      model: slug,
+      store: false,
+      reasoning: { effort: "max", summary: "auto" },
+    });
+  });
+
   it("fails before constructing a request when the key is missing", () => {
     expect(() =>
       createConcentrateModel("concentrate:glm-5.3", { apiKey: " " }),

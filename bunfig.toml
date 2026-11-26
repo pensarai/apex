@@ -1,4 +1,6 @@
 [install]
+# `bun add` writes the exact version it resolved, never a range.
+exact = true
 # Refuse to install packages published less than 3 days ago (supply chain mitigation).
 minimumReleaseAge = 259200
 # Temporarily exempting this package from the release-age gate.

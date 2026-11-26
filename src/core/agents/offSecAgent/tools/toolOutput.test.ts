@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
   chmod,
@@ -13,7 +14,10 @@ import { join } from "node:path";
 import { generateText, stepCountIs } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyToolResultBudget } from "../../../ai/contextManagement";
+import {
+  applyToolResultBudget,
+  estimateMessageTokens,
+} from "../../../ai/contextManagement";
 import { LocalBackends } from "../../../tools/backends/local";
 import { executeCommand } from "./executeCommand";
 import { grep } from "./grep";
@@ -51,17 +55,92 @@ function reference(text: string): string {
 }
 
 describe("bounded model output", () => {
+  it("reconstructs model-issued read and grep references after losing executor scratch", async () => {
+    const first = await context();
+    first.subagentId = "owned-child";
+    const output = {
+      success: true,
+      error: "",
+      command: "synthetic command",
+      exitCode: 0,
+      stdout: `${"noise\n".repeat(3_000)}MIDDLE_EVIDENCE\n${"noise\n".repeat(3_000)}`,
+      stderr: "",
+    };
+    const project = (ctx: ToolContext) => {
+      const projectOutput = executeCommand(ctx).toModelOutput;
+      assert(projectOutput);
+      return projectOutput({
+        toolCallId: "recorded-command",
+        input: { command: output.command, toolCallDescription: "Fixture" },
+        output,
+      });
+    };
+    const original = await project(first);
+    assert(original.type === "text");
+    const ref = reference(String(original.value));
+    const readInput = {
+      path: ref,
+      byteOffset: 17_900,
+      byteCount: 300,
+      toolCallDescription: "Read original evidence",
+    };
+    const grepInput = {
+      directory: ref,
+      pattern: "MIDDLE_EVIDENCE",
+      flags: "-Hn",
+      toolCallDescription: "Search original evidence",
+    };
+    const readOriginal = await readFile(first).execute?.(readInput, options);
+    const grepOriginal = await grep(first).execute?.(grepInput, options);
+    expect(readOriginal).toMatchObject({ success: true });
+    expect(grepOriginal).toMatchObject({ success: true });
+    await rm(first.session.rootPath, { recursive: true });
+
+    const replacement = await context();
+    replacement.subagentId = first.subagentId;
+    expect(replacement.session.rootPath).not.toBe(first.session.rootPath);
+    expect(
+      await readFile(replacement).execute?.(readInput, options),
+    ).toMatchObject({ success: false });
+    const replayed = await project(replacement);
+    assert(replayed.type === "text");
+    const readReplayed = await readFile(replacement).execute?.(
+      readInput,
+      options,
+    );
+    const grepReplayed = await grep(replacement).execute?.(grepInput, options);
+    expect(readReplayed).toEqual(readOriginal);
+    expect(grepReplayed).toEqual(grepOriginal);
+    expect(replayed).toEqual(original);
+    const history = (value: typeof original) => [
+      {
+        role: "tool" as const,
+        content: [
+          {
+            type: "tool-result" as const,
+            toolCallId: "recorded-command",
+            toolName: "execute_command",
+            output: value,
+          },
+        ],
+      },
+    ];
+    expect(estimateMessageTokens(history(replayed))).toBe(
+      estimateMessageTokens(history(original)),
+    );
+  });
+
   it("leaves small results intact and keeps the reported probe sizes inline", async () => {
     const ctx = await context();
     for (const size of [0, 6_500, 8_400]) {
       const output = { success: true, error: "", stdout: "x".repeat(size) };
-      expect(await toolOutputForModel(ctx, output)).toEqual({
+      expect(await toolOutputForModel(ctx, "output-test", output)).toEqual({
         type: "json",
         value: output,
       });
     }
     const escaped = { success: true, error: "", stdout: "\\".repeat(26_000) };
-    const projected = await toolOutputForModel(ctx, escaped);
+    const projected = await toolOutputForModel(ctx, "output-test", escaped);
     expect(projected.type).toBe("text");
     expect(String(projected.value).includes(escaped.stdout)).toBe(true);
     expect(String(projected.value).includes("output omitted")).toBe(false);
@@ -97,7 +176,7 @@ describe("bounded model output", () => {
       stdoutTruncated: true,
     };
     const original = structuredClone(output);
-    const projected = await toolOutputForModel(ctx, output);
+    const projected = await toolOutputForModel(ctx, "output-test", output);
     expect(projected.type).toBe("text");
     const text = String(projected.value);
     expect(text).toContain("success=false; exitCode=124; capture=INCOMPLETE");
@@ -151,7 +230,7 @@ describe("bounded model output", () => {
       error: "",
       stdout: `${"noise\n".repeat(3_000)}MIDDLE_EVIDENCE\n${"noise\n".repeat(3_000)}`,
     };
-    const projected = await toolOutputForModel(ctx, output);
+    const projected = await toolOutputForModel(ctx, "output-test", output);
     const ref = reference(String(projected.value));
     const found = await grep(ctx).execute?.(
       {
@@ -241,7 +320,7 @@ describe("bounded model output", () => {
     "sanitizes artifact read failures that surface after resolution",
     async () => {
       const ctx = await context();
-      const projected = await toolOutputForModel(ctx, {
+      const projected = await toolOutputForModel(ctx, "output-test", {
         success: true,
         error: "",
         stdout: "x".repeat(80_000),
@@ -311,7 +390,7 @@ describe("bounded model output", () => {
 
   it("provides bounded byte continuation through a giant Unicode line", async () => {
     const ctx = await context();
-    const projected = await toolOutputForModel(ctx, {
+    const projected = await toolOutputForModel(ctx, "output-test", {
       success: true,
       error: "",
       stdout: "🔐".repeat(30_000),
@@ -344,7 +423,7 @@ describe("bounded model output", () => {
 
   it("marks artifact byte pages truncated only when the output cap omits requested bytes", async () => {
     const ctx = await context();
-    const projected = await toolOutputForModel(ctx, {
+    const projected = await toolOutputForModel(ctx, "output-test", {
       success: true,
       error: "",
       stdout: "x".repeat(TOOL_OUTPUT_MAX_BYTES * 2),
@@ -396,11 +475,19 @@ describe("bounded model output", () => {
     const ctx = await context();
     const output = { success: true, error: "", stdout: "x".repeat(80_000) };
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => toolOutputForModel(ctx, output)),
+      Array.from({ length: 10 }, (_, index) =>
+        toolOutputForModel(ctx, `output-${index}`, output),
+      ),
     );
     expect(new Set(results.map((r) => reference(String(r.value)))).size).toBe(
       10,
     );
+    const repeated = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        toolOutputForModel(ctx, "output-0", output),
+      ),
+    );
+    expect(repeated).toEqual(Array.from({ length: 10 }, () => results[0]));
     await expect(
       resolveToolOutput(ctx, "tool-output:../secret"),
     ).rejects.toThrow("Invalid");

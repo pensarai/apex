@@ -19,7 +19,7 @@ import {
   resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
-import { toolOutputForModel } from "./toolOutput";
+import { boundedOutputPreview, toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
 
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
@@ -130,6 +130,13 @@ const executeCommandInputSchema = z.object({
       "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),
   command: z.string().describe("The shell command to execute"),
+  background: z
+    .boolean()
+    .nullable()
+    .optional()
+    .describe(
+      "Run as a managed background job and return a jobId immediately. Continue other work; completion is delivered automatically. Use for slow scans such as nmap. Do not add shell & or nohup. Supported in local, unrecorded sessions. The timeout still applies.",
+    ),
   promptInjection: promptInjectionPointerSchema
     .optional()
     .describe(
@@ -184,6 +191,8 @@ export type ExecuteCommandResult = {
   stderr: string;
   command: string;
   exitCode?: number;
+  jobId?: string;
+  status?: "running" | "completed";
   stdoutTruncated?: boolean;
   stderrTruncated?: boolean;
 };
@@ -303,10 +312,16 @@ export function executeCommand(ctx: ToolContext) {
     description: `Execute a shell command for penetration testing activities.
 
 Each call runs in a FRESH shell in your working directory: cd, export,
-aliases, and background jobs do NOT persist between calls. Chain related
+and aliases do NOT persist between calls. Chain related
 steps in one command (cd dir && ./run) or use absolute paths. Environment
 activation (virtualenv, exports) must happen in the SAME command that uses
 it, or come from the session's configured environment.
+
+BACKGROUND SCANS: set background=true for slow commands such as nmap.
+The call returns a jobId, freeing the command lane for other work. Completion
+arrives automatically with output and exit status, including after you finish
+your immediate work. Use command_job to inspect or cancel a job. Do not use
+shell &/nohup for managed jobs. Jobs end on turn cancellation or timeout.
 
 LOCAL SERVICES: to start a long-running service, background it WITH
 redirected stdio so the call returns immediately and the service survives as
@@ -386,10 +401,11 @@ PROMPT-INJECTION PAYLOADS:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    toModelOutput: ({ output }) =>
-      toolOutputForModel(ctx, output as ExecuteCommandResult),
+    toModelOutput: ({ toolCallId, output }) =>
+      toolOutputForModel(ctx, toolCallId, output as ExecuteCommandResult),
     execute: async ({
       command,
+      background,
       promptInjection,
       timeoutSeconds,
       timeout,
@@ -543,26 +559,49 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         return redactSecretValues(stripped, ctx.secretValues);
       };
 
-      {
+      const run = async (
+        signal: AbortSignal | undefined,
+        detached: boolean,
+        onOutput?: (text: string) => void,
+      ): Promise<ExecuteCommandResult> => {
+        let preview = "";
+        const commandBackend = detached
+          ? resolveBackends({
+              ...ctx,
+              commandShell: undefined,
+              backgroundJobs: undefined,
+            }).command
+          : backends.command;
         let captured: Awaited<ReturnType<typeof collectCommand>>;
         try {
           captured = await collectCommand(
-            backends.command.run(commandWithHeaders, {
+            commandBackend.run(commandWithHeaders, {
               timeoutSeconds: effectiveTimeout,
               envVars: promptInjectionEnvVars,
-              abortSignal: ctx.abortSignal,
+              abortSignal: signal,
             }),
-            (chunk) =>
-              ctx.eventBus?.emit("command-output", { data: redact(chunk) }),
+            (chunk) => {
+              if (detached) {
+                preview = boundedOutputPreview(
+                  preview + chunk,
+                  "... output omitted ...",
+                  16 * 1024,
+                );
+                onOutput?.(redact(preview));
+              } else
+                ctx.eventBus?.emit("command-output", { data: redact(chunk) });
+            },
           );
         } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
+          const msg = redact(
+            error instanceof Error ? error.message : String(error),
+          );
           return {
             success: false,
             error: msg,
             stdout: "",
             stderr: msg,
-            command,
+            command: redact(command),
           };
         }
         const {
@@ -598,7 +637,39 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           stdoutTruncated,
           stderrTruncated,
         };
+      };
+      if (background) {
+        if (!ctx.backgroundJobs || ctx.backends || ctx.sandbox) {
+          return {
+            success: false,
+            error:
+              "Background commands require a local, unrecorded agent session",
+            stdout: "",
+            stderr: "",
+            command: redact(command),
+          };
+        }
+        try {
+          return ctx.backgroundJobs.start(redact(command), (signal, output) =>
+            run(
+              ctx.abortSignal
+                ? AbortSignal.any([ctx.abortSignal, signal])
+                : signal,
+              true,
+              output,
+            ),
+          );
+        } catch (error) {
+          return {
+            success: false,
+            error: String(error),
+            stdout: "",
+            stderr: "",
+            command: redact(command),
+          };
+        }
       }
+      return run(ctx.abortSignal, false);
     },
   });
 }

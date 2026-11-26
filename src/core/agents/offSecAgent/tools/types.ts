@@ -4,10 +4,12 @@ import type {
   ToolSet,
 } from "ai";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ReasoningSetting,
   ThinkingEffort,
   UsageRecorder,
 } from "../../../ai";
@@ -18,11 +20,20 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
-import type { ToolBackends } from "../../../tools/backends/types";
+import type {
+  CallbackBackend,
+  ToolBackends,
+} from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
-import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type {
+  AgentHooks,
+  FindingPolicy,
+  StreamIdFactory,
+  SystemPentestScope,
+} from "../types";
+import type { BackgroundJobs } from "./backgroundJobs";
 import type { CallbackListenerRegistry } from "./callbackListener";
 import type { EmailAdapterResolver } from "./email/adapters";
 import type { PerCommandShell } from "./perCommandShell";
@@ -38,6 +49,8 @@ import type { SmsInbox } from "./smsInbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  backgroundJobs?: BackgroundJobs;
+  findingPolicy?: FindingPolicy;
   attackSurfaceArtifactsPath?: string;
 
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
@@ -79,6 +92,9 @@ export type ToolContext = {
 
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
+  toolProtocol?: AgentToolProtocolPreference;
+  /** Effective tool roster inherited by scoped recon workers. */
+  activeToolNames?: readonly string[];
 
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
@@ -172,6 +188,7 @@ export type ToolContext = {
 
   /** OpenAI reasoning effort for GPT/o-series sub-agents. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  reasoning?: ReasoningSetting;
 
   /**
    * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the
@@ -229,7 +246,7 @@ export type ToolContext = {
    * the agent builds its tools (`OffensiveSecurityAgentInput.subagentSpawner` ??
    * the in-process spawner), so it is always present here and tools never
    * re-default it; a durable runtime injects one that spawns child workflows
-   * instead. The three durable hooks below are inherited by every child the
+   * instead. The durable hooks below are inherited by every child the
    * spawner constructs.
    */
   subagentSpawner: SubagentSpawner;
@@ -255,6 +272,11 @@ export type ToolContext = {
    * `pensar-managed` inbox). Unset → the config-driven factory.
    */
   emailAdapterFor?: EmailAdapterResolver;
+
+  /** Host-supplied run callback domain reader; local backends expose it as `backends.callbacks`. */
+  callbacks?: CallbackBackend;
+
+  toolExecutionContext?: AgentHooks["toolExecutionContext"];
 
   /** Provider middleware inherited by spawned children. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];

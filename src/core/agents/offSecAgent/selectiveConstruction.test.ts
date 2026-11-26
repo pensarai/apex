@@ -27,7 +27,7 @@ vi.mock("zod", () => {
   return { z, default: z };
 });
 
-vi.mock("./tools", () => {
+vi.mock("./tools", async () => {
   const fakeTool = (name: string) => ({
     description: `${name} stub`,
     inputSchema: {},
@@ -69,6 +69,7 @@ vi.mock("./tools", () => {
     return Object.fromEntries(wanted.map((name) => [name, fakeTool(name)]));
   };
   return {
+    BackgroundJobs: (await import("./tools/backgroundJobs")).BackgroundJobs,
     createToolsForNames: (
       ctx: Record<string, unknown>,
       requested: readonly string[] | undefined,
@@ -90,13 +91,18 @@ vi.mock("./tools", () => {
     PLAN_MODE_TOOL_NAMES: ["execute_command", "read_file", "web_search"],
     createResponseTool: () => fakeTool("response"),
     RESPONSE_TOOL_NAME: "response",
+    REPORT_ERROR_TOOL_NAME: "report_error",
     ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
     WORKSPACE_TOOL_NAMES: ["list_workspace_domains"],
     WORKSPACE_WRITE_TOOL_NAMES: ["create_workspace_domain"],
     FAST_STRIKE_EXCLUDED_TOOL_NAMES: ["spawn_pentest_agent", "write_plan"],
     PerCommandShell: class {},
     PlaywrightMcpSession: class {},
-    resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
+    resolveBrowserHeaderPolicy: () => ({
+      allowedHosts: [],
+      allowedPorts: [],
+      headers: {},
+    }),
     // Minimal registry stub: the agent constructs one per instance and
     // finalization drains it; these tests never start listeners.
     CallbackListenerRegistry: class {
@@ -113,6 +119,7 @@ vi.mock("./tools", () => {
 });
 
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: Record<string, unknown>) => {
     state.streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };
@@ -287,6 +294,70 @@ describe("agent-level selective construction", () => {
       ].sort(),
     );
     expect(Object.keys(streamTools())).toContain("custom_extra");
+  });
+
+  it("external grading removes the finding tool before default-mode construction and extra-tool merge", () => {
+    const m = marker();
+    makeAgent(
+      baseInput({
+        findingPolicy: "external",
+        activeTools: [
+          "document_vulnerability",
+          "execute_command",
+          "http_request",
+          "spawn_pentest_agent",
+        ],
+        extraTools: {
+          document_vulnerability: {
+            description: "caller override",
+            inputSchema: {},
+            execute: async () => "should not run",
+          },
+        },
+      }) as never,
+    );
+
+    expect(constructedSince(m)).toEqual([
+      "execute_command",
+      "http_request",
+      "spawn_pentest_agent",
+    ]);
+    expect(streamTools()).not.toHaveProperty("document_vulnerability");
+    expect(streamTools()).toHaveProperty("spawn_pentest_agent");
+    expect(state.toolContexts.at(-1)).toMatchObject({
+      findingPolicy: "external",
+    });
+  });
+
+  it("external Fast Strike retains discovery tools while excluding the finding tool", () => {
+    const m = marker();
+    makeAgent(
+      baseInput({
+        mode: "fast-strike",
+        findingPolicy: "external",
+        activeTools: [],
+        responseSchema: { parse: () => {} },
+        extraTools: {
+          document_vulnerability: {
+            description: "caller override",
+            inputSchema: {},
+            execute: async () => "should not run",
+          },
+        },
+      }) as never,
+    );
+
+    expect(constructedSince(m)).not.toContain("document_vulnerability");
+    expect(streamTools()).not.toHaveProperty("document_vulnerability");
+    for (const name of [
+      "browser_navigate",
+      "http_request",
+      "execute_command",
+      "read_file",
+      "response",
+    ]) {
+      expect(streamTools()).toHaveProperty(name);
+    }
   });
 
   it("fast-strike keeps a builtin extra override at its builtin position in the provider tool map", () => {

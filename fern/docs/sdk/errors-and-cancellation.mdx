@@ -1,0 +1,104 @@
+---
+title: "Errors and Cancellation"
+description: "Abort Apex agent runs and handle errors from agents and the Pensar Console API"
+---
+
+## Aborting a run
+
+Every agent runner accepts an `abortSignal`. Aborting it stops the model stream, disconnects the agent's browser, and rejects the returned promise:
+
+```ts
+import { runPentestAgent } from "@pensar/apex/core/api";
+
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 30 * 60 * 1000);
+
+try {
+  const result = await runPentestAgent({
+    target,
+    session,
+    model: "claude-opus-4-6",
+    authConfig,
+    abortSignal: controller.signal,
+  });
+  console.log(`Found ${result.findings.length} findings`);
+} catch (error) {
+  if (error instanceof Error && error.name === "AbortError") {
+    console.log("Pentest cancelled; partial artifacts remain in", session.rootPath);
+  } else {
+    throw error;
+  }
+} finally {
+  clearTimeout(timeout);
+}
+```
+
+An aborted run rejects with a `DOMException` named `AbortError`. If you call `controller.abort(reason)` with your own `reason`, agents reject with that reason instead. Findings and POCs written before the abort stay in the session directory.
+
+### Clients that own the signal
+
+`createOffensiveSecurityAgentClient()` creates the `AbortController` for you. That means `abort()` works immediately, even while the client is still creating the session:
+
+```ts
+import { createOffensiveSecurityAgentClient } from "@pensar/apex/core/api";
+
+const client = createOffensiveSecurityAgentClient();
+process.once("SIGINT", () => client.abort());
+
+await client.run({ prompt, model, activeTools, authConfig });
+```
+
+See [runOffensiveSecurityAgent](/apex/sdk/reference/run-offensive-security-agent#createoffensivesecurityagentclient).
+
+### Teardown handles
+
+`startTargetedPentestAgent()` returns a handle instead of a promise. Call `abortAndDrain()` to stop the run and wait until its browser and spans are torn down:
+
+```ts
+import { startTargetedPentestAgent } from "@pensar/apex/api/targetedPentest";
+
+const handle = startTargetedPentestAgent({ target, objectives, session, model });
+try {
+  const result = await handle.result;
+} finally {
+  await handle.abortAndDrain();
+}
+```
+
+See [runTargetedPentestAgent](/apex/sdk/reference/run-targeted-pentest-agent#starttargetedpentestagent).
+
+## Agent errors
+
+Runners reject when an agent can't continue: for example, when the provider rejects your API key or the model ID isn't available for the configured providers. Errors that happen while a run is streaming are also emitted on the `AgentEventBus` as `error` events. Subscribe to them if you want to log failures as they happen:
+
+```ts
+eventBus.on("error", ({ error, subagentId }) => {
+  console.error(`[${subagentId ?? "root"}]`, error);
+});
+```
+
+In `runPentestAgent`, a failure in one swarm target doesn't fail the whole run. The workflow emits `subagent-complete` with `status: "failed"` plus an `error` event, then carries on with the remaining targets. The exception is `findingPolicy: "external"`: there, any incomplete target rejects the run, because the findings can't be aggregated.
+
+## Console API errors
+
+The [Console API functions](/apex/sdk/reference/console-api) throw a plain `Error` in two cases:
+
+| Situation | Error message |
+| --- | --- |
+| No Pensar Console credentials | Starts with `Not authenticated.` |
+| Non-2xx response | `API error (<status>): <server message>` |
+| Network failure (DNS, TLS, connection refused) | The underlying `fetch` `TypeError`, unwrapped (for example, `fetch failed`) |
+
+```ts
+import { getIssue } from "@pensar/apex/core/api";
+
+try {
+  const issue = await getIssue("VULN-000123");
+} catch (error) {
+  if (error instanceof Error && error.message.startsWith("API error (404)")) {
+    console.log("Issue not found");
+  } else {
+    throw error;
+  }
+}
+```

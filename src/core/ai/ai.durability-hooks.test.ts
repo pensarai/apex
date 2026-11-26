@@ -144,14 +144,25 @@ describe("streamResponse durability hooks", () => {
   });
 
   describe("languageModelMiddleware", () => {
-    it("passes the raw model through and never wraps when unset", () => {
+    it("wraps only for stream cleanup when host middleware is unset", () => {
       streamResponse({ model: "test-model", prompt: "hi" });
-      expect(mocks.wrapLanguageModel).not.toHaveBeenCalled();
-      expect(streamCall(0).model).toBe(mocks.baseModel);
+      expect(mocks.wrapLanguageModel).toHaveBeenCalledOnce();
+      expect(mocks.wrapLanguageModel).toHaveBeenCalledWith({
+        model: mocks.baseModel,
+        middleware: {
+          specificationVersion: "v3",
+          wrapStream: expect.any(Function),
+        },
+      });
+      expect(streamCall(0).model).toBe(mocks.wrappedModel);
       expect(streamCall(0).maxRetries).toBe(3);
     });
 
-    it("wraps the model with the middleware when set", () => {
+    it("wraps host middleware before stream cleanup", () => {
+      const attemptModel = { ...mocks.baseModel, modelId: "attempt" };
+      mocks.wrapLanguageModel
+        .mockReturnValueOnce(mocks.wrappedModel)
+        .mockReturnValueOnce(attemptModel);
       const middleware: LanguageModelMiddleware = {
         specificationVersion: "v3",
       };
@@ -160,12 +171,19 @@ describe("streamResponse durability hooks", () => {
         prompt: "hi",
         languageModelMiddleware: middleware,
       });
-      expect(mocks.wrapLanguageModel).toHaveBeenCalledOnce();
-      expect(mocks.wrapLanguageModel).toHaveBeenCalledWith({
+      expect(mocks.wrapLanguageModel).toHaveBeenCalledTimes(2);
+      expect(mocks.wrapLanguageModel).toHaveBeenNthCalledWith(1, {
         model: mocks.baseModel,
         middleware,
       });
-      expect(streamCall(0).model).toBe(mocks.wrappedModel);
+      expect(mocks.wrapLanguageModel).toHaveBeenNthCalledWith(2, {
+        model: mocks.wrappedModel,
+        middleware: {
+          specificationVersion: "v3",
+          wrapStream: expect.any(Function),
+        },
+      });
+      expect(streamCall(0).model).toBe(attemptModel);
     });
   });
 

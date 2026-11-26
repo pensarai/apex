@@ -1,4 +1,4 @@
-import type { ToolResultPart } from "ai";
+import type { JSONValue, ToolResultPart } from "ai";
 import { responseArgBytes } from "./streamDiagnostics";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,8 @@ export interface LifecycleChunk {
   error?: unknown;
   result?: unknown;
   output?: unknown;
+  preliminary?: boolean;
+  toolCall?: { toolCallId: string };
 }
 
 export class ToolLifecycleTracker {
@@ -88,13 +90,18 @@ export class ToolLifecycleTracker {
         });
         break;
       }
+      case "tool-approval-request":
+        // Held for approval, not unfinished: finish-step must not close it as "did not complete".
+        this.inFlight.delete(chunk.toolCall?.toolCallId as string);
+        break;
       case "tool-result":
+        if (chunk.preliminary) break;
         this.inFlight.delete(chunk.toolCallId as string);
         this.completed.push({
           type: "tool-result",
           toolCallId: chunk.toolCallId as string,
           toolName: chunk.toolName as string,
-          output: (chunk.result ?? chunk.output) as ToolResultPart["output"],
+          output: toResultOutput(chunk.result ?? chunk.output),
         });
         break;
     }
@@ -168,4 +175,26 @@ export class ToolLifecycleTracker {
       toolErrors: new Map(this.errors),
     };
   }
+}
+
+const OUTPUT_TYPES = new Set([
+  "text",
+  "json",
+  "error-text",
+  "error-json",
+  "content",
+  "execution-denied",
+]);
+
+/** Stream chunks carry the tool's raw return value; a persisted tool-result needs the model output shape. */
+function toResultOutput(raw: unknown): ToolResultPart["output"] {
+  if (
+    raw &&
+    typeof raw === "object" &&
+    OUTPUT_TYPES.has((raw as { type?: unknown }).type as string)
+  )
+    return raw as ToolResultPart["output"];
+  return typeof raw === "string"
+    ? { type: "text", value: raw }
+    : { type: "json", value: (raw ?? null) as JSONValue };
 }

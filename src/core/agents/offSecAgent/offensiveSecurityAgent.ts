@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -8,8 +9,21 @@ import type {
   TextStreamPart,
   ToolSet,
 } from "ai";
-import { hasToolCall } from "ai";
-import { normalizeStepUsage, streamResponse } from "../../ai";
+import { stepCountIs } from "ai";
+import {
+  type ContextCompaction,
+  normalizeStepUsage,
+  resolveModelRuntimeProfile,
+  streamResponse,
+} from "../../ai";
+import {
+  buildCodeModeInstructions,
+  CanonicalCapabilityInvoker,
+  CodeModeRuntime,
+  createCodeModeTools,
+  resolveCodeModeToolPresentation,
+} from "../../code-mode";
+import { usesBasetenEndpoint } from "../../config/baseten";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
@@ -20,11 +34,15 @@ import {
   unregisterActiveRootSpan,
   withSubagentSessionBaggage,
 } from "../../observability";
+import { prepareOllamaModel } from "../../ollama";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import type { RunContextRecorder } from "../../runtime/runContext";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
+import { LANCE_CONFIG, LANCE_SYSTEM_PROMPT, LanceRuntime } from "../lance";
+import { createLanceJudgeVerifier } from "../lanceJudge";
+import { basetenStartup } from "./basetenStartup";
 import {
   createInterruptedStepFinalizer,
   type FinalizeInterruptedStepInput,
@@ -43,9 +61,11 @@ import {
 } from "./runtimeContext";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { inProcessSubagentSpawner } from "./subagentSpawner";
+import { wrapToolExecutionContext } from "./toolExecutionContext";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  BackgroundJobs,
   CallbackListenerRegistry,
   createResponseTool,
   createToolsForNames,
@@ -55,6 +75,7 @@ import {
   PerCommandShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
+  REPORT_ERROR_TOOL_NAME,
   RESPONSE_TOOL_NAME,
   resolveBrowserHeaderPolicy,
   SEND_EMAIL_TOOL_NAME,
@@ -273,6 +294,7 @@ export function filterWorkspaceToolsForRun(
  * ```
  */
 export class OffensiveSecurityAgent<TResult = void> {
+  private codeModeRuntime?: CodeModeRuntime;
   /** The real SDK stream result — created exactly once, with backend-probed facts via {@link streamReady} or settled-or-unknown facts via the sync escape hatch. */
   private _streamResult: StreamTextResult<ToolSet, never> | null = null;
 
@@ -287,6 +309,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Memoized {@link streamReady} promise; initialization runs at most once. */
   private streamInit: Promise<void> | null = null;
 
+  private readonly usesOllama: boolean;
+
   /** True when this agent's tool selection can use backend-probed execution facts. */
   private readonly probesRuntime: boolean;
 
@@ -298,6 +322,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private readonly resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
+    validatedResponse?: unknown,
   ) => TResult | Promise<TResult>;
 
   /** The structured result captured by the `response` tool, or `null` until it fires. */
@@ -332,11 +357,15 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
+  private readonly requiresResponse: boolean;
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
   /** Per-run stream counters for deterministic id derivation via {@link streamIdFactory}. */
   private streamStepIndex = -1;
+
+  /** Reported on the next step, so only a reset the model continued from is announced. */
+  private pendingCompaction: ContextCompaction | null = null;
 
   private streamTextPartIndex = 0;
 
@@ -379,6 +408,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   private browserDisconnected = false;
   private shellDisposed = false;
 
+  private readonly backgroundJobs?: BackgroundJobs;
   /** Listeners started by this agent's callback helper tools; drained on finalization. */
   private readonly callbackListeners = new CallbackListenerRegistry();
   // Cached dispose barrier — repeat disposeOwnedShell() calls return the
@@ -423,8 +453,18 @@ export class OffensiveSecurityAgent<TResult = void> {
     let session = input.session;
     if (!session) {
       session = await createSession({
+        ...(input.mode === "lance" ? { name: "Lance" } : {}),
         targets: input.target ? [input.target] : [],
-        config: input.sessionConfig,
+        config:
+          input.reasoning === undefined
+            ? input.sessionConfig
+            : {
+                ...input.sessionConfig,
+                modelReasoning: {
+                  model: input.model,
+                  setting: input.reasoning,
+                },
+              },
         model: input.model,
         authConfig: input.authConfig,
         userMessage: input.prompt,
@@ -444,11 +484,83 @@ export class OffensiveSecurityAgent<TResult = void> {
     return this.subagentId ?? this._session.id;
   }
 
+  readonly lanceRuntime?: LanceRuntime;
+  private lanceModel?: string;
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    this.usesOllama = input.model.startsWith("ollama:");
+    if (this.usesOllama && input.authConfig?.ollama) {
+      // Loading updates this run's metadata, never the picker or another run.
+      input = {
+        ...input,
+        authConfig: {
+          ...input.authConfig,
+          ollama: structuredClone(input.authConfig.ollama),
+        },
+      };
+    }
+    if (
+      input.mode === "lance" &&
+      !input.lance?.interactive &&
+      existsSync(join(input.session.rootPath, "lance-result.json"))
+    ) {
+      throw new Error("This Lance attempt is terminal; use a new session");
+    }
+    if (input.mode === "lance") {
+      if (
+        input.extraTools ||
+        input.responseSchema ||
+        input.subagentSpawner ||
+        input.system ||
+        input.resolveResult ||
+        input.subagentId
+      ) {
+        throw new Error(
+          "Lance does not permit tool, prompt, response, or spawner overrides",
+        );
+      }
+      const lanceOptions = { ...input.lance };
+      this.lanceRuntime = new LanceRuntime(
+        lanceOptions,
+        input.abortSignal,
+        input.session.rootPath,
+      );
+      if (input.findingPolicy === "native" && !lanceOptions.verifyObjective) {
+        lanceOptions.verificationSource = "apex_judge";
+        lanceOptions.verifyObjective = createLanceJudgeVerifier(
+          input,
+          this.lanceRuntime,
+        );
+      }
+      this.lanceModel = input.model;
+      const middleware = input.languageModelMiddleware;
+      input = {
+        ...input,
+        system: LANCE_SYSTEM_PROMPT,
+        abortSignal: this.lanceRuntime.signal,
+        subagentSpawner: this.lanceRuntime.spawner,
+        languageModelMiddleware: [
+          this.lanceRuntime.middleware,
+          ...(Array.isArray(middleware)
+            ? middleware
+            : middleware
+              ? [middleware]
+              : []),
+        ],
+        stopWhen: [
+          () => this.lanceRuntime!.terminal,
+          ...(this.lanceRuntime.budget.kind === "steps"
+            ? [stepCountIs(this.lanceRuntime.budget.limit)]
+            : []),
+        ],
+        skillsRegistry: undefined,
+      };
+    }
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
     this.agentMode = input.mode ?? "default";
+    this.requiresResponse = Boolean(input.responseSchema);
     this.abortSignal = input.abortSignal;
     this.streamIdFactory = input.streamIdFactory;
     this.contextRecorder = input.contextRecorder;
@@ -551,7 +663,28 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const toolCtx = {
+    if (
+      !input.sandbox &&
+      !input.backends &&
+      !input.contextRecorder &&
+      !input.toolExecutionRecorder &&
+      input.mode !== "lance"
+    ) {
+      this.backgroundJobs = new BackgroundJobs((state) => {
+        this.eventBus.emit("background-job", {
+          ...state,
+          subagentId: this.subagentId,
+        });
+      });
+      if (input.commandCancelHandle) {
+        input.commandCancelHandle.cancelBackground = async (jobId) => {
+          await this.backgroundJobs?.cancel(jobId);
+        };
+      }
+    }
+    const toolCtx: ToolContext = {
+      backgroundJobs: this.backgroundJobs,
+      findingPolicy: input.findingPolicy,
       ...(input.attackSurfaceArtifactsPath
         ? { attackSurfaceArtifactsPath: input.attackSurfaceArtifactsPath }
         : {}),
@@ -564,6 +697,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
+      toolProtocol: input.toolProtocol,
       eventBus: this.eventBus,
       onStepFinish: input.forwardUsageCallbacksToSpawnedAgents
         ? input.onStepFinish
@@ -589,6 +723,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       enableThinking: input.enableThinking,
       thinkingEffort: input.thinkingEffort,
       openAIReasoningEffort: input.openAIReasoningEffort,
+      reasoning: input.reasoning,
       surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
@@ -605,8 +740,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       callbackListeners: this.callbackListeners,
       smsInbox: input.smsInbox,
       emailAdapterFor: input.emailAdapterFor,
+      callbacks: input.callbacks,
       languageModelMiddleware: input.languageModelMiddleware,
       usageRecorder: input.usageRecorder,
+      toolExecutionContext: input.toolExecutionContext,
       streamIdFactory: input.streamIdFactory,
     };
 
@@ -630,7 +767,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     let activeTools = (input.activeTools as string[]).filter(
       passesEmailSmsGates,
     );
-    if (input.mode === "plan") {
+    if (input.mode === "lance") {
+      activeTools = [...LANCE_CONFIG.tools];
+    } else if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
       activeTools = activeTools.filter((t) => planSet.has(t));
     } else if (input.mode === "fast-strike") {
@@ -658,17 +797,51 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    if (input.findingPolicy === "external") {
+      activeTools = activeTools.filter(
+        (name) => name !== "document_vulnerability",
+      );
+    }
+
     activeTools = filterWorkspaceToolsForRun(
       activeTools,
       input.prompt,
       input.approvalGate !== undefined,
     );
 
+    toolCtx.activeToolNames = activeTools;
     const builtinTools = createToolsForNames(toolCtx, activeTools);
 
-    let tools: ToolSet = input.extraTools
-      ? { ...builtinTools, ...input.extraTools }
+    const extraTools =
+      input.findingPolicy === "external" && input.extraTools
+        ? Object.fromEntries(
+            Object.entries(input.extraTools).filter(
+              ([name]) => name !== "document_vulnerability",
+            ),
+          )
+        : input.extraTools;
+    let tools: ToolSet = extraTools
+      ? { ...builtinTools, ...extraTools }
       : { ...builtinTools };
+
+    if (this.lanceRuntime) {
+      const runtime = this.lanceRuntime;
+      tools = Object.fromEntries(
+        Object.entries(tools).map(([name, definition]) => [
+          name,
+          {
+            ...definition,
+            execute: async (
+              args: unknown,
+              options: Parameters<NonNullable<typeof definition.execute>>[1],
+            ) => {
+              runtime.checkAgent();
+              return definition.execute!(args, options);
+            },
+          },
+        ]),
+      );
+    }
 
     // Only approved calls may reach the execution journal.
     if (input.toolExecutionRecorder) {
@@ -681,16 +854,27 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         input.approvalGate,
         AGENT_PAUSE_TOOLS,
+        this.lanceRuntime?.signal,
       );
     }
 
+    if (this.lanceRuntime) {
+      tools = this.lanceRuntime.tools(tools);
+      activeTools = Object.keys(tools);
+    }
+
     // -- Response schema → auto capture / stop / resolve ----------------------
+    let resolveInStreamContext: ReturnType<typeof AsyncLocalStorage.snapshot>;
     if (input.responseSchema) {
       tools = {
         ...tools,
         [RESPONSE_TOOL_NAME]: createResponseTool(
           input.responseSchema,
           (result) => {
+            if (this.backgroundJobs?.hasPending)
+              throw new Error(
+                "Background jobs still have pending results. Continue independent work or end with a brief waiting message; completion notices arrive automatically. Submit your final response after incorporating those results.",
+              );
             this._responseToolFired = true;
             this._responseToolResult = result;
             if (RESPONSE_DEBUG) {
@@ -712,7 +896,7 @@ export class OffensiveSecurityAgent<TResult = void> {
                         Promise.race([sr.response, this._drainRejection]),
                     },
                   });
-                  return customResolve(guarded);
+                  return resolveInStreamContext(customResolve, guarded, result);
                 })
                 .then((resolved) => {
                   this._capturedResponse = resolved;
@@ -730,6 +914,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       };
     }
 
+    if (input.toolExecutionContext) {
+      tools = wrapToolExecutionContext(tools, input.toolExecutionContext);
+    }
+
     if (input.resolveResult) {
       this.resolveResult = input.resolveResult;
     } else if (input.responseSchema) {
@@ -741,9 +929,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      const responseStop: StopCondition<ToolSet> = () =>
+        this._responseToolFired;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
@@ -751,6 +938,59 @@ export class OffensiveSecurityAgent<TResult = void> {
       } else {
         stopWhen = [stopWhen, responseStop];
       }
+    }
+
+    const canonicalActiveTools = activeTools;
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.mode === "lance" ? "direct" : input.toolProtocol,
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const selectedNames = activeTools.filter((name) =>
+        Object.hasOwn(canonicalTools, name),
+      );
+      if (input.responseSchema && !selectedNames.includes(RESPONSE_TOOL_NAME)) {
+        selectedNames.push(RESPONSE_TOOL_NAME);
+      }
+      const { direct, nested } = resolveCodeModeToolPresentation({
+        activeTools: selectedNames,
+        extraTools: Object.keys(input.extraTools ?? {}),
+        directTools: input.directTools,
+        nestedTools: input.nestedTools,
+      });
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools: nested,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+        getToolPartId: (toolCallId) =>
+          input.streamIdFactory?.({ kind: "tool-part", toolCallId }) ??
+          newPartId(),
+      });
+      this.codeModeRuntime = new CodeModeRuntime(
+        invoker,
+        nested,
+        input.onCodeCellComplete,
+      );
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        invoker.tools,
+        direct,
+      );
+      if (input.toolExecutionRecorder) {
+        const recorded = wrapRecordedTools(
+          { exec: tools.exec, wait: tools.wait },
+          input.toolExecutionRecorder,
+        );
+        tools = { ...tools, ...recorded };
+      }
+      activeTools = Object.keys(tools);
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
     }
 
     // -- Messages persistence -------------------------------------------------
@@ -816,13 +1056,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.system ??
       buildBaseSystemPrompt({
         sandboxMode: agentCwd === input.session.rootPath,
+        findingPolicy: input.findingPolicy,
       });
     const commandPlatform = resolveCommandPlatform(toolCtx);
     const workspaceSection = buildSessionWorkspaceSection(
       input.session,
       agentCwd,
-      activeTools,
+      canonicalActiveTools,
       fileWorkspaceRoot,
+      input.findingPolicy,
     );
     // Bundled wordlist paths are host-local: advertise them only when
     // commands execute locally.
@@ -831,10 +1073,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     const assembleBaseSystemPrompt = (
       facts: RuntimeExecutionFacts | null,
     ): string => {
-      const sections: string[] = [baseSystemPrompt];
+      const sections: string[] = [
+        baseSystemPrompt,
+        codeModeInstructions,
+      ].filter(Boolean);
       if (facts) {
         sections.push(
-          buildRuntimeContextSection(facts, { platform: commandPlatform }),
+          buildRuntimeContextSection(facts, {
+            platform: commandPlatform,
+            codeModeEnabled: runtimeProfile.protocol !== "direct",
+          }),
         );
       }
       if (bundledAssets) sections.push(bundledAssets);
@@ -844,9 +1092,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Only agents whose tools can execute commands, touch files, or run
     // PoCs get a runtime probe — for anyone else the facts are noise and the
     // probe is a wasted subprocess.
-    this.probesRuntime = activeTools.some((name) =>
-      RUNTIME_CAPABLE_TOOL_NAMES.has(name),
-    );
+    this.probesRuntime =
+      input.mode !== "lance" &&
+      canonicalActiveTools.some((name) => RUNTIME_CAPABLE_TOOL_NAMES.has(name));
 
     // -- Init record + stream --------------------------------------------------
     // Created by async initialization (streamReady) so the AI SDK telemetry
@@ -856,11 +1104,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     // factory with settled-or-unknown facts — never host facts — guarded so
     // exactly one model stream exists either way.
     this.createStream = (facts) => {
+      // The detached resolver belongs to the stream owner, not its closing response tool.
+      resolveInStreamContext = AsyncLocalStorage.snapshot();
       // Hash only the base system prompt (excluding session workspace paths)
       // so the hash is stable across runs with identical prompt versions. No
       // step record can precede this init line: steps only originate from the
       // stream created below.
-      const baseWithFacts = assembleBaseSystemPrompt(facts);
+      const baseWithFacts =
+        input.mode === "lance"
+          ? LANCE_SYSTEM_PROMPT
+          : assembleBaseSystemPrompt(facts);
       traceWriter.writeInit({
         model: input.model,
         systemPrompt: baseWithFacts,
@@ -868,16 +1121,56 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionId: input.session.id,
         target: input.target,
       });
+      this.lanceRuntime?.start();
+      const continuation = this.lanceRuntime?.continuationContext();
+      const middleware = input.languageModelMiddleware;
+      const startup = usesBasetenEndpoint(
+        input.model,
+        input.authConfig?.customProviders,
+      )
+        ? basetenStartup(input.model, (event) =>
+            this.eventBus.emit("model-loading", {
+              ...event,
+              sessionId: this.busSessionId,
+              subagentId: this.subagentId,
+            }),
+          )
+        : undefined;
       return streamResponse({
-        prompt: input.prompt,
-        system: baseWithFacts + workspaceSection,
+        prompt: continuation
+          ? `${input.prompt}\n\n${continuation}`
+          : input.prompt,
+        system:
+          input.mode === "lance"
+            ? `${LANCE_SYSTEM_PROMPT}\nWorking directory (not automatically in scope): ${agentCwd}\nTarget: ${input.target ?? "Use the user's explicit target, or ask if missing"}\nExecution budget: ${JSON.stringify(this.lanceRuntime!.budget)}${Number.isFinite(this.lanceRuntime!.softDeadlineAt) ? `\nDeadline: ${new Date(this.lanceRuntime!.softDeadlineAt).toISOString()}` : ""}`
+            : baseWithFacts + workspaceSection,
+        harness: input.harness,
+        primaryModelOnly: input.mode === "lance",
+        _initialPrompt: input.mode === "lance" ? input.prompt : undefined,
+        runContextCompaction: this.lanceRuntime?.runContextCompaction,
+        getContinuationContext: this.lanceRuntime?.continuationContext,
+        onInvalidToolCall: (name) => {
+          if (this.lanceRuntime && !activeTools.includes(name)) {
+            this.lanceRuntime.violation("forbidden_tool", name);
+          }
+        },
         model: input.model,
-        messages: input.messages,
+        messages:
+          continuation && input.messages
+            ? [...input.messages, { role: "user", content: continuation }]
+            : input.messages,
         tools,
         activeTools,
         stopWhen,
         toolChoice: "auto",
-        languageModelMiddleware: input.languageModelMiddleware,
+        getPendingMessages: this.backgroundJobs
+          ? (wait) =>
+              this.backgroundJobs?.notifications(wait, toolCtx) ??
+              Promise.resolve([])
+          : undefined,
+        languageModelMiddleware: startup
+          ? [...[middleware ?? []].flat(), startup]
+          : middleware,
         usageRecorder: input.usageRecorder,
         contextRecorder: input.contextRecorder,
         inferenceRecorder: input.inferenceRecorder,
@@ -886,13 +1179,14 @@ export class OffensiveSecurityAgent<TResult = void> {
             messages: [...context.messages],
             responseMessageOffset: context.responseMessageOffset,
           };
+          if (this.lanceRuntime || this.backgroundJobs) {
+            this.writer.setLatest(persistedMessages(context.messages));
+          }
         },
-        // Per-subagent so the overflow tool-result dumps land next to this
-        // agent's messages.json (`subagents/{id}/tool-results/`) and a host
-        // can reclaim them when the subagent finishes, instead of piling up
-        // at the shared session root for the whole scan (ENOSPC). Falls back
-        // to the session root for the root/operator agent.
-        sessionPath: messagesDir,
+        // Match retained-output ownership even with a custom messagesDir.
+        sessionPath: input.subagentId
+          ? join(input.session.rootPath, "subagents", input.subagentId)
+          : input.session.rootPath,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
           const auxiliaryModelEvent =
@@ -906,6 +1200,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             return;
           }
 
+          this.lanceRuntime?.stepFinished();
           const canonical =
             input.contextRecorder?.latest() ??
             legacyMessages(event.response.messages);
@@ -924,12 +1219,13 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.currentMessageId = null;
           await input.onStepFinish?.(event);
         },
-        onSummarized: () => {
+        onSummarized: (compaction) => {
           preparedContextRef.current = {
             messages: [],
             responseMessageOffset: 0,
           };
           traceWriter.markSummarized();
+          this.pendingCompaction = compaction;
         },
         onFinish: async (event) => {
           // Flush any pending persistence before finishing
@@ -952,6 +1248,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
+        reasoning: input.reasoning,
         silent: true,
       });
     };
@@ -959,6 +1256,19 @@ export class OffensiveSecurityAgent<TResult = void> {
       // The sync escape hatch may have created the stream while discovery was
       // pending — never a second model stream.
       if (this._streamResult !== null) return;
+      if (this.usesOllama) {
+        await prepareOllamaModel(
+          input.model,
+          input.authConfig?.ollama,
+          this.abortSignal,
+          (event) =>
+            this.eventBus.emit("model-loading", {
+              ...event,
+              sessionId: this.busSessionId,
+              subagentId: this.subagentId,
+            }),
+        );
+      }
       // Abort-before-start skips the probe but still creates the stream so the
       // SDK surfaces the abort normally; a probe failure degrades the prompt
       // to unknown facts rather than failing the stream.
@@ -992,7 +1302,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /**
    * The underlying Vercel AI SDK stream result — synchronous escape hatch.
-   * Always a real SDK result. Cold access creates it immediately with facts
+   * Always a real SDK result. Ollama callers must await {@link streamReady}
+   * to load weights and resolve the context budget first. Other cold access uses facts
    * already settled for this runtime scope, else explicit unknown facts —
    * never host facts; callers needing freshly probed facts await
    * {@link streamReady}, `consume()`, or `fullStream` iteration instead.
@@ -1001,6 +1312,11 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   get streamResult(): StreamTextResult<ToolSet, never> {
     if (this._streamResult === null) {
+      if (this.usesOllama) {
+        throw new Error(
+          "Await streamReady() before accessing an Ollama streamResult",
+        );
+      }
       const facts = this.probesRuntime
         ? (peekSettledRuntimeFacts(this.toolCtx) ?? UNKNOWN_FACTS)
         : null;
@@ -1060,6 +1376,21 @@ export class OffensiveSecurityAgent<TResult = void> {
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
   async consume(): Promise<TResult> {
+    if (!this.lanceRuntime) return this.consumeRun();
+    this.lanceRuntime.start();
+    let error: unknown;
+    try {
+      return await this.consumeRun();
+    } catch (cause) {
+      error = cause;
+      return undefined as TResult;
+    } finally {
+      this.lanceRuntime.finish(error);
+      this.lanceRuntime.persist(this.session.rootPath, this.lanceModel!);
+    }
+  }
+
+  private async consumeRun(): Promise<TResult> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
@@ -1094,6 +1425,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       const tracker = new ToolLifecycleTracker();
       let streamError: unknown;
       let hasStreamError = false;
+      let responseError: unknown;
+      let reportErrorCompleted = false;
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
@@ -1113,6 +1446,18 @@ export class OffensiveSecurityAgent<TResult = void> {
         // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
           diagnostics.observeChunk(chunk);
+          if (
+            chunk.type === "tool-error" &&
+            chunk.toolName === RESPONSE_TOOL_NAME
+          )
+            responseError = chunk.error;
+          if (
+            chunk.type === "tool-result" &&
+            chunk.toolName === REPORT_ERROR_TOOL_NAME &&
+            !chunk.preliminary
+          ) {
+            reportErrorCompleted = true;
+          }
           this.applyStreamPart(chunk, { ids, tracker, diagnostics });
           bus.emitStreamPart(chunk, ids);
         }
@@ -1151,6 +1496,19 @@ export class OffensiveSecurityAgent<TResult = void> {
 
       if (this.abortSignal?.aborted) {
         throw agentAbortReason(this.abortSignal);
+      }
+
+      if (
+        this.requiresResponse &&
+        !this._responseToolFired &&
+        !reportErrorCompleted
+      ) {
+        throw Object.assign(
+          new Error("Structured agent ended without a validated response", {
+            cause: responseError,
+          }),
+          { sessionId: this.busSessionId },
+        );
       }
 
       if (this.resolveResult) {
@@ -1217,6 +1575,13 @@ export class OffensiveSecurityAgent<TResult = void> {
             }
             return result;
           } catch (err) {
+            if (this.lanceRuntime?.terminal) {
+              span.setAttribute(
+                "pensar.lance.outcome",
+                this.lanceRuntime.metrics(this.lanceModel!).outcome,
+              );
+              throw err;
+            }
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);
             span.setStatus({ code: SpanStatusCode.ERROR });
@@ -1310,6 +1675,20 @@ export class OffensiveSecurityAgent<TResult = void> {
           }) ?? newMessageId();
         this.currentMessageId = ids.messageId;
         ids.textPartId = undefined;
+        if (this.pendingCompaction) {
+          bus.emit("context-compacted", {
+            ...this.pendingCompaction,
+            subagentId: sid,
+            sessionId: this.busSessionId,
+            messageId: ids.messageId,
+            partId:
+              this.streamIdFactory?.({
+                kind: "compaction-part",
+                stepIndex: this.streamStepIndex,
+              }) ?? newPartId(),
+          });
+          this.pendingCompaction = null;
+        }
         break;
       case "text-start":
         ids.textPartId =
@@ -1420,10 +1799,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     try {
+      try {
+        await this.codeModeRuntime?.dispose();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
       // Dispose first — the 3s kill protocol is awaited, never
       // fire-and-forget: hosts rely on drained before closeout, so an
       // active command must settle (bounded) before finalization continues.
       try {
+        await this.backgroundJobs?.dispose();
         await this.disposeOwnedShell();
       } catch (error) {
         recordFinalizationError(error);
@@ -1548,7 +1933,9 @@ export class OffensiveSecurityAgent<TResult = void> {
    * so owned work settles before the host starts closeout.
    */
   async abortAndDrain(): Promise<void> {
+    await this.codeModeRuntime?.dispose();
     await this.disconnectOwnedBrowser();
+    await this.backgroundJobs?.dispose();
     await this.disposeOwnedShell().catch(() => {});
     await this.callbackListeners.stopAll().catch(() => {});
     await this.drained.catch(() => {});
@@ -1571,6 +1958,7 @@ function wrapToolsWithApprovalGate(
   tools: ToolSet,
   gate: ApprovalGate,
   exemptToolNames?: Set<string>,
+  signal?: AbortSignal,
 ): ToolSet {
   const wrapped: ToolSet = {};
 
@@ -1595,11 +1983,26 @@ function wrapToolsWithApprovalGate(
       // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool execute receives an opaque ExecuteContext we don't need to narrow.
       execute: async (args: Record<string, unknown>, options: any) => {
         const toolCallId =
+          options?.toolCallId ??
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+        const approvalSignal: AbortSignal | undefined =
+          signal && options?.abortSignal
+            ? AbortSignal.any([signal, options.abortSignal])
+            : (signal ?? options?.abortSignal);
         log.debug(`${name} (${toolCallId}): checking`);
+        const cancelApproval = () => {
+          for (const pending of gate.getPendingApprovals()) {
+            if (pending.toolCallId === String(toolCallId))
+              gate.deny(pending.id);
+          }
+        };
         try {
+          approvalSignal?.throwIfAborted();
+          approvalSignal?.addEventListener("abort", cancelApproval, {
+            once: true,
+          });
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
@@ -1607,9 +2010,12 @@ function wrapToolsWithApprovalGate(
             return { blocked: true, reason: "Denied by operator" };
           }
           throw err;
+        } finally {
+          approvalSignal?.removeEventListener("abort", cancelApproval);
         }
         log.debug(`${name} (${toolCallId}): approved, executing`);
 
+        approvalSignal?.throwIfAborted();
         const result = await originalExecute(args, options);
         log.debug(`${name} (${toolCallId}): execute finished`);
         return result;

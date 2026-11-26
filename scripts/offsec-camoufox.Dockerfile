@@ -10,11 +10,12 @@
 #
 # Built via the Daytona SDK's Image.fromDockerfile() in smoke-daytona-camoufox.ts.
 
-FROM node:20.18.1-slim
+FROM node:22.23.5-slim
 
 # Same base apt style as the prod deps layer, trimmed to what the browser path
-# needs. build-essential + python3: camoufox-js pulls in the native
-# better-sqlite3, which has no prebuilt for node 20 and falls back to node-gyp.
+# needs. build-essential + python3: a fallback for native modules without a
+# prebuild (better-sqlite3 13, which camoufox-js pulls in, ships prebuilt
+# binaries and needs Node 22).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \
     ca-certificates curl wget git \
@@ -22,14 +23,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # apex's sandboxPlaywright.ts resolves camoufox-js/playwright-core from
 # SANDBOX_PW_DIR (/opt/sandbox-playwright). Bake them here, PINNED:
-#   - camoufox-js 0.11.1 matches the change on the branch
+#   - camoufox-js 0.13.0 matches apex's pinned version
 #   - playwright-core 1.53.1 is the version camoufox-js is built against
 #     (its own devDep). The default tree resolves 1.58.0-alpha via
 #     @playwright/mcp, whose newer Juggler protocol the Camoufox build rejects
 #     ("Browser.setDefaultViewport ... isMobile not described in this scheme").
 WORKDIR /opt/sandbox-playwright
 RUN npm init -y --silent \
- && npm install --no-audit --no-fund camoufox-js@0.11.1 playwright-core@1.53.1
+ && npm install --no-audit --no-fund --save-exact camoufox-js@0.13.0 playwright-core@1.53.1 \
+      fingerprint-generator@2.1.90 header-generator@2.1.90 generative-bayesian-network@2.1.90
 
 # Analog of prod's `playwright install --with-deps chrome`: install the Firefox
 # system libraries (GTK3, X, nss, fonts…). Camoufox is a patched Firefox and

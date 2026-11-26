@@ -34,12 +34,16 @@ type UpdateTaskResult = {
 };
 
 export function updateTask(ctx: ToolContext) {
+  const completedGuidance =
+    ctx.findingPolicy === "external"
+      ? "vulnerability identified with supporting evidence, OR conclusively determined the endpoint is not vulnerable / materiality is not met for this technique."
+      : "vulnerability found and documented via document_vulnerability, OR conclusively determined the endpoint is not vulnerable / materiality is not met for this technique. Documentation is NOT required to complete a non-vulnerable task.";
   return tool({
     description: `Update a task's status and record results.
 
 Status transitions:
 - "in_progress" — Set when you START testing a task. Pick one pending task at a time.
-- "completed" — Set when testing is done: vulnerability found and documented via document_vulnerability, OR conclusively determined the endpoint is not vulnerable / materiality is not met for this technique. Documentation is NOT required to complete a non-vulnerable task.
+- "completed" — Set when testing is done: ${completedGuidance}
 - "failed" — Set when the technique didn't work: rate limited, blocked by WAF, dead end, or approach not applicable. Then create a NEW task with an alternative technique.
 
 Always include a result or observation explaining the outcome.`,

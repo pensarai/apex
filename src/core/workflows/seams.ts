@@ -266,11 +266,15 @@ export function resolveItemHooks<TItem>(
   item: TItem,
   index: number,
 ): AgentHooks {
+  const itemHooks = seams.hooksForItem?.(item, index);
   return {
     ...hooks,
     contextRecorder: undefined,
     inferenceRecorder: undefined,
     toolExecutionRecorder: undefined,
-    ...seams.hooksForItem?.(item, index),
+    ...itemHooks,
+    ...(hooks?.findingPolicy === "external"
+      ? { findingPolicy: "external" as const }
+      : {}),
   };
 }

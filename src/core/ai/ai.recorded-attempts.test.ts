@@ -1,3 +1,4 @@
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import {
   APICallError,
   type LanguageModelV3GenerateResult,
@@ -392,6 +393,54 @@ describe("recorded attempts at the model boundary", () => {
     ).rejects.toThrow(RunPersistenceError);
     expect(doStream).toHaveBeenCalledTimes(1);
     await expect(recorder.flush()).rejects.toThrow(RunPersistenceError);
+  });
+
+  it("keeps cache markers bounded across idle recovery", async () => {
+    const { StreamIdleTimeoutError } = await import("./ai");
+    const counts: number[] = [];
+    const model = createAmazonBedrock({
+      apiKey: "synthetic-key",
+      region: "us-east-1",
+      fetch: Object.assign(
+        async (_url: RequestInfo | URL, init?: RequestInit) => {
+          const body = JSON.parse(String(init?.body));
+          counts.push(JSON.stringify(body).split('"cachePoint"').length - 1);
+          return Response.json({
+            output: {
+              message: { role: "assistant", content: [{ text: "ok" }] },
+            },
+            stopReason: "end_turn",
+            usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+          });
+        },
+        { preconnect: () => {} },
+      ),
+    })("global.anthropic.claude-opus-4-6-v1");
+    const doStream = vi.fn(async (options) => {
+      await model.doGenerate(options);
+      return counts.length < 4
+        ? {
+            stream: simulateReadableStream({
+              chunks: [
+                {
+                  type: "error" as const,
+                  error: new StreamIdleTimeoutError(1),
+                },
+              ],
+            }),
+          }
+        : textStream();
+    });
+    state.model = new MockLanguageModelV3({ modelId: MODEL, doStream });
+    await drain(
+      streamResponse({
+        prompt: "Synthetic recovery fixture",
+        system: "Synthetic system fixture",
+        model: "global.anthropic.claude-opus-4-6-v1",
+        silent: true,
+      }),
+    );
+    expect(counts).toEqual([2, 2, 2, 2]);
   });
 
   it("persists the stream rate-limit decision before the re-dispatch", async () => {

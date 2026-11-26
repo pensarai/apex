@@ -107,12 +107,46 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 | `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
 | `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
 
+### Ollama (local models)
+
+Start Ollama with a model installed, then open `/models` and select it under
+**Ollama (local)**. Apex discovers models automatically at startup and refreshes
+the list every five seconds, including when Ollama starts after Apex. No API key
+or manual endpoint setup is needed. Running models appear first.
+
+Discovery uses `http://127.0.0.1:11434` by default and honors `OLLAMA_HOST`.
+Headless commands accept `--model-provider ollama --model <ollama-model-name>`
+or `--model ollama:<ollama-model-name>`. Model names retain their full tags,
+including Hugging Face paths. Existing manual local endpoints remain separate.
+
+Apex loads the selected model on the first request if needed, showing **Loading
+model weights** with a dedicated throbber. It then reads Ollama's allocated
+context before fitting the prompt or deciding whether to compact the conversation.
+Servers without context metadata use a conservative 4,096-token budget. Apex
+does not download models or override Ollama's idle-unload settings; model lifetime
+is managed by Ollama, independently of Apex sessions.
+Agent workflows require a model and Ollama template that support tool calls;
+discovery alone does not establish tool support.
+
 ### Hoonify inference
 
 Connect **Hoonify** in `/providers` or set `HOONIFY_API_KEY`, then select a
 discovered model in `/models`. Headless commands accept
 `--model-provider hoonify --model <catalog-model-id>`. See
 [Hoonify setup](docs/hoonify.md) for model discovery, token budgets, and live checks.
+
+### Inference.net
+
+Connect **Inference.net** in `/providers` or set `INFERENCE_API_KEY`, then select
+**DeepSeek V4.1 Flash 1017 Cyber** in `/models`. This is the only Inference.net model
+currently available in Apex. Headless commands accept
+`--model inference:deepseek-v4.1-flash-1017-cyber`.
+
+Your team needs [approved model access](https://inference.net/model-access/deepseek-v4.1-flash-1017-cyber)
+before inference will succeed; saving a valid API key does not grant model access.
+Apex uses the provider's default reasoning behavior and the
+[catalog](https://api.inference.net/v1/models) limits of 1,040,000 context tokens
+and 393,216 output tokens.
 
 ### Custom inference endpoints
 
@@ -121,6 +155,22 @@ configuration or the `APEX_CUSTOM_PROVIDERS` worker environment variable. Select
 it with `--model-provider <id> --model <model>`, or choose its declared models in
 the operator's `/models` picker. See [custom inference setup](docs/custom-inference.md)
 for GLM settings, headless job configuration, and a live connection test.
+
+### Web search
+
+Use your own Exa API key for direct web search with any model provider:
+
+```bash
+export EXA_API_KEY=your-exa-api-key
+pensar
+```
+
+You can also save the key as `exaAPIKey` in your existing
+`~/.pensar/config.json`. If a Brave key is configured (`BRAVE_API_KEY` or
+`braveAPIKey`), Brave takes precedence; remove that key to use Exa. Without
+either search key, Apex uses the existing Pensar web-search gateway, which
+requires Pensar authentication. Exa errors are returned directly without
+switching providers.
 
 ### Logging
 

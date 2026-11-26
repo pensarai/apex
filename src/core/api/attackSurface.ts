@@ -3,6 +3,11 @@ import {
   type AttackSurfaceResult,
   BlackboxAttackSurfaceAgent,
 } from "../agents/specialized/attackSurface/blackboxAgent";
+import {
+  type GeneralizedAttackSurfaceAgentInput,
+  type GeneralizedAttackSurfaceResult,
+  runGeneralizedReconToReport,
+} from "../agents/specialized/attackSurface/generalizedAgent";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
 import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";
 
@@ -59,6 +64,27 @@ async function runBlackboxAttackSurface(
 }
 
 // ---------------------------------------------------------------------------
+// Generalized (origin-driven, app-level threat models)
+// ---------------------------------------------------------------------------
+
+export type {
+  GeneralizedAttackSurfaceAgentInput,
+  GeneralizedAttackSurfaceResult,
+} from "../agents/specialized/attackSurface/generalizedAgent";
+
+/**
+ * Run the generalized, origin-driven attack-surface agent. Given only an
+ * origin, it discovers the services hosted there, maps them to connected
+ * repositories where applicable, and produces application-level threat models
+ * and pentest objectives.
+ */
+export async function runGeneralizedAttackSurface(
+  input: GeneralizedAttackSurfaceAgentInput,
+): Promise<GeneralizedAttackSurfaceResult> {
+  return runGeneralizedReconToReport(input);
+}
+
+// ---------------------------------------------------------------------------
 // Whitebox (source code analysis)
 // ---------------------------------------------------------------------------
 
@@ -77,6 +103,7 @@ async function runWhiteboxAttackSurface(
     enableThinking: input.enableThinking,
     thinkingEffort: input.thinkingEffort,
     openAIReasoningEffort: input.openAIReasoningEffort,
+    reasoning: input.reasoning,
   });
 
   console.log(

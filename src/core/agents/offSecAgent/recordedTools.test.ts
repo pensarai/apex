@@ -476,10 +476,12 @@ vi.mock("zod", () => {
   return { z, default: z };
 });
 
-vi.mock("./tools", () => ({
+vi.mock("./tools", async () => ({
+  BackgroundJobs: (await import("./tools/backgroundJobs")).BackgroundJobs,
   createToolsForNames: () => ({}),
   createResponseTool: () => ({}),
   RESPONSE_TOOL_NAME: "response",
+  REPORT_ERROR_TOOL_NAME: "report_error",
   listToolRegistryNames: () => [],
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
   WORKSPACE_TOOL_NAMES: [],
@@ -492,7 +494,11 @@ vi.mock("./tools", () => ({
   sessionHasSmsPasswordless: () => false,
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
-  resolveBrowserHeaderPolicy: () => ({ allowedHosts: [], headers: {} }),
+  resolveBrowserHeaderPolicy: () => ({
+    allowedHosts: [],
+    allowedPorts: [],
+    headers: {},
+  }),
   CallbackListenerRegistry: class {
     async stopAll() {
       return [];
@@ -502,6 +508,7 @@ vi.mock("./tools", () => ({
 }));
 
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({ protocol: "direct" }),
   streamResponse: (opts: { tools: ToolSet }) => {
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };

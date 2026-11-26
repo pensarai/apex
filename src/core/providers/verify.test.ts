@@ -47,3 +47,57 @@ describe("verifyApiKey Concentrate key format", () => {
     });
   });
 });
+
+describe("verifyApiKey Inference.net", () => {
+  it("validates the bearer key without making an inference request", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(verifyApiKey("inference", " test-key ")).resolves.toEqual({
+      valid: true,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.inference.net/v1/models",
+      expect.objectContaining({
+        method: "GET",
+        headers: { Authorization: "Bearer test-key" },
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it.each([401, 403, 429, 500])("reports HTTP %s", async (status) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status })),
+    );
+    await expect(verifyApiKey("inference", "test-key")).resolves.toEqual({
+      valid: false,
+      error:
+        status === 401 || status === 403
+          ? "Invalid API key"
+          : `Inference.net returned HTTP ${status}`,
+    });
+  });
+
+  it("rejects empty keys before making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(verifyApiKey("inference", " ")).resolves.toEqual({
+      valid: false,
+      error: "Enter an Inference.net API key",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new Error("network failure"), "Could not reach Inference.net API"],
+    [new DOMException("aborted", "AbortError"), "Request timed out"],
+  ])("reports transport failures", async (error, message) => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(error));
+    await expect(verifyApiKey("inference", "test-key")).resolves.toEqual({
+      valid: false,
+      error: message,
+    });
+  });
+});

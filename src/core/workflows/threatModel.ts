@@ -31,6 +31,7 @@ export interface ThreatModelWorkflowInput {
 
   /** AI model (defaults to claude-sonnet-4-5) */
   model?: AIModel;
+  reasoning?: import("../ai").ReasoningSetting;
 
   /** Optional existing session to reuse — auto-created if omitted */
   session?: SessionInfo;
@@ -95,6 +96,7 @@ Working directory: ${input.codebasePath}`;
     system,
     prompt,
     model,
+    reasoning: input.reasoning,
     session,
     activeTools: [...HEADLESS_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
     authConfig: input.authConfig,

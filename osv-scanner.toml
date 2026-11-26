@@ -1,0 +1,14 @@
+# Accepted advisories for scripts/osv-gate.ts and osv-scanner.
+#
+# Each entry names one advisory and says why it is accepted. The gate fails
+# on an entry without a reason. `ignoreUntil` is optional.
+# A [[PackageOverrides]] entry that sets `ignore` or `vulnerability.ignore`
+# hides findings too, and needs a `reason` the same way. The gate reads this
+# file strictly: only these two tables, with one-line `key = value` entries.
+# Top-level keys, other tables, inline tables, multi-line values and a key
+# set twice in one entry (in any case) fail it.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-01
+# reason = "Only reachable through the dev server, which never runs in production."

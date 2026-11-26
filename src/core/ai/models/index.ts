@@ -4,6 +4,7 @@ import {
   resolveCustomModel,
 } from "../../config/customProviders";
 import { type HoonifyModel, resolveHoonifyModel } from "../../hoonify";
+import { type OllamaCatalog, resolveOllamaModel } from "../../ollama";
 import type { AIModel, ModelInfo } from "../ai";
 
 // Anthropic, OpenAI, Google, Bedrock — auto-generated from SDK type definitions.
@@ -17,14 +18,18 @@ export {
   getClaudeCapabilities,
 } from "./claude-capabilities";
 
-import { CONCENTRATE_MODELS } from "./concentrate";
+import {
+  CONCENTRATE_MAX_OUTPUT_TOKENS,
+  CONCENTRATE_MODELS,
+} from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
+import { INFERENCE_MODELS } from "./inference";
 // Bedrock Mantle (OpenAI Responses API) — curated manually.
 import { MANTLE_MODELS } from "./mantle";
 import { OPENAI_MODELS } from "./openai";
 // OpenRouter — curated manually (SDK doesn't enumerate models).
-import { OPENROUTER_MODELS } from "./openrouter";
+import { OPENROUTER_MAX_OUTPUT_TOKENS, OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
@@ -35,11 +40,18 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...MANTLE_MODELS,
   ...OPENROUTER_MODELS,
   ...CONCENTRATE_MODELS,
+  ...INFERENCE_MODELS,
   ...PENSAR_MODELS,
   ...INCEPTION_MODELS,
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {
+  if (model.startsWith("ollama:"))
+    return {
+      id: model,
+      name: model.slice("ollama:".length),
+      provider: "ollama",
+    };
   if (model.startsWith("hoonify:"))
     return {
       id: model,
@@ -48,13 +60,13 @@ export function getModelInfo(model: AIModel): ModelInfo {
     };
   const custom = parseCustomModelId(model);
   if (custom) return { id: model, name: custom.modelId, provider: "custom" };
-  return (
-    AVAILABLE_MODELS.find((m) => m.id === model) ?? {
-      id: model,
-      name: model,
-      provider: "local",
-    }
-  );
+  const registeredModel = AVAILABLE_MODELS.find((m) => m.id === model);
+  if (registeredModel) return registeredModel;
+  if (model.startsWith("inference:"))
+    throw new Error(
+      `Unknown Inference.net model "${model}". Select an available Inference.net model in /models.`,
+    );
+  return { id: model, name: model, provider: "local" };
 }
 
 /**
@@ -86,7 +98,10 @@ export function getMaxOutputTokens(
   modelId: string,
   customProviders?: CustomProviders,
   hoonifyModels?: HoonifyModel[],
+  ollama?: OllamaCatalog,
 ): number {
+  if (modelId.startsWith("ollama:"))
+    return resolveOllamaModel(modelId, ollama).model.maxOutputTokens;
   if (modelId.startsWith("hoonify:"))
     return resolveHoonifyModel(modelId, hoonifyModels).maxOutputTokens;
   if (parseCustomModelId(modelId))
@@ -101,8 +116,13 @@ export function getMaxOutputTokens(
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  if (modelId === "inference:deepseek-v4.1-flash-1017-cyber") return 393_216;
   if (modelId === "chat-latest") return 128_000;
   if (getClaudeCapabilities(modelId)) return 128_000;
+  const openRouterBudget = OPENROUTER_MAX_OUTPUT_TOKENS[modelId];
+  if (openRouterBudget) return openRouterBudget;
+  const concentrateBudget = CONCENTRATE_MAX_OUTPUT_TOKENS[modelId];
+  if (concentrateBudget) return concentrateBudget;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
   // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
   // digit.digit sequences to dashes so all Claude patterns match both forms.
@@ -161,7 +181,7 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // `getMaxOutputTokens` handles legacy small-window variants.
   if (
     modelId.includes("gpt-5") ||
-    /^(?:openai\/|concentrate:)?gpt-6[.-]/.test(modelId)
+    /^(?:openai\/|concentrate:|mantle:openai\.)?gpt-6[.-]/.test(modelId)
   ) {
     return 128_000;
   }
@@ -222,20 +242,33 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 131_072;
   }
 
+  if (modelId.includes("mimo-v2.6-pro")) {
+    return 131_072;
+  }
+
+  if (modelId.includes("kimi-k3")) {
+    return 131_072;
+  }
+
   // GLM 5 models ship a ~131K (128Ki) max-output window. Matching the family
   // keeps Bedrock and OpenRouter model IDs on the same budget.
   if (modelId.includes("glm-5")) {
     return 131_072;
   }
 
-  // V4.1 Flash's larger output window must precede the legacy DeepSeek fallback.
-  if (modelId.includes("deepseek-v4.1-flash")) {
+  // DeepSeek V4's larger output window must precede the legacy DeepSeek fallback.
+  if (/deepseek-v4[.-]/.test(modelId)) {
     return 384_000;
   }
 
   // Keep the conservative 8K floor used by Bedrock's legacy DeepSeek models.
   if (modelId.includes("deepseek")) {
     return 8_192;
+  }
+
+  // Qwen3.8's first-party 131K output window must precede the Qwen fallback.
+  if (modelId.includes("qwen3.8")) {
+    return 131_072;
   }
 
   // Qwen3 Coder ships a 16K max-output window over its 128K+ context. Match the

@@ -7,6 +7,7 @@ import {
   type AIAuthConfig,
   type AIModel,
   generateObjectResponse,
+  type ReasoningSetting,
   type UsageRecorder,
 } from "../ai";
 import { createLogger } from "../logger/structured";
@@ -328,6 +329,7 @@ Which findings share a common root cause? Return groups using 0-based indices.`;
 export interface FindingsRegistryOptions {
   /** AI model for Tier 3 semantic dedup. When omitted, Tier 3 is skipped. */
   model?: AIModel;
+  reasoning?: ReasoningSetting;
   /** Per-provider API key overrides for the model. */
   authConfig?: AIAuthConfig;
   /** Signal to cancel in-flight LLM calls (Tier 3 semantic dedup). */
@@ -378,6 +380,7 @@ export class FindingsRegistry implements FindingsRegistryOps {
   private findings: Finding[] = [];
 
   private model?: AIModel;
+  private reasoning?: ReasoningSetting;
   private authConfig?: AIAuthConfig;
   private abortSignal?: AbortSignal;
   private sessionId?: string;
@@ -392,6 +395,7 @@ export class FindingsRegistry implements FindingsRegistryOps {
 
   constructor(opts?: FindingsRegistryOptions) {
     this.model = opts?.model;
+    this.reasoning = opts?.reasoning;
     this.authConfig = opts?.authConfig;
     this.abortSignal = opts?.abortSignal;
     this.sessionId = opts?.sessionId;
@@ -610,6 +614,7 @@ export class FindingsRegistry implements FindingsRegistryOps {
 
     const result = await generateObjectResponse({
       model: this.model,
+      reasoning: this.reasoning,
       schema: SemanticDedupResultSchema,
       prompt,
       system: SEMANTIC_DEDUP_SYSTEM,
@@ -683,6 +688,7 @@ export class FindingsRegistry implements FindingsRegistryOps {
     try {
       result = await generateObjectResponse({
         model: this.model,
+        reasoning: this.reasoning,
         schema: RootCauseGroupResultSchema,
         prompt,
         system: ROOT_CAUSE_GROUPING_SYSTEM,

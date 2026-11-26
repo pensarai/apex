@@ -2,6 +2,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { readDocumentedTopology } from "./documentTopology";
+import { topologyToMermaid } from "./topologyMermaid";
 import type { ToolContext } from "./types";
 
 /**
@@ -63,10 +65,20 @@ Call this at the END of your analysis with:
         "attack-surface-results.json",
       );
       writeFileSync(resultsPath, JSON.stringify(results, null, 2));
+      const topology = readDocumentedTopology(ctx.session.rootPath);
+      const diagramPath = topology.components.length
+        ? join(ctx.session.rootPath, "topology.mmd")
+        : undefined;
+      if (diagramPath)
+        writeFileSync(
+          diagramPath,
+          topologyToMermaid(topology, { controls: true }),
+        );
 
       return {
         success: true,
         resultsPath,
+        ...(diagramPath ? { diagramPath } : {}),
         summary: results.summary,
         message: `Attack surface analysis complete. ${results.summary.totalAssets} assets identified for penetration testing.`,
       };

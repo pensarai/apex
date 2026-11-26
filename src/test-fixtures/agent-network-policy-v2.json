@@ -1,0 +1,80 @@
+{
+  "version": 2,
+  "jobId": "job-fixture",
+  "workspaceId": "workspace-fixture",
+  "sessionId": "session-fixture",
+  "agentType": "blackbox-pentest",
+  "destinations": [
+    {
+      "host": "app.example.test",
+      "port": 443,
+      "transport": "https",
+      "purpose": "target",
+      "route": "internet",
+      "wildcard": false,
+      "methods": [],
+      "pathPrefixes": []
+    },
+    {
+      "host": "assets.example.test",
+      "port": 443,
+      "transport": "https",
+      "purpose": "auxiliary",
+      "route": "internet",
+      "wildcard": true,
+      "sourceRef": "idp:platform-allowlist",
+      "methods": ["GET", "HEAD"],
+      "pathPrefixes": ["/"]
+    },
+    {
+      "host": "internal.corp.example",
+      "port": 443,
+      "transport": "https",
+      "purpose": "target",
+      "route": "customer-tailnet",
+      "wildcard": false,
+      "methods": [],
+      "pathPrefixes": []
+    },
+    {
+      "host": "mtls.example.test",
+      "port": 443,
+      "transport": "tls",
+      "purpose": "target",
+      "route": "internet",
+      "wildcard": false,
+      "methods": [],
+      "pathPrefixes": []
+    }
+  ],
+  "privateDomains": ["corp.example"],
+  "hostnameMappings": [
+    {
+      "hostname": "app.example.test",
+      "ip": "8.8.8.8"
+    }
+  ],
+  "rateLimit": {
+    "requestsPerSecond": 25,
+    "scopeId": "scan-fixture",
+    "aggregation": "per-target-host"
+  },
+  "scopeCases": [
+    {
+      "host": "app.example.test",
+      "allowed": true
+    },
+    {
+      "host": "prod.example.test",
+      "allowed": false
+    },
+    {
+      "host": "cdn.assets.example.test",
+      "allowed": true
+    },
+    {
+      "host": "assets.example.test.evil.test",
+      "allowed": false
+    }
+  ]
+}

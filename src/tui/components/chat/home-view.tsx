@@ -31,7 +31,7 @@ interface HomeViewProps {
 
 export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { colors } = useTheme();
-  const { model } = useAgent();
+  const { model, reasoning } = useAgent();
   const dimensions = useDimensions();
   const config = useConfig();
   const route = useRoute();
@@ -270,7 +270,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
           <OperatorModeBar
             operatorMode="manual"
-            modelName={model.name}
+            modelName={reasoning ? `${model.name} · ${reasoning}` : model.name}
             providerName={providerDisplayName(model.provider)}
             showMode={false}
             maxWidth={inputWidth - 2 - inputPadding * 2}

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { winScriptFromEnv } from "./__tests__/sandboxScript";
+import { acceptedTypes } from "./__tests__/wireSchema";
 import { type ReadFileResult, readFile } from "./readFile";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
@@ -154,7 +155,7 @@ describe("readFile healthy paths", () => {
       const schema = body.tools[0].parameters;
       // Responses can require every property, so inactive fields must allow null.
       for (const field of ["startLine", "endLine", "byteOffset", "byteCount"]) {
-        expect(schema.properties[field].anyOf).toContainEqual({ type: "null" });
+        expect(acceptedTypes(schema.properties[field])).toContain("null");
       }
       return new Response(
         JSON.stringify({

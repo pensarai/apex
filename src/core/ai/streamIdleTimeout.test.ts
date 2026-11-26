@@ -184,6 +184,27 @@ describe("StreamIdleTimeoutError", () => {
 });
 
 describe("createToolExecutionGate", () => {
+  it("keeps streaming tools gated until their final result", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({
+      type: "tool-call",
+      toolCallId: "streaming",
+      toolName: "probe",
+    });
+    gate.observe({
+      type: "tool-result",
+      toolCallId: "streaming",
+      preliminary: true,
+    });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+    gate.observe({
+      type: "tool-result",
+      toolCallId: "streaming",
+      preliminary: false,
+    });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
   it("opens on tool-call and closes on tool-result", () => {
     const gate = createToolExecutionGate();
     expect(gate.shouldEnforceIdleTimeout()).toBe(true);

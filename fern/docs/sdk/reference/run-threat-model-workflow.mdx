@@ -1,0 +1,92 @@
+---
+title: "runThreatModelWorkflow"
+description: "Generate a threat model document for a codebase"
+---
+
+```ts title="Signature"
+function runThreatModelWorkflow(
+  input: ThreatModelWorkflowInput,
+): Promise<ThreatModelWorkflowResult>;
+```
+
+Analyzes a codebase with Apex's built-in `threat-model` skill and writes a Markdown threat model to `outputPath`. This is what `pensar threat-model` runs. Pass the result to [`runPentestAgent`](/apex/sdk/reference/run-pentest-agent) as `threatModel` to steer a pentest.
+
+```ts title="Import"
+import { runThreatModelWorkflow } from "@pensar/apex/core/api";
+```
+
+## Parameters
+
+<ParamField path="codebasePath" type="string" required={true}>
+  Path to the codebase to analyze.
+</ParamField>
+
+<ParamField path="outputPath" type="string" required={true}>
+  Where to write the threat model Markdown file.
+</ParamField>
+
+<ParamField path="model" type="AIModel" default="claude-sonnet-4-5">
+  Model ID. See [Models](/apex/sdk/configuration#models).
+</ParamField>
+
+<ParamField path="authConfig" type="AIAuthConfig">
+  AI provider credentials.
+</ParamField>
+
+<ParamField path="session" type="SessionInfo">
+  Session to reuse. One is created when omitted.
+</ParamField>
+
+<ParamField path="eventBus" type="AgentEventBus">
+  Streaming events. See [AgentEventBus](/apex/sdk/reference/agent-event-bus).
+</ParamField>
+
+<ParamField path="abortSignal" type="AbortSignal">
+  Cancels the run.
+</ParamField>
+
+<ParamField path="reasoning" type="ReasoningSetting">
+  Extended-thinking setting. See [Reasoning](/apex/sdk/configuration#reasoning).
+</ParamField>
+
+## Returns
+
+`Promise<ThreatModelWorkflowResult>`
+
+<ParamField path="outputPath" type="string">
+  Absolute path of the written threat model.
+</ParamField>
+
+<ParamField path="session" type="SessionInfo">
+  The session used, whether provided or created.
+</ParamField>
+
+## Example
+
+```ts title="Threat model, then pentest"
+import { readFileSync } from "node:fs";
+import { buildAuthConfig } from "@pensar/apex/core/ai";
+import { runPentestAgent, runThreatModelWorkflow } from "@pensar/apex/core/api";
+import { config } from "@pensar/apex/core/config";
+import { sessions } from "@pensar/apex/core/session";
+
+const authConfig = buildAuthConfig(await config.get());
+const model = "claude-opus-4-6";
+
+const { outputPath } = await runThreatModelWorkflow({
+  codebasePath: "./my-app",
+  outputPath: "./threat-model.md",
+  model,
+  authConfig,
+});
+
+const target = "http://localhost:3000";
+await runPentestAgent({
+  target,
+  cwd: "./my-app",
+  session: await sessions.create({ name: "Threat-model-guided", targets: [target] }),
+  model,
+  authConfig,
+  threatModel: readFileSync(outputPath, "utf8"),
+});
+```

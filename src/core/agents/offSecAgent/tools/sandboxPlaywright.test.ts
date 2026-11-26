@@ -6,12 +6,14 @@ import { createBrowserToolset } from "./browserTools";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
 import {
   createSandboxBrowserTools,
+  installSandboxPlaywright,
   SandboxBrowserBackend,
 } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
 
 const RESULT_START = "__PW_RESULT__";
 const RESULT_END = "__PW_END__";
+const SANDBOX_ACTION_PATH = "/opt/sandbox-playwright/pw_action.js";
 
 function ok(stdout = "OK"): SandboxExecutionResult {
   return { stdout, stderr: "", exitCode: 0, success: true };
@@ -48,6 +50,15 @@ function makeCtx(sandbox: UnifiedSandbox, rootPath: string): ToolContext {
     target: "https://target.example",
     sandbox,
   } as unknown as ToolContext;
+}
+
+function generatedPlaywrightScript(commands: string[]): string {
+  const action = commands.find((command) =>
+    command.includes(`${SANDBOX_ACTION_PATH}`),
+  );
+  const encoded = action?.match(/echo "([^"]+)" \| base64 -d/)?.[1];
+  if (!encoded) throw new Error("missing generated Playwright script");
+  return Buffer.from(encoded, "base64").toString("utf8");
 }
 
 describe("SandboxBrowserBackend", () => {
@@ -109,6 +120,31 @@ describe("SandboxBrowserBackend", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("leaves page traffic to the tool policy instead of aborting it in the browser", async () => {
+    const { sandbox, commands } = makeFakeSandbox({
+      success: true,
+      url: "https://target.example/dashboard",
+      title: "Dashboard",
+    });
+    const ctx = makeCtx(sandbox, rootPath);
+    ctx.session.config = {
+      scopeConstraints: {
+        strictScope: true,
+        allowedHosts: ["target.example", "*.assets.example"],
+        allowedPorts: [443, 8443],
+      },
+    };
+
+    await SandboxBrowserBackend(ctx).navigate(
+      "https://target.example/dashboard",
+    );
+
+    const script = generatedPlaywrightScript(commands);
+    expect(script).not.toContain("route.abort");
+    expect(script).not.toContain("EnforceScope");
+    expect(script).toContain("serviceWorkers: 'block'");
+  });
+
   it("routes scoped headers per request instead of configuring them globally", async () => {
     const { sandbox, commands } = makeFakeSandbox({
       success: true,
@@ -142,6 +178,8 @@ describe("SandboxBrowserBackend", () => {
     expect(script).toContain("context.route('**/*'");
     expect(script).toContain("X-Session-Secret");
     expect(script).toContain("X-Credential-Secret");
+    expect(script).toContain("maxRedirects: 0");
+    expect(script).toContain("await route.fulfill({ response })");
     expect(script).not.toContain("extraHTTPHeaders");
   });
 
@@ -231,5 +269,43 @@ describe("SandboxBrowserBackend", () => {
       cookies,
       cookieHeader: "session=abc",
     });
+  });
+});
+
+describe("installSandboxPlaywright Node runtime", () => {
+  function sandboxWithNode(version: string): {
+    sandbox: UnifiedSandbox;
+    commands: string[];
+  } {
+    const commands: string[] = [];
+    const sandbox: UnifiedSandbox = {
+      type: "linux",
+      execute: vi.fn(async (command: string) => {
+        commands.push(command);
+        if (command === "which apk")
+          return { stdout: "", stderr: "", exitCode: 1, success: false };
+        if (command.startsWith("node -p")) return ok(`${version}\n`);
+        return ok();
+      }),
+    };
+    return { sandbox, commands };
+  }
+
+  it("refuses a Node 20 sandbox before installing camoufox-js", async () => {
+    const { sandbox, commands } = sandboxWithNode("20.18.1");
+    await expect(installSandboxPlaywright(sandbox)).rejects.toThrow(
+      "Camoufox requires Node 22 or newer in the sandbox image; found 20.18.1.",
+    );
+    expect(commands.some((c) => c.includes("npm install"))).toBe(false);
+  });
+
+  it("installs on a Node 22 sandbox", async () => {
+    const { sandbox, commands } = sandboxWithNode("22.23.5");
+    await installSandboxPlaywright(sandbox);
+    expect(
+      commands.some((c) =>
+        c.includes("npm install --save-exact camoufox-js@0.13.0"),
+      ),
+    ).toBe(true);
   });
 });

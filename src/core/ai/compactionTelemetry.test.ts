@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trace } from "@opentelemetry/api";
@@ -17,6 +23,7 @@ import {
   fitMessagesToContext,
 } from "./contextManagement";
 import { createNativeRolloutEvidenceCapture } from "./native-rollout-evidence";
+import { parseResponsesSSE } from "./providers/pensarResponsesStream";
 
 const state: { model?: MockLanguageModelV3 } = {};
 vi.mock("./utils", async () => ({
@@ -24,7 +31,9 @@ vi.mock("./utils", async () => ({
   getProviderModel: () => state.model,
 }));
 const { streamResponse } = await import("./ai");
-const { createSummarizationStream } = await import("./utils");
+const { CompactionRejectedError, createSummarizationStream } = await import(
+  "./utils"
+);
 
 const MODEL = "claude-haiku-4-5";
 const usage = {
@@ -45,7 +54,7 @@ function model() {
       stream: simulateReadableStream({
         chunks: [
           { type: "text-start", id: "t" },
-          { type: "text-delta", id: "t", delta: "Done" },
+          { type: "text-delta", id: "t", delta: "A compact summary" },
           { type: "text-end", id: "t" },
           {
             type: "finish",
@@ -56,6 +65,24 @@ function model() {
       }),
     }),
   });
+}
+
+const SUMMARIZE_FN = "apex.context.summarize";
+
+// Summary and resumed turn both arrive via doStream; the instruction separates them.
+function isSummaryCall(options: { prompt: unknown }): boolean {
+  return JSON.stringify(options.prompt).includes("Compact this conversation");
+}
+
+// By functionId, not span name, so it survives a streaming/one-shot switch.
+function summarySpan<
+  T extends { name: string; attributes: Record<string, unknown> },
+>(spans: readonly T[]): T | undefined {
+  return spans.find(
+    (span) =>
+      span.name.endsWith(".doStream") &&
+      span.attributes["ai.telemetry.functionId"] === SUMMARIZE_FN,
+  );
 }
 
 async function drain(stream: { fullStream: AsyncIterable<unknown> }) {
@@ -125,7 +152,14 @@ describe("compaction observability", () => {
       ...options,
       telemetry: context,
     });
-    expect(observed.messages).toEqual(baseline.messages);
+    const withoutReferenceIds = (messages: ModelMessage[]) =>
+      JSON.stringify(messages).replace(
+        /tool-output:[0-9a-f-]{36}/g,
+        "tool-output:<opaque>",
+      );
+    expect(withoutReferenceIds(observed.messages)).toBe(
+      withoutReferenceIds(baseline.messages),
+    );
     expect(observed.estimatedInputTokens).toBe(baseline.estimatedInputTokens);
     const spans = otel.getFinishedSpans();
     expect(spans).toHaveLength(1);
@@ -193,10 +227,13 @@ describe("compaction observability", () => {
     await drain(stream);
     const spans = otel.getFinishedSpans();
     const compaction = requireSpan(spans, "apex.context.compact");
-    const summary = spans.find(
-      (span) => span.name === "ai.generateText.doGenerate",
+    const summary = summarySpan(spans);
+    const resumed = spans.find(
+      (span) =>
+        span.name === "ai.streamText" &&
+        span.attributes["ai.telemetry.functionId"] !== SUMMARIZE_FN,
     );
-    const resumed = requireSpan(spans, "ai.streamText");
+    if (!resumed) throw new Error("no resumed agent-turn span");
     expect(compaction?.attributes).toMatchObject({
       "apex.compaction.outcome": "completed",
       "pensar.session.id": "ses_child",
@@ -284,8 +321,7 @@ describe("compaction observability", () => {
     }
   });
 
-  it("captures the transformation and distinguishes successful saves from silent write failures", () => {
-    mkdirSync(join(directory, "tool-results", "c0.txt"), { recursive: true });
+  it("captures the transformation and successful opaque saves", () => {
     const messages = toolHistory();
     const fitted = runWithAiPayloadCapture(true, () =>
       fitMessagesToContext(messages, {
@@ -308,8 +344,8 @@ describe("compaction observability", () => {
     expect(
       JSON.parse(String(attributes["apex.compaction.evidence.after.json"])),
     ).toEqual({ messages: fitted.messages, system: "research system" });
-    expect(attributes["apex.compaction.persistence.written"]).toBe(9);
-    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(1);
+    expect(attributes["apex.compaction.persistence.written"]).toBe(10);
+    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(0);
     const results = JSON.parse(
       String(attributes["apex.compaction.evidence.results.json"]),
     );
@@ -318,20 +354,48 @@ describe("compaction observability", () => {
       position: "1:0",
       toolCallId: "c0",
       method: "snip",
-      preservation: "write_failed",
+      preservation: "written",
       originalChars: 18_000,
-      inputChars: 18_000,
     });
     expect(results[1]).toMatchObject({
       toolCallId: "c1",
       preservation: "written",
     });
     expect(
-      readFileSync(join(directory, "tool-results", "c1.txt"), "utf8"),
+      readFileSync(
+        join(
+          directory,
+          "logs",
+          "tool-output",
+          `${results[1].path.slice("tool-output:".length)}.txt`,
+        ),
+        "utf8",
+      ),
     ).toBe("evidence ".repeat(2000));
     expect(attributes["apex.compaction.evidence.capture_ms"]).toEqual(
       expect.any(Number),
     );
+  });
+
+  it("records a failed save and stops without inventing a retained reference", () => {
+    mkdirSync(join(directory, "logs"));
+    writeFileSync(join(directory, "logs", "tool-output"), "blocked");
+    expect(() =>
+      fitMessagesToContext(toolHistory(), {
+        contextWindow: 400,
+        maxOutputTokens: 0,
+        overheadTokens: 0,
+        safetyMarginTokens: 0,
+        sessionPath: directory,
+        telemetry: context,
+      }),
+    ).toThrow("Referenced tool output is unavailable");
+    const { attributes } = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    );
+    expect(attributes["apex.compaction.persistence.written"]).toBe(0);
+    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(1);
   });
 
   it("does not treat old archive references or snipped outputs as verified files", () => {
@@ -418,7 +482,8 @@ describe("compaction observability", () => {
       prompt: "original task",
       system: "research system",
     });
-    const summary = requireSpan(spans, "ai.generateText.doGenerate");
+    const summary = summarySpan(spans);
+    if (!summary) throw new Error("no summarizer model span");
     expect(summary.attributes["ai.prompt.messages"]).toContain(
       "continue researching",
     );
@@ -433,7 +498,8 @@ describe("compaction observability", () => {
       String(compact.attributes["apex.compaction.evidence.after.json"]),
     );
     expect(after.messages[0].content).toContain("A compact summary");
-    expect(summaryModel.doStreamCalls[0]?.prompt).toMatchObject([
+    // [0] is the summarization call; the resumed agent turn follows it.
+    expect(summaryModel.doStreamCalls[1]?.prompt).toMatchObject([
       { role: "system", content: after.system },
       {
         role: "user",
@@ -538,11 +604,191 @@ describe("compaction observability", () => {
     }
   });
 
+  it("summarizes over a stream, so a slow summary is never a silent connection", async () => {
+    // A one-shot summarization returns no response headers until the whole summary
+    // exists, which anything watching time-to-headers reads as a dead connection.
+    // Compaction became unreachable that way, so the call must stream.
+    const summaryModel = model();
+    state.model = summaryModel;
+    await drain(
+      createSummarizationStream(
+        [{ role: "user", content: "history" }],
+        { prompt: "continue", model: MODEL, silent: true },
+        summaryModel,
+      ),
+    );
+    expect(summaryModel.doGenerateCalls).toHaveLength(0);
+    expect(JSON.stringify(summaryModel.doStreamCalls[0]?.prompt)).toContain(
+      "Compact this conversation",
+    );
+  });
+
+  it("rejects a summary whose stream errored but still resolved partial text", async () => {
+    // An error part resolves `.text` with partial output rather than rejecting.
+    const partialFailure = new Error("provider dropped the summary mid-stream");
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      // Only the summary errors, so refusing it is the sole thing that can reject.
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                  { type: "error", error: partialFailure },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "error", raw: "error" },
+                    usage,
+                  },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toBe(partialFailure);
+  });
+
+  it("rejects a summary truncated at the output cap", async () => {
+    // finishReason "length" delivers partial text without an error part.
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      // Only the summary truncates, so refusing it is the sole thing that can reject.
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                  { type: "text-end", id: "s" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "length", raw: "max_tokens" },
+                    usage,
+                  },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
+  });
+
+  it("rejects a summary whose stream disconnected before the finish chunk", async () => {
+    // With output but no finish chunk, ai resolves the partial text, fires no
+    // error, and defaults finishReason to "other".
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: MODEL,
+      doStream: async (options) =>
+        isSummaryCall(options)
+          ? {
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "s" },
+                  { type: "text-delta", id: "s", delta: "A partial sum" },
+                ] as never,
+              }),
+            }
+          : healthy.doStream(options),
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: MODEL, silent: true },
+      state.model,
+    );
+    await expect(drain(stream)).rejects.toThrow(CompactionRejectedError);
+  });
+
+  it.each([
+    { terminal: undefined, reason: undefined, expected: "other" },
+    {
+      terminal: "response.incomplete",
+      reason: "content_filter",
+      expected: "content-filter",
+    },
+    {
+      terminal: "response.incomplete",
+      reason: "max_output_tokens",
+      expected: "length",
+    },
+    { terminal: "response.completed", reason: undefined, expected: "stop" },
+  ])("handles a Responses summary finishing with $expected", async ({
+    terminal,
+    reason,
+    expected,
+  }) => {
+    const healthy = model();
+    state.model = new MockLanguageModelV3({
+      modelId: "openai.gpt-5.5",
+      doStream: async (options) => {
+        if (!isSummaryCall(options)) return healthy.doStream(options);
+        const events = [
+          { type: "response.output_text.delta", delta: "A compact summary" },
+          ...(terminal
+            ? [
+                {
+                  type: terminal,
+                  response: {
+                    status:
+                      terminal === "response.completed"
+                        ? "completed"
+                        : "incomplete",
+                    ...(reason ? { incomplete_details: { reason } } : {}),
+                  },
+                },
+              ]
+            : []),
+        ];
+        const sse = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                events
+                  .map(
+                    (event) =>
+                      `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+                  )
+                  .join(""),
+              ),
+            );
+            controller.close();
+          },
+        });
+        return { stream: parseResponsesSSE(sse, { idleTimeoutMs: 5_000 }) };
+      },
+    });
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      { prompt: "continue", model: "pensar:openai.gpt-5.5", silent: true },
+      state.model,
+    );
+    if (expected === "stop") {
+      await expect(drain(stream)).resolves.toBeUndefined();
+    } else {
+      await expect(drain(stream)).rejects.toThrow(`finishReason: ${expected}`);
+    }
+  });
+
   it("records summary cancellation without hiding the original error", async () => {
     const cancelled = new Error("cancelled");
     cancelled.name = "AbortError";
     state.model = new MockLanguageModelV3({
-      doGenerate: async () => {
+      doStream: async () => {
         throw cancelled;
       },
     });
@@ -569,10 +815,10 @@ describe("compaction observability", () => {
     const normal = model();
     state.model = new MockLanguageModelV3({
       modelId: MODEL,
-      doGenerate: async () => {
-        throw new Error("context length exceeded");
-      },
-      doStream: (options) => normal.doStream(options),
+      doStream: (options) =>
+        isSummaryCall(options)
+          ? Promise.reject(new Error("context length exceeded"))
+          : normal.doStream(options),
     });
     await runWithAiPayloadCapture(true, () =>
       drain(
@@ -612,10 +858,18 @@ describe("compaction observability", () => {
         String(reset?.attributes["apex.compaction.evidence.after.json"]),
       )?.messages,
     ).toEqual([{ role: "user", content: "original task" }]);
+    // A resumed agent turn must carry the reset's span id. Summarizer attempts are
+    // `ai.streamText` spans too now, so they are excluded rather than assumed last.
     expect(
-      spans.find((span) => span.name === "ai.streamText")?.attributes[
-        "ai.telemetry.metadata.compactionSpanId"
-      ],
-    ).toBe(reset?.spanContext().spanId);
+      spans
+        .filter(
+          (span) =>
+            span.name === "ai.streamText" &&
+            span.attributes["ai.telemetry.functionId"] !== SUMMARIZE_FN,
+        )
+        .map(
+          (span) => span.attributes["ai.telemetry.metadata.compactionSpanId"],
+        ),
+    ).toContain(reset?.spanContext().spanId);
   });
 });

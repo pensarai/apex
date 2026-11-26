@@ -11,6 +11,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
     contextLength: 1050000,
   },
   {
+    id: "gpt-6.1-terra",
+    name: "GPT-6.1-terra",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
     id: "gpt-6-luna",
     name: "GPT-6-luna",
     provider: "openai",

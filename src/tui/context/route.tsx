@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { LanceBudget } from "../../core/agents/lanceBudget";
 import type { SessionConfig } from "../../core/session";
 
 export type RoutePath =
@@ -70,6 +71,9 @@ export type Route =
         operatorMode?: import("../../core/operator").OperatorMode;
         /** Overrides the persisted Strike Mode preference for this new session. */
         strikeMode?: boolean;
+        lanceMode?: boolean;
+        lanceBudget?: LanceBudget;
+        findingPolicy?: import("../../core/agents/offSecAgent").FindingPolicy;
         sandbox?: boolean;
         taskDriven?: boolean;
         /** Headers from wizard/CLI; replace the snapshotted global defaults. */

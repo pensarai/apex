@@ -48,6 +48,7 @@ const RetryDecisionSchema = z
     authority: z.enum([
       "stream-rate-limit",
       "stream-idle",
+      "stream-incomplete",
       "object-rate-limit",
       "context-restart",
     ]),
