@@ -312,7 +312,8 @@ const mainWindow = new BrowserWindow({
   title: "Apex",
   renderer: "cef",
   titleBarStyle: "hiddenInset",
-  transparent: true,
+  // Transparent CEF windows use Electrobun's low-resolution off-screen renderer.
+  transparent: false,
   frame: { x: 100, y: 80, width: 1220, height: 800 },
   url,
   rpc,
