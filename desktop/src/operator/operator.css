@@ -541,6 +541,7 @@
   margin-inline: auto;
 }
 .op-compose {
+  position: relative;
   flex-shrink: 0;
   margin-bottom: 24px;
   padding: 12px;
@@ -958,4 +959,143 @@
   overflow-wrap: anywhere;
   color: var(--color-fg-3);
   font: 11px / 1.625 var(--font-mono);
+}
+
+.op-slash-menu {
+  height: auto;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+.op-slash-list {
+  overflow: auto;
+  max-height: min(320px, 40vh);
+}
+.op-slash-description {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.op-slash-description strong {
+  font-weight: 500;
+}
+.op-slash-description > span {
+  color: var(--color-fg-3);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.op-slash-kind,
+.op-slash-hint {
+  color: var(--color-fg-3);
+  font-size: 11px;
+}
+.op-slash-hint {
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border);
+}
+.op-goal {
+  margin: 0 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-fg-3);
+}
+.op-goal summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.op-goal summary::-webkit-details-marker {
+  display: none;
+}
+.op-goal-objective {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-fg);
+}
+.op-goal-status {
+  font-weight: 500;
+}
+.op-goal[open] .op-goal-chevron {
+  transform: rotate(90deg);
+}
+.op-goal-detail {
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.op-goal-detail p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+.op-goal-detail ul {
+  padding-left: 16px;
+}
+
+.op-slash-item {
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  padding: 8px 12px;
+  text-align: left;
+  border-radius: 0;
+}
+.op-slash-item[aria-selected="true"],
+.op-slash-item:hover {
+  background: var(--color-surface-3);
+}
+.op-slash-empty {
+  padding: 12px;
+  color: var(--color-fg-3);
+  font-size: 12px;
+}
+
+.op-command-input {
+  position: relative;
+  width: 100%;
+}
+.op-command-input textarea,
+.op-command-overlay {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 8;
+}
+.op-command-overlay {
+  position: absolute;
+  inset: 0;
+  padding: 4px;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--color-fg);
+}
+.op-command-overlay > span {
+  color: var(--color-accent);
+}
+.op-command-highlighted textarea {
+  color: transparent;
+  caret-color: var(--color-fg);
+  transition: none;
+}
+.op-command-highlighted textarea::selection {
+  color: transparent;
+}
+
+.op-command-input textarea {
+  transition: none;
 }

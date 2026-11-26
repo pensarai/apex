@@ -20,6 +20,27 @@ import {
   type BackgroundJobState,
 } from "../../../src/core/eventBus";
 import {
+  continuationMessage,
+  createFileGoalHost,
+  createGoal,
+  createUpdateGoalTool,
+  endGoal,
+  type Goal,
+  type GoalNext,
+  goalPromptSection,
+  goalStopCondition,
+  isGoalControlMessage,
+  kickoffMessage,
+  newGoalSchema,
+  readGoalFile,
+  type ScheduleResult,
+  scheduleGoalNext,
+  settleGoalTurn,
+  turnFactsFromMessages,
+  UPDATE_GOAL_TOOL_NAME,
+  writeGoalFile,
+} from "../../../src/core/goals";
+import {
   formatParseError,
   parseHeaderLine,
   parseHeaderList,
@@ -60,6 +81,8 @@ import {
 import { markInFlightToolsErrored } from "../../../src/tui/components/operator-dashboard/display-state";
 import {
   buildOperatorSystemPrompt,
+  goalStatusLine,
+  parseGoalSlashCommand,
   resolveActiveFindingPolicy,
   resolveOperatorAgentMode,
   resolveOperatorFindingPolicy,
@@ -111,6 +134,9 @@ type AgentClient = ReturnType<typeof createOffensiveSecurityAgentClient>;
 class OperatorHost {
   constructor(private options: HostOptions) {}
   private session?: SessionInfo;
+  private goal: Goal | null = null;
+  private goalPaused = false;
+  private goalsEnabled = true;
   private workingDirectory = "";
   private history: ModelMessage[] = [];
   private messages: DisplayMessage[] = [];
@@ -159,6 +185,9 @@ class OperatorHost {
     const s = this.session;
     return {
       revision: ++this.revision,
+      goal: this.goal,
+      goalPaused: this.goalPaused,
+      goalsEnabled: this.goalsEnabled,
       processes: [...this.processes.values()],
       sessionId: s?.id,
       name: s?.name,
@@ -220,7 +249,7 @@ class OperatorHost {
         name: a.name,
         status: a.status,
         parentToolCallId: a.parentToolCallId,
-        modelLoading: a.modelLoading ?? undefined,
+        modelLoading: a.modelLoading?.model,
         spawnedAt: a.spawnedAt.toISOString(),
         completedAt: a.completedAt?.toISOString(),
         input: a.input,
@@ -269,7 +298,7 @@ class OperatorHost {
           name: a.name,
           status: a.status,
           parentToolCallId: a.parentToolCallId,
-          modelLoading: a.modelLoading ?? undefined,
+          modelLoading: a.modelLoading?.model,
           spawnedAt: a.spawnedAt.toISOString(),
           completedAt: a.completedAt?.toISOString(),
           input: a.input,
@@ -287,6 +316,8 @@ class OperatorHost {
   private reset(session: SessionInfo, mode: OperatorMode, model?: string) {
     this.ensureOpen();
     this.session = session;
+    this.goal = readGoalFile(session.rootPath);
+    this.goalPaused = false;
     this.mode = mode;
     this.gate.updateConfig({ requireApproval: mode === "manual" });
     this.modelOverride = model;
@@ -349,6 +380,26 @@ class OperatorHost {
       }
       const strikeMode = input.strikeMode ?? cfg.strikeMode ?? false;
       const lanceMode = input.lanceMode ?? cfg.lanceMode ?? false;
+      this.goalsEnabled = cfg.goalsEnabled !== false;
+      const goalInput = input.goal
+        ? newGoalSchema.parse(input.goal)
+        : undefined;
+      if (goalInput && (!this.goalsEnabled || lanceMode))
+        throw new Error(
+          lanceMode
+            ? "Goals are unavailable in Lance mode."
+            : "Goals are disabled. Enable them in Advanced settings.",
+        );
+      if (goalInput && (input.skill || attachments.length || input.prompt))
+        throw new Error("Start a goal with its objective only.");
+      if (input.skill && lanceMode)
+        throw new Error("Lance accepts direct objectives only.");
+      if (
+        input.skill &&
+        strikeMode &&
+        ["pentest", "threat-model"].includes(input.skill)
+      )
+        throw new Error("This skill needs standard operator mode.");
       const mode = input.mode ?? "manual";
       if (!OPERATOR_MODE_CYCLE.includes(mode))
         throw new Error("Invalid operator mode.");
@@ -397,7 +448,11 @@ class OperatorHost {
       this.reset(session, mode, input.model);
       this.model = currentModel;
       this.globalModelAtStart = cfg.selectedModelId;
-      if (input.skill) {
+      if (goalInput) {
+        this.goal = createGoal({ sessionId: session.id, ...goalInput });
+        writeGoalFile(session.rootPath, this.goal);
+        this.run(kickoffMessage(this.goal));
+      } else if (input.skill) {
         const { content } = await this.skills.readSkillContent(input.skill);
         const prompt =
           input.skill === "threat-model"
@@ -409,8 +464,13 @@ class OperatorHost {
                 codebasePath: cwd,
                 skillContent: content,
               })
-            : `<skill name="prompt-injection">\nWorking directory: ${cwd}\nTarget: ${input.target ?? ""}\nLibrary: ${input.promptInjectionLibrarySource ?? ""}\n\n${content}\n</skill>`;
-        this.run(prompt, `/${input.skill}`);
+            : `<skill name="${input.skill}">\nWorking directory: ${cwd}\nTarget: ${input.target ?? ""}\nLibrary: ${input.promptInjectionLibrarySource ?? ""}\n\n${content}\n</skill>`;
+        this.run(
+          input.skillArguments?.length
+            ? `${prompt}\nOperator input: ${input.skillArguments.join(" ")}`
+            : prompt,
+          `/${input.skill}`,
+        );
       } else if (input.prompt || attachments.length) {
         const prompt = await attachFilesToPrompt(
           session.rootPath,
@@ -479,6 +539,15 @@ class OperatorHost {
         );
         this.messages = convertModelMessagesToUI(state.messages, true);
       }
+      this.messages = this.messages.filter(
+        (message) =>
+          message.role !== "user" ||
+          typeof message.content !== "string" ||
+          !isGoalControlMessage(message.content),
+      );
+      const cfg = await config.get();
+      this.goalsEnabled = cfg.goalsEnabled !== false;
+      this.goalPaused = this.goal?.status === "active";
       this.agents.setState(
         loadSubagentSessionsFromDisk(session.rootPath, true),
       );
@@ -486,7 +555,7 @@ class OperatorHost {
       return this.snapshot();
     });
   };
-  private run(prompt: string | null, label?: string) {
+  private run(prompt: string | null, label?: string, hidden = false) {
     const session = this.session;
     if (!session || this.client || this.disposed)
       throw new Error("The operator cannot start another turn now.");
@@ -497,7 +566,7 @@ class OperatorHost {
     this.status = "running";
     this.activity = "waiting";
     this.error = undefined;
-    this.turn = this.execute(session, client, prompt, label);
+    this.turn = this.execute(session, client, prompt, label, hidden);
     this.publish();
   }
   private async execute(
@@ -505,7 +574,11 @@ class OperatorHost {
     client: AgentClient,
     prompt: string | null,
     label?: string,
+    hidden = false,
   ) {
+    let goalNext: GoalNext | null = null;
+    let turnGoal: Goal | null = null;
+    const goalHost = this.goalHost(session);
     const previous = this.history;
     const transcriptPath = join(session.rootPath, "messages.json");
     const display = createDisplayEventHandlers({
@@ -526,8 +599,9 @@ class OperatorHost {
         this.messages = updateWorkflowDataMessage(this.messages, fn);
         this.publish();
       },
-      onModelLoading: (model) => {
-        this.modelLoading = model ?? undefined;
+      onModelLoading: (event) => {
+        this.modelLoading =
+          event.status === "loading" ? event.model : undefined;
         this.publish();
       },
       clearSubagentSessions: () => this.agents.setState(new Map()),
@@ -646,6 +720,11 @@ class OperatorHost {
     try {
       const cfg = await config.get();
       if (!current()) return;
+      this.goalsEnabled = cfg.goalsEnabled !== false;
+      if (hidden && (!this.goalsEnabled || this.goalPaused)) {
+        this.goalPaused = true;
+        return;
+      }
       if (this.modelOverride && this.globalModelAtStart !== cfg.selectedModelId)
         this.modelOverride = undefined;
       const model = this.resolveModel(cfg, this.modelOverride);
@@ -666,7 +745,16 @@ class OperatorHost {
         saved?.findingPolicy ?? "native",
       );
       const target = session.targets[0];
-      const system = lance
+      if (hidden && lance) {
+        this.goalPaused = true;
+        return;
+      }
+      this.goal = readGoalFile(session.rootPath);
+      turnGoal =
+        this.goalsEnabled && !lance && this.goal?.status === "active"
+          ? this.goal
+          : null;
+      let system = lance
         ? undefined
         : buildOperatorSystemPrompt(
             target,
@@ -685,16 +773,18 @@ class OperatorHost {
               findingPolicy: policy,
             },
           );
+      if (turnGoal) system = `${system}\n\n${goalPromptSection(turnGoal)}`;
       if (prompt !== null) {
         this.history = normalizeMessages([
           ...this.history,
           { role: "user", content: prompt },
         ]);
-        this.messages.push({
-          role: "user",
-          content: label ?? prompt,
-          createdAt: new Date(),
-        });
+        if (!hidden)
+          this.messages.push({
+            role: "user",
+            content: label ?? prompt,
+            createdAt: new Date(),
+          });
         await writeFile(transcriptPath, JSON.stringify(this.history, null, 2));
         this.publish();
       }
@@ -715,10 +805,16 @@ class OperatorHost {
         model,
         target,
         mode: agentMode,
-        activeTools: selectedTools(session, [
-          ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
-          ...SKILL_TOOL_NAMES,
-        ]),
+        extraTools: turnGoal
+          ? { [UPDATE_GOAL_TOOL_NAME]: createUpdateGoalTool() }
+          : undefined,
+        activeTools: [
+          ...selectedTools(session, [
+            ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+            ...SKILL_TOOL_NAMES,
+          ]),
+          ...(turnGoal ? [UPDATE_GOAL_TOOL_NAME] : []),
+        ],
         lance: lance
           ? {
               interactive: true,
@@ -728,6 +824,7 @@ class OperatorHost {
         stopWhen: [
           stepCountIs(10000),
           hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
+          ...(turnGoal ? [goalStopCondition] : []),
         ],
         findingPolicy: policy,
         approvalGate: this.gate,
@@ -757,15 +854,26 @@ class OperatorHost {
         },
       });
       if (!current()) return;
+      const response = await result.streamResult.response;
       const persisted = await sessions.loadOperatorState(session.id);
       this.history = normalizeMessages(
         sessions.getResumeMessages(
-          persisted?.messages ?? [
-            ...this.history,
-            ...(await result.streamResult.response).messages,
-          ],
+          persisted?.messages ?? [...this.history, ...response.messages],
         ),
       );
+      if (turnGoal && !this.goalPaused && current()) {
+        goalNext = await settleGoalTurn(
+          goalHost,
+          session.id,
+          turnFactsFromMessages(response.messages, {
+            outcome: this.error ? "error" : "completed",
+            error: this.error,
+            automatic: hidden,
+            heldCallCount: this.questions || this.reviewPlan ? 1 : 0,
+          }),
+        );
+        this.goal = readGoalFile(session.rootPath);
+      }
       if (result.lance && result.lance.outcome !== "awaiting_input")
         this.messages.push({
           role: "system",
@@ -775,6 +883,26 @@ class OperatorHost {
     } catch (e) {
       if (current()) {
         this.error = e instanceof Error ? e.message : String(e);
+        if (
+          (turnGoal || (this.goalsEnabled && this.goal?.status === "active")) &&
+          !this.goalPaused
+        ) {
+          try {
+            await settleGoalTurn(
+              goalHost,
+              session.id,
+              turnFactsFromMessages([], {
+                outcome: "error",
+                automatic: hidden,
+                heldCallCount: 0,
+                error: this.error,
+              }),
+            );
+            this.goal = readGoalFile(session.rootPath);
+          } catch (goalError) {
+            this.error += ` · Goal could not be saved: ${goalError}`;
+          }
+        }
         this.history = previous;
         this.questions = undefined;
         this.queue = [];
@@ -825,9 +953,101 @@ class OperatorHost {
       if (this.status === "idle" && !this.disposed && !this.error) {
         const next = this.queue.shift();
         if (next) this.run(next.prompt, next.text);
+        else if (goalNext) {
+          await scheduleGoalNext(goalHost, session.id, goalNext);
+          this.goal = readGoalFile(session.rootPath);
+        }
       }
       this.publish();
     }
+  }
+  private goalHost(session: SessionInfo) {
+    const host = createFileGoalHost({
+      sessionRoot: session.rootPath,
+      scheduleTurn: (next) => this.scheduleGoal(next),
+      report: (goal) => {
+        this.goal = goal;
+        this.messages.push({
+          role: "system",
+          content: goalStatusLine(goal),
+          createdAt: new Date(),
+        });
+      },
+    });
+    return {
+      ...host,
+      update: (id: string, next: Goal) => {
+        if (this.goalPaused || this.disposed || this.session !== session)
+          return Promise.resolve(null);
+        return host.update(id, next);
+      },
+    };
+  }
+  private scheduleGoal(next: GoalNext): ScheduleResult {
+    const goal = this.goal;
+    if (
+      !this.goalsEnabled ||
+      this.goalPaused ||
+      this.disposed ||
+      this.client ||
+      this.questions ||
+      this.reviewPlan ||
+      this.queue.length ||
+      !goal ||
+      goal.id !== next.goalId ||
+      (next.kind === "continue"
+        ? goal.status !== "active"
+        : goal.status !== "blocked")
+    )
+      return "skipped";
+    try {
+      this.run(next.message, undefined, true);
+      return "scheduled";
+    } catch (error) {
+      return {
+        refused: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  private async changeGoal(command: string) {
+    const session = this.session;
+    if (!session) throw new Error("No operator session.");
+    const cfg = await config.get();
+    this.goalsEnabled = cfg.goalsEnabled !== false;
+    const op = parseGoalSlashCommand(command);
+    if (op.kind === "invalid") throw new Error(op.reason);
+    this.goal = readGoalFile(session.rootPath);
+    if (op.kind === "status") {
+      this.messages.push({
+        role: "system",
+        content: this.goal
+          ? goalStatusLine(this.goal)
+          : "No goal. Use /goal <objective> [--rounds N].",
+        createdAt: new Date(),
+      });
+      return;
+    }
+    if (op.kind === "clear") {
+      this.goalPaused = true;
+      if (this.goal?.status === "active") {
+        this.goal = endGoal(this.goal, "cancelled", "ended_by_operator", null);
+        writeGoalFile(session.rootPath, this.goal);
+      }
+      return;
+    }
+    if (!this.goalsEnabled || session.config?.operatorSettings?.lanceMode)
+      throw new Error(
+        "Goals are unavailable with the current execution settings.",
+      );
+    if (this.client || this.questions || this.reviewPlan)
+      throw new Error(
+        "Stop or finish the current turn or review before setting a goal.",
+      );
+    const input = newGoalSchema.parse(op);
+    this.goal = createGoal({ sessionId: session.id, ...input });
+    writeGoalFile(session.rootPath, this.goal);
+    this.goalPaused = false;
+    this.run(kickoffMessage(this.goal));
   }
   private async modeChange(mode: OperatorMode) {
     const session = this.session;
@@ -846,6 +1066,7 @@ class OperatorHost {
     }
   }
   private async cancel() {
+    this.goalPaused = true;
     this.queue = [];
     this.reviewPlan = false;
     if (this.questions && !this.client && this.session) {
@@ -878,7 +1099,10 @@ class OperatorHost {
         prompt: text,
       });
       this.gate.denyAll();
-    } else this.run(text, label);
+    } else {
+      this.goalPaused = false;
+      this.run(text, label);
+    }
   }
   private async action({
     sessionId,
@@ -892,6 +1116,25 @@ class OperatorHost {
     if (this.changing || !session || sessionId !== session.id)
       throw new Error("The active operator session changed.");
     switch (action.type) {
+      case "goal":
+        await this.changeGoal(action.command);
+        break;
+      case "resume-goal": {
+        const cfg = await config.get();
+        this.goalsEnabled = cfg.goalsEnabled !== false;
+        if (!this.goalsEnabled || session.config?.operatorSettings?.lanceMode)
+          throw new Error(
+            "Goals are unavailable with the current execution settings.",
+          );
+        if (this.client || this.questions || this.reviewPlan)
+          throw new Error("Finish the current turn or review first.");
+        this.goal = readGoalFile(session.rootPath);
+        if (this.goal?.status !== "active")
+          throw new Error("No active goal to resume.");
+        this.goalPaused = false;
+        this.run(continuationMessage(), undefined, true);
+        break;
+      }
       case "send": {
         if (this.questions || this.reviewPlan)
           throw new Error("Resolve the pending review first.");
@@ -1009,6 +1252,7 @@ class OperatorHost {
           await this.cancel();
           await turn;
           this.queue = rest;
+          this.goalPaused = false;
           this.run(message.prompt, message.text);
         }
         break;
@@ -1145,6 +1389,37 @@ class OperatorHost {
     return `data:image/png;base64,${(await readFile(file)).toString("base64")}`;
   }
   requests = {
+    operatorSkills: async () => {
+      this.options.requireAcceptance();
+      await this.skills.load({ projectRoot: this.cwd });
+      this.ensureOpen();
+      return this.catalog();
+    },
+    operatorGoal: async ({
+      command,
+      mode,
+    }: {
+      command: string;
+      mode?: OperatorMode;
+    }) => {
+      this.options.requireAcceptance();
+      if (this.session)
+        return this.requests.operatorAction({
+          sessionId: this.session.id,
+          action: { type: "goal", command },
+        });
+      const op = parseGoalSlashCommand(command);
+      if (op.kind === "invalid") throw new Error(op.reason);
+      if (op.kind === "set")
+        return this.start({ goal: newGoalSchema.parse(op), mode });
+      this.messages.push({
+        role: "system",
+        content: "No goal. Use /goal <objective> [--rounds N].",
+        createdAt: new Date(),
+      });
+      this.publish();
+      return this.snapshot();
+    },
     operatorAttackSurface: ({ sessionId }: { sessionId: string }) => {
       this.options.requireAcceptance();
       if (!this.session || this.session.id !== sessionId)

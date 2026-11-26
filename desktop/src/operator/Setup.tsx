@@ -19,7 +19,11 @@ export function OperatorSetup({
 }) {
   const [workflow, setWorkflow] = useState<
     "conversation" | "threat-model" | "prompt-injection"
-  >(initial?.skill ?? "conversation");
+  >(
+    initial?.skill === "threat-model" || initial?.skill === "prompt-injection"
+      ? initial.skill
+      : "conversation",
+  );
   const [error, setError] = useState("");
   const [headerMode, setHeaderMode] = useState(
     initial?.headers === undefined

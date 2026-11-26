@@ -467,6 +467,16 @@ function AdvancedPanel({ data, save }: EditorProps) {
           />
           Use Surface for whitebox discovery
         </label>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={draft.goals !== false}
+            onChange={(event) =>
+              setDraft({ ...draft, goals: event.target.checked })
+            }
+          />
+          Enable persistent goals (/goal)
+        </label>
         <Button type="submit">Save execution settings</Button>
       </form>
       <details>

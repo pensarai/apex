@@ -140,6 +140,7 @@ export function settingsSnapshot(
       findingPolicy: cfg.findingPolicy ?? "native",
       budget: cfg.lanceBudget ?? DEFAULT_LANCE_BUDGET,
       surface: cfg.surfaceIntegrationEnabled ?? true,
+      goals: cfg.goalsEnabled !== false,
     },
     appearance: appearance(cfg),
     headers: Object.entries(cfg.defaultHeaders ?? {}).map(([name, value]) => ({
@@ -231,11 +232,12 @@ async function change(action: SettingsChange) {
       break;
     }
     case "advanced": {
-      const { mode, findingPolicy, budget, surface } = action.value;
+      const { mode, findingPolicy, budget, surface, goals } = action.value;
       if (
         !["standard", "strike", "lance"].includes(mode) ||
         !["native", "external"].includes(findingPolicy) ||
-        typeof surface !== "boolean"
+        typeof surface !== "boolean" ||
+        (goals !== undefined && typeof goals !== "boolean")
       )
         throw new Error("Unknown execution setting.");
       await config.update({
@@ -243,6 +245,7 @@ async function change(action: SettingsChange) {
         lanceMode: mode === "lance",
         findingPolicy,
         surfaceIntegrationEnabled: surface,
+        ...(goals !== undefined && { goalsEnabled: goals }),
         ...(mode === "lance" && {
           lanceBudget: lanceBudgetSchema.parse(budget),
         }),

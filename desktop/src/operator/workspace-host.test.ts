@@ -82,6 +82,44 @@ describe("desktop session workspace", () => {
     expect(next.tabId).not.toBe(first.tabId);
     await starting;
   });
+  it("keeps goal lifecycles isolated between tabs", async () => {
+    const wait = deferred();
+    const run = vi.fn(async (input: OffensiveSecurityAgentClientInput) => {
+      await wait.promise;
+      throw new Error(`Blocked ${input.session?.id}`);
+    });
+    sdk.create.mockImplementation(() => ({ run, abort: wait.resolve }));
+    const first = await workspace.requests.operatorOpen({});
+    const second = await workspace.requests.operatorOpen({});
+    const one = await workspace.requests.operatorGoal({
+      tabId: first.tabId,
+      command: "Inspect first",
+    });
+    const two = await workspace.requests.operatorGoal({
+      tabId: second.tabId,
+      command: "Inspect second",
+    });
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    await workspace.requests.operatorGoal({
+      tabId: first.tabId,
+      command: "clear",
+    });
+    wait.resolve();
+    await vi.waitFor(() =>
+      expect(
+        workspace.requests.operatorState({ tabId: second.tabId }).goal?.status,
+      ).toBe("blocked"),
+    );
+    expect(one.goal?.id).not.toBe(two.goal?.id);
+    expect(
+      workspace.requests.operatorState({ tabId: first.tabId }).goal,
+    ).toMatchObject({ objective: "Inspect first", status: "cancelled" });
+    expect(
+      workspace.requests.operatorState({ tabId: second.tabId }).goal,
+    ).toMatchObject({ objective: "Inspect second", status: "blocked" });
+    await workspace.requests.operatorClose({ tabId: first.tabId, stop: true });
+    await workspace.requests.operatorClose({ tabId: second.tabId, stop: true });
+  });
   it("keeps attack surfaces isolated between session tabs", async () => {
     const first = await workspace.requests.operatorOpen({});
     const second = await workspace.requests.operatorOpen({});

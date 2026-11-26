@@ -1,5 +1,6 @@
 import type { LoadedTopology } from "../../../src/core/agents/offSecAgent/tools/topologyRecords";
 import type { BackgroundJobState } from "../../../src/core/eventBus";
+import type { Goal } from "../../../src/core/goals/types";
 import type { DisplayReasoning } from "../../../src/core/session/persistence";
 import type { WorkflowData } from "../../../src/core/workflows/pentest-progress";
 
@@ -14,7 +15,9 @@ export interface OperatorAttachment {
 
 export interface OperatorLaunch {
   attachments?: OperatorAttachment[];
-  skill?: "threat-model" | "prompt-injection";
+  skill?: string;
+  skillArguments?: string[];
+  goal?: { objective: string; maxRounds?: number };
   skillOutput?: string;
   target?: string;
   prompt?: string;
@@ -78,6 +81,9 @@ export type OperatorActivity =
   | "working";
 
 export interface OperatorSnapshot {
+  goal?: Goal | null;
+  goalsEnabled?: boolean;
+  goalPaused?: boolean;
   processes?: BackgroundJobState[];
   revision: number;
   activity?: OperatorActivity;
@@ -119,6 +125,8 @@ export interface OperatorSnapshot {
 }
 
 export type OperatorAction =
+  | { type: "goal"; command: string }
+  | { type: "resume-goal" }
   | { type: "send"; text: string; attachments?: OperatorAttachment[] }
   | { type: "skill"; slug: string; autopilot?: boolean; arguments?: string[] }
   | { type: "mode"; mode: OperatorMode }
@@ -143,6 +151,11 @@ export type OperatorAction =
   | { type: "open-folder" };
 type Call<P, R> = { params: P; response: R };
 export type OperatorSessionRequests = {
+  operatorSkills: Call<void, OperatorSnapshot["skills"]>;
+  operatorGoal: Call<
+    { command: string; mode?: OperatorMode },
+    OperatorSnapshot
+  >;
   operatorAttackSurface: Call<{ sessionId: string }, LoadedTopology>;
   operatorArguments: Call<{ command: string }, OperatorLaunch>;
   operatorWatch: Call<{ key: string }, OperatorSnapshot>;

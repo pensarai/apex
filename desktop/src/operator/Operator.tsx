@@ -21,7 +21,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@pensarai/design-system/ui/resizable";
-import { Textarea } from "@pensarai/design-system/ui/textarea";
 import {
   ArrowUp,
   File as FileIcon,
@@ -45,18 +44,22 @@ import type { SettingsSnapshot, SettingsTab } from "../settings/contract";
 import { api } from "../view/bridge";
 import { AttackSurface } from "./AttackSurface";
 import { encodeAttachments, validateAttachmentSizes } from "./attachments";
+import { CommandInput } from "./CommandInput";
 import type { OperatorClient } from "./client";
 import type {
   OperatorAction,
   OperatorLaunch,
   OperatorSnapshot,
 } from "./contract";
+import { GoalStatus } from "./GoalStatus";
 import { Issues } from "./Issues";
 import { applyFrame, type OperatorFrame } from "./live";
 import { ModelPicker } from "./ModelPicker";
 import { Processes } from "./Processes";
 import { Questions } from "./Questions";
 import { OperatorSetup } from "./Setup";
+import { SlashMenu } from "./SlashMenu";
+import { COMMAND_ALIASES, slashEntries } from "./slash-commands";
 import { subagentActivity, subagentLabel } from "./subagent-presentation";
 import { hasSurfaceToolCall, surfaceReveal } from "./surface-reveal";
 import { ToolPicker } from "./ToolPicker";
@@ -114,6 +117,34 @@ export default function OperatorSessionView({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
+  const [skills, setSkills] = useState(initialSnapshot.skills);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashId = useId();
+  const entries = slashEntries(text, skills);
+  const slashOpen = !slashDismissed && /^\/[^\s]*$/.test(text);
+  const selectedSlash =
+    entries[Math.min(slashIndex, Math.max(0, entries.length - 1))]?.slug;
+  const insertSlash = (slug: string) => {
+    setText(`/${slug} `);
+    setSlashDismissed(true);
+    input.current?.focus();
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Changing the working directory changes the project skill catalog.
+  useEffect(() => {
+    let cancelled = false;
+    void client
+      .operatorSkills()
+      .then((next) => {
+        if (!cancelled) setSkills(next);
+      })
+      .catch((failure) => {
+        if (!cancelled) setError(`Skills could not be loaded: ${failure}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, cwd]);
   const [attachments, setAttachments] = useState<{ id: string; file: File }[]>(
     [],
   );
@@ -297,26 +328,7 @@ export default function OperatorSessionView({
       setError("");
       try {
         const [raw, ...args] = splitCommand(value.slice(1));
-        const aliases: Record<string, string> = {
-          o: "operator",
-          w: "pentest",
-          p: "pentest",
-          web: "pentest",
-          s: "resume",
-          sessions: "resume",
-          tm: "threat-model",
-          pi: "prompt-injection",
-          t: "tools",
-          auth: "login",
-          buy: "credits",
-          redact: "obfuscate",
-          "advanced-settings": "advanced",
-          theme: "themes",
-          model: "models",
-          q: "exit",
-          quit: "exit",
-        };
-        const cmd = aliases[raw?.toLowerCase()] ?? raw?.toLowerCase();
+        const cmd = COMMAND_ALIASES[raw?.toLowerCase()] ?? raw?.toLowerCase();
         const noArgs = [
           "new",
           "plan",
@@ -343,6 +355,14 @@ export default function OperatorSessionView({
             `Start or resume an operator session to use /${cmd}.`,
           );
         switch (cmd) {
+          case "goal":
+            if (
+              !(await perform(() =>
+                client.operatorGoal({ command: value.slice(5).trim(), mode }),
+              ))
+            )
+              return;
+            break;
           case "pentest":
             if (!onPentest) throw new Error("Open Pentest from the sidebar.");
             setText("");
@@ -424,10 +444,23 @@ export default function OperatorSessionView({
               throw new Error("Close the Apex window to quit the desktop app.");
             break;
           default:
-            if (!state?.skills.some((skill) => skill.slug === cmd))
+            if (!skills.some((skill) => skill.slug === cmd))
               throw new Error(
                 "Unknown operator command. Enter /help for available commands.",
               );
+            if (!sessionId) {
+              if (
+                !(await perform(() =>
+                  client.operatorStart({
+                    skill: cmd,
+                    skillArguments: args.filter((arg) => arg !== "--autopilot"),
+                    mode: args.includes("--autopilot") ? "auto" : draftMode,
+                  }),
+                ))
+              )
+                return;
+              break;
+            }
             if (
               !(await action({
                 type: "skill",
@@ -810,6 +843,22 @@ export default function OperatorSessionView({
                         addAttachments(Array.from(event.dataTransfer.files));
                       }}
                     >
+                      <GoalStatus
+                        state={state}
+                        busy={busy}
+                        onEnd={() =>
+                          void action({ type: "goal", command: "clear" })
+                        }
+                        onResume={() => void action({ type: "resume-goal" })}
+                      />
+                      {slashOpen && (
+                        <SlashMenu
+                          id={slashId}
+                          entries={entries}
+                          selected={selectedSlash}
+                          onSelect={insertSlash}
+                        />
+                      )}
                       {draggingFiles && (
                         <div className="op-attachment-hint">
                           Drop files to attach
@@ -892,13 +941,61 @@ export default function OperatorSessionView({
                           </Button>
                         </div>
                       ))}
-                      <Textarea
+                      <CommandInput
+                        skills={skills}
                         ref={input}
                         aria-label="Operator message"
                         value={text}
                         disabled={busy}
-                        onChange={(e) => setText(e.target.value)}
+                        aria-expanded={slashOpen}
+                        aria-controls={slashOpen ? slashId : undefined}
+                        aria-activedescendant={
+                          slashOpen && selectedSlash
+                            ? `${slashId}-${selectedSlash}`
+                            : undefined
+                        }
+                        aria-autocomplete="list"
+                        onBlur={() => setSlashDismissed(true)}
+                        onChange={(e) => {
+                          setText(e.target.value);
+                          setSlashIndex(0);
+                          setSlashDismissed(false);
+                        }}
                         onKeyDown={(e) => {
+                          if (
+                            slashOpen &&
+                            !e.nativeEvent.isComposing &&
+                            !e.shiftKey
+                          ) {
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setSlashDismissed(true);
+                              return;
+                            }
+                            if (
+                              entries.length &&
+                              (e.key === "ArrowDown" || e.key === "ArrowUp")
+                            ) {
+                              e.preventDefault();
+                              setSlashIndex(
+                                (index) =>
+                                  (index +
+                                    (e.key === "ArrowDown" ? 1 : -1) +
+                                    entries.length) %
+                                  entries.length,
+                              );
+                              return;
+                            }
+                            if (
+                              selectedSlash &&
+                              (e.key === "Enter" || e.key === "Tab")
+                            ) {
+                              e.preventDefault();
+                              insertSlash(selectedSlash);
+                              return;
+                            }
+                          }
                           if (
                             e.key === "Tab" &&
                             e.shiftKey &&
@@ -919,7 +1016,7 @@ export default function OperatorSessionView({
                         placeholder={
                           active
                             ? "Write a follow-up, Enter to queue…"
-                            : "Ask anything, /help for commands…"
+                            : "Ask anything, / for commands and skills…"
                         }
                         rows={2}
                       />
@@ -1204,6 +1301,12 @@ export default function OperatorSessionView({
                         <dl>
                           {[
                             ["/new", "New conversation"],
+                            [
+                              "/goal <objective> [--rounds N]",
+                              "Start a persistent goal",
+                            ],
+                            ["/goal", "Show goal status"],
+                            ["/goal clear", "End the current goal"],
                             [
                               "/operator --target <host>",
                               "Configure a new session",

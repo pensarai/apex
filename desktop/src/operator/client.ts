@@ -12,6 +12,8 @@ export type OperatorClient = {
 
 export function createOperatorClient(tabId: string): OperatorClient {
   return {
+    operatorSkills: () => api.operatorSkills({ tabId }),
+    operatorGoal: (params) => api.operatorGoal({ ...params, tabId }),
     operatorAttackSurface: (params) =>
       api.operatorAttackSurface({ ...params, tabId }),
     operatorArguments: (params) => api.operatorArguments({ ...params, tabId }),

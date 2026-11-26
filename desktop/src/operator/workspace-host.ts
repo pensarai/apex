@@ -206,6 +206,14 @@ export function createOperatorWorkspace(options: Options) {
         return directory;
       });
     },
+    operatorSkills: ({ tabId }) =>
+      entryFor(tabId).host.requests.operatorSkills(),
+    operatorGoal: ({ tabId, ...input }) => {
+      const entry = entryFor(tabId);
+      return entry.host.sessionId
+        ? track(entry, () => entry.host.requests.operatorGoal(input))
+        : initialize(entry, () => entry.host.requests.operatorGoal(input));
+    },
     operatorArguments: ({ tabId, command }) =>
       entryFor(tabId).host.requests.operatorArguments({ command }),
     operatorState: ({ tabId }) => entryFor(tabId).host.requests.operatorState(),

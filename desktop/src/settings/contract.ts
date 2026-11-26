@@ -26,6 +26,7 @@ export type Advanced = {
   findingPolicy: "native" | "external";
   budget: LanceBudget;
   surface: boolean;
+  goals?: boolean;
 };
 export type SettingsModel = {
   id: string;

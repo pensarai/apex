@@ -31,12 +31,12 @@ import {
   DestructiveActionError,
 } from "./destructiveGuard";
 import { redactSecretValues } from "./executeCommand";
-import { PerCommandShell } from "./perCommandShell";
 import {
   buildHttpPocScript,
   HttpPocError,
   httpPocRequestSchema,
 } from "./httpPoc";
+import { PerCommandShell } from "./perCommandShell";
 import {
   assertCommandInScope,
   assertFindingEndpointInScope,
