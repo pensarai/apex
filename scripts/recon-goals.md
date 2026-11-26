@@ -47,7 +47,10 @@ each turn. A recorded context without that journal is rejected before dispatch.
 Console PR [#4343](https://github.com/pensarai/console/pull/4343) wires this seam
 in system recon, separately from chat goals; it has not been deployed. Replayed
 completion is rejected if the host did not restore the report and binding or
-restored different topology. The journal pins the update baseline by content,
+the restored topology differs from that binding. This checks current consistency;
+the host's ordered model/tool journal must reproduce the previously accepted map.
+The adapter does not independently compare it with an archived completion snapshot.
+The journal pins the update baseline by content,
 so changing executor paths is safe but changing the baseline is rejected.
 The no-goal API path keeps its existing behavior.
 
@@ -67,8 +70,9 @@ is a catalog estimate, not an invoice or a strict spending cap. All terminal out
 retain topology and metrics, including incomplete runs.
 
 The baseline omits `goal` entirely and includes no audit implementation. Both arms
-use the same operator objective, tools and 100-step work limit; the goal arm can
-perform up to four goal rounds. Run each arm into a fresh output directory with
+use the same operator objective, tools and 100-step limit per work pass; the goal
+arm can perform up to four goal rounds. The baseline can also exceed 100 total
+steps through its missing-report continuations. Run each arm into a fresh output directory with
 identical source, model, origins and budgets. Ordinary recon retains its existing
 missing-report continuation behavior. Input metadata records the selected arm,
 and results retain the goal state (absent for the baseline).
