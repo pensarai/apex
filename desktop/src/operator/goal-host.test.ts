@@ -144,10 +144,10 @@ describe("desktop goal lifecycle", () => {
   it.each([
     false,
     true,
-  ])("delivers goal attachments and restores their paths (existing session: %s)", async (existing) => {
+  ])("preserves long goal objectives and attachments across resume (existing session: %s)", async (existing) => {
     if (existing) await host.start({ name: "Existing" });
     sdk.run.mockImplementation((input) => result(input, blocked()));
-    const objective = "Review the attached scope. ".padEnd(4000, "x");
+    const objective = "Review the attached scope. ".repeat(400).trim();
     const attachment = {
       name: "scope-decisions.csv",
       base64: Buffer.from(
@@ -181,6 +181,7 @@ describe("desktop goal lifecycle", () => {
     });
     try {
       await viewer.requests.operatorResume({ id: session.id });
+      expect(viewer.requests.operatorState().goal?.objective).toBe(objective);
       expect(
         viewer.requests
           .operatorState()

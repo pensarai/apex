@@ -4,7 +4,6 @@ export const GOAL_LIMITS = {
   defaultMaxRounds: 50,
   maxRoundsCeiling: 200,
   maxStalledRounds: 3,
-  objectiveMaxChars: 4_000,
 } as const;
 
 export const goalMaxRoundsSchema = z
@@ -14,7 +13,7 @@ export const goalMaxRoundsSchema = z
   .max(GOAL_LIMITS.maxRoundsCeiling);
 
 export const newGoalSchema = z.object({
-  objective: z.string().trim().min(1).max(GOAL_LIMITS.objectiveMaxChars),
+  objective: z.string().trim().min(1),
   maxRounds: goalMaxRoundsSchema.optional(),
 });
 
@@ -46,7 +45,7 @@ export type EvidenceAddress = z.infer<typeof evidenceAddressSchema>;
 export const goalSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
-  objective: z.string().min(1).max(GOAL_LIMITS.objectiveMaxChars),
+  objective: z.string().min(1),
   status: z.enum(GOAL_STATUSES),
   reason: z.enum(GOAL_REASONS).nullable(),
   detail: z.string().nullable(),
