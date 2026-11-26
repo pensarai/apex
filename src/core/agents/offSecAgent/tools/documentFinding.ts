@@ -30,11 +30,13 @@ import {
   assertCommandActionAllowed,
   DestructiveActionError,
 } from "./destructiveGuard";
+import { redactSecretValues } from "./executeCommand";
 import {
   buildHttpPocScript,
   HttpPocError,
   httpPocRequestSchema,
 } from "./httpPoc";
+import { PerCommandShell } from "./perCommandShell";
 import {
   assertCommandInScope,
   assertFindingEndpointInScope,
@@ -50,6 +52,12 @@ import type { ToolContext } from "./types";
 const log = scopedLogger(() => createLogger("document-finding"));
 
 export const documentVulnerabilityInputSchema = z.object({
+  background: z
+    .boolean()
+    .nullish()
+    .describe(
+      "Run validation as a managed background job. Defaults to true in local unrecorded sessions: returns a jobId immediately and delivers the final verdict automatically. Set false to wait synchronously.",
+    ),
   title: z.string().describe("Finding title"),
   description: z.string().describe("Detailed description of the finding"),
   impact: z.string().describe("Potential impact if exploited"),
@@ -334,10 +342,10 @@ function slugify(str: string, maxLen: number): string {
 }
 
 export function documentVulnerability(ctx: ToolContext) {
-  const { session } = ctx;
-
   return tool({
     description: `Document a CONFIRMED security vulnerability by providing your proof-of-concept script and finding details.
+
+In local unrecorded sessions, validation runs in the background by default. The initial jobId is only a receipt, not a confirmed finding. Continue independent work; the final acceptance, rejection, or failure is delivered automatically to you. Do not poll or finalize your response before receiving the verdict. Set background=false to wait synchronously. Other sessions remain synchronous unless background=true is explicitly requested (unsupported there).
 
 This tool handles the full vulnerability documentation lifecycle:
 1. Creates and executes your POC script (bash, python, or javascript), or the HTTP requests you give in pocRequests
@@ -362,455 +370,526 @@ CRITICAL RULES — READ BEFORE CALLING:
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input, { toolCallId }) => {
-      // Defense in depth: reject findings whose endpoint host is outside the
-      // immutable engagement scope so a routing error can't write
-      // infrastructure findings into the shared customer registry.
-      try {
-        assertFindingEndpointInScope(input.endpoint, ctx);
-      } catch (error) {
-        if (error instanceof ScopeViolationError) {
-          return {
-            success: false,
-            error: error.message,
-            message: `Finding endpoint rejected — out of scope: ${error.message}`,
-          };
-        }
-        throw error;
-      }
-
-      const credentialIdsCheck = assertKnownCredentialIds(
-        input.credentialIds,
-        ctx,
-      );
-      if (!credentialIdsCheck.ok) {
+      if (
+        input.background === true &&
+        (!ctx.backgroundJobs || ctx.sandbox || ctx.backends)
+      )
         return {
           success: false,
-          error: credentialIdsCheck.message,
-          message: `Finding credential provenance rejected: ${credentialIdsCheck.message}`,
+          error:
+            "Background vulnerability validation is available only in local, unrecorded sessions.",
         };
-      }
-      const credentialIds = credentialIdsCheck.credentialIds;
-
-      let poc: ScriptPocInput;
+      if (
+        input.background === false ||
+        !ctx.backgroundJobs ||
+        ctx.sandbox ||
+        ctx.backends
+      )
+        return runDocumentVulnerability(ctx, input, toolCallId);
       try {
-        poc = resolvePocScript(input, ctx);
-      } catch (error) {
-        if (
-          error instanceof ScopeViolationError ||
-          error instanceof DestructiveActionError ||
-          error instanceof HttpPocError
-        ) {
-          const guidance =
-            error instanceof ScopeViolationError && input.pocType !== "http"
-              ? POC_PAYLOAD_URL_GUIDANCE
-              : "";
-          return {
-            success: false,
-            error: error.message,
-            message: `Finding PoC rejected: ${error.message}${guidance}`,
-          };
-        }
-        throw error;
-      }
-
-      // Resolve declared paths upfront so a bad declaration fails before
-      // the POC runs; the checks themselves run post-execution on emitted bytes.
-      let declaredArtifacts:
-        | Array<{ path: string; language: PocType; scriptPath: string }>
-        | undefined;
-      if (input.generatedExecutableArtifacts) {
-        try {
-          declaredArtifacts = input.generatedExecutableArtifacts.map(
-            (declared) => ({
-              path: declared.path,
-              language: declared.language,
-              scriptPath: resolveDeclaredArtifactPath(ctx, declared.path),
-            }),
-          );
-        } catch (error: unknown) {
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: errorMsg,
-            message: `Generated executable declaration rejected: ${errorMsg}`,
-          };
-        }
-      }
-
-      try {
-        // Early dedup check — avoid POC execution + LLM calls for known vulns
-        const materializedEvidence = formatMateriality(input);
-
-        if (ctx.findingsRegistry) {
-          const quickCheck = ctx.findingsRegistry.isDuplicate({
-            title: input.title,
-            description: input.description,
-            endpoint: input.endpoint,
-            severity: "MEDIUM",
-            impact: input.impact,
-            evidence: materializedEvidence,
-            pocPath: "",
-            remediation: input.remediation,
-            ...(input.references && { references: input.references }),
-            ...(input.vulnerabilityClass && {
-              vulnerabilityClass: input.vulnerabilityClass,
-            }),
-            credentialIds,
-          });
-          if (quickCheck.duplicate) {
-            const matchTitle = quickCheck.matchedFinding?.title ?? "unknown";
-            return {
-              success: false,
-              duplicate: true,
-              matchType: quickCheck.matchType,
-              matchedFinding: matchTitle,
-              message: `Duplicate finding (${quickCheck.matchType}): already documented as "${matchTitle}". Skipping.`,
-            };
-          }
-        }
-
-        // Phase 1: Write & execute POC
-        const pocResult = await executePoc(ctx, poc);
-
-        if (!pocResult.success) {
-          if (pocResult.syntaxCheck?.status === "invalid") {
-            return {
-              success: false,
-              syntaxFailed: true,
-              syntaxCheck: pocResult.syntaxCheck,
-              message: `POC failed the native ${poc.pocType} syntax check before execution (${pocResult.syntaxCheck.detail}). Revise pocContent.`,
-            };
-          }
-          return {
-            success: false,
-            pocFailed: true,
-            stdout: pocResult.stdout,
-            stderr: pocResult.stderr,
-            exitCode: pocResult.exitCode,
-            syntaxCheck: pocResult.syntaxCheck,
-            message: `POC exited with code ${pocResult.exitCode ?? "unknown"}. Review the output and revise pocContent.`,
-          };
-        }
-
-        const { filename, stdout, stderr, exitCode } = pocResult;
-        const pocPath = `pocs/${filename}`;
-
-        // Declared executables are checked against the emitted bytes before
-        // the judge spends an LLM call; the wrapper's verdict never covers them.
-        const generatedArtifactChecks: GeneratedArtifactCheck[] = [];
-        if (declaredArtifacts) {
-          for (const declared of declaredArtifacts) {
-            generatedArtifactChecks.push({
-              path: declared.path,
-              language: declared.language,
-              ...(await checkScriptSyntax(ctx, {
-                language: declared.language,
-                runner: POC_RUNNERS[declared.language],
-                scriptPath: declared.scriptPath,
-                abortSignal: ctx.abortSignal,
-              })),
+        return ctx.backgroundJobs.startTool(
+          "document_vulnerability",
+          redactSecretValues(input.title, ctx.secretValues),
+          async (signal, jobId, output) => {
+            const shell = new PerCommandShell({
+              cwd: ctx.agentCwd,
+              env: ctx.environmentVariables,
             });
-          }
-          const invalid = generatedArtifactChecks.find(
-            (check) => check.status === "invalid",
-          );
-          if (invalid) {
-            await cleanupPocFiles(ctx, filename);
-            return {
-              success: false,
-              syntaxFailed: true,
-              syntaxCheck: pocResult.syntaxCheck,
-              generatedArtifactChecks,
-              message: `Generated executable ${invalid.path} failed its native ${invalid.language} syntax check (${invalid.detail}). Revise the POC to emit valid ${invalid.language} or fix the declaration.`,
-            };
-          }
-        }
-
-        // Phase 2: LLM Finding Judge
-        const judgeInput: FindingJudgeInput = {
-          pocScript: poc.pocContent,
-          pocType: poc.pocType,
-          pocPath,
-          target: ctx.target ?? ctx.session.targets[0],
-          pocOutput: {
-            stdout: stdout || "",
-            stderr: stderr || "",
-            exitCode: exitCode ?? 0,
+            const abortSignal = ctx.abortSignal
+              ? AbortSignal.any([signal, ctx.abortSignal])
+              : signal;
+            try {
+              const result = await runDocumentVulnerability(
+                { ...ctx, commandShell: shell, abortSignal },
+                { ...input, pocName: `${jobId}-${slugify(input.pocName, 12)}` },
+                toolCallId,
+                output,
+                jobId,
+              );
+              return JSON.parse(
+                redactSecretValues(JSON.stringify(result), ctx.secretValues),
+              ) as Awaited<ReturnType<typeof runDocumentVulnerability>>;
+            } finally {
+              await shell.dispose();
+            }
           },
-          claim: {
-            title: input.title,
-            description: input.description,
-            impact: input.impact,
-            evidence: materializedEvidence,
-            endpoint: input.endpoint,
-            vulnerabilityClass: input.vulnerabilityClass,
-          },
-        };
-
-        // Run the judge as a proper nested subagent through the spawner —
-        // child bus + explicit lifecycle so its stream nests under the worker
-        // that invoked document_vulnerability. `error` is only set by the
-        // infrastructure-failure fallback, so a judge that completed and
-        // rejected the finding still counts as "completed".
-        const spawner = ctx.subagentSpawner;
-        const judgeResult: FindingJudgeResult =
-          await spawner.spawn<FindingJudgeResult>({
-            spec: { type: "finding-judge", judgeInput, target: ctx.target },
-            runtime: {
-              session: ctx.session,
-              ...getModelSettings(ctx),
-              abortSignal: ctx.abortSignal,
-              sandbox: ctx.sandbox,
-              backends: ctx.backends,
-              callbacks: ctx.callbacks,
-              languageModelMiddleware: ctx.languageModelMiddleware,
-              toolProtocol: ctx.toolProtocol,
-              usageRecorder: ctx.usageRecorder,
-              toolExecutionContext: ctx.toolExecutionContext,
-              streamIdFactory: ctx.streamIdFactory,
-            },
-            parentBus: ctx.eventBus,
-            subagentName: "Finding Judge",
-            lifecycleInput: { title: input.title, endpoint: input.endpoint },
-            parentSubagentId: ctx.subagentId,
-            parentToolCallId: toolCallId,
-            resolveStatus: (r) => (r.error ? "failed" : "completed"),
-          });
-
-        if (!judgeResult.valid) {
-          await cleanupPocFiles(ctx, filename);
-          return {
-            success: false,
-            judgeRejected: true,
-            judgeReasoning: judgeResult.reasoning,
-            judgeConcerns: judgeResult.concerns,
-            judgeConfidence: judgeResult.confidence,
-            message: `Finding rejected by validation judge: ${judgeResult.reasoning}`,
-          };
-        }
-
-        const isVulnerability = judgeResult.findingType === "vulnerability";
-
-        // Write sidecar only after judge acceptance (avoid wasted I/O on rejection)
-        await writePocOutputSidecar(
-          ctx,
-          filename,
-          stdout || "",
-          stderr || "",
-          exitCode ?? 0,
-          input.pocDescription,
         );
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
+}
 
-        // Build structured evidence file links
-        const evidenceFiles: EvidenceFileEntry[] = [];
+async function runDocumentVulnerability(
+  ctx: ToolContext,
+  input: DocumentVulnerabilityInput,
+  toolCallId: string,
+  onProgress?: (message: string) => void,
+  jobId?: string,
+) {
+  const { session } = ctx;
+  ctx.abortSignal?.throwIfAborted();
 
-        evidenceFiles.push({
-          path: `pocs/${filename}.output.json`,
-          type: "poc-output",
-          description: `POC execution output for ${filename}`,
+  // Defense in depth: reject findings whose endpoint host is outside the
+  // immutable engagement scope so a routing error can't write
+  // infrastructure findings into the shared customer registry.
+  try {
+    assertFindingEndpointInScope(input.endpoint, ctx);
+  } catch (error) {
+    if (error instanceof ScopeViolationError) {
+      return {
+        success: false,
+        error: error.message,
+        message: `Finding endpoint rejected — out of scope: ${error.message}`,
+      };
+    }
+    throw error;
+  }
+
+  const credentialIdsCheck = assertKnownCredentialIds(input.credentialIds, ctx);
+  if (!credentialIdsCheck.ok) {
+    return {
+      success: false,
+      error: credentialIdsCheck.message,
+      message: `Finding credential provenance rejected: ${credentialIdsCheck.message}`,
+    };
+  }
+  const credentialIds = credentialIdsCheck.credentialIds;
+
+  let poc: ScriptPocInput;
+  try {
+    poc = resolvePocScript(input, ctx);
+  } catch (error) {
+    if (
+      error instanceof ScopeViolationError ||
+      error instanceof DestructiveActionError ||
+      error instanceof HttpPocError
+    ) {
+      const guidance =
+        error instanceof ScopeViolationError && input.pocType !== "http"
+          ? POC_PAYLOAD_URL_GUIDANCE
+          : "";
+      return {
+        success: false,
+        error: error.message,
+        message: `Finding PoC rejected: ${error.message}${guidance}`,
+      };
+    }
+    throw error;
+  }
+
+  // Resolve declared paths upfront so a bad declaration fails before
+  // the POC runs; the checks themselves run post-execution on emitted bytes.
+  let declaredArtifacts:
+    | Array<{ path: string; language: PocType; scriptPath: string }>
+    | undefined;
+  if (input.generatedExecutableArtifacts) {
+    try {
+      declaredArtifacts = input.generatedExecutableArtifacts.map(
+        (declared) => ({
+          path: declared.path,
+          language: declared.language,
+          scriptPath: resolveDeclaredArtifactPath(ctx, declared.path),
+        }),
+      );
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        error: errorMsg,
+        message: `Generated executable declaration rejected: ${errorMsg}`,
+      };
+    }
+  }
+
+  const reportPaths: string[] = [];
+  let rawEvidencePath: string | undefined;
+  let findingPersisted = false;
+  try {
+    // Early dedup check — avoid POC execution + LLM calls for known vulns
+    const materializedEvidence = formatMateriality(input);
+
+    if (ctx.findingsRegistry) {
+      const quickCheck = ctx.findingsRegistry.isDuplicate({
+        title: input.title,
+        description: input.description,
+        endpoint: input.endpoint,
+        severity: "MEDIUM",
+        impact: input.impact,
+        evidence: materializedEvidence,
+        pocPath: "",
+        remediation: input.remediation,
+        ...(input.references && { references: input.references }),
+        ...(input.vulnerabilityClass && {
+          vulnerabilityClass: input.vulnerabilityClass,
+        }),
+        credentialIds,
+      });
+      if (quickCheck.duplicate) {
+        const matchTitle = quickCheck.matchedFinding?.title ?? "unknown";
+        return {
+          success: false,
+          duplicate: true,
+          matchType: quickCheck.matchType,
+          matchedFinding: matchTitle,
+          message: `Duplicate finding (${quickCheck.matchType}): already documented as "${matchTitle}". Skipping.`,
+        };
+      }
+    }
+
+    // Phase 1: Write & execute POC
+    onProgress?.("Running proof of concept…");
+    const pocResult = await executePoc(ctx, poc);
+
+    if (!pocResult.success) {
+      if (pocResult.syntaxCheck?.status === "invalid") {
+        return {
+          success: false,
+          syntaxFailed: true,
+          syntaxCheck: pocResult.syntaxCheck,
+          message: `POC failed the native ${poc.pocType} syntax check before execution (${pocResult.syntaxCheck.detail}). Revise pocContent.`,
+        };
+      }
+      return {
+        success: false,
+        pocFailed: true,
+        stdout: pocResult.stdout,
+        stderr: pocResult.stderr,
+        exitCode: pocResult.exitCode,
+        syntaxCheck: pocResult.syntaxCheck,
+        message: `POC exited with code ${pocResult.exitCode ?? "unknown"}. Review the output and revise pocContent.`,
+      };
+    }
+
+    const { filename, stdout, stderr, exitCode } = pocResult;
+    const pocPath = `pocs/${filename}`;
+
+    // Declared executables are checked against the emitted bytes before
+    // the judge spends an LLM call; the wrapper's verdict never covers them.
+    const generatedArtifactChecks: GeneratedArtifactCheck[] = [];
+    if (declaredArtifacts) {
+      for (const declared of declaredArtifacts) {
+        generatedArtifactChecks.push({
+          path: declared.path,
+          language: declared.language,
+          ...(await checkScriptSyntax(ctx, {
+            language: declared.language,
+            runner: POC_RUNNERS[declared.language],
+            scriptPath: declared.scriptPath,
+            abortSignal: ctx.abortSignal,
+          })),
         });
+      }
+      const invalid = generatedArtifactChecks.find(
+        (check) => check.status === "invalid",
+      );
+      if (invalid) {
+        await cleanupPocFiles(ctx, filename);
+        return {
+          success: false,
+          syntaxFailed: true,
+          syntaxCheck: pocResult.syntaxCheck,
+          generatedArtifactChecks,
+          message: `Generated executable ${invalid.path} failed its native ${invalid.language} syntax check (${invalid.detail}). Revise the POC to emit valid ${invalid.language} or fix the declaration.`,
+        };
+      }
+    }
 
-        // Phase 3: CVSS 4.0 scoring
-        const timestamp = new Date().toISOString();
+    // Phase 2: LLM Finding Judge
+    const judgeInput: FindingJudgeInput = {
+      pocScript: poc.pocContent,
+      pocType: poc.pocType,
+      pocPath,
+      target: ctx.target ?? ctx.session.targets[0],
+      pocOutput: {
+        stdout: stdout || "",
+        stderr: stderr || "",
+        exitCode: exitCode ?? 0,
+      },
+      claim: {
+        title: input.title,
+        description: input.description,
+        impact: input.impact,
+        evidence: materializedEvidence,
+        endpoint: input.endpoint,
+        vulnerabilityClass: input.vulnerabilityClass,
+      },
+    };
 
-        const outputDir = isVulnerability
-          ? findingsRoot(ctx)
-          : artifactPath(ctx, artifactsRoot(ctx), "informational");
+    // Run the judge as a proper nested subagent through the spawner —
+    // child bus + explicit lifecycle so its stream nests under the worker
+    // that invoked document_vulnerability. `error` is only set by the
+    // infrastructure-failure fallback, so a judge that completed and
+    // rejected the finding still counts as "completed".
+    onProgress?.(
+      "Proof of concept completed. Finding Judge is validating the evidence…",
+    );
+    const spawner = ctx.subagentSpawner;
+    const judgeResult: FindingJudgeResult =
+      await spawner.spawn<FindingJudgeResult>({
+        spec: { type: "finding-judge", judgeInput, target: ctx.target },
+        runtime: {
+          session: ctx.session,
+          ...getModelSettings(ctx),
+          abortSignal: ctx.abortSignal,
+          sandbox: ctx.sandbox,
+          backends: ctx.backends,
+          callbacks: ctx.callbacks,
+          languageModelMiddleware: ctx.languageModelMiddleware,
+          toolProtocol: ctx.toolProtocol,
+          usageRecorder: ctx.usageRecorder,
+          toolExecutionContext: ctx.toolExecutionContext,
+          streamIdFactory: ctx.streamIdFactory,
+        },
+        parentBus: ctx.eventBus,
+        subagentName: "Finding Judge",
+        lifecycleInput: { title: input.title, endpoint: input.endpoint },
+        parentSubagentId: ctx.subagentId,
+        parentToolCallId: toolCallId,
+        resolveStatus: (r) => (r.error ? "failed" : "completed"),
+      });
 
-        let evidenceForPrompt = materializedEvidence;
+    if (!judgeResult.valid) {
+      await cleanupPocFiles(ctx, filename);
+      return {
+        success: false,
+        judgeRejected: true,
+        judgeReasoning: judgeResult.reasoning,
+        judgeConcerns: judgeResult.concerns,
+        judgeConfidence: judgeResult.confidence,
+        message: `Finding rejected by validation judge: ${judgeResult.reasoning}`,
+      };
+    }
 
-        if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
-          const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
-          const evidenceFilePath = artifactPath(
-            ctx,
-            outputDir,
-            evidenceFilename,
-          );
-          const evidenceWrite = await writeArtifact(
-            ctx,
-            evidenceFilePath,
-            materializedEvidence,
-            { mode: "overwrite" },
-          );
-          if (!evidenceWrite.success) {
-            throw new Error(
-              evidenceWrite.error || `Failed to write ${evidenceFilePath}`,
-            );
-          }
-          evidenceForPrompt =
-            materializedEvidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
-            `\n... [truncated — full output saved to ${evidenceFilename}]`;
-          const pathPrefix = isVulnerability ? "findings" : "informational";
-          evidenceFiles.push({
-            path: `${pathPrefix}/${evidenceFilename}`,
-            type: "raw-evidence",
-            description: `Full evidence output (${materializedEvidence.length} bytes)`,
-          });
-        }
+    ctx.abortSignal?.throwIfAborted();
+    const isVulnerability = judgeResult.findingType === "vulnerability";
 
-        let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
-        let cvssWarning: string | undefined;
+    // Write sidecar only after judge acceptance (avoid wasted I/O on rejection)
+    await writePocOutputSidecar(
+      ctx,
+      filename,
+      stdout || "",
+      stderr || "",
+      exitCode ?? 0,
+      input.pocDescription,
+    );
 
-        if (!isVulnerability) {
-          cvssResult = {
-            score: 0,
-            severity: "LOW",
-            vectorString: "",
-            metrics: FALLBACK_CVSS.metrics,
-            scoreType: "N/A",
-            reasoning: `Classified as ${judgeResult.findingType} — CVSS scoring skipped.`,
-            cwes: [],
-          };
-          cvssWarning = `Classified as ${judgeResult.findingType} — not scored.`;
-        } else {
-          const cvssInput: CVSSScorerInput = {
-            finding: {
-              title: input.title,
-              description: input.description,
-              impact: input.impact,
-              evidence: evidenceForPrompt,
-              endpoint: input.endpoint,
-              remediation: input.remediation,
-              vulnerabilityClass: input.vulnerabilityClass,
-            },
-            agentMessages: [],
-          };
+    // Build structured evidence file links
+    const evidenceFiles: EvidenceFileEntry[] = [];
 
-          // Deliberately no retry: an identical re-prompt seconds later has
-          // never recovered a scorer failure.
-          try {
-            cvssResult = await scoreFindingWithCVSS(
-              cvssInput,
-              ctx.model!,
-              ctx.authConfig,
-              ctx.abortSignal,
-              ctx.session.id,
-              {
-                reasoning: ctx.reasoning,
-                languageModelMiddleware: ctx.languageModelMiddleware,
-                usageRecorder: ctx.usageRecorder,
-              },
-            );
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            const cancelled = ctx.abortSignal?.aborted === true;
+    evidenceFiles.push({
+      path: `pocs/${filename}.output.json`,
+      type: "poc-output",
+      description: `POC execution output for ${filename}`,
+    });
 
-            cvssWarning = cancelled
-              ? `CVSS scoring cancelled, using estimated MEDIUM severity.`
-              : `CVSS scoring failed (${msg}), using estimated MEDIUM severity.`;
-            cvssResult = FALLBACK_CVSS;
+    // Phase 3: CVSS 4.0 scoring
+    const timestamp = new Date().toISOString();
 
-            log.warn("CVSS scoring fell back to estimated MEDIUM severity", {
-              error: msg,
-              cancelled,
-              model: ctx.model,
-              sessionId: session.id,
-              finding: input.title,
-            });
-          }
-        }
+    const outputDir = isVulnerability
+      ? findingsRoot(ctx)
+      : artifactPath(ctx, artifactsRoot(ctx), "informational");
 
-        const severity =
-          cvssResult.severity === "NONE" ? "LOW" : cvssResult.severity;
+    let evidenceForPrompt = materializedEvidence;
 
-        // Phase 4: Build finding and register with dedup
-        const finding: Finding = {
+    if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
+      const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}${jobId ? `-${jobId}` : ""}-evidence.txt`;
+      const evidenceFilePath = artifactPath(ctx, outputDir, evidenceFilename);
+      rawEvidencePath = evidenceFilePath;
+      const evidenceWrite = await writeArtifact(
+        ctx,
+        evidenceFilePath,
+        materializedEvidence,
+        { mode: "overwrite" },
+      );
+      if (!evidenceWrite.success) {
+        throw new Error(
+          evidenceWrite.error || `Failed to write ${evidenceFilePath}`,
+        );
+      }
+      evidenceForPrompt =
+        materializedEvidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
+        `\n... [truncated — full output saved to ${evidenceFilename}]`;
+      const pathPrefix = isVulnerability ? "findings" : "informational";
+      evidenceFiles.push({
+        path: `${pathPrefix}/${evidenceFilename}`,
+        type: "raw-evidence",
+        description: `Full evidence output (${materializedEvidence.length} bytes)`,
+      });
+    }
+
+    let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
+    let cvssWarning: string | undefined;
+
+    if (!isVulnerability) {
+      cvssResult = {
+        score: 0,
+        severity: "LOW",
+        vectorString: "",
+        metrics: FALLBACK_CVSS.metrics,
+        scoreType: "N/A",
+        reasoning: `Classified as ${judgeResult.findingType} — CVSS scoring skipped.`,
+        cwes: [],
+      };
+      cvssWarning = `Classified as ${judgeResult.findingType} — not scored.`;
+    } else {
+      onProgress?.(
+        "Finding Judge accepted the finding. Calculating CVSS severity…",
+      );
+      const cvssInput: CVSSScorerInput = {
+        finding: {
           title: input.title,
           description: input.description,
           impact: input.impact,
-          evidence: materializedEvidence,
+          evidence: evidenceForPrompt,
           endpoint: input.endpoint,
-          pocPath,
           remediation: input.remediation,
-          ...(input.references && { references: input.references }),
-          ...(input.vulnerabilityClass && {
-            vulnerabilityClass: input.vulnerabilityClass,
-          }),
-          severity: severity as Finding["severity"],
-          ...(evidenceFiles.length > 0 && { evidenceFiles }),
-          ...(input.attackPath &&
-            input.attackPath.length > 0 && { attackPath: input.attackPath }),
-          credentialIds,
-        };
+          vulnerabilityClass: input.vulnerabilityClass,
+        },
+        agentMessages: [],
+      };
 
-        if (isVulnerability && ctx.findingsRegistry) {
-          const check = await ctx.findingsRegistry.register(finding);
-          if (check.duplicate) {
-            await cleanupPocFiles(ctx, filename);
-            const matchTitle = check.matchedFinding?.title ?? "unknown";
-            return {
-              success: false,
-              duplicate: true,
-              matchType: check.matchType,
-              matchedFinding: matchTitle,
-              message: `Duplicate finding (${check.matchType}): already documented as "${matchTitle}". Skipping.`,
-            };
-          }
-        }
+      // Deliberately no retry: an identical re-prompt seconds later has
+      // never recovered a scorer failure.
+      try {
+        cvssResult = await scoreFindingWithCVSS(
+          cvssInput,
+          ctx.model!,
+          ctx.authConfig,
+          ctx.abortSignal,
+          ctx.session.id,
+          {
+            reasoning: ctx.reasoning,
+            languageModelMiddleware: ctx.languageModelMiddleware,
+            usageRecorder: ctx.usageRecorder,
+          },
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const cancelled = ctx.abortSignal?.aborted === true;
 
-        // Phase 5: Persist finding
-        const findingWithMeta = {
-          ...finding,
-          timestamp,
+        cvssWarning = cancelled
+          ? `CVSS scoring cancelled, using estimated MEDIUM severity.`
+          : `CVSS scoring failed (${msg}), using estimated MEDIUM severity.`;
+        cvssResult = FALLBACK_CVSS;
+
+        log.warn("CVSS scoring fell back to estimated MEDIUM severity", {
+          error: msg,
+          cancelled,
+          model: ctx.model,
           sessionId: session.id,
-          target: session.targets[0],
-          pocOutput: {
-            stdout: stdout || "",
-            stderr: stderr || "",
-            exitCode: exitCode ?? 0,
-            executedAt: timestamp,
-          },
-          cwes: cvssResult.cwes,
-          cvss: {
-            scored: cvssWarning === undefined,
-            score: cvssResult.score,
-            severity: cvssResult.severity,
-            vectorString: cvssWarning ? "" : cvssResult.vectorString,
-            metrics: cvssResult.metrics,
-            scoreType: cvssResult.scoreType,
-            reasoning: cvssResult.reasoning,
-          },
-          judge: {
-            valid: judgeResult.valid,
-            findingType: judgeResult.findingType,
-            confidence: judgeResult.confidence,
-            reasoning: judgeResult.reasoning,
-            concerns: judgeResult.concerns,
-            verificationSteps: judgeResult.verificationSteps,
-            toolEvidence: judgeResult.toolEvidence,
-            reproducedPoc: judgeResult.reproducedPoc,
-            webResearchUsed: judgeResult.webResearchUsed,
-            limitations: judgeResult.limitations,
-            ...(judgeResult.error && { error: judgeResult.error }),
-          },
+          finding: input.title,
+        });
+      }
+    }
+
+    ctx.abortSignal?.throwIfAborted();
+    onProgress?.("Validation complete. Saving finding…");
+    const severity =
+      cvssResult.severity === "NONE" ? "LOW" : cvssResult.severity;
+
+    // Phase 4: Build finding and register with dedup
+    const finding: Finding = {
+      title: input.title,
+      description: input.description,
+      impact: input.impact,
+      evidence: materializedEvidence,
+      endpoint: input.endpoint,
+      pocPath,
+      remediation: input.remediation,
+      ...(input.references && { references: input.references }),
+      ...(input.vulnerabilityClass && {
+        vulnerabilityClass: input.vulnerabilityClass,
+      }),
+      severity: severity as Finding["severity"],
+      ...(evidenceFiles.length > 0 && { evidenceFiles }),
+      ...(input.attackPath &&
+        input.attackPath.length > 0 && { attackPath: input.attackPath }),
+      credentialIds,
+    };
+
+    if (isVulnerability && ctx.findingsRegistry) {
+      const check = await ctx.findingsRegistry.register(finding);
+      if (check.duplicate) {
+        await cleanupPocFiles(ctx, filename);
+        const matchTitle = check.matchedFinding?.title ?? "unknown";
+        return {
+          success: false,
+          duplicate: true,
+          matchType: check.matchType,
+          matchedFinding: matchTitle,
+          message: `Duplicate finding (${check.matchType}): already documented as "${matchTitle}". Skipping.`,
         };
+      }
+    }
 
-        const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}`;
-        const jsonFilename = `${findingId}.json`;
-        const mdFilename = `${findingId}.md`;
-        const jsonPath = artifactPath(ctx, outputDir, jsonFilename);
-        const mdPath = artifactPath(ctx, outputDir, mdFilename);
+    // Phase 5: Persist finding
+    const findingWithMeta = {
+      ...finding,
+      timestamp,
+      sessionId: session.id,
+      target: session.targets[0],
+      pocOutput: {
+        stdout: stdout || "",
+        stderr: stderr || "",
+        exitCode: exitCode ?? 0,
+        executedAt: timestamp,
+      },
+      cwes: cvssResult.cwes,
+      cvss: {
+        scored: cvssWarning === undefined,
+        score: cvssResult.score,
+        severity: cvssResult.severity,
+        vectorString: cvssWarning ? "" : cvssResult.vectorString,
+        metrics: cvssResult.metrics,
+        scoreType: cvssResult.scoreType,
+        reasoning: cvssResult.reasoning,
+      },
+      judge: {
+        valid: judgeResult.valid,
+        findingType: judgeResult.findingType,
+        confidence: judgeResult.confidence,
+        reasoning: judgeResult.reasoning,
+        concerns: judgeResult.concerns,
+        verificationSteps: judgeResult.verificationSteps,
+        toolEvidence: judgeResult.toolEvidence,
+        reproducedPoc: judgeResult.reproducedPoc,
+        webResearchUsed: judgeResult.webResearchUsed,
+        limitations: judgeResult.limitations,
+        ...(judgeResult.error && { error: judgeResult.error }),
+      },
+    };
 
-        try {
-          const jsonWrite = await writeArtifact(
-            ctx,
-            jsonPath,
-            JSON.stringify(findingWithMeta, null, 2),
-            { mode: "overwrite" },
-          );
-          if (!jsonWrite.success) {
-            throw new Error(jsonWrite.error || `Failed to write ${jsonPath}`);
-          }
+    const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}${jobId ? `-${jobId}` : ""}`;
+    const jsonFilename = `${findingId}.json`;
+    const mdFilename = `${findingId}.md`;
+    const jsonPath = artifactPath(ctx, outputDir, jsonFilename);
+    const mdPath = artifactPath(ctx, outputDir, mdFilename);
 
-          const cvssSection = cvssWarning
-            ? `## CVSS 4.0 Assessment
+    try {
+      reportPaths.push(jsonPath, mdPath);
+      const jsonWrite = await writeArtifact(
+        ctx,
+        jsonPath,
+        JSON.stringify(findingWithMeta, null, 2),
+        { mode: "overwrite" },
+      );
+      if (!jsonWrite.success) {
+        throw new Error(jsonWrite.error || `Failed to write ${jsonPath}`);
+      }
+
+      const cvssSection = cvssWarning
+        ? `## CVSS 4.0 Assessment
 
 **Warning:** ${cvssWarning}
 
 **Score:** ${cvssResult.score} / 10.0 (${cvssResult.severity})
 **Score Type:** ${cvssResult.scoreType}`
-            : `## CVSS 4.0 Assessment
+        : `## CVSS 4.0 Assessment
 
 **Score:** ${cvssResult.score} / 10.0 (${cvssResult.severity})
 **Vector:** \`${cvssResult.vectorString}\`
@@ -818,48 +897,46 @@ CRITICAL RULES — READ BEFORE CALLING:
 
 **Reasoning:** ${cvssResult.reasoning}`;
 
-          const cweSection = cvssResult.cwes?.length
-            ? `## CWE Classification
+      const cweSection = cvssResult.cwes?.length
+        ? `## CWE Classification
 
 ${cvssResult.cwes.map((cwe) => `- **${cwe.id}**${hasCanonicalName(cwe) ? `: ${cwe.name}` : ""} — ${cwe.reasoning}`).join("\n")}`
-            : "";
+        : "";
 
-          const hasLargeEvidence = finding.evidenceFiles?.some(
-            (ef) => ef.type === "raw-evidence",
-          );
-          const evidenceSection = hasLargeEvidence
-            ? `## Evidence
+      const hasLargeEvidence = finding.evidenceFiles?.some(
+        (ef) => ef.type === "raw-evidence",
+      );
+      const evidenceSection = hasLargeEvidence
+        ? `## Evidence
 
 \`\`\`
 ${finding.evidence.substring(0, 5_000)}
 \`\`\`
 
 > Full evidence output: see evidence files below`
-            : `## Evidence
+        : `## Evidence
 
 \`\`\`
 ${finding.evidence}
 \`\`\``;
 
-          const evidenceFilesSection = finding.evidenceFiles?.length
-            ? `## Evidence Files
+      const evidenceFilesSection = finding.evidenceFiles?.length
+        ? `## Evidence Files
 
 ${finding.evidenceFiles.map((ef) => `- **[${ef.type}]** \`${ef.path}\` — ${ef.description}`).join("\n")}`
-            : "";
+        : "";
 
-          const headerLines = [
-            `**Severity:** ${cvssWarning ? `${finding.severity} (estimated)` : finding.severity}`,
-            `**CVSS 4.0 Score:** ${cvssWarning ? "N/A" : `${cvssResult.score} (${cvssResult.severity})`}`,
-            ...(cvssWarning
-              ? []
-              : [`**Vector:** \`${cvssResult.vectorString}\``]),
-            `**Target:** ${session.targets[0]}`,
-            `**Endpoint:** ${finding.endpoint}`,
-            `**Date:** ${timestamp}`,
-            `**Session:** ${session.id}`,
-          ];
+      const headerLines = [
+        `**Severity:** ${cvssWarning ? `${finding.severity} (estimated)` : finding.severity}`,
+        `**CVSS 4.0 Score:** ${cvssWarning ? "N/A" : `${cvssResult.score} (${cvssResult.severity})`}`,
+        ...(cvssWarning ? [] : [`**Vector:** \`${cvssResult.vectorString}\``]),
+        `**Target:** ${session.targets[0]}`,
+        `**Endpoint:** ${finding.endpoint}`,
+        `**Date:** ${timestamp}`,
+        `**Session:** ${session.id}`,
+      ];
 
-          const markdown = `# ${finding.title}
+      const markdown = `# ${finding.title}
 
 ${headerLines.join("  \n")}
 
@@ -890,77 +967,85 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 *This finding was automatically documented by the Pensar penetration testing agent.*
 `;
 
-          const mdWrite = await writeArtifact(ctx, mdPath, markdown, {
-            mode: "overwrite",
-          });
-          if (!mdWrite.success) {
-            throw new Error(mdWrite.error || `Failed to write ${mdPath}`);
-          }
+      const mdWrite = await writeArtifact(ctx, mdPath, markdown, {
+        mode: "overwrite",
+      });
+      if (!mdWrite.success) {
+        throw new Error(mdWrite.error || `Failed to write ${mdPath}`);
+      }
 
-          if (isVulnerability) {
-            const summaryPath = artifactPath(
-              ctx,
-              artifactsRoot(ctx),
-              "findings-summary.md",
-            );
-            const cweTag = cvssResult.cwes?.length
-              ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
-              : "";
-            const cvssTag = cvssWarning
-              ? "(estimated)"
-              : `(CVSS ${cvssResult.score})`;
-            const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
+      if (isVulnerability) {
+        const summaryPath = artifactPath(
+          ctx,
+          artifactsRoot(ctx),
+          "findings-summary.md",
+        );
+        const cweTag = cvssResult.cwes?.length
+          ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
+          : "";
+        const cvssTag = cvssWarning
+          ? "(estimated)"
+          : `(CVSS ${cvssResult.score})`;
+        const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
-            await updateSummary(summaryPath, async () => {
-              const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
-              const summaryWrite = await appendArtifactSummary(
-                ctx,
-                summaryPath,
-                header,
-                summaryEntry,
-              );
-              if (!summaryWrite.success) {
-                log.warn("Failed to update findings-summary.md", {
-                  error: summaryWrite.error,
-                  sessionId: session.id,
-                });
-              }
+        await updateSummary(summaryPath, async () => {
+          const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
+          const summaryWrite = await appendArtifactSummary(
+            ctx,
+            summaryPath,
+            header,
+            summaryEntry,
+          );
+          if (!summaryWrite.success) {
+            log.warn("Failed to update findings-summary.md", {
+              error: summaryWrite.error,
+              sessionId: session.id,
             });
           }
-        } catch (writeError: unknown) {
-          if (isVulnerability && ctx.findingsRegistry) {
-            await ctx.findingsRegistry.unregister(finding);
-          }
-          throw writeError;
-        }
-
-        const typeTag = isVulnerability
-          ? finding.severity
-          : judgeResult.findingType.toUpperCase();
-        const resultMessage = cvssWarning
-          ? `Finding documented: [${typeTag}] ${finding.title} (${cvssWarning})`
-          : `Finding documented: [${typeTag}] ${finding.title}`;
-
-        return {
-          success: true,
-          finding: findingWithMeta,
-          filepath: mdPath,
-          message: resultMessage,
-          syntaxCheck: pocResult.syntaxCheck,
-          ...(generatedArtifactChecks.length > 0
-            ? { generatedArtifactChecks }
-            : {}),
-        };
-      } catch (error: unknown) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        return {
-          success: false,
-          error: errorMsg,
-          message: `Failed to document finding: ${errorMsg}`,
-        };
+        });
       }
-    },
-  });
+    } catch (writeError: unknown) {
+      if (isVulnerability && ctx.findingsRegistry) {
+        await ctx.findingsRegistry.unregister(finding);
+      }
+      throw writeError;
+    }
+
+    findingPersisted = true;
+    const typeTag = isVulnerability
+      ? finding.severity
+      : judgeResult.findingType.toUpperCase();
+    const resultMessage = cvssWarning
+      ? `Finding documented: [${typeTag}] ${finding.title} (${cvssWarning})`
+      : `Finding documented: [${typeTag}] ${finding.title}`;
+
+    return {
+      success: true,
+      finding: findingWithMeta,
+      filepath: mdPath,
+      message: resultMessage,
+      syntaxCheck: pocResult.syntaxCheck,
+      ...(generatedArtifactChecks.length > 0
+        ? { generatedArtifactChecks }
+        : {}),
+    };
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: errorMsg,
+      message: `Failed to document finding: ${errorMsg}`,
+    };
+  } finally {
+    if (jobId && !findingPersisted) {
+      // Cancellation stops validation, but must not abort removal of its owned artifacts.
+      const cleanupCtx = { ...ctx, abortSignal: undefined };
+      for (const reportPath of reportPaths)
+        await deleteArtifact(cleanupCtx, reportPath);
+      await cleanupPocFiles(cleanupCtx, preparePoc(poc).filename);
+      if (rawEvidencePath) await deleteArtifact(cleanupCtx, rawEvidencePath);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

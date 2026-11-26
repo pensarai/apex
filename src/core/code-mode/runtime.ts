@@ -143,10 +143,10 @@ const GUEST_PRELUDE = `
   };
   const activeLanes = new Set();
   const invoke = async (name, input = {}) => {
-    const lane = laneFor(name);
+    const lane = name === "execute_command" && input?.background === true ? undefined : laneFor(name);
     if (lane && activeLanes.has(lane)) {
       const hint = lane === "shell"
-        ? "execute_command is single-lane. Await each command before starting the next; use JavaScript in exec to compose other independent capabilities."
+        ? "execute_command is single-lane for foreground calls. For a slow scan, use background=true and await the jobId before starting the next command. Completion arrives automatically in supported local sessions."
         : "Browser operations are single-lane and stateful; await each mutation before starting the next.";
       const error = new Error(hint);
       error.toJSON = () => ({ name: "Error", message: hint });

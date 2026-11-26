@@ -67,7 +67,7 @@ function statefulLaneFor(toolName: string): StatefulLane | undefined {
 
 function laneConflictMessage(lane: StatefulLane): string {
   if (lane === "shell") {
-    return "execute_command is single-lane across exec cells and direct calls. Await the active command before starting another.";
+    return "execute_command is single-lane across exec cells and direct calls. Await the active command before starting another. For slow scans in local sessions, start with background=true to release the foreground lane.";
   }
   if (lane === "browser") {
     return "Browser operations are single-lane across exec cells and direct calls; await the active browser operation.";
@@ -146,15 +146,22 @@ export class CanonicalCapabilityInvoker {
             // Keep streams visible to the SDK and hold the lane until iteration ends.
             execute: async function* (input, options) {
               options.abortSignal?.throwIfAborted();
-              if (activeLanes.has(lane))
+              const ownsLane = !(
+                name === "execute_command" &&
+                typeof input === "object" &&
+                input !== null &&
+                "background" in input &&
+                input.background === true
+              );
+              if (ownsLane && activeLanes.has(lane))
                 throw new Error(laneConflictMessage(lane));
-              activeLanes.add(lane);
+              if (ownsLane) activeLanes.add(lane);
               try {
                 const result = await execute(input, options);
                 if (isAsyncIterable(result)) yield* result;
                 else yield result;
               } finally {
-                activeLanes.delete(lane);
+                if (ownsLane) activeLanes.delete(lane);
               }
             },
           } satisfies ToolSet[string],

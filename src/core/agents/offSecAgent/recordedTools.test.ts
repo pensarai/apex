@@ -476,7 +476,8 @@ vi.mock("zod", () => {
   return { z, default: z };
 });
 
-vi.mock("./tools", () => ({
+vi.mock("./tools", async () => ({
+  BackgroundJobs: (await import("./tools/backgroundJobs")).BackgroundJobs,
   createToolsForNames: () => ({}),
   createResponseTool: () => ({}),
   RESPONSE_TOOL_NAME: "response",

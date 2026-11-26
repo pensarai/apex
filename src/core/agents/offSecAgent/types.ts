@@ -561,6 +561,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = AgentHooks & {
  */
 export type CommandCancelHandle = {
   cancel: () => boolean;
+  cancelBackground?: (jobId: string) => Promise<void>;
 };
 
 /**

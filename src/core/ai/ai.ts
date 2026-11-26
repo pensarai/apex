@@ -8,6 +8,7 @@ import {
   generateText,
   type LanguageModel,
   type LanguageModelMiddleware,
+  type LanguageModelUsage,
   type ModelMessage,
   Output,
   RetryError,
@@ -779,10 +780,51 @@ function retryBudgetOf(opts: StreamResponseOpts): StreamRetryBudget {
   return budget;
 }
 
+function combineUsage(
+  a: LanguageModelUsage,
+  b: LanguageModelUsage,
+): LanguageModelUsage {
+  const sum = (left: number | undefined, right: number | undefined) =>
+    left === undefined && right === undefined
+      ? undefined
+      : (left ?? 0) + (right ?? 0);
+  return {
+    inputTokens: sum(a.inputTokens, b.inputTokens),
+    outputTokens: sum(a.outputTokens, b.outputTokens),
+    totalTokens: sum(a.totalTokens, b.totalTokens),
+    inputTokenDetails: {
+      noCacheTokens: sum(
+        a.inputTokenDetails?.noCacheTokens,
+        b.inputTokenDetails?.noCacheTokens,
+      ),
+      cacheReadTokens: sum(
+        a.inputTokenDetails?.cacheReadTokens,
+        b.inputTokenDetails?.cacheReadTokens,
+      ),
+      cacheWriteTokens: sum(
+        a.inputTokenDetails?.cacheWriteTokens,
+        b.inputTokenDetails?.cacheWriteTokens,
+      ),
+    },
+    outputTokenDetails: {
+      textTokens: sum(
+        a.outputTokenDetails?.textTokens,
+        b.outputTokenDetails?.textTokens,
+      ),
+      reasoningTokens: sum(
+        a.outputTokenDetails?.reasoningTokens,
+        b.outputTokenDetails?.reasoningTokens,
+      ),
+    },
+    reasoningTokens: sum(a.reasoningTokens, b.reasoningTokens),
+    cachedInputTokens: sum(a.cachedInputTokens, b.cachedInputTokens),
+  };
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
-  messagesContainer: { current: ModelMessage[] },
+  messagesContainer: { current: ModelMessage[]; completed?: ModelMessage[] },
   opts: StreamResponseOpts,
   model: LanguageModel,
   silent?: boolean,
@@ -796,6 +838,7 @@ function wrapStreamWithErrorHandler(
   // Result fields must describe the attempt that produced the consumed
   // chunks, not the attempt that failed and was replaced.
   let finalAttempt: StreamTextResult<ToolSet, never> = originalStream;
+  let continuedAfterSuccess = false;
   let consumptionStarted = false;
   let settleAttempts!: () => void;
   const attemptsSettled = new Promise<void>((resolve) => {
@@ -819,6 +862,9 @@ function wrapStreamWithErrorHandler(
             consumptionStarted = true;
             let streamError: unknown;
             let currentStepHadToolCall = false;
+            let finish:
+              | Extract<TextStreamPart<ToolSet>, { type: "finish" }>
+              | undefined;
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
@@ -882,7 +928,9 @@ function wrapStreamWithErrorHandler(
                   budget.idleResume = 0;
                 }
 
-                yield chunk;
+                if (chunk.type === "finish" && opts.getPendingMessages)
+                  finish = chunk;
+                else yield chunk;
               }
               if (streamError !== undefined) {
                 // The tail is consumed but the SDK's finalization
@@ -890,6 +938,49 @@ function wrapStreamWithErrorHandler(
                 // await it so the error never overtakes the span lifecycle.
                 await Promise.resolve(originalStream.response).catch(() => {});
                 throw streamError;
+              }
+              if (opts.getPendingMessages && finish) {
+                const conditions = opts.stopWhen
+                  ? Array.isArray(opts.stopWhen)
+                    ? opts.stopWhen
+                    : [opts.stopWhen]
+                  : [];
+                const steps =
+                  (opts as InternalStreamResponseOpts)[STREAM_STEPS] ?? [];
+                const stopped = (
+                  await Promise.all(
+                    conditions.map((condition) => condition({ steps })),
+                  )
+                ).some(Boolean);
+                opts.abortSignal?.throwIfAborted();
+                const notifications =
+                  !stopped && finish.finishReason === "stop"
+                    ? await opts.getPendingMessages(true)
+                    : [];
+                opts.abortSignal?.throwIfAborted();
+                if (notifications.length) {
+                  const continued = streamResponse({
+                    ...opts,
+                    messages: [
+                      ...(messagesContainer.completed ??
+                        messagesContainer.current),
+                      ...notifications,
+                    ],
+                  });
+                  finalAttempt = continued;
+                  continuedAfterSuccess = true;
+                  for await (const chunk of continued.fullStream) {
+                    yield chunk.type === "finish"
+                      ? {
+                          ...chunk,
+                          totalUsage: combineUsage(
+                            finish.totalUsage,
+                            chunk.totalUsage,
+                          ),
+                        }
+                      : chunk;
+                  }
+                } else yield finish;
               }
             } catch (caughtError) {
               // A tail-drain failure must not replace the provider error that
@@ -1289,13 +1380,24 @@ function wrapStreamWithErrorHandler(
       // without it belongs to the original attempt.
       const fromFinalAttempt = (original: () => unknown) =>
         consumptionStarted
-          ? attemptsSettled.then(() =>
-              finalAttempt === originalStream
+          ? attemptsSettled.then(async () => {
+              // A wake-up continues a successful segment; recovery replaces a failed one.
+              if (continuedAfterSuccess && prop === "steps")
+                return [
+                  ...(await originalStream.steps),
+                  ...(await finalAttempt.steps),
+                ];
+              if (continuedAfterSuccess && prop === "totalUsage")
+                return combineUsage(
+                  await originalStream.totalUsage,
+                  await finalAttempt.totalUsage,
+                );
+              return finalAttempt === originalStream
                 ? original()
                 : (finalAttempt as unknown as Record<string | symbol, unknown>)[
                     prop
-                  ],
-            )
+                  ];
+            })
           : original();
       return Promise.resolve(value).then(
         (resolved) => fromFinalAttempt(() => resolved),
@@ -1508,6 +1610,8 @@ export interface StreamResponseOpts {
   prompt: string;
   system?: string;
   model: AIModel;
+  /** Drain asynchronous tool notifications; wait only when the model has no immediate work. */
+  getPendingMessages?: (wait: boolean) => Promise<ModelMessage[]>;
   messages?: Array<ModelMessage>;
   stopWhen?:
     | StopCondition<NoInfer<ToolSet>>
@@ -1708,6 +1812,7 @@ function streamResponseWithinOperation(
   // older, pre-fit messages again.
   let recorderBase: ModelMessage[] | undefined;
   let responseMessageLength = 0;
+  const injectedMessages: { offset: number; messages: ModelMessage[] }[] = [];
   const estimatedOverheadTokens = estimateToolsOverheadTokens(tools) + 1_000;
   let preparedInputEstimateTokens = 0;
   let inputSafetyMarginTokens = 10_000;
@@ -1757,7 +1862,14 @@ function streamResponseWithinOperation(
       step.response?.id !== "summarization" &&
       step.response?.id !== "tool-repair"
     ) {
-      if (opts.harness === "general") streamSteps.push(step);
+      if (opts.harness === "general" || opts.getPendingMessages)
+        streamSteps.push(step);
+      if (opts.getPendingMessages && step.response?.messages) {
+        messagesContainer.completed = [
+          ...messagesContainer.current,
+          ...step.response.messages.slice(responseMessageLength),
+        ];
+      }
       if (step.response?.messages)
         responseMessageLength = step.response.messages.length;
     }
@@ -1877,7 +1989,10 @@ function streamResponseWithinOperation(
 
   // Container reference is stable; value gets reassigned by `prepareStep`
   // and the recovery paths so nested retries read the latest compacted view.
-  const messagesContainer = { current: fittedMessages || [] };
+  const messagesContainer: {
+    current: ModelMessage[];
+    completed?: ModelMessage[];
+  } = { current: fittedMessages || [] };
 
   // Layer 1+2 alone can't fit — escalate before sending a doomed request.
   // Wrap with the same error handler the streamText path uses, otherwise
@@ -2161,6 +2276,22 @@ function streamResponseWithinOperation(
           step.messages,
           step.steps.flatMap((previous) => previous.toolCalls),
         );
+        if (opts.getPendingMessages) {
+          const notifications = await opts.getPendingMessages(false);
+          if (notifications.length)
+            injectedMessages.push({
+              offset: stepMessages.length,
+              messages: notifications,
+            });
+          // The SDK rebuilds raw history each step; preserve each notification's original position.
+          for (const injection of [...injectedMessages].reverse()) {
+            stepMessages = [
+              ...stepMessages.slice(0, injection.offset),
+              ...injection.messages,
+              ...stepMessages.slice(injection.offset),
+            ];
+          }
+        }
         if (step.stepNumber > 0) {
           if (
             (!opts.primaryModelOnly || opts.runContextCompaction) &&
