@@ -1,5 +1,5 @@
 import type { WebviewTagElement } from "electrobun/view";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { OperatorClient } from "../operator/client";
 import type { BrowserState, BrowserViewDescriptor } from "./contract";
 
@@ -53,7 +53,7 @@ function NativeView({
 }) {
   const mount = useRef<HTMLDivElement>(null);
   const element = useRef<WebviewTagElement | undefined>(undefined);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const parent = mount.current;
     if (!parent) return;
     const node = document.createElement("electrobun-webview");
@@ -67,7 +67,7 @@ function NativeView({
       '[role="dialog"], [data-radix-popper-content-wrapper]',
     );
     node.style.cssText =
-      "position:fixed;left:-10000px;top:0;width:1000px;height:720px;";
+      "position:fixed;left:-10000px;top:0;width:1000px;height:720px;visibility:hidden;";
     parent.append(node);
     let disposed = false;
     const ready = setInterval(() => {
@@ -104,11 +104,13 @@ function NativeView({
       element.current = undefined;
     };
   }, [client, view.id, view.url, view.partition]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = element.current;
     if (!node) return;
     const sync = () => {
       const showing = visible && !!viewport;
+      // Electrobun hides the native view but leaves the tag's white background.
+      node.style.visibility = showing ? "visible" : "hidden";
       node.toggleHidden(!showing);
       node.togglePassthrough(busy || !showing);
       if (showing) {
@@ -125,9 +127,8 @@ function NativeView({
     const observer = new ResizeObserver(sync);
     if (viewport) observer.observe(viewport);
     window.addEventListener("resize", sync);
-    const frame = requestAnimationFrame(sync);
+    sync();
     return () => {
-      cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("resize", sync);
     };

@@ -95,6 +95,45 @@ describe("shared session browser", () => {
     );
     await browser.close();
   });
+  it.each([
+    "Invalid InterceptionId",
+    "Invalid InterceptionId.",
+    "Connection refused",
+  ])("handles continuation failure without retrying expired requests: %s", async (message) => {
+    const { browser } = fixture();
+    const send = vi.fn(async (method: string) => {
+      if (method === "Fetch.continueRequest") throw new Error(message);
+      return {};
+    });
+    const view = { id: "view", sessionId: "page" };
+    const internals = browser as unknown as {
+      views: Map<string, typeof view>;
+      connection: { send: typeof send; close: () => void };
+      handleEvent: (event: unknown) => Promise<void>;
+    };
+    internals.views.set(view.id, view);
+    internals.connection = { send, close: vi.fn() };
+    const result = internals.handleEvent({
+      method: "Fetch.requestPaused",
+      sessionId: "page",
+      params: {
+        requestId: "request",
+        request: { url: "https://example.test", headers: {} },
+      },
+    });
+    if (message.startsWith("Invalid InterceptionId")) {
+      await expect(result).resolves.toBeUndefined();
+      expect(send).toHaveBeenCalledTimes(1);
+    } else {
+      await expect(result).rejects.toThrow(message);
+      expect(send).toHaveBeenLastCalledWith(
+        "Fetch.failRequest",
+        { requestId: "request", errorReason: "Aborted" },
+        "page",
+      );
+    }
+    await browser.close();
+  });
   it("releases paused requests when header preparation fails", async () => {
     const { browser } = fixture();
     const send = vi.fn(async () => ({}));

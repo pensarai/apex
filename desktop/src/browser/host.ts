@@ -340,6 +340,12 @@ export class SessionBrowser {
           view,
         );
       } catch (error) {
+        // Navigation can release an interception before its continuation arrives.
+        if (
+          error instanceof Error &&
+          /^Invalid InterceptionId\.?$/.test(error.message)
+        )
+          return;
         await this.send(
           "Fetch.failRequest",
           { requestId, errorReason: "Aborted" },
