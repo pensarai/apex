@@ -125,10 +125,16 @@ export interface OperatorSnapshot {
 }
 
 export type OperatorAction =
-  | { type: "goal"; command: string }
+  | { type: "goal"; command: string; attachments?: OperatorAttachment[] }
   | { type: "resume-goal" }
   | { type: "send"; text: string; attachments?: OperatorAttachment[] }
-  | { type: "skill"; slug: string; autopilot?: boolean; arguments?: string[] }
+  | {
+      type: "skill";
+      slug: string;
+      autopilot?: boolean;
+      arguments?: string[];
+      attachments?: OperatorAttachment[];
+    }
   | { type: "mode"; mode: OperatorMode }
   | { type: "model"; id: string }
   | { type: "approval"; id: string; decision: "approve" | "deny" | "auto" }
@@ -153,7 +159,11 @@ type Call<P, R> = { params: P; response: R };
 export type OperatorSessionRequests = {
   operatorSkills: Call<void, OperatorSnapshot["skills"]>;
   operatorGoal: Call<
-    { command: string; mode?: OperatorMode },
+    {
+      command: string;
+      mode?: OperatorMode;
+      attachments?: OperatorAttachment[];
+    },
     OperatorSnapshot
   >;
   operatorAttackSurface: Call<{ sessionId: string }, LoadedTopology>;

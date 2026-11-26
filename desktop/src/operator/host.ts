@@ -105,6 +105,7 @@ import { operatorArguments } from "./arguments";
 import { attachFilesToPrompt, decodeAttachments } from "./attachments-host";
 import type {
   OperatorAction,
+  OperatorAttachment,
   OperatorLaunch,
   OperatorMessage,
   OperatorMode,
@@ -363,10 +364,6 @@ class OperatorHost {
   start = async (input: OperatorLaunch) =>
     this.switchSession(async () => {
       const attachments = decodeAttachments(input.attachments);
-      if (input.skill && attachments.length)
-        throw new Error(
-          "Send attachments with a message, not a slash command.",
-        );
       const cfg = await config.get();
       const currentModel = this.resolveModel(cfg, input.model);
       let headers = input.headers;
@@ -390,7 +387,7 @@ class OperatorHost {
             ? "Goals are unavailable in Lance mode."
             : "Goals are disabled. Enable them in Advanced settings.",
         );
-      if (goalInput && (input.skill || attachments.length || input.prompt))
+      if (goalInput && (input.skill || input.prompt))
         throw new Error("Start a goal with its objective only.");
       if (input.skill && lanceMode)
         throw new Error("Lance accepts direct objectives only.");
@@ -449,9 +446,16 @@ class OperatorHost {
       this.model = currentModel;
       this.globalModelAtStart = cfg.selectedModelId;
       if (goalInput) {
-        this.goal = createGoal({ sessionId: session.id, ...goalInput });
-        writeGoalFile(session.rootPath, this.goal);
-        this.run(kickoffMessage(this.goal));
+        const goal = createGoal({ sessionId: session.id, ...goalInput });
+        const prompt = await attachFilesToPrompt(
+          session.rootPath,
+          kickoffMessage(goal),
+          attachments,
+        );
+        this.ensureOpen();
+        writeGoalFile(session.rootPath, goal);
+        this.goal = goal;
+        this.run(prompt);
       } else if (input.skill) {
         const { content } = await this.skills.readSkillContent(input.skill);
         const prompt =
@@ -465,11 +469,17 @@ class OperatorHost {
                 skillContent: content,
               })
             : `<skill name="${input.skill}">\nWorking directory: ${cwd}\nTarget: ${input.target ?? ""}\nLibrary: ${input.promptInjectionLibrarySource ?? ""}\n\n${content}\n</skill>`;
-        this.run(
+        const withFiles = await attachFilesToPrompt(
+          session.rootPath,
           input.skillArguments?.length
             ? `${prompt}\nOperator input: ${input.skillArguments.join(" ")}`
             : prompt,
-          `/${input.skill}`,
+          attachments,
+        );
+        this.ensureOpen();
+        this.run(
+          withFiles,
+          `/${input.skill}${attachments.length ? `\nAttached files: ${attachments.map((file) => file.name).join(", ")}` : ""}`,
         );
       } else if (input.prompt || attachments.length) {
         const prompt = await attachFilesToPrompt(
@@ -1009,7 +1019,7 @@ class OperatorHost {
       };
     }
   }
-  private async changeGoal(command: string) {
+  private async changeGoal(command: string, files?: OperatorAttachment[]) {
     const session = this.session;
     if (!session) throw new Error("No operator session.");
     const cfg = await config.get();
@@ -1044,10 +1054,17 @@ class OperatorHost {
         "Stop or finish the current turn or review before setting a goal.",
       );
     const input = newGoalSchema.parse(op);
-    this.goal = createGoal({ sessionId: session.id, ...input });
-    writeGoalFile(session.rootPath, this.goal);
+    const goal = createGoal({ sessionId: session.id, ...input });
+    const prompt = await attachFilesToPrompt(
+      session.rootPath,
+      kickoffMessage(goal),
+      decodeAttachments(files),
+    );
+    this.ensureOpen();
+    writeGoalFile(session.rootPath, goal);
+    this.goal = goal;
     this.goalPaused = false;
-    this.run(kickoffMessage(this.goal));
+    this.run(prompt);
   }
   private async modeChange(mode: OperatorMode) {
     const session = this.session;
@@ -1117,7 +1134,7 @@ class OperatorHost {
       throw new Error("The active operator session changed.");
     switch (action.type) {
       case "goal":
-        await this.changeGoal(action.command);
+        await this.changeGoal(action.command, action.attachments);
         break;
       case "resume-goal": {
         const cfg = await config.get();
@@ -1148,6 +1165,9 @@ class OperatorHost {
         break;
       }
       case "skill": {
+        if (this.questions || this.reviewPlan)
+          throw new Error("Resolve the pending review first.");
+        const attachments = decodeAttachments(action.attachments);
         if (session.config?.operatorSettings?.lanceMode)
           throw new Error("Lance accepts direct objectives only.");
         if (
@@ -1165,11 +1185,17 @@ class OperatorHost {
                 skillContent: content,
               })
             : `<skill name="${action.slug}">\nWorking directory: ${this.workingDirectory}\n\n${content}\n</skill>`;
-        this.submit(
+        const withFiles = await attachFilesToPrompt(
+          session.rootPath,
           action.arguments?.length
             ? `${prompt}\nOperator input: ${action.arguments.join(" ")}`
             : prompt,
-          `/${action.slug}`,
+          attachments,
+        );
+        this.ensureOpen();
+        this.submit(
+          withFiles,
+          `/${action.slug}${attachments.length ? `\nAttached files: ${attachments.map((file) => file.name).join(", ")}` : ""}`,
         );
         break;
       }
@@ -1398,20 +1424,22 @@ class OperatorHost {
     operatorGoal: async ({
       command,
       mode,
+      attachments,
     }: {
       command: string;
       mode?: OperatorMode;
+      attachments?: OperatorAttachment[];
     }) => {
       this.options.requireAcceptance();
       if (this.session)
         return this.requests.operatorAction({
           sessionId: this.session.id,
-          action: { type: "goal", command },
+          action: { type: "goal", command, attachments },
         });
       const op = parseGoalSlashCommand(command);
       if (op.kind === "invalid") throw new Error(op.reason);
       if (op.kind === "set")
-        return this.start({ goal: newGoalSchema.parse(op), mode });
+        return this.start({ goal: newGoalSchema.parse(op), mode, attachments });
       this.messages.push({
         role: "system",
         content: "No goal. Use /goal <objective> [--rounds N].",

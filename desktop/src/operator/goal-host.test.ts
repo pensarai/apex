@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
@@ -133,6 +140,84 @@ describe("desktop goal lifecycle", () => {
       snapshot.messages.some((m) => m.content === "Goal: Verify the fixture"),
     ).toBe(true);
     expect(readGoalFile(input.session.rootPath)?.status).toBe("complete");
+  });
+  it.each([
+    false,
+    true,
+  ])("delivers goal attachments and restores their paths (existing session: %s)", async (existing) => {
+    if (existing) await host.start({ name: "Existing" });
+    sdk.run.mockImplementation((input) => result(input, blocked()));
+    const objective = "Review the attached scope. ".padEnd(4000, "x");
+    const attachment = {
+      name: "scope-decisions.csv",
+      base64: Buffer.from(
+        "hostname,scope_decision\nexample.test,TEST_APPLICATION",
+      ).toString("base64"),
+    };
+    const started = await host.requests.operatorGoal({
+      command: objective,
+      attachments: [attachment],
+    });
+    await idle();
+    const session = await sessions.get(required(started.sessionId));
+    const directory = required(
+      (await readdir(session.rootPath)).find((name) =>
+        name.startsWith("attachments-"),
+      ),
+    );
+    const path = join(session.rootPath, directory, "1-scope-decisions.csv");
+    expect(await readFile(path, "utf8")).toContain(
+      "example.test,TEST_APPLICATION",
+    );
+    expect(sdk.run.mock.calls[0][0].prompt).toContain(JSON.stringify(path));
+    expect(readGoalFile(session.rootPath)?.objective).toBe(objective);
+    expect(
+      await readFile(join(session.rootPath, "messages.json"), "utf8"),
+    ).toContain("1-scope-decisions.csv");
+    const viewer = createOperatorHost({
+      cwd: () => dir,
+      requireAcceptance() {},
+      emit() {},
+    });
+    try {
+      await viewer.requests.operatorResume({ id: session.id });
+      expect(
+        viewer.requests
+          .operatorState()
+          .messages.some((message) => message.content.includes(path)),
+      ).toBe(true);
+    } finally {
+      await viewer.close(true);
+    }
+  });
+  it("does not store attachments for goal status or clear commands, or invalid goal attachments", async () => {
+    const started = await host.start({ name: "Existing" });
+    const session = await sessions.get(started.sessionId);
+    const attachment = {
+      name: "scope.csv",
+      base64: Buffer.from("scope").toString("base64"),
+    };
+    await host.requests.operatorGoal({
+      command: "",
+      attachments: [attachment],
+    });
+    await host.requests.operatorGoal({
+      command: "clear",
+      attachments: [attachment],
+    });
+    await expect(
+      host.requests.operatorGoal({
+        command: "Inspect",
+        attachments: [{ ...attachment, base64: "invalid" }],
+      }),
+    ).rejects.toThrow("encoding");
+    expect(
+      (await readdir(session.rootPath)).some((name) =>
+        name.startsWith("attachments-"),
+      ),
+    ).toBe(false);
+    expect(readGoalFile(session.rootPath)).toBeNull();
+    expect(sdk.run).not.toHaveBeenCalled();
   });
   it("rejects unsupported completion claims, continues invisibly, then wraps up once at the round limit", async () => {
     sdk.run.mockImplementation((input) =>
@@ -452,11 +537,59 @@ describe("desktop goal lifecycle", () => {
     expect(catalog.some((skill) => skill.slug === "inspect")).toBe(true);
     expect(host.sessionId).toBeUndefined();
     sdk.run.mockImplementation((input) => result(input));
-    await host.start({ skill: "inspect", skillArguments: ["login"] });
+    await host.start({
+      skill: "inspect",
+      skillArguments: ["login"],
+      attachments: [
+        {
+          name: "scope.csv",
+          base64: Buffer.from("fixture").toString("base64"),
+        },
+      ],
+    });
     await idle();
     expect(sdk.run.mock.calls[0][0].prompt).toContain(
       "Read the fixture files.",
     );
     expect(sdk.run.mock.calls[0][0].prompt).toContain("Operator input: login");
+    expect(sdk.run.mock.calls[0][0].prompt).toContain("1-scope.csv");
+    expect(host.requests.operatorState().messages[0].content).toContain(
+      "Attached files: scope.csv",
+    );
+  });
+  it("queues skill attachments with the expanded skill prompt", async () => {
+    await mkdir(join(dir, ".skills", "inspect"), { recursive: true });
+    await writeFile(
+      join(dir, ".skills", "inspect", "SKILL.md"),
+      "---\nname: inspect\ndescription: Inspect fixtures\n---\nRead the attached scope.",
+    );
+    const wait = deferred();
+    sdk.run.mockImplementation(async (input) => {
+      await wait.promise;
+      return result(input);
+    });
+    const started = await host.start({ prompt: "First turn" });
+    await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledOnce());
+    const queued = await host.requests.operatorAction({
+      sessionId: started.sessionId,
+      action: {
+        type: "skill",
+        slug: "inspect",
+        attachments: [
+          {
+            name: "scope.csv",
+            base64: Buffer.from("fixture").toString("base64"),
+          },
+        ],
+      },
+    });
+    expect(queued.queue[0].text).toContain("scope.csv");
+    wait.resolve();
+    await idle();
+    expect(sdk.run).toHaveBeenCalledTimes(2);
+    expect(sdk.run.mock.calls[1][0].prompt).toContain(
+      "Read the attached scope.",
+    );
+    expect(sdk.run.mock.calls[1][0].prompt).toContain("1-scope.csv");
   });
 });

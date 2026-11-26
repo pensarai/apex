@@ -1,3 +1,4 @@
+import { splitCommand } from "../commands";
 import type { OperatorSnapshot } from "./contract";
 
 export type SlashEntry = {
@@ -97,4 +98,15 @@ export function commandRange(
   )
     return;
   return { start: match[1].length, end: match[0].length };
+}
+
+export function parseSlashInput(text: string) {
+  const input = text.trim().slice(1);
+  const raw = input.split(/\s/, 1)[0].toLowerCase();
+  const command = COMMAND_ALIASES[raw] ?? raw;
+  return {
+    command,
+    arguments: command === "goal" ? [] : splitCommand(input).slice(1),
+    rest: input.slice(raw.length).trim(),
+  };
 }

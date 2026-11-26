@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandRange, slashEntries } from "./slash-commands";
+import { commandRange, parseSlashInput, slashEntries } from "./slash-commands";
 
 describe("composer slash catalog", () => {
   const skills = [
@@ -58,6 +58,24 @@ describe("command highlighting", () => {
     expect(commandRange("  /goal inspect /recon", skills)).toEqual({
       start: 2,
       end: 7,
+    });
+  });
+});
+
+describe("slash input parsing", () => {
+  it("preserves natural language and multiline goal objectives without shell quote parsing", () => {
+    const objective =
+      "Review the attached scope.csv. Don't stop early.\n\nUse the customer's test plan.";
+    expect(parseSlashInput(`/goal ${objective}`)).toEqual({
+      command: "goal",
+      arguments: [],
+      rest: objective,
+    });
+  });
+  it("keeps quoting and aliases for commands with structured arguments", () => {
+    expect(parseSlashInput('/tm --output "review notes.md"')).toMatchObject({
+      command: "threat-model",
+      arguments: ["--output", "review notes.md"],
     });
   });
 });

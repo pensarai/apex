@@ -70,6 +70,22 @@ describe("file goal host", () => {
     ).toEqual([]);
   });
 
+  it("keeps evidence before a kickoff out of the goal window when clients append context", async () => {
+    messages([
+      result("old proof"),
+      {
+        role: "user",
+        content: `${kickoffMessage(goal)}\n\nAttached files: scope.csv at /session/attachments/scope.csv`,
+      },
+      result("new proof"),
+      { role: "user", content: `${kickoffMessage(goal)} about something else` },
+    ]);
+    expect(await host().findEvidence(goal, ref("proof"))).toEqual([
+      { address: "local:ses_1/m2/p0", succeeded: true, inGoalWindow: true },
+      { address: "local:ses_1/m0/p0", succeeded: true, inGoalWindow: false },
+    ]);
+  });
+
   it("flags a command that exited nonzero inside an ordinary result", async () => {
     messages([
       { role: "user", content: kickoffMessage(goal) },

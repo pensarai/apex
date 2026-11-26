@@ -38,7 +38,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { splitCommand } from "../commands";
 import { runAppearanceCommand } from "../settings/appearance";
 import type { SettingsSnapshot, SettingsTab } from "../settings/contract";
 import { api } from "../view/bridge";
@@ -59,7 +58,7 @@ import { Processes } from "./Processes";
 import { Questions } from "./Questions";
 import { OperatorSetup } from "./Setup";
 import { SlashMenu } from "./SlashMenu";
-import { COMMAND_ALIASES, slashEntries } from "./slash-commands";
+import { parseSlashInput, slashEntries } from "./slash-commands";
 import { subagentActivity, subagentLabel } from "./subagent-presentation";
 import { hasSurfaceToolCall, surfaceReveal } from "./surface-reveal";
 import { ToolPicker } from "./ToolPicker";
@@ -263,10 +262,10 @@ export default function OperatorSessionView({
     if (!sessionId) return Promise.resolve(false);
     return perform(() => client.operatorAction({ sessionId, action: command }));
   }
-  async function newChat() {
+  async function newChat(clearAttachments = true) {
     await onNewSession();
     setText("");
-    setAttachments([]);
+    if (clearAttachments) setAttachments([]);
   }
   function addAttachments(files: File[]) {
     if (!files.length || busy) return;
@@ -320,15 +319,13 @@ export default function OperatorSessionView({
     const value = text.trim();
     const sessionId = state.sessionId;
     if ((!value && !attachments.length) || busy) return;
+    let consumedAttachments = !value.startsWith("/");
+    const encodedAttachments = () =>
+      encodeAttachments(attachments.map(({ file }) => file));
     if (value.startsWith("/")) {
-      if (attachments.length) {
-        setError("Send attachments with a message, not a slash command.");
-        return;
-      }
       setError("");
       try {
-        const [raw, ...args] = splitCommand(value.slice(1));
-        const cmd = COMMAND_ALIASES[raw?.toLowerCase()] ?? raw?.toLowerCase();
+        const { command: cmd, arguments: args, rest } = parseSlashInput(value);
         const noArgs = [
           "new",
           "plan",
@@ -357,9 +354,16 @@ export default function OperatorSessionView({
         switch (cmd) {
           case "goal":
             if (
-              !(await perform(() =>
-                client.operatorGoal({ command: value.slice(5).trim(), mode }),
-              ))
+              !(await perform(async () => {
+                const next = await client.operatorGoal({
+                  command: rest,
+                  mode,
+                  attachments: await encodedAttachments(),
+                });
+                consumedAttachments =
+                  !!next.goal && next.goal.id !== state.goal?.id;
+                return next;
+              }))
             )
               return;
             break;
@@ -374,20 +378,19 @@ export default function OperatorSessionView({
             await onRuns(value);
             break;
           case "new":
-            await newChat();
+            await newChat(false);
             break;
           case "operator":
           case "threat-model":
           case "prompt-injection": {
-            setText("");
-            if (cmd === "operator" && !args.length) {
+            if (cmd === "operator" && !args.length && !attachments.length) {
               await newChat();
               break;
             }
             setPrefill(await client.operatorArguments({ command: value }));
             setFormKey((n) => n + 1);
             setSetupOpen(true);
-            break;
+            return;
           }
           case "resume":
             if (!onSessions) throw new Error("Open Sessions from the sidebar.");
@@ -450,8 +453,9 @@ export default function OperatorSessionView({
               );
             if (!sessionId) {
               if (
-                !(await perform(() =>
+                !(await perform(async () =>
                   client.operatorStart({
+                    attachments: await encodedAttachments(),
                     skill: cmd,
                     skillArguments: args.filter((arg) => arg !== "--autopilot"),
                     mode: args.includes("--autopilot") ? "auto" : draftMode,
@@ -459,17 +463,25 @@ export default function OperatorSessionView({
                 ))
               )
                 return;
+              consumedAttachments = true;
               break;
             }
             if (
-              !(await action({
-                type: "skill",
-                slug: cmd,
-                autopilot: args.includes("--autopilot"),
-                arguments: args.filter((a) => a !== "--autopilot"),
-              }))
+              !(await perform(async () =>
+                client.operatorAction({
+                  sessionId,
+                  action: {
+                    type: "skill",
+                    attachments: await encodedAttachments(),
+                    slug: cmd,
+                    autopilot: args.includes("--autopilot"),
+                    arguments: args.filter((a) => a !== "--autopilot"),
+                  },
+                }),
+              ))
             )
               return;
+            consumedAttachments = true;
         }
       } catch (e) {
         setError(String(e));
@@ -504,7 +516,7 @@ export default function OperatorSessionView({
     )
       return;
     setText("");
-    setAttachments([]);
+    if (consumedAttachments) setAttachments([]);
     if (focused.current) input.current?.focus();
   };
   const active = !!state && state.status !== "idle";
@@ -1416,8 +1428,15 @@ export default function OperatorSessionView({
                     setBusy(true);
                     setError("");
                     try {
-                      if (state.sessionId) await onNewSession(options);
-                      else apply(await client.operatorStart(options));
+                      const launch = {
+                        ...options,
+                        attachments: await encodeAttachments(
+                          attachments.map(({ file }) => file),
+                        ),
+                      };
+                      if (state.sessionId) await onNewSession(launch);
+                      else apply(await client.operatorStart(launch));
+                      setAttachments([]);
                       setSetupOpen(false);
                       setPrefill(undefined);
                       setText("");

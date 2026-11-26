@@ -39,7 +39,10 @@ function goalWindowStart(messages: ModelMessage[], goal: Goal): number {
   const kickoff = kickoffMessage(goal);
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message?.role === "user" && textOf(message) === kickoff) return i;
+    if (message?.role !== "user") continue;
+    const text = textOf(message);
+    // Clients may append file references or other context after the objective.
+    if (text === kickoff || text.startsWith(`${kickoff}\n\n`)) return i;
   }
   return 0;
 }
