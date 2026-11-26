@@ -550,6 +550,41 @@
 .op-compose:focus-within {
   border-color: var(--color-border-strong);
 }
+.op-compose.op-compose-dragging {
+  border-color: var(--color-accent);
+}
+.op-attachment-hint {
+  color: var(--color-accent);
+  font-size: 12px;
+  padding: 4px;
+}
+.op-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.op-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  padding-left: 8px;
+  color: var(--color-fg-2);
+  font-size: 12px;
+}
+.op-attachment > svg {
+  flex-shrink: 0;
+}
+.op-attachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .op-compose textarea {
   min-height: 48px;
   max-height: 30vh;

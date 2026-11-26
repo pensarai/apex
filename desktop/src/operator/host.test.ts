@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +43,60 @@ describe("desktop operator", () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
+  });
+  it("delivers session-owned attachments on the first turn and queued follow-ups", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    sdk.run.mockImplementation(
+      async (value: OffensiveSecurityAgentClientInput) => {
+        await pending;
+        return {
+          session: value.session,
+          streamResult: { response: Promise.resolve({ messages: [] }) },
+        };
+      },
+    );
+    const attachment = {
+      name: "notes.txt",
+      base64: Buffer.from("Attachment contents").toString("base64"),
+    };
+    const { sessionId } = await host.start({ attachments: [attachment] });
+    try {
+      await vi.waitFor(() => expect(sdk.run).toHaveBeenCalledOnce());
+      const first = sdk.run.mock
+        .calls[0][0] as OffensiveSecurityAgentClientInput;
+      expect(first.prompt).toContain("Please analyze the attached files.");
+      const directory = (await readdir(first.session.rootPath)).find((name) =>
+        name.startsWith("attachments-"),
+      );
+      if (!directory) throw new Error("Missing attachment directory");
+      const path = join(first.session.rootPath, directory, "1-notes.txt");
+      expect(await readFile(path, "utf8")).toBe("Attachment contents");
+      expect(first.prompt).toContain(JSON.stringify(path));
+      const queued = await host.requests.operatorAction({
+        sessionId,
+        action: { type: "send", text: "Compare", attachments: [attachment] },
+      });
+      expect(queued.queue[0].text).toContain("notes.txt");
+    } finally {
+      finish();
+      await vi.waitFor(() =>
+        expect(host.requests.operatorState().status).toBe("idle"),
+      );
+    }
+    expect(sdk.run).toHaveBeenCalledTimes(2);
+    const second = sdk.run.mock
+      .calls[1][0] as OffensiveSecurityAgentClientInput;
+    expect(second.prompt).toContain("Compare");
+    expect(second.prompt).toContain("notes.txt");
+    const session = await sessions.get(sessionId);
+    const transcript = await readFile(
+      join(session.rootPath, "messages.json"),
+      "utf8",
+    );
+    expect(transcript).toContain("attachments-");
   });
   it("reads the session attack surface from persisted records, including updates and retirements", async () => {
     const { sessionId } = await host.start({ name: "Recon" });

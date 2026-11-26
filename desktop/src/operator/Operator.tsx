@@ -22,7 +22,15 @@ import {
   ResizablePanelGroup,
 } from "@pensarai/design-system/ui/resizable";
 import { Textarea } from "@pensarai/design-system/ui/textarea";
-import { ArrowUp, Network, ShieldAlert, Square } from "lucide-react";
+import {
+  ArrowUp,
+  File as FileIcon,
+  Network,
+  Paperclip,
+  ShieldAlert,
+  Square,
+  X,
+} from "lucide-react";
 import {
   Fragment,
   useCallback,
@@ -36,6 +44,7 @@ import { runAppearanceCommand } from "../settings/appearance";
 import type { SettingsSnapshot, SettingsTab } from "../settings/contract";
 import { api } from "../view/bridge";
 import { AttackSurface } from "./AttackSurface";
+import { encodeAttachments, validateAttachmentSizes } from "./attachments";
 import type { OperatorClient } from "./client";
 import type {
   OperatorAction,
@@ -105,6 +114,12 @@ export default function OperatorSessionView({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
+  const [attachments, setAttachments] = useState<{ id: string; file: File }[]>(
+    [],
+  );
+  const [draggingFiles, setDraggingFiles] = useState(false);
+  const dragDepth = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [agentPath, setAgentPath] = useState<string[]>([]);
   const [header, setHeader] = useState("");
   const [verbose, setVerbose] = useState(false);
@@ -220,6 +235,24 @@ export default function OperatorSessionView({
   async function newChat() {
     await onNewSession();
     setText("");
+    setAttachments([]);
+  }
+  function addAttachments(files: File[]) {
+    if (!files.length || busy) return;
+    try {
+      validateAttachmentSizes([
+        ...attachments.map(({ file }) => file),
+        ...files,
+      ]);
+      setAttachments((previous) => [
+        ...previous,
+        ...files.map((file) => ({ id: crypto.randomUUID(), file })),
+      ]);
+      setError("");
+      input.current?.focus();
+    } catch (error) {
+      setError(String(error));
+    }
   }
   function openPanel(next: Panel) {
     setPanel(next);
@@ -254,8 +287,13 @@ export default function OperatorSessionView({
   }, [isFocused]);
   const submit = async () => {
     const value = text.trim();
-    if (!value || busy) return;
+    const sessionId = state.sessionId;
+    if ((!value && !attachments.length) || busy) return;
     if (value.startsWith("/")) {
+      if (attachments.length) {
+        setError("Send attachments with a message, not a slash command.");
+        return;
+      }
       setError("");
       try {
         const [raw, ...args] = splitCommand(value.slice(1));
@@ -404,15 +442,36 @@ export default function OperatorSessionView({
         setError(String(e));
         return;
       }
-    } else if (!state?.sessionId) {
+    } else if (!sessionId) {
       if (
-        !(await perform(() =>
-          client.operatorStart({ prompt: value, mode: draftMode }),
+        !(await perform(async () =>
+          client.operatorStart({
+            prompt: value,
+            mode: draftMode,
+            attachments: await encodeAttachments(
+              attachments.map(({ file }) => file),
+            ),
+          }),
         ))
       )
         return;
-    } else if (!(await action({ type: "send", text: value }))) return;
+    } else if (
+      !(await perform(async () =>
+        client.operatorAction({
+          sessionId,
+          action: {
+            type: "send",
+            text: value,
+            attachments: await encodeAttachments(
+              attachments.map(({ file }) => file),
+            ),
+          },
+        }),
+      ))
+    )
+      return;
     setText("");
+    setAttachments([]);
     if (focused.current) input.current?.focus();
   };
   const active = !!state && state.status !== "idle";
@@ -711,7 +770,81 @@ export default function OperatorSessionView({
                     </div>
                   )}
                   {!current && (
-                    <div className="op-compose">
+                    <div
+                      className={`op-compose${draggingFiles ? " op-compose-dragging" : ""}`}
+                      role="group"
+                      aria-label="Message composer"
+                      onDragEnter={(event) => {
+                        if (!event.dataTransfer.types.includes("Files")) return;
+                        event.preventDefault();
+                        dragDepth.current++;
+                        setDraggingFiles(true);
+                      }}
+                      onDragOver={(event) => {
+                        if (!event.dataTransfer.types.includes("Files")) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = busy ? "none" : "copy";
+                      }}
+                      onDragLeave={(event) => {
+                        if (!event.dataTransfer.types.includes("Files")) return;
+                        event.preventDefault();
+                        if (--dragDepth.current <= 0) {
+                          dragDepth.current = 0;
+                          setDraggingFiles(false);
+                        }
+                      }}
+                      onDrop={(event) => {
+                        if (!event.dataTransfer.types.includes("Files")) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dragDepth.current = 0;
+                        setDraggingFiles(false);
+                        if (
+                          Array.from(event.dataTransfer.items).some(
+                            (item) => item.webkitGetAsEntry?.()?.isDirectory,
+                          )
+                        ) {
+                          setError("Drop individual files, not folders.");
+                          return;
+                        }
+                        addAttachments(Array.from(event.dataTransfer.files));
+                      }}
+                    >
+                      {draggingFiles && (
+                        <div className="op-attachment-hint">
+                          Drop files to attach
+                        </div>
+                      )}
+                      {!!attachments.length && (
+                        <ul
+                          className="op-attachments"
+                          aria-label="Attached files"
+                        >
+                          {attachments.map(({ id, file }) => (
+                            <li
+                              key={id}
+                              className="op-attachment"
+                              title={file.name}
+                            >
+                              <FileIcon size={14} aria-hidden="true" />
+                              <span>{file.name}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={busy}
+                                aria-label={`Remove ${file.name}`}
+                                onClick={() =>
+                                  setAttachments((previous) =>
+                                    previous.filter((entry) => entry.id !== id),
+                                  )
+                                }
+                              >
+                                <X size={12} aria-hidden="true" />
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {state.queue.map((q) => (
                         <div key={q.id} className="op-queued">
                           <span>{q.text}</span>
@@ -763,6 +896,7 @@ export default function OperatorSessionView({
                         ref={input}
                         aria-label="Operator message"
                         value={text}
+                        disabled={busy}
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={(e) => {
                           if (
@@ -791,6 +925,29 @@ export default function OperatorSessionView({
                       />
                       <div className="op-compose-controls">
                         <div className="op-mode-controls">
+                          <input
+                            ref={fileInput}
+                            type="file"
+                            multiple
+                            hidden
+                            aria-label="Choose attachments"
+                            onChange={(event) => {
+                              addAttachments(
+                                Array.from(event.target.files ?? []),
+                              );
+                              event.target.value = "";
+                            }}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Attach files"
+                            title="Attach files (up to 20 MB per message)"
+                            disabled={busy}
+                            onClick={() => fileInput.current?.click()}
+                          >
+                            <Paperclip size={14} aria-hidden="true" />
+                          </Button>
                           <Button
                             size="xs"
                             variant="ghost"
@@ -856,7 +1013,7 @@ export default function OperatorSessionView({
                               busy ||
                               state.status === "stopping" ||
                               (!active &&
-                                (!text.trim() ||
+                                ((!text.trim() && !attachments.length) ||
                                   !!state.questions ||
                                   state.reviewPlan))
                             }

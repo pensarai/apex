@@ -79,6 +79,7 @@ import {
 } from "../../../src/tui/components/operator-dashboard/subagent-state";
 import { updateWorkflowDataMessage } from "../../../src/tui/components/operator-dashboard/workflow-data";
 import { operatorArguments } from "./arguments";
+import { attachFilesToPrompt, decodeAttachments } from "./attachments-host";
 import type {
   OperatorAction,
   OperatorLaunch,
@@ -330,6 +331,11 @@ class OperatorHost {
   }
   start = async (input: OperatorLaunch) =>
     this.switchSession(async () => {
+      const attachments = decodeAttachments(input.attachments);
+      if (input.skill && attachments.length)
+        throw new Error(
+          "Send attachments with a message, not a slash command.",
+        );
       const cfg = await config.get();
       const currentModel = this.resolveModel(cfg, input.model);
       let headers = input.headers;
@@ -405,7 +411,15 @@ class OperatorHost {
               })
             : `<skill name="prompt-injection">\nWorking directory: ${cwd}\nTarget: ${input.target ?? ""}\nLibrary: ${input.promptInjectionLibrarySource ?? ""}\n\n${content}\n</skill>`;
         this.run(prompt, `/${input.skill}`);
-      } else if (input.prompt) this.run(input.prompt, input.displayPrompt);
+      } else if (input.prompt || attachments.length) {
+        const prompt = await attachFilesToPrompt(
+          session.rootPath,
+          input.prompt ?? "",
+          attachments,
+        );
+        this.ensureOpen();
+        this.run(prompt, attachments.length ? undefined : input.displayPrompt);
+      }
       this.publish();
       return { ...this.snapshot(), sessionId: session.id };
     });
@@ -878,9 +892,18 @@ class OperatorHost {
     if (this.changing || !session || sessionId !== session.id)
       throw new Error("The active operator session changed.");
     switch (action.type) {
-      case "send":
-        this.submit(action.text.trim());
+      case "send": {
+        if (this.questions || this.reviewPlan)
+          throw new Error("Resolve the pending review first.");
+        const prompt = await attachFilesToPrompt(
+          session.rootPath,
+          action.text.trim(),
+          decodeAttachments(action.attachments),
+        );
+        this.ensureOpen();
+        this.submit(prompt);
         break;
+      }
       case "skill": {
         if (session.config?.operatorSettings?.lanceMode)
           throw new Error("Lance accepts direct objectives only.");

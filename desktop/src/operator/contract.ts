@@ -7,7 +7,13 @@ import type { OperatorFrame } from "./live";
 
 export type OperatorMode = "manual" | "auto" | "plan";
 
+export interface OperatorAttachment {
+  name: string;
+  base64: string;
+}
+
 export interface OperatorLaunch {
+  attachments?: OperatorAttachment[];
   skill?: "threat-model" | "prompt-injection";
   skillOutput?: string;
   target?: string;
@@ -113,7 +119,7 @@ export interface OperatorSnapshot {
 }
 
 export type OperatorAction =
-  | { type: "send"; text: string }
+  | { type: "send"; text: string; attachments?: OperatorAttachment[] }
   | { type: "skill"; slug: string; autopilot?: boolean; arguments?: string[] }
   | { type: "mode"; mode: OperatorMode }
   | { type: "model"; id: string }
