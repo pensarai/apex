@@ -34,9 +34,9 @@ import type {
 import {
   AgentEventBus,
   type AgentMode,
-  ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
   type FindingPolicy,
+  OPERATOR_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../core/agents/offSecAgent";
@@ -1043,7 +1043,9 @@ export default function OperatorDashboard({
           : {}),
         target: initialConfig?.target,
         activeTools: [
-          ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+          ...(agentMode === "plan"
+            ? PLAN_MODE_TOOL_NAMES
+            : OPERATOR_TOOL_NAMES),
           ...SKILL_TOOL_NAMES,
           ...(activeGoal ? [UPDATE_GOAL_TOOL_NAME] : []),
         ] as string[],

@@ -764,8 +764,19 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
+/** Operator recon uses topology tools; endpoint-oriented workflows keep their own rosters. */
+export const OPERATOR_TOOL_NAMES: ToolName[] = ALL_TOOL_NAMES.filter(
+  (name) =>
+    name !== "document_app" &&
+    name !== "document_endpoint" &&
+    name !== "run_attack_surface" &&
+    name !== "spawn_coding_agent",
+);
+
 /** Orchestration/ceremony tools excluded from fast-strike mode (registry minus this list). */
 export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
+  "document_app",
+  "document_endpoint",
   // Sub-agents / workflow
   "run_attack_surface",
   "spawn_pentest_swarm",

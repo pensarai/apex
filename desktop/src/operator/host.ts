@@ -3,9 +3,9 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
 import { DEFAULT_LANCE_BUDGET } from "../../../src/core/agents/lanceBudget";
 import {
-  ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
   type CommandCancelHandle,
+  OPERATOR_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../src/core/agents/offSecAgent";
@@ -820,7 +820,9 @@ class OperatorHost {
           : undefined,
         activeTools: [
           ...selectedTools(session, [
-            ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+            ...(agentMode === "plan"
+              ? PLAN_MODE_TOOL_NAMES
+              : OPERATOR_TOOL_NAMES),
             ...SKILL_TOOL_NAMES,
           ]),
           ...(turnGoal ? [UPDATE_GOAL_TOOL_NAME] : []),

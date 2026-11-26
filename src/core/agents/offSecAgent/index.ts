@@ -99,6 +99,7 @@ export {
   listWorkspaceApps,
   listWorkspaceDomains,
   listWorkspaceEndpoints,
+  OPERATOR_TOOL_NAMES,
   PentestReportedError,
   PerCommandShell,
   PLAN_MODE_TOOL_NAMES,

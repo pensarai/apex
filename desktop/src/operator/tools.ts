@@ -1,12 +1,12 @@
 import {
-  ALL_TOOL_NAMES,
+  OPERATOR_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../../../src/core/agents/offSecAgent";
 import { type SessionInfo, sessions } from "../../../src/core/session";
 import { sessionId } from "../bun/workspace";
 
 const catalog = [
-  ...new Set<string>([...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES]),
+  ...new Set<string>([...OPERATOR_TOOL_NAMES, ...SKILL_TOOL_NAMES]),
 ].sort();
 export function selectedTools(
   session: SessionInfo | undefined,

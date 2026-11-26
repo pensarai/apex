@@ -683,7 +683,7 @@ async function runOperator() {
   const { sessions, normalizeMessages, getResumeMessages } = await import(
     "./core/session"
   );
-  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
+  const { OPERATOR_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
     "./core/agents/offSecAgent"
   );
   const { config: appConfig } = await import("./core/config");
@@ -776,7 +776,10 @@ ${sep}\n`);
             model,
             reasoning,
             target,
-            activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+            activeTools: [
+              ...OPERATOR_TOOL_NAMES,
+              ...SKILL_TOOL_NAMES,
+            ] as string[],
             stopWhen: stepCountIs(10000),
             authConfig: buildAuthConfig(pensarConfig),
             eventBus: bus,

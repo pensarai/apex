@@ -32,6 +32,26 @@ describe("unconfined workspace guidance", () => {
 describe("buildBaseSystemPrompt workspace management", () => {
   const prompt = buildBaseSystemPrompt();
 
+  it("directs recon to generalized topology tools and workers", () => {
+    for (const name of [
+      "document_boundary",
+      "document_component",
+      "document_flow",
+      "document_control",
+      "document_threat",
+      "review_topology",
+      "spawn_recon_agent",
+    ])
+      expect(prompt).toContain(name);
+    for (const name of [
+      "document_app",
+      "document_endpoint",
+      "run_attack_surface",
+      "spawn_coding_agent",
+    ])
+      expect(prompt).not.toContain(name);
+  });
+
   it("routes explicit authenticated workspace mutations to in-process tools", () => {
     expect(prompt).toContain("**create_workspace_domain**");
     expect(prompt).toContain("**create_workspace_app**");
@@ -60,7 +80,7 @@ describe("buildBaseSystemPrompt workspace management", () => {
       "This does not update the authenticated Pensar workspace",
     );
     expect(prompt).toContain(
-      "Do not substitute `document_app`, `document_endpoint`, shell-based `pensar apps` commands, attack-surface discovery, or threat-model generation",
+      "Do not substitute session topology documentation, shell-based `pensar apps` commands, attack-surface discovery, or threat-model generation",
     );
   });
 

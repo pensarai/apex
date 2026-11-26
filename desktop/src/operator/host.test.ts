@@ -8,6 +8,7 @@ import { config } from "../../../src/core/config";
 import { planFilePath } from "../../../src/core/plan";
 import { sessions } from "../../../src/core/session";
 import { createOperatorHost } from "./host";
+import { toolRequests } from "./tools";
 
 const sdk = vi.hoisted(() => ({ run: vi.fn(), abort: vi.fn() }));
 vi.mock("../../../src/core/api", () => ({
@@ -43,6 +44,38 @@ describe("desktop operator", () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
+  });
+  it("uses generalized recon on resumed sessions even with saved legacy tools enabled", async () => {
+    sdk.run.mockImplementation(async (input) => ({
+      session: input.session,
+      streamResult: { response: { messages: [] } },
+    }));
+    const { sessionId } = await host.start({ name: "Recon" });
+    const legacyTools = [
+      "document_app",
+      "document_endpoint",
+      "run_attack_surface",
+      "spawn_coding_agent",
+    ];
+    for (const name of legacyTools)
+      await sessions.toggleTool(sessionId, name, true);
+    await host.requests.operatorResume({ id: sessionId });
+    await host.requests.operatorAction({
+      sessionId,
+      action: { type: "send", text: "Continue mapping the attack surface" },
+    });
+    await vi.waitFor(() =>
+      expect(host.requests.operatorState().status).toBe("idle"),
+    );
+    const input = sdk.run.mock.lastCall?.[0];
+    expect(input.activeTools).toContain("document_component");
+    expect(input.activeTools).toContain("spawn_recon_agent");
+    const catalog = await toolRequests.toolSelection({ id: sessionId });
+    for (const name of legacyTools) {
+      expect(input.activeTools).not.toContain(name);
+      expect(input.system).not.toContain(name);
+      expect(catalog.map((tool) => tool.name)).not.toContain(name);
+    }
   });
   it("delivers session-owned attachments on the first turn and queued follow-ups", async () => {
     let finish!: () => void;

@@ -1,8 +1,8 @@
 import { stepCountIs } from "ai";
 import {
-  ALL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
   buildBaseSystemPrompt,
+  OPERATOR_TOOL_NAMES,
   SKILL_TOOL_NAMES,
 } from "../agents/offSecAgent";
 import type { AIAuthConfig, AIModel } from "../ai";
@@ -14,7 +14,7 @@ import { createSkillsRegistry } from "../skills";
 import { buildThreatModelPrompt } from "../skills/builtins";
 
 // Headless — no TTY, so strip ask_user_questions from the active set.
-const HEADLESS_TOOL_NAMES = ALL_TOOL_NAMES.filter(
+const HEADLESS_TOOL_NAMES = OPERATOR_TOOL_NAMES.filter(
   (name) => name !== ASK_USER_QUESTIONS_TOOL_NAME,
 );
 

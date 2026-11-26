@@ -3,10 +3,10 @@ import type { SessionInfo } from "../../../session";
 import { createToolsetState, toggleTool } from "../../../toolset";
 import { inProcessSubagentSpawner } from "../../offSecAgent/subagentSpawner";
 import {
-  ALL_TOOL_NAMES,
   createToolsForNames,
   FAST_STRIKE_EXCLUDED_TOOL_NAMES,
   listToolRegistryNames,
+  OPERATOR_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
 } from "../../offSecAgent/tools";
 import type { ToolContext } from "../../offSecAgent/tools/types";
@@ -63,6 +63,19 @@ describe("recon toolsets", () => {
 });
 
 describe("operator reconnaissance access", () => {
+  it("excludes legacy recon entry points from operator and strike mode", () => {
+    for (const name of [
+      "document_app",
+      "document_endpoint",
+      "run_attack_surface",
+      "spawn_coding_agent",
+    ] as const) {
+      expect(OPERATOR_TOOL_NAMES).not.toContain(name);
+      expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).toContain(name);
+      expect(PLAN_MODE_TOOL_NAMES).not.toContain(name);
+    }
+  });
+
   const topologyTools = [
     "document_boundary",
     "document_component",
@@ -85,7 +98,7 @@ describe("operator reconnaissance access", () => {
       agentCwd: "/tmp",
     } as ToolContext;
     const selected = topologyTools.filter((name) =>
-      ALL_TOOL_NAMES.includes(name),
+      OPERATOR_TOOL_NAMES.includes(name),
     );
     expect(Object.keys(createToolsForNames(ctx, selected)).sort()).toEqual(
       [...topologyTools].sort(),

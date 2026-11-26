@@ -777,6 +777,13 @@ describe("buildOperatorSystemPrompt", () => {
       "A threat is a hypothesis to test, not a confirmed vulnerability",
     );
     expect(prompt).toContain("honor the operator's approval settings");
+    for (const name of [
+      "document_app",
+      "document_endpoint",
+      "run_attack_surface",
+      "spawn_coding_agent",
+    ])
+      expect(prompt).not.toContain(name);
   });
 
   it.each([
