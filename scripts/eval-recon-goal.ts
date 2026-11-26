@@ -32,9 +32,13 @@ const { values } = parseArgs({
   },
   strict: true,
 });
-if (!values.fixture || !values.output || values.arm !== "goal")
+if (
+  !values.fixture ||
+  !values.output ||
+  !["goal", "baseline"].includes(values.arm ?? "")
+)
   throw new Error(
-    "Usage: --arm goal --fixture <customer-source-repo> --output <new-directory>",
+    "Usage: --arm goal|baseline --fixture <customer-source-repo> --output <new-directory>",
   );
 const minutes = Number(values.minutes),
   dollars = Number(values.dollars);
@@ -242,6 +246,9 @@ writeFileSync(
   JSON.stringify(
     {
       arm: values.arm,
+      goalEnabled: values.arm === "goal",
+      auditEnabled: false,
+      workSteps: 100,
       model,
       commit,
       fixture,
@@ -275,7 +282,10 @@ try {
     excludeTools: GENERALIZED_ATTACK_SURFACE_TOOLS.filter(
       (t) => !allowed.has(t),
     ),
-    goal: { objective, maxRounds: 4, workSteps: 100 },
+    stepLimit: 100,
+    ...(values.arm === "goal"
+      ? { goal: { objective, maxRounds: 4, workSteps: 100 } }
+      : {}),
   });
 } catch (e) {
   status = "failed";

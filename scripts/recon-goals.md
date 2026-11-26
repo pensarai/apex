@@ -59,11 +59,19 @@ a revised objective or budget.
 
 ## Bounded evaluation
 
-`scripts/eval-recon-goal.ts` runs the goal path with source-only backends, an allowlist
+`scripts/eval-recon-goal.ts` runs either the goal path (`--arm goal`) or ordinary
+recon (`--arm baseline`) with source-only backends, an allowlist
 of source-navigation/topology tools, and no target network, browser, shell or inbox
 access. The default budget is ten minutes and $12 estimated usage. Provider usage
 is a catalog estimate, not an invoice or a strict spending cap. All terminal outcomes
 retain topology and metrics, including incomplete runs.
+
+The baseline omits `goal` entirely and includes no audit implementation. Both arms
+use the same operator objective, tools and 100-step work limit; the goal arm can
+perform up to four goal rounds. Run each arm into a fresh output directory with
+identical source, model, origins and budgets. Ordinary recon retains its existing
+missing-report continuation behavior. Input metadata records the selected arm,
+and results retain the goal state (absent for the baseline).
 
 Use only generated customer repositories from the
 [balanced fixture](https://github.com/pensarai/recon-eval-environments/pull/1), not
@@ -89,6 +97,6 @@ Keep the evaluator answer key, ratings and score files outside the agent scope.
 
 The preserved experimental branch `codex/recon-persistent-goals` contains the
 paired goal/audit runner and historical comparisons. This replacement branch keeps
-only the goal runner so closing the audit PR does not reintroduce its architecture
+only the goal/plain recon runner so closing the audit PR does not reintroduce its architecture
 through the new PR. The audit baseline is preserved at Apex `d07b62a6` and Console
 `2e10deb95`; no branches or evidence are deleted when their PRs close.
