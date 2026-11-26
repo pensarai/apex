@@ -4,6 +4,11 @@ import type { Goal } from "../../../src/core/goals/types";
 import type { DisplayReasoning } from "../../../src/core/session/persistence";
 import type { WorkflowData } from "../../../src/core/workflows/pentest-progress";
 
+import type {
+  BrowserEvent,
+  BrowserInput,
+  BrowserState,
+} from "../browser/contract";
 import type { OperatorFrame } from "./live";
 
 export type OperatorMode = "manual" | "auto" | "plan";
@@ -157,6 +162,10 @@ export type OperatorAction =
   | { type: "open-folder" };
 type Call<P, R> = { params: P; response: R };
 export type OperatorSessionRequests = {
+  operatorBrowserAttach: Call<{ id: string; viewId: number }, void>;
+  operatorBrowserWatch: Call<{ key: string }, BrowserState>;
+  operatorBrowserUnwatch: Call<{ key: string }, void>;
+  operatorBrowserInput: Call<{ input: BrowserInput }, BrowserState>;
   operatorSkills: Call<void, OperatorSnapshot["skills"]>;
   operatorGoal: Call<
     {
@@ -201,5 +210,6 @@ export type OperatorRequests = {
   operatorSetDirectory: Call<{ tabId: string; cwd: string }, string>;
 };
 export type OperatorMessages = {
+  operatorBrowser: { tabId: string; event: BrowserEvent };
   operatorSnapshot: { tabId: string; frame: OperatorFrame };
 };

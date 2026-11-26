@@ -45,6 +45,52 @@ describe("desktop operator", () => {
     vi.unstubAllEnvs();
     await rm(dir, { recursive: true, force: true });
   });
+  it("supplies the same lazy browser to successive local operator turns", async () => {
+    sdk.run.mockImplementation(async (input) => ({
+      session: input.session,
+      streamResult: { response: { messages: [] } },
+    }));
+    const { sessionId } = await host.start({ name: "Shared browser" });
+    for (const text of [
+      "Inspect the current page",
+      "Continue on the same page",
+    ]) {
+      await host.requests.operatorAction({
+        sessionId,
+        action: { type: "send", text },
+      });
+      await vi.waitFor(() =>
+        expect(host.requests.operatorState().status).toBe("idle"),
+      );
+    }
+    const first = sdk.run.mock.calls[0][0];
+    const second = sdk.run.mock.calls[1][0];
+    expect(first.browserSession).toBeDefined();
+    expect(second.browserSession).toBe(first.browserSession);
+    expect(first.system).toContain("same persistent browser");
+    await host.close();
+  });
+  it("keeps remote sessions on their sandbox browser", async () => {
+    sdk.run.mockImplementation(async (input) => ({
+      session: input.session,
+      streamResult: { response: { messages: [] } },
+    }));
+    const { sessionId } = await host.start({
+      name: "Remote browser",
+      sandbox: true,
+    });
+    await host.requests.operatorAction({
+      sessionId,
+      action: { type: "send", text: "Inspect the page" },
+    });
+    await vi.waitFor(() =>
+      expect(host.requests.operatorState().status).toBe("idle"),
+    );
+    expect(sdk.run.mock.calls[0][0].browserSession).toBeUndefined();
+    expect(() => host.requests.operatorBrowserWatch({ key: "panel" })).toThrow(
+      "local sessions",
+    );
+  });
   it("uses generalized recon on resumed sessions even with saved legacy tools enabled", async () => {
     sdk.run.mockImplementation(async (input) => ({
       session: input.session,

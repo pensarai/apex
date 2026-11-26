@@ -7,7 +7,7 @@ import { sessionId } from "./workspace";
 
 export function createFileRequests(options: {
   cwd: () => string;
-  openPath: (path: string) => boolean;
+  openPath: (path: string) => boolean | Promise<boolean>;
   requireAcceptance: () => void;
 }) {
   return {
@@ -44,7 +44,7 @@ export function createFileRequests(options: {
             continue;
           throw error;
         }
-        if (!options.openPath(candidate))
+        if (!(await options.openPath(candidate)))
           throw new Error(`Could not open ${file.name}.`);
         return;
       }

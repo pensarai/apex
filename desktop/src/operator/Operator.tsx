@@ -24,6 +24,7 @@ import {
 import {
   ArrowUp,
   File as FileIcon,
+  Globe,
   Network,
   Paperclip,
   ShieldAlert,
@@ -38,6 +39,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { Browser } from "../browser/Browser";
+import { type BrowserLink, BrowserLinkContext } from "../browser/links";
+import { NativeViews } from "../browser/NativeViews";
 import { runAppearanceCommand } from "../settings/appearance";
 import type { SettingsSnapshot, SettingsTab } from "../settings/contract";
 import { api } from "../view/bridge";
@@ -155,6 +159,11 @@ export default function OperatorSessionView({
   const [verbose, setVerbose] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [browserViewport, setBrowserViewport] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const browserTrigger = useRef<HTMLButtonElement>(null);
   const [surfaceOpen, setSurfaceOpen] = useState(false);
   const [processesOpen, setProcessesOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -164,7 +173,7 @@ export default function OperatorSessionView({
   const runningProcesses = processes.filter(
     (job) => job.status === "running",
   ).length;
-  const sidebarOpen = surfaceOpen || processesOpen || issuesOpen;
+  const sidebarOpen = surfaceOpen || processesOpen || issuesOpen || browserOpen;
   const surfaceActivity = hasSurfaceToolCall(state);
   useEffect(() => {
     if (
@@ -172,8 +181,14 @@ export default function OperatorSessionView({
       surfaceActivity &&
       surfaceReveal.claim(state.sessionId)
     )
-      setSurfaceOpen(!processesOpen && !issuesOpen);
-  }, [state.sessionId, surfaceActivity, processesOpen, issuesOpen]);
+      setSurfaceOpen(!processesOpen && !issuesOpen && !browserOpen);
+  }, [
+    state.sessionId,
+    surfaceActivity,
+    processesOpen,
+    issuesOpen,
+    browserOpen,
+  ]);
   const surfaceId = useId();
   const surfaceWidth = useRef(50);
   const surfaceTrigger = useRef<HTMLButtonElement>(null);
@@ -533,721 +548,472 @@ export default function OperatorSessionView({
     );
     setInspecting(false);
   };
+  const openBrowserLink = useCallback(
+    async (link: BrowserLink) => {
+      setSurfaceOpen(false);
+      setIssuesOpen(false);
+      setProcessesOpen(false);
+      setBrowserOpen(true);
+      await client.operatorBrowserInput({ input: link });
+    },
+    [client],
+  );
   const cancelCommandId =
     state.status === "running" ? runningCommandId(state.messages) : undefined;
   return (
-    <div className="op-page" ref={page}>
-      {(state?.sessionId || inspecting) && (
-        <header>
-          <div>
-            <h1 className="op-session-title">
-              {state?.sessionId ? state.name || "Operator" : "New session"}
-            </h1>
-          </div>
-          <div className="actions">
-            {state.sessionId && (
+    <BrowserLinkContext.Provider value={openBrowserLink}>
+      <div className="op-page" ref={page}>
+        <NativeViews
+          client={client}
+          visible={visible && browserOpen}
+          viewport={browserViewport}
+        />
+        {state && (
+          <header>
+            <div>
+              <h1 className="op-session-title">
+                {state?.sessionId ? state.name || "Operator" : "New session"}
+              </h1>
+            </div>
+            <div className="actions">
               <Button
                 size="sm"
-                ref={surfaceTrigger}
-                aria-expanded={surfaceOpen}
-                aria-controls={surfaceOpen ? surfaceId : undefined}
-                onClick={() => {
-                  if (state.sessionId) surfaceReveal.markShown(state.sessionId);
-                  setProcessesOpen(false);
-                  setIssuesOpen(false);
-                  setSurfaceOpen((open) => !open);
-                }}
+                ref={browserTrigger}
+                disabled={busy}
+                aria-expanded={browserOpen}
+                aria-controls={browserOpen ? surfaceId : undefined}
+                onClick={() =>
+                  void (async () => {
+                    if (
+                      !state.sessionId &&
+                      !(await perform(() => client.operatorStart({ mode })))
+                    )
+                      return;
+                    setSurfaceOpen(false);
+                    setIssuesOpen(false);
+                    setProcessesOpen(false);
+                    setBrowserOpen((open) => !open);
+                  })()
+                }
               >
-                <Network size={14} aria-hidden="true" />
-                Attack surface
+                <Globe size={14} aria-hidden="true" /> Browser
               </Button>
-            )}
-            {state.sessionId && (
+              {state.sessionId && (
+                <Button
+                  size="sm"
+                  ref={surfaceTrigger}
+                  aria-expanded={surfaceOpen}
+                  aria-controls={surfaceOpen ? surfaceId : undefined}
+                  onClick={() => {
+                    if (state.sessionId)
+                      surfaceReveal.markShown(state.sessionId);
+                    setProcessesOpen(false);
+                    setIssuesOpen(false);
+                    setBrowserOpen(false);
+                    setSurfaceOpen((open) => !open);
+                  }}
+                >
+                  <Network size={14} aria-hidden="true" />
+                  Attack surface
+                </Button>
+              )}
+              {state.sessionId && (
+                <Button
+                  size="sm"
+                  ref={issuesTrigger}
+                  aria-expanded={issuesOpen}
+                  aria-controls={issuesOpen ? surfaceId : undefined}
+                  onClick={() => {
+                    setSurfaceOpen(false);
+                    setProcessesOpen(false);
+                    setBrowserOpen(false);
+                    setIssuesOpen((open) => !open);
+                  }}
+                >
+                  <ShieldAlert size={14} aria-hidden="true" />
+                  Issues
+                </Button>
+              )}
               <Button
                 size="sm"
-                ref={issuesTrigger}
-                aria-expanded={issuesOpen}
-                aria-controls={issuesOpen ? surfaceId : undefined}
-                onClick={() => {
-                  setSurfaceOpen(false);
-                  setProcessesOpen(false);
-                  setIssuesOpen((open) => !open);
-                }}
+                aria-pressed={inspecting}
+                onClick={() => setInspecting(!inspecting)}
               >
-                <ShieldAlert size={14} aria-hidden="true" />
-                Issues
+                {inspecting ? "Hide details" : "Details"}
               </Button>
-            )}
-            <Button
-              size="sm"
-              aria-pressed={inspecting}
-              onClick={() => setInspecting(!inspecting)}
+            </div>
+          </header>
+        )}
+        {error && <p role="alert">{error}</p>}
+        {!state ? (
+          <p className="empty">
+            {error ? "Unable to open operator." : "Opening operator…"}
+          </p>
+        ) : (
+          <>
+            <ResizablePanelGroup
+              orientation="horizontal"
+              className="op-session-content"
+              onLayoutChanged={(layout) => {
+                if (sidebarOpen && layout[surfaceId] !== undefined)
+                  surfaceWidth.current = layout[surfaceId];
+              }}
             >
-              {inspecting ? "Hide details" : "Details"}
-            </Button>
-          </div>
-        </header>
-      )}
-      {error && <p role="alert">{error}</p>}
-      {!state ? (
-        <p className="empty">
-          {error ? "Unable to open operator." : "Opening operator…"}
-        </p>
-      ) : (
-        <>
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="op-session-content"
-            onLayoutChanged={(layout) => {
-              if (sidebarOpen && layout[surfaceId] !== undefined)
-                surfaceWidth.current = layout[surfaceId];
-            }}
-          >
-            <ResizablePanel
-              id={`${surfaceId}-conversation`}
-              minSize="25%"
-              defaultSize={`${100 - surfaceWidth.current}%`}
-              className="op-conversation-panel"
-            >
-              <div
-                className={`op-body${inspecting ? " op-with-inspector" : ""}`}
+              <ResizablePanel
+                id={`${surfaceId}-conversation`}
+                minSize="25%"
+                defaultSize={`${100 - surfaceWidth.current}%`}
+                className="op-conversation-panel"
               >
                 <div
-                  className={`op-chat${state.sessionId ? "" : " op-chat-empty"}`}
+                  className={`op-body${inspecting ? " op-with-inspector" : ""}`}
                 >
-                  {current && (
-                    <div className="op-agent-context">
-                      <Breadcrumb aria-label="Conversation path">
-                        <BreadcrumbList>
-                          <BreadcrumbItem>
-                            <BreadcrumbLink asChild>
-                              <button
-                                type="button"
-                                onClick={() => setAgentPath([])}
-                              >
-                                Operator
-                              </button>
-                            </BreadcrumbLink>
-                          </BreadcrumbItem>
-                          {path.map((agent, index) => (
-                            <Fragment key={agent.id}>
-                              <BreadcrumbSeparator />
-                              <BreadcrumbItem>
-                                {index === path.length - 1 ? (
-                                  <BreadcrumbPage>
-                                    {subagentLabel(
-                                      agent,
-                                      state.subagents.indexOf(agent),
-                                    )}
-                                  </BreadcrumbPage>
-                                ) : (
-                                  <BreadcrumbLink asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setAgentPath(
-                                          path
-                                            .slice(0, index + 1)
-                                            .map((entry) => entry.id),
-                                        )
-                                      }
-                                    >
+                  <div
+                    className={`op-chat${state.sessionId ? "" : " op-chat-empty"}`}
+                  >
+                    {current && (
+                      <div className="op-agent-context">
+                        <Breadcrumb aria-label="Conversation path">
+                          <BreadcrumbList>
+                            <BreadcrumbItem>
+                              <BreadcrumbLink asChild>
+                                <button
+                                  type="button"
+                                  onClick={() => setAgentPath([])}
+                                >
+                                  Operator
+                                </button>
+                              </BreadcrumbLink>
+                            </BreadcrumbItem>
+                            {path.map((agent, index) => (
+                              <Fragment key={agent.id}>
+                                <BreadcrumbSeparator />
+                                <BreadcrumbItem>
+                                  {index === path.length - 1 ? (
+                                    <BreadcrumbPage>
                                       {subagentLabel(
                                         agent,
                                         state.subagents.indexOf(agent),
                                       )}
-                                    </button>
-                                  </BreadcrumbLink>
-                                )}
-                              </BreadcrumbItem>
-                            </Fragment>
-                          ))}
-                        </BreadcrumbList>
-                      </Breadcrumb>
-                      <span className="op-agent-view-status">
-                        {current.status === "cancelled"
-                          ? "Interrupted"
-                          : current.status}{" "}
-                        · Read-only
-                      </span>
-                      {current.input != null && (
-                        <details className="op-agent-objective">
-                          <summary>Objective</summary>
-                          <pre>{JSON.stringify(current.input, null, 2)}</pre>
-                        </details>
-                      )}
-                    </div>
-                  )}
-                  {state.sessionId ? (
-                    <>
-                      <div className="op-transcript-view" hidden={!!current}>
-                        <Transcript
-                          key={state.sessionId}
-                          screenshot={client.operatorScreenshot}
-                          visible={visible && !current}
-                          messages={state.messages}
-                          sessionId={state.sessionId}
-                          activity={state.activity}
-                          modelLoading={state.modelLoading}
-                          subagents={state.subagents}
-                          onSelectSubagent={openSubagent}
-                          cancelCommandId={cancelCommandId}
-                          commandBusy={busy}
-                          onCancelCommand={(toolCallId) =>
-                            void action({ type: "cancel-command", toolCallId })
-                          }
-                          verbose={verbose}
-                        />
+                                    </BreadcrumbPage>
+                                  ) : (
+                                    <BreadcrumbLink asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setAgentPath(
+                                            path
+                                              .slice(0, index + 1)
+                                              .map((entry) => entry.id),
+                                          )
+                                        }
+                                      >
+                                        {subagentLabel(
+                                          agent,
+                                          state.subagents.indexOf(agent),
+                                        )}
+                                      </button>
+                                    </BreadcrumbLink>
+                                  )}
+                                </BreadcrumbItem>
+                              </Fragment>
+                            ))}
+                          </BreadcrumbList>
+                        </Breadcrumb>
+                        <span className="op-agent-view-status">
+                          {current.status === "cancelled"
+                            ? "Interrupted"
+                            : current.status}{" "}
+                          · Read-only
+                        </span>
+                        {current.input != null && (
+                          <details className="op-agent-objective">
+                            <summary>Objective</summary>
+                            <pre>{JSON.stringify(current.input, null, 2)}</pre>
+                          </details>
+                        )}
                       </div>
-                      {path.map((agent) => (
-                        <div
-                          className="op-transcript-view"
-                          key={agent.id}
-                          hidden={agent.id !== current?.id}
-                        >
+                    )}
+                    {state.sessionId ? (
+                      <>
+                        <div className="op-transcript-view" hidden={!!current}>
                           <Transcript
+                            key={state.sessionId}
                             screenshot={client.operatorScreenshot}
-                            visible={visible && agent.id === current?.id}
-                            messages={agent.messages}
-                            sessionId={state.sessionId ?? ""}
-                            agentId={agent.id}
-                            activity={subagentActivity(agent)}
-                            modelLoading={agent.modelLoading ?? undefined}
+                            visible={visible && !current}
+                            messages={state.messages}
+                            sessionId={state.sessionId}
+                            activity={state.activity}
+                            modelLoading={state.modelLoading}
                             subagents={state.subagents}
                             onSelectSubagent={openSubagent}
+                            cancelCommandId={cancelCommandId}
+                            commandBusy={busy}
+                            onCancelCommand={(toolCallId) =>
+                              void action({
+                                type: "cancel-command",
+                                toolCallId,
+                              })
+                            }
                             verbose={verbose}
                           />
                         </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="op-welcome">
-                      <PensarMark size={80} fill="currentColor" />
-                      <h1>Apex</h1>
-                    </div>
-                  )}
-                  {state.error && <p role="alert">{state.error}</p>}
-                  <div className="op-decisions">
-                    {state.approvals.map((a) => (
-                      <section key={a.id} className="op-review">
-                        <h3>Approve {a.toolName}?</h3>
-                        {a.reasoning && <p>{a.reasoning}</p>}
-                        <pre>{JSON.stringify(a.args, null, 2)}</pre>
-                        <div className="actions">
-                          {(["approve", "deny", "auto"] as const).map(
-                            (decision) => (
-                              <Button
-                                key={decision}
-                                size="sm"
-                                disabled={busy}
-                                onClick={() =>
-                                  action({
-                                    type: "approval",
-                                    id: a.id,
-                                    decision,
-                                  })
-                                }
-                              >
-                                {decision === "approve"
-                                  ? "Approve"
-                                  : decision === "deny"
-                                    ? "Deny"
-                                    : "Approve and switch to automatic"}
-                              </Button>
-                            ),
-                          )}
-                        </div>
-                      </section>
-                    ))}
-                    {state.questions && (
-                      <Questions
-                        key={state.questions.toolCallId}
-                        id={state.questions.toolCallId}
-                        questions={state.questions.questions}
-                        submit={action}
-                        disabled={busy || state.status !== "waiting"}
-                      />
-                    )}
-                    {state.reviewPlan && (
-                      <div className="op-review">
-                        <h3>Review the proposed plan</h3>
-                        <pre>{state.plan ?? "Reading plan…"}</pre>
-                        <div className="actions">
-                          <Button
-                            disabled={busy || state.status !== "waiting"}
-                            variant="constructive"
-                            onClick={() =>
-                              action({ type: "plan", approve: true })
-                            }
+                        {path.map((agent) => (
+                          <div
+                            className="op-transcript-view"
+                            key={agent.id}
+                            hidden={agent.id !== current?.id}
                           >
-                            Approve plan
-                          </Button>
-                          <Button
-                            disabled={busy || state.status !== "waiting"}
-                            onClick={() =>
-                              action({ type: "plan", approve: false })
-                            }
-                          >
-                            Request changes
-                          </Button>
-                        </div>
+                            <Transcript
+                              screenshot={client.operatorScreenshot}
+                              visible={visible && agent.id === current?.id}
+                              messages={agent.messages}
+                              sessionId={state.sessionId ?? ""}
+                              agentId={agent.id}
+                              activity={subagentActivity(agent)}
+                              modelLoading={agent.modelLoading ?? undefined}
+                              subagents={state.subagents}
+                              onSelectSubagent={openSubagent}
+                              verbose={verbose}
+                            />
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <div className="op-welcome">
+                        <PensarMark size={80} fill="currentColor" />
+                        <h1>Apex</h1>
                       </div>
                     )}
-                  </div>
-                  {!current && runningProcesses > 0 && (
-                    <div className="op-process-bar">
-                      <Button
-                        size="xs"
-                        className="op-process-pill"
-                        ref={processTrigger}
-                        aria-expanded={processesOpen}
-                        aria-controls={processesOpen ? surfaceId : undefined}
-                        onClick={() => {
-                          setSurfaceOpen(false);
-                          setIssuesOpen(false);
-                          setProcessesOpen((open) => !open);
-                        }}
-                      >
-                        <span className="op-process-dot" aria-hidden="true" />
-                        {runningProcesses} running{" "}
-                        {runningProcesses === 1 ? "process" : "processes"}
-                      </Button>
-                    </div>
-                  )}
-                  {!current && (
-                    <div
-                      className={`op-compose${draggingFiles ? " op-compose-dragging" : ""}`}
-                      role="group"
-                      aria-label="Message composer"
-                      onDragEnter={(event) => {
-                        if (!event.dataTransfer.types.includes("Files")) return;
-                        event.preventDefault();
-                        dragDepth.current++;
-                        setDraggingFiles(true);
-                      }}
-                      onDragOver={(event) => {
-                        if (!event.dataTransfer.types.includes("Files")) return;
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = busy ? "none" : "copy";
-                      }}
-                      onDragLeave={(event) => {
-                        if (!event.dataTransfer.types.includes("Files")) return;
-                        event.preventDefault();
-                        if (--dragDepth.current <= 0) {
-                          dragDepth.current = 0;
-                          setDraggingFiles(false);
-                        }
-                      }}
-                      onDrop={(event) => {
-                        if (!event.dataTransfer.types.includes("Files")) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        dragDepth.current = 0;
-                        setDraggingFiles(false);
-                        if (
-                          Array.from(event.dataTransfer.items).some(
-                            (item) => item.webkitGetAsEntry?.()?.isDirectory,
-                          )
-                        ) {
-                          setError("Drop individual files, not folders.");
-                          return;
-                        }
-                        addAttachments(Array.from(event.dataTransfer.files));
-                      }}
-                    >
-                      <GoalStatus
-                        state={state}
-                        busy={busy}
-                        onEnd={() =>
-                          void action({ type: "goal", command: "clear" })
-                        }
-                        onResume={() => void action({ type: "resume-goal" })}
-                      />
-                      {slashOpen && (
-                        <SlashMenu
-                          id={slashId}
-                          entries={entries}
-                          selected={selectedSlash}
-                          onSelect={insertSlash}
+                    {state.error && <p role="alert">{state.error}</p>}
+                    <div className="op-decisions">
+                      {state.approvals.map((a) => (
+                        <section key={a.id} className="op-review">
+                          <h3>Approve {a.toolName}?</h3>
+                          {a.reasoning && <p>{a.reasoning}</p>}
+                          <pre>{JSON.stringify(a.args, null, 2)}</pre>
+                          <div className="actions">
+                            {(["approve", "deny", "auto"] as const).map(
+                              (decision) => (
+                                <Button
+                                  key={decision}
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    action({
+                                      type: "approval",
+                                      id: a.id,
+                                      decision,
+                                    })
+                                  }
+                                >
+                                  {decision === "approve"
+                                    ? "Approve"
+                                    : decision === "deny"
+                                      ? "Deny"
+                                      : "Approve and switch to automatic"}
+                                </Button>
+                              ),
+                            )}
+                          </div>
+                        </section>
+                      ))}
+                      {state.questions && (
+                        <Questions
+                          key={state.questions.toolCallId}
+                          id={state.questions.toolCallId}
+                          questions={state.questions.questions}
+                          submit={action}
+                          disabled={busy || state.status !== "waiting"}
                         />
                       )}
-                      {draggingFiles && (
-                        <div className="op-attachment-hint">
-                          Drop files to attach
-                        </div>
-                      )}
-                      {!!attachments.length && (
-                        <ul
-                          className="op-attachments"
-                          aria-label="Attached files"
-                        >
-                          {attachments.map(({ id, file }) => (
-                            <li
-                              key={id}
-                              className="op-attachment"
-                              title={file.name}
+                      {state.reviewPlan && (
+                        <div className="op-review">
+                          <h3>Review the proposed plan</h3>
+                          <pre>{state.plan ?? "Reading plan…"}</pre>
+                          <div className="actions">
+                            <Button
+                              disabled={busy || state.status !== "waiting"}
+                              variant="constructive"
+                              onClick={() =>
+                                action({ type: "plan", approve: true })
+                              }
                             >
-                              <FileIcon size={14} aria-hidden="true" />
-                              <span>{file.name}</span>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                disabled={busy}
-                                aria-label={`Remove ${file.name}`}
-                                onClick={() =>
-                                  setAttachments((previous) =>
-                                    previous.filter((entry) => entry.id !== id),
-                                  )
-                                }
-                              >
-                                <X size={12} aria-hidden="true" />
-                              </Button>
-                            </li>
-                          ))}
-                        </ul>
+                              Approve plan
+                            </Button>
+                            <Button
+                              disabled={busy || state.status !== "waiting"}
+                              onClick={() =>
+                                action({ type: "plan", approve: false })
+                              }
+                            >
+                              Request changes
+                            </Button>
+                          </div>
+                        </div>
                       )}
-                      {state.queue.map((q) => (
-                        <div key={q.id} className="op-queued">
-                          <span>{q.text}</span>
-                          <Button
-                            size="xs"
-                            disabled={busy}
-                            onClick={() =>
-                              action({
-                                type: "queue",
-                                id: q.id,
-                                operation: "send-now",
-                              })
-                            }
-                          >
-                            Send now
-                          </Button>
-                          <Button
-                            size="xs"
-                            disabled={busy}
-                            onClick={async () => {
-                              if (
-                                await action({
-                                  type: "queue",
-                                  id: q.id,
-                                  operation: "remove",
-                                })
-                              )
-                                setText(q.text);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="xs"
-                            disabled={busy}
-                            onClick={() =>
-                              action({
-                                type: "queue",
-                                id: q.id,
-                                operation: "remove",
-                              })
-                            }
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
-                      <CommandInput
-                        skills={skills}
-                        ref={input}
-                        aria-label="Operator message"
-                        value={text}
-                        disabled={busy}
-                        aria-expanded={slashOpen}
-                        aria-controls={slashOpen ? slashId : undefined}
-                        aria-activedescendant={
-                          slashOpen && selectedSlash
-                            ? `${slashId}-${selectedSlash}`
-                            : undefined
-                        }
-                        aria-autocomplete="list"
-                        onBlur={() => setSlashDismissed(true)}
-                        onChange={(e) => {
-                          setText(e.target.value);
-                          setSlashIndex(0);
-                          setSlashDismissed(false);
-                        }}
-                        onKeyDown={(e) => {
-                          if (
-                            slashOpen &&
-                            !e.nativeEvent.isComposing &&
-                            !e.shiftKey
-                          ) {
-                            if (e.key === "Escape") {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setSlashDismissed(true);
-                              return;
-                            }
-                            if (
-                              entries.length &&
-                              (e.key === "ArrowDown" || e.key === "ArrowUp")
-                            ) {
-                              e.preventDefault();
-                              setSlashIndex(
-                                (index) =>
-                                  (index +
-                                    (e.key === "ArrowDown" ? 1 : -1) +
-                                    entries.length) %
-                                  entries.length,
-                              );
-                              return;
-                            }
-                            if (
-                              selectedSlash &&
-                              (e.key === "Enter" || e.key === "Tab")
-                            ) {
-                              e.preventDefault();
-                              insertSlash(selectedSlash);
-                              return;
-                            }
-                          }
-                          if (
-                            e.key === "Tab" &&
-                            e.shiftKey &&
-                            !e.nativeEvent.isComposing
-                          ) {
-                            e.preventDefault();
-                            cycleMode();
-                          }
-                          if (
-                            e.key === "Enter" &&
-                            !e.shiftKey &&
-                            !e.nativeEvent.isComposing
-                          ) {
-                            e.preventDefault();
-                            void submit();
-                          }
-                        }}
-                        placeholder={
-                          active
-                            ? "Write a follow-up, Enter to queue…"
-                            : "Ask anything, / for commands and skills…"
-                        }
-                        rows={2}
-                      />
-                      <div className="op-compose-controls">
-                        <div className="op-mode-controls">
-                          <input
-                            ref={fileInput}
-                            type="file"
-                            multiple
-                            hidden
-                            aria-label="Choose attachments"
-                            onChange={(event) => {
-                              addAttachments(
-                                Array.from(event.target.files ?? []),
-                              );
-                              event.target.value = "";
-                            }}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="Attach files"
-                            title="Attach files (up to 20 MB per message)"
-                            disabled={busy}
-                            onClick={() => fileInput.current?.click()}
-                          >
-                            <Paperclip size={14} aria-hidden="true" />
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            className="op-mode"
-                            disabled={modeLocked}
-                            aria-label={`Mode: ${mode}. Click or press Shift+Tab in the message input to cycle.`}
-                            title="Cycle mode (Shift+Tab in message input)"
-                            onClick={cycleMode}
-                          >
-                            {mode === "auto"
-                              ? "Automatic"
-                              : mode === "plan"
-                                ? "Plan"
-                                : "Manual"}
-                          </Button>
-                          <span className="op-shortcut">Shift+Tab</span>
-                          {state.sessionId && (
-                            <ToolPicker
-                              sessionId={state.sessionId}
-                              disabled={active || state.strike || state.lance}
-                              open={isFocused && toolsOpen}
-                              onOpenChange={setToolsOpen}
-                            />
-                          )}
-                          <ModelPicker
-                            models={modelSettings?.models}
-                            selected={modelSettings?.selected}
-                            current={state.modelLoading || state.model}
-                            active={active}
-                            open={isFocused && modelsOpen}
-                            onOpenChange={setModelsOpen}
-                            onSettings={() => onSettings?.("Providers")}
-                            onSelectModel={async (id) => {
-                              if (state.sessionId)
-                                apply(
-                                  await client.operatorAction({
-                                    sessionId: state.sessionId,
-                                    action: { type: "model", id },
-                                  }),
-                                );
-                            }}
-                          />
-                          {state.sessionId && (state.lance || state.strike) && (
-                            <span>{state.lance ? "Lance" : "Strike"}</span>
-                          )}
-                          {active && (
-                            <span className="op-status">
-                              {state.approvals.length
-                                ? "Awaiting approval"
-                                : state.status}
-                            </span>
-                          )}
-                        </div>
-                        <div className="actions">
-                          <Button
-                            variant={active ? "default" : "constructive"}
-                            size="icon-sm"
-                            aria-label={active ? "Stop turn" : "Send message"}
-                            title={
-                              active ? "Stop turn" : "Send message (Enter)"
-                            }
-                            disabled={
-                              busy ||
-                              state.status === "stopping" ||
-                              (!active &&
-                                ((!text.trim() && !attachments.length) ||
-                                  !!state.questions ||
-                                  state.reviewPlan))
-                            }
-                            onClick={() =>
-                              active
-                                ? void action({ type: "cancel" })
-                                : void submit()
-                            }
-                          >
-                            {active ? (
-                              <Square
-                                size={14}
-                                fill="currentColor"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <ArrowUp size={16} aria-hidden="true" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
                     </div>
-                  )}
-                  {!state.sessionId && cwd && (
-                    <div className="op-project">
-                      <button
-                        type="button"
-                        disabled={!onChooseFolder}
-                        onClick={() => void onChooseFolder?.()}
-                        title={cwd}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          aria-hidden="true"
-                        >
-                          <path d="M3 7V5h6l2 2h10v12H3Z" />
-                        </svg>
-                        {cwd.split(/[\\/]/).filter(Boolean).at(-1) || cwd}
-                      </button>
-                      <span title={cwd}>{cwd}</span>
-                    </div>
-                  )}
-                </div>
-                {inspecting && (
-                  <section className="op-inspector">
-                    <div className="actions">
-                      <Button
-                        size="xs"
-                        onClick={() => setVerbose(!verbose)}
-                        aria-pressed={verbose}
-                      >
-                        Verbose
-                      </Button>
-                    </div>
-                    <label className="op-panel-select">
-                      Inspect{" "}
-                      <select
-                        value={panel}
-                        onChange={(e) => setPanel(e.target.value as Panel)}
-                      >
-                        {panels.map((p) => (
-                          <option key={p}>{p}</option>
-                        ))}
-                      </select>
-                    </label>
-                    {panel === "Overview" && (
-                      <>
-                        <dl>
-                          <dt>Session</dt>
-                          <dd>
-                            {state.sessionId ||
-                              "Created when you send your first message"}
-                          </dd>
-                          <dt>Target</dt>
-                          <dd>{state.target || "Local workspace"}</dd>
-                          <dt>Tokens in / out</dt>
-                          <dd>
-                            {state.usage.input.toLocaleString()} /{" "}
-                            {state.usage.output.toLocaleString()}
-                          </dd>
-                          {state.usage.context !== undefined && (
-                            <>
-                              <dt>Context</dt>
-                              <dd>
-                                {state.usage.context.toLocaleString()} /{" "}
-                                {state.usage.limit?.toLocaleString()}
-                              </dd>
-                            </>
-                          )}
-                        </dl>
+                    {!current && runningProcesses > 0 && (
+                      <div className="op-process-bar">
                         <Button
-                          size="sm"
-                          disabled={!state.sessionId}
-                          onClick={() => action({ type: "open-folder" })}
+                          size="xs"
+                          className="op-process-pill"
+                          ref={processTrigger}
+                          aria-expanded={processesOpen}
+                          aria-controls={processesOpen ? surfaceId : undefined}
+                          onClick={() => {
+                            setSurfaceOpen(false);
+                            setIssuesOpen(false);
+                            setBrowserOpen(false);
+                            setProcessesOpen((open) => !open);
+                          }}
                         >
-                          Open session folder
+                          <span className="op-process-dot" aria-hidden="true" />
+                          {runningProcesses} running{" "}
+                          {runningProcesses === 1 ? "process" : "processes"}
                         </Button>
-                      </>
+                      </div>
                     )}
-                    {panel === "Plan" && (
-                      <pre>
-                        {state.plan ||
-                          "Switch to Plan mode and describe the objective to draft a plan."}
-                      </pre>
-                    )}
-                    {panel === "Headers" && (
-                      <>
-                        <p>Request headers for this session.</p>
-                        {state.headers.map((h) => (
-                          <div key={h.name} className="op-header">
-                            <code>
-                              {h.name}: {h.displayValue}
-                            </code>
+                    {!current && (
+                      <div
+                        className={`op-compose${draggingFiles ? " op-compose-dragging" : ""}`}
+                        role="group"
+                        aria-label="Message composer"
+                        onDragEnter={(event) => {
+                          if (!event.dataTransfer.types.includes("Files"))
+                            return;
+                          event.preventDefault();
+                          dragDepth.current++;
+                          setDraggingFiles(true);
+                        }}
+                        onDragOver={(event) => {
+                          if (!event.dataTransfer.types.includes("Files"))
+                            return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = busy
+                            ? "none"
+                            : "copy";
+                        }}
+                        onDragLeave={(event) => {
+                          if (!event.dataTransfer.types.includes("Files"))
+                            return;
+                          event.preventDefault();
+                          if (--dragDepth.current <= 0) {
+                            dragDepth.current = 0;
+                            setDraggingFiles(false);
+                          }
+                        }}
+                        onDrop={(event) => {
+                          if (!event.dataTransfer.types.includes("Files"))
+                            return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          dragDepth.current = 0;
+                          setDraggingFiles(false);
+                          if (
+                            Array.from(event.dataTransfer.items).some(
+                              (item) => item.webkitGetAsEntry?.()?.isDirectory,
+                            )
+                          ) {
+                            setError("Drop individual files, not folders.");
+                            return;
+                          }
+                          addAttachments(Array.from(event.dataTransfer.files));
+                        }}
+                      >
+                        <GoalStatus
+                          state={state}
+                          busy={busy}
+                          onEnd={() =>
+                            void action({ type: "goal", command: "clear" })
+                          }
+                          onResume={() => void action({ type: "resume-goal" })}
+                        />
+                        {slashOpen && (
+                          <SlashMenu
+                            id={slashId}
+                            entries={entries}
+                            selected={selectedSlash}
+                            onSelect={insertSlash}
+                          />
+                        )}
+                        {draggingFiles && (
+                          <div className="op-attachment-hint">
+                            Drop files to attach
+                          </div>
+                        )}
+                        {!!attachments.length && (
+                          <ul
+                            className="op-attachments"
+                            aria-label="Attached files"
+                          >
+                            {attachments.map(({ id, file }) => (
+                              <li
+                                key={id}
+                                className="op-attachment"
+                                title={file.name}
+                              >
+                                <FileIcon size={14} aria-hidden="true" />
+                                <span>{file.name}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  disabled={busy}
+                                  aria-label={`Remove ${file.name}`}
+                                  onClick={() =>
+                                    setAttachments((previous) =>
+                                      previous.filter(
+                                        (entry) => entry.id !== id,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <X size={12} aria-hidden="true" />
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {state.queue.map((q) => (
+                          <div key={q.id} className="op-queued">
+                            <span>{q.text}</span>
                             <Button
                               size="xs"
                               disabled={busy}
                               onClick={() =>
                                 action({
-                                  type: "headers",
-                                  command: `/headers remove ${h.name}`,
+                                  type: "queue",
+                                  id: q.id,
+                                  operation: "send-now",
+                                })
+                              }
+                            >
+                              Send now
+                            </Button>
+                            <Button
+                              size="xs"
+                              disabled={busy}
+                              onClick={async () => {
+                                if (
+                                  await action({
+                                    type: "queue",
+                                    id: q.id,
+                                    operation: "remove",
+                                  })
+                                )
+                                  setText(q.text);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="xs"
+                              disabled={busy}
+                              onClick={() =>
+                                action({
+                                  type: "queue",
+                                  id: q.id,
+                                  operation: "remove",
                                 })
                               }
                             >
@@ -1255,205 +1021,522 @@ export default function OperatorSessionView({
                             </Button>
                           </div>
                         ))}
-                        <form
-                          onSubmit={async (e) => {
-                            e.preventDefault();
-                            if (
-                              await action({
-                                type: "headers",
-                                command: `/headers set ${header}`,
-                              })
-                            )
-                              setHeader("");
+                        <CommandInput
+                          skills={skills}
+                          ref={input}
+                          aria-label="Operator message"
+                          value={text}
+                          disabled={busy}
+                          aria-expanded={slashOpen}
+                          aria-controls={slashOpen ? slashId : undefined}
+                          aria-activedescendant={
+                            slashOpen && selectedSlash
+                              ? `${slashId}-${selectedSlash}`
+                              : undefined
+                          }
+                          aria-autocomplete="list"
+                          onBlur={() => setSlashDismissed(true)}
+                          onChange={(e) => {
+                            setText(e.target.value);
+                            setSlashIndex(0);
+                            setSlashDismissed(false);
                           }}
+                          onKeyDown={(e) => {
+                            if (
+                              slashOpen &&
+                              !e.nativeEvent.isComposing &&
+                              !e.shiftKey
+                            ) {
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSlashDismissed(true);
+                                return;
+                              }
+                              if (
+                                entries.length &&
+                                (e.key === "ArrowDown" || e.key === "ArrowUp")
+                              ) {
+                                e.preventDefault();
+                                setSlashIndex(
+                                  (index) =>
+                                    (index +
+                                      (e.key === "ArrowDown" ? 1 : -1) +
+                                      entries.length) %
+                                    entries.length,
+                                );
+                                return;
+                              }
+                              if (
+                                selectedSlash &&
+                                (e.key === "Enter" || e.key === "Tab")
+                              ) {
+                                e.preventDefault();
+                                insertSlash(selectedSlash);
+                                return;
+                              }
+                            }
+                            if (
+                              e.key === "Tab" &&
+                              e.shiftKey &&
+                              !e.nativeEvent.isComposing
+                            ) {
+                              e.preventDefault();
+                              cycleMode();
+                            }
+                            if (
+                              e.key === "Enter" &&
+                              !e.shiftKey &&
+                              !e.nativeEvent.isComposing
+                            ) {
+                              e.preventDefault();
+                              void submit();
+                            }
+                          }}
+                          placeholder={
+                            active
+                              ? "Write a follow-up, Enter to queue…"
+                              : "Ask anything, / for commands and skills…"
+                          }
+                          rows={2}
+                        />
+                        <div className="op-compose-controls">
+                          <div className="op-mode-controls">
+                            <input
+                              ref={fileInput}
+                              type="file"
+                              multiple
+                              hidden
+                              aria-label="Choose attachments"
+                              onChange={(event) => {
+                                addAttachments(
+                                  Array.from(event.target.files ?? []),
+                                );
+                                event.target.value = "";
+                              }}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Attach files"
+                              title="Attach files (up to 20 MB per message)"
+                              disabled={busy}
+                              onClick={() => fileInput.current?.click()}
+                            >
+                              <Paperclip size={14} aria-hidden="true" />
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              className="op-mode"
+                              disabled={modeLocked}
+                              aria-label={`Mode: ${mode}. Click or press Shift+Tab in the message input to cycle.`}
+                              title="Cycle mode (Shift+Tab in message input)"
+                              onClick={cycleMode}
+                            >
+                              {mode === "auto"
+                                ? "Automatic"
+                                : mode === "plan"
+                                  ? "Plan"
+                                  : "Manual"}
+                            </Button>
+                            <span className="op-shortcut">Shift+Tab</span>
+                            {state.sessionId && (
+                              <ToolPicker
+                                sessionId={state.sessionId}
+                                disabled={active || state.strike || state.lance}
+                                open={isFocused && toolsOpen}
+                                onOpenChange={setToolsOpen}
+                              />
+                            )}
+                            <ModelPicker
+                              models={modelSettings?.models}
+                              selected={modelSettings?.selected}
+                              current={state.modelLoading || state.model}
+                              active={active}
+                              open={isFocused && modelsOpen}
+                              onOpenChange={setModelsOpen}
+                              onSettings={() => onSettings?.("Providers")}
+                              onSelectModel={async (id) => {
+                                if (state.sessionId)
+                                  apply(
+                                    await client.operatorAction({
+                                      sessionId: state.sessionId,
+                                      action: { type: "model", id },
+                                    }),
+                                  );
+                              }}
+                            />
+                            {state.sessionId &&
+                              (state.lance || state.strike) && (
+                                <span>{state.lance ? "Lance" : "Strike"}</span>
+                              )}
+                            {active && (
+                              <span className="op-status">
+                                {state.approvals.length
+                                  ? "Awaiting approval"
+                                  : state.status}
+                              </span>
+                            )}
+                          </div>
+                          <div className="actions">
+                            <Button
+                              variant={active ? "default" : "constructive"}
+                              size="icon-sm"
+                              aria-label={active ? "Stop turn" : "Send message"}
+                              title={
+                                active ? "Stop turn" : "Send message (Enter)"
+                              }
+                              disabled={
+                                busy ||
+                                state.status === "stopping" ||
+                                (!active &&
+                                  ((!text.trim() && !attachments.length) ||
+                                    !!state.questions ||
+                                    state.reviewPlan))
+                              }
+                              onClick={() =>
+                                active
+                                  ? void action({ type: "cancel" })
+                                  : void submit()
+                              }
+                            >
+                              {active ? (
+                                <Square
+                                  size={14}
+                                  fill="currentColor"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <ArrowUp size={16} aria-hidden="true" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {!state.sessionId && cwd && (
+                      <div className="op-project">
+                        <button
+                          type="button"
+                          disabled={!onChooseFolder}
+                          onClick={() => void onChooseFolder?.()}
+                          title={cwd}
                         >
-                          <Input
-                            aria-label="Session header"
-                            type="password"
-                            placeholder="Name: value"
-                            value={header}
-                            onChange={(e) => setHeader(e.target.value)}
-                          />
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            aria-hidden="true"
+                          >
+                            <path d="M3 7V5h6l2 2h10v12H3Z" />
+                          </svg>
+                          {cwd.split(/[\\/]/).filter(Boolean).at(-1) || cwd}
+                        </button>
+                        <span title={cwd}>{cwd}</span>
+                      </div>
+                    )}
+                  </div>
+                  {inspecting && (
+                    <section className="op-inspector">
+                      <div className="actions">
+                        <Button
+                          size="xs"
+                          onClick={() => setVerbose(!verbose)}
+                          aria-pressed={verbose}
+                        >
+                          Verbose
+                        </Button>
+                      </div>
+                      <label className="op-panel-select">
+                        Inspect{" "}
+                        <select
+                          value={panel}
+                          onChange={(e) => setPanel(e.target.value as Panel)}
+                        >
+                          {panels.map((p) => (
+                            <option key={p}>{p}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {panel === "Overview" && (
+                        <>
+                          <dl>
+                            <dt>Session</dt>
+                            <dd>
+                              {state.sessionId ||
+                                "Created when you send your first message"}
+                            </dd>
+                            <dt>Target</dt>
+                            <dd>{state.target || "Local workspace"}</dd>
+                            <dt>Tokens in / out</dt>
+                            <dd>
+                              {state.usage.input.toLocaleString()} /{" "}
+                              {state.usage.output.toLocaleString()}
+                            </dd>
+                            {state.usage.context !== undefined && (
+                              <>
+                                <dt>Context</dt>
+                                <dd>
+                                  {state.usage.context.toLocaleString()} /{" "}
+                                  {state.usage.limit?.toLocaleString()}
+                                </dd>
+                              </>
+                            )}
+                          </dl>
                           <Button
                             size="sm"
-                            disabled={
-                              !state.sessionId || busy || !header.trim()
-                            }
-                            type="submit"
+                            disabled={!state.sessionId}
+                            onClick={() => action({ type: "open-folder" })}
                           >
-                            Set header
+                            Open session folder
                           </Button>
-                        </form>
-                      </>
-                    )}
-                    {panel === "Skills" &&
-                      state.skills.map((s) => (
-                        <div className="op-skill" key={s.slug}>
-                          <strong>{s.name}</strong>
-                          <p>{s.description}</p>
-                          <Button
-                            size="xs"
-                            disabled={!state.sessionId || busy || state.lance}
-                            onClick={() =>
-                              action({ type: "skill", slug: s.slug })
-                            }
-                          >
-                            Run /{s.slug}
-                          </Button>
-                        </div>
-                      ))}
-                    {panel === "Help" && (
-                      <>
-                        <p>
-                          Enter sends a message. Shift+Enter adds a line.
-                          Messages sent during a turn enter the queue. Shift+Tab
-                          in the message input cycles Manual, Automatic and Plan
-                          modes.
-                        </p>
-                        <dl>
-                          {[
-                            ["/new", "New conversation"],
-                            [
-                              "/goal <objective> [--rounds N]",
-                              "Start a persistent goal",
-                            ],
-                            ["/goal", "Show goal status"],
-                            ["/goal clear", "End the current goal"],
-                            [
-                              "/operator --target <host>",
-                              "Configure a new session",
-                            ],
-                            ["/models", "Model and effort"],
-                            ["/plan", "Current plan"],
-                            ["/tools", "Available tools"],
-                            ["/headers", "Session headers"],
-                            ["/skills", "Skill catalog"],
-                            ["/pentest", "Pentest wizard"],
-                            ["/resume", "Session history"],
-                            ["/open-session", "Open artifacts"],
-                          ].map(([name, label]) => (
-                            <div key={name}>
-                              <dt>{name}</dt>
-                              <dd>{label}</dd>
+                        </>
+                      )}
+                      {panel === "Plan" && (
+                        <pre>
+                          {state.plan ||
+                            "Switch to Plan mode and describe the objective to draft a plan."}
+                        </pre>
+                      )}
+                      {panel === "Headers" && (
+                        <>
+                          <p>Request headers for this session.</p>
+                          {state.headers.map((h) => (
+                            <div key={h.name} className="op-header">
+                              <code>
+                                {h.name}: {h.displayValue}
+                              </code>
+                              <Button
+                                size="xs"
+                                disabled={busy}
+                                onClick={() =>
+                                  action({
+                                    type: "headers",
+                                    command: `/headers remove ${h.name}`,
+                                  })
+                                }
+                              >
+                                Remove
+                              </Button>
                             </div>
                           ))}
-                        </dl>
-                      </>
-                    )}
-                  </section>
-                )}
-              </div>
-            </ResizablePanel>
-            {sidebarOpen && state.sessionId && (
-              <>
-                <ResizableHandle
-                  className="op-surface-resize"
-                  aria-label={
-                    issuesOpen
-                      ? "Resize issues sidebar"
-                      : processesOpen
-                        ? "Resize processes sidebar"
-                        : "Resize attack surface sidebar"
-                  }
-                />
-                <ResizablePanel
-                  id={surfaceId}
-                  defaultSize={`${surfaceWidth.current}%`}
-                  minSize="30%"
-                  maxSize="75%"
-                  className="op-surface-panel"
-                >
-                  {issuesOpen ? (
-                    <Issues
-                      key={state.sessionId}
-                      sessionId={state.sessionId}
-                      active={visible}
-                      onClose={() => {
-                        setIssuesOpen(false);
-                        issuesTrigger.current?.focus();
-                      }}
-                    />
-                  ) : processesOpen ? (
-                    <Processes
-                      processes={processes}
-                      busy={busy}
-                      onCancel={(jobId) =>
-                        void action({ type: "cancel-process", jobId })
-                      }
-                      onClose={() => {
-                        setProcessesOpen(false);
-                        (processTrigger.current ?? input.current)?.focus();
-                      }}
-                    />
-                  ) : (
-                    <AttackSurface
-                      key={state.sessionId}
-                      client={client}
-                      sessionId={state.sessionId}
-                      active={visible}
-                      onClose={() => {
-                        setSurfaceOpen(false);
-                        surfaceTrigger.current?.focus();
-                      }}
-                    />
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (
+                                await action({
+                                  type: "headers",
+                                  command: `/headers set ${header}`,
+                                })
+                              )
+                                setHeader("");
+                            }}
+                          >
+                            <Input
+                              aria-label="Session header"
+                              type="password"
+                              placeholder="Name: value"
+                              value={header}
+                              onChange={(e) => setHeader(e.target.value)}
+                            />
+                            <Button
+                              size="sm"
+                              disabled={
+                                !state.sessionId || busy || !header.trim()
+                              }
+                              type="submit"
+                            >
+                              Set header
+                            </Button>
+                          </form>
+                        </>
+                      )}
+                      {panel === "Skills" &&
+                        state.skills.map((s) => (
+                          <div className="op-skill" key={s.slug}>
+                            <strong>{s.name}</strong>
+                            <p>{s.description}</p>
+                            <Button
+                              size="xs"
+                              disabled={!state.sessionId || busy || state.lance}
+                              onClick={() =>
+                                action({ type: "skill", slug: s.slug })
+                              }
+                            >
+                              Run /{s.slug}
+                            </Button>
+                          </div>
+                        ))}
+                      {panel === "Help" && (
+                        <>
+                          <p>
+                            Enter sends a message. Shift+Enter adds a line.
+                            Messages sent during a turn enter the queue.
+                            Shift+Tab in the message input cycles Manual,
+                            Automatic and Plan modes.
+                          </p>
+                          <dl>
+                            {[
+                              ["/new", "New conversation"],
+                              [
+                                "/goal <objective> [--rounds N]",
+                                "Start a persistent goal",
+                              ],
+                              ["/goal", "Show goal status"],
+                              ["/goal clear", "End the current goal"],
+                              [
+                                "/operator --target <host>",
+                                "Configure a new session",
+                              ],
+                              ["/models", "Model and effort"],
+                              ["/plan", "Current plan"],
+                              ["/tools", "Available tools"],
+                              ["/headers", "Session headers"],
+                              ["/skills", "Skill catalog"],
+                              ["/pentest", "Pentest wizard"],
+                              ["/resume", "Session history"],
+                              ["/open-session", "Open artifacts"],
+                            ].map(([name, label]) => (
+                              <div key={name}>
+                                <dt>{name}</dt>
+                                <dd>{label}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </>
+                      )}
+                    </section>
                   )}
-                </ResizablePanel>
-              </>
-            )}
-          </ResizablePanelGroup>
-          {isFocused && setupOpen && (
-            <Dialog
-              open
-              onOpenChange={(open) => {
-                setSetupOpen(open);
-                if (!open) setPrefill(undefined);
-              }}
-            >
-              <DialogContent className="op-config-dialog">
-                <DialogHeader>
-                  <DialogTitle>Configure a new session</DialogTitle>
-                  <DialogDescription>
-                    Review the command options before starting.
-                  </DialogDescription>
-                </DialogHeader>
-                <OperatorSetup
-                  key={formKey}
-                  initial={prefill}
-                  busy={busy}
-                  cancel={() => {
-                    setSetupOpen(false);
-                    setPrefill(undefined);
-                  }}
-                  start={async (options) => {
-                    setBusy(true);
-                    setError("");
-                    try {
-                      const launch = {
-                        ...options,
-                        attachments: await encodeAttachments(
-                          attachments.map(({ file }) => file),
-                        ),
-                      };
-                      if (state.sessionId) await onNewSession(launch);
-                      else apply(await client.operatorStart(launch));
-                      setAttachments([]);
+                </div>
+              </ResizablePanel>
+              {sidebarOpen && state.sessionId && (
+                <>
+                  <ResizableHandle
+                    className="op-surface-resize"
+                    aria-label={
+                      browserOpen
+                        ? "Resize browser sidebar"
+                        : issuesOpen
+                          ? "Resize issues sidebar"
+                          : processesOpen
+                            ? "Resize processes sidebar"
+                            : "Resize attack surface sidebar"
+                    }
+                  />
+                  <ResizablePanel
+                    id={surfaceId}
+                    defaultSize={`${surfaceWidth.current}%`}
+                    minSize="30%"
+                    maxSize="75%"
+                    className="op-surface-panel"
+                  >
+                    {browserOpen ? (
+                      <Browser
+                        onViewport={setBrowserViewport}
+                        key={state.sessionId}
+                        client={client}
+                        active={visible}
+                        onClose={() => {
+                          setBrowserOpen(false);
+                          browserTrigger.current?.focus();
+                        }}
+                      />
+                    ) : issuesOpen ? (
+                      <Issues
+                        key={state.sessionId}
+                        sessionId={state.sessionId}
+                        active={visible}
+                        onClose={() => {
+                          setIssuesOpen(false);
+                          issuesTrigger.current?.focus();
+                        }}
+                      />
+                    ) : processesOpen ? (
+                      <Processes
+                        processes={processes}
+                        busy={busy}
+                        onCancel={(jobId) =>
+                          void action({ type: "cancel-process", jobId })
+                        }
+                        onClose={() => {
+                          setProcessesOpen(false);
+                          (processTrigger.current ?? input.current)?.focus();
+                        }}
+                      />
+                    ) : (
+                      <AttackSurface
+                        key={state.sessionId}
+                        client={client}
+                        sessionId={state.sessionId}
+                        active={visible}
+                        onClose={() => {
+                          setSurfaceOpen(false);
+                          surfaceTrigger.current?.focus();
+                        }}
+                      />
+                    )}
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
+            {isFocused && setupOpen && (
+              <Dialog
+                open
+                onOpenChange={(open) => {
+                  setSetupOpen(open);
+                  if (!open) setPrefill(undefined);
+                }}
+              >
+                <DialogContent className="op-config-dialog">
+                  <DialogHeader>
+                    <DialogTitle>Configure a new session</DialogTitle>
+                    <DialogDescription>
+                      Review the command options before starting.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <OperatorSetup
+                    key={formKey}
+                    initial={prefill}
+                    busy={busy}
+                    cancel={() => {
                       setSetupOpen(false);
                       setPrefill(undefined);
-                      setText("");
-                      setAgentPath([]);
-                      setPanel("Overview");
-                    } catch (e) {
-                      setError(String(e));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                />
-              </DialogContent>
-            </Dialog>
-          )}
-        </>
-      )}
-    </div>
+                    }}
+                    start={async (options) => {
+                      setBusy(true);
+                      setError("");
+                      try {
+                        const launch = {
+                          ...options,
+                          attachments: await encodeAttachments(
+                            attachments.map(({ file }) => file),
+                          ),
+                        };
+                        if (state.sessionId) await onNewSession(launch);
+                        else apply(await client.operatorStart(launch));
+                        setAttachments([]);
+                        setSetupOpen(false);
+                        setPrefill(undefined);
+                        setText("");
+                        setAgentPath([]);
+                        setPanel("Overview");
+                      } catch (e) {
+                        setError(String(e));
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  />
+                </DialogContent>
+              </Dialog>
+            )}
+          </>
+        )}
+      </div>
+    </BrowserLinkContext.Provider>
   );
 }

@@ -101,6 +101,9 @@ import {
   markSubagentsInterrupted,
 } from "../../../src/tui/components/operator-dashboard/subagent-state";
 import { updateWorkflowDataMessage } from "../../../src/tui/components/operator-dashboard/workflow-data";
+import type { BrowserEvent, BrowserInput } from "../browser/contract";
+import { SessionBrowser } from "../browser/host";
+import type { NativeBrowserBridge } from "../browser/native";
 import { operatorArguments } from "./arguments";
 import { attachFilesToPrompt, decodeAttachments } from "./attachments-host";
 import type {
@@ -126,8 +129,10 @@ function wireMessage(m: DisplayMessage): OperatorMessage {
 }
 
 type HostOptions = {
+  nativeBrowser?: NativeBrowserBridge;
   cwd: () => string;
   requireAcceptance: () => void;
+  emitBrowser?: (event: BrowserEvent) => void;
   emit: (frame: OperatorFrame) => void;
 };
 type AgentClient = ReturnType<typeof createOffensiveSecurityAgentClient>;
@@ -135,6 +140,25 @@ type AgentClient = ReturnType<typeof createOffensiveSecurityAgentClient>;
 class OperatorHost {
   constructor(private options: HostOptions) {}
   private session?: SessionInfo;
+  private sharedBrowser?: SessionBrowser;
+  private browser() {
+    this.options.requireAcceptance();
+    if (this.disposed || !this.session)
+      throw new Error("Open a session before using its browser.");
+    if (!this.session.config?.agentCwd)
+      throw new Error(
+        "The shared browser is available in local sessions. Remote sessions use their sandbox browser.",
+      );
+    if (!this.sharedBrowser) {
+      const session = this.session;
+      this.sharedBrowser = new SessionBrowser({
+        native: this.options.nativeBrowser,
+        getSession: () => this.session ?? session,
+        emit: (event) => this.options.emitBrowser?.(event),
+      });
+    }
+    return this.sharedBrowser;
+  }
   private goal: Goal | null = null;
   private goalPaused = false;
   private goalsEnabled = true;
@@ -783,6 +807,9 @@ class OperatorHost {
               findingPolicy: policy,
             },
           );
+      if (session.config?.agentCwd)
+        system +=
+          "\n\nYour browser tools control the same persistent browser shown in the desktop Browser sidebar. The user can navigate and sign in there between your actions. Inspect the current page before navigating away; preserve their tabs and login state. Your browser actions are visible to the user.";
       if (turnGoal) system = `${system}\n\n${goalPromptSection(turnGoal)}`;
       if (prompt !== null) {
         this.history = normalizeMessages([
@@ -809,6 +836,9 @@ class OperatorHost {
             : getSavedReasoning(model, cfg);
       const result = await client.run({
         session,
+        browserSession: session.config?.agentCwd
+          ? this.browser().session
+          : undefined,
         system,
         prompt: prompt ?? "",
         messages: this.history,
@@ -1458,6 +1488,14 @@ class OperatorHost {
     },
     operatorArguments: ({ command }: { command: string }) =>
       operatorArguments(command, this.options.cwd()),
+    operatorBrowserAttach: ({ id, viewId }: { id: string; viewId: number }) =>
+      this.browser().attachView(id, viewId),
+    operatorBrowserWatch: ({ key }: { key: string }) =>
+      this.browser().watch(key),
+    operatorBrowserUnwatch: ({ key }: { key: string }) =>
+      this.sharedBrowser?.unwatch(key),
+    operatorBrowserInput: ({ input }: { input: BrowserInput }) =>
+      this.browser().input(input),
     operatorState: () => this.snapshot(),
     operatorWatch: (p: { key: string }) => this.watch(p),
     operatorUnwatch: ({ key }: { key: string }) => {
@@ -1506,6 +1544,7 @@ class OperatorHost {
     if (stop) await this.cancel();
     await this.turn;
     this.dispose();
+    await this.sharedBrowser?.close();
   }
   dispose() {
     this.disposed = true;
@@ -1515,6 +1554,11 @@ class OperatorHost {
     this.gate.denyAll();
     this.gate.removeAllListeners();
     this.client?.abort();
+    void this.sharedBrowser
+      ?.close()
+      .catch((error) =>
+        console.error("Could not close session browser:", error),
+      );
   }
 }
 

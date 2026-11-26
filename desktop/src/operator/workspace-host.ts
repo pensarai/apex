@@ -1,4 +1,5 @@
 import { realpath, stat } from "node:fs/promises";
+import type { NativeBrowserBridge } from "../browser/native";
 import type {
   OperatorLaunch,
   OperatorMessages,
@@ -19,8 +20,10 @@ type Entry = {
   claimedSession?: string;
 };
 type Options = {
+  nativeBrowser?: NativeBrowserBridge;
   cwd: () => string;
   requireAcceptance: () => void;
+  emitBrowser?: (event: OperatorMessages["operatorBrowser"]) => void;
   emit: (event: OperatorMessages["operatorSnapshot"]) => void;
 };
 type Handlers = {
@@ -69,7 +72,9 @@ export function createOperatorWorkspace(options: Options) {
       cwd: options.cwd(),
       host: createOperatorHost({
         cwd: () => entry.cwd,
+        nativeBrowser: options.nativeBrowser,
         requireAcceptance: options.requireAcceptance,
+        emitBrowser: (event) => options.emitBrowser?.({ tabId, event }),
         emit: (frame) => options.emit({ tabId, frame }),
       }),
       pending: new Set(),
@@ -205,6 +210,22 @@ export function createOperatorWorkspace(options: Options) {
         entry.cwd = directory;
         return directory;
       });
+    },
+    operatorBrowserAttach: ({ tabId, id, viewId }) =>
+      entryFor(tabId).host.requests.operatorBrowserAttach({ id, viewId }),
+    operatorBrowserWatch: ({ tabId, key }) => {
+      const entry = entryFor(tabId);
+      return track(entry, () =>
+        entry.host.requests.operatorBrowserWatch({ key }),
+      );
+    },
+    operatorBrowserUnwatch: ({ tabId, key }) =>
+      entries.get(tabId)?.host.requests.operatorBrowserUnwatch({ key }),
+    operatorBrowserInput: ({ tabId, input }) => {
+      const entry = entryFor(tabId);
+      return track(entry, () =>
+        entry.host.requests.operatorBrowserInput({ input }),
+      );
     },
     operatorSkills: ({ tabId }) =>
       entryFor(tabId).host.requests.operatorSkills(),

@@ -14,6 +14,7 @@ import { config } from "../../../src/core/config";
 import { hasAnyProviderConfigured } from "../../../src/core/providers";
 import { sessions } from "../../../src/core/session";
 import { createSkillsRegistry } from "../../../src/core/skills";
+import { nativeBrowserBridge } from "../browser/native";
 import { splitCommand } from "../commands";
 import { toolRequests } from "../operator/tools";
 import { createOperatorWorkspace } from "../operator/workspace-host";
@@ -27,6 +28,9 @@ import {
   sessionId,
   sessionRows,
 } from "./workspace";
+
+await import("../browser/native-runtime");
+if (process.platform === "darwin") await import("../browser/native-macos");
 
 const cli = join(PATHS.RESOURCES_FOLDER, "app", "cli", "cli.js");
 const url = "views://workspace/index.html";
@@ -63,9 +67,14 @@ function validSize({ cols, rows }: { cols: number; rows: number }) {
 }
 
 const operator = createOperatorWorkspace({
+  nativeBrowser: nativeBrowserBridge({
+    getView: (id) => BrowserView.getById(id),
+    windowId: () => mainWindow.id,
+  }),
   cwd: () => cwd,
   requireAcceptance,
   emit: (snapshot) => rpc.send.operatorSnapshot(snapshot),
+  emitBrowser: (event) => rpc.send.operatorBrowser(event),
 });
 const pentest = createPentestRequests({
   getCwd: () => cwd,
@@ -301,6 +310,7 @@ ApplicationMenu.on("application-menu-clicked", (event) => {
 });
 const mainWindow = new BrowserWindow({
   title: "Apex",
+  renderer: "cef",
   titleBarStyle: "hiddenInset",
   transparent: true,
   frame: { x: 100, y: 80, width: 1220, height: 800 },

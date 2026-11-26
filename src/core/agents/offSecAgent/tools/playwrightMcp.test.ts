@@ -222,6 +222,28 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     expect(cfg.browser.launchOptions.chromiumSandbox).toBe(false);
   });
 
+  it("attaches lazily to the host-owned context without isolation", async () => {
+    const endpoint = vi.fn(
+      async () => "ws://127.0.0.1:9222/devtools/browser/test",
+    );
+    const session = new PlaywrightMcpSession({
+      cdpEndpoint: endpoint,
+    }) as unknown as {
+      buildMcpLaunch(
+        id: string,
+      ): Promise<{ cfg: { browser: Record<string, unknown> } }>;
+    };
+    expect(endpoint).not.toHaveBeenCalled();
+    const { cfg } = await session.buildMcpLaunch("test");
+    expect(endpoint).toHaveBeenCalledOnce();
+    expect(cfg.browser).toEqual({
+      browserName: "chromium",
+      cdpEndpoint: "ws://127.0.0.1:9222/devtools/browser/test",
+      isolated: false,
+    });
+    expect(cfg.browser).not.toHaveProperty("launchOptions");
+  });
+
   it("keeps scoped credentials out of global context options", async () => {
     const session = new PlaywrightMcpSession({
       engine: "chrome",

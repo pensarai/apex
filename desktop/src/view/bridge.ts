@@ -1,6 +1,7 @@
 import { Electroview } from "electrobun/view";
 import type { DesktopRPC } from "../shared";
 
+export const browserEvents = new EventTarget();
 export const operatorEvents = new EventTarget();
 export const runEvents = new EventTarget();
 export const terminalEvents = new EventTarget();
@@ -11,6 +12,10 @@ const rpc = Electroview.defineRPC<DesktopRPC>({
       sessionCommand: (command) =>
         window.dispatchEvent(
           new CustomEvent("apex:session-command", { detail: command }),
+        ),
+      operatorBrowser: (event) =>
+        browserEvents.dispatchEvent(
+          new CustomEvent("browser", { detail: event }),
         ),
       operatorSnapshot: (snapshot) =>
         operatorEvents.dispatchEvent(

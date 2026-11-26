@@ -393,6 +393,8 @@ export function setViewportSize(viewportSize: string | undefined): void {
 export type BrowserEngine = "camoufox" | "chrome";
 
 export interface PlaywrightMcpSessionOptions {
+  /** Attach to a host-owned Chromium context instead of launching another browser. */
+  readonly cdpEndpoint?: string | (() => Promise<string>);
   readonly headless?: boolean;
   readonly userAgent?: string | null;
   readonly viewportSize?: string | null;
@@ -424,6 +426,7 @@ export interface PlaywrightMcpSessionOptions {
  * signal + timeout support.
  */
 export class PlaywrightMcpSession {
+  private readonly cdpEndpoint: PlaywrightMcpSessionOptions["cdpEndpoint"];
   private mcpClient: Client | null = null;
   private mcpTransport: StdioClientTransport | null = null;
   private mcpProcess: import("child_process").ChildProcess | null = null;
@@ -452,6 +455,7 @@ export class PlaywrightMcpSession {
    * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
   constructor(options: PlaywrightMcpSessionOptions = {}) {
+    this.cdpEndpoint = options.cdpEndpoint;
     const { headless, userAgent, viewportSize, headerPolicy, display, engine } =
       options;
     this.engine = engine ?? "camoufox";
@@ -608,6 +612,23 @@ export class PlaywrightMcpSession {
     const env: Record<string, string> = { [BROWSER_LAUNCH_ENV]: launchId };
     if (this.display) env.DISPLAY = this.display;
 
+    if (this.cdpEndpoint) {
+      const endpoint =
+        typeof this.cdpEndpoint === "function"
+          ? await this.cdpEndpoint()
+          : this.cdpEndpoint;
+      return {
+        cfg: {
+          browser: {
+            browserName: "chromium",
+            cdpEndpoint: endpoint,
+            isolated: false,
+          },
+        },
+        env,
+      };
+    }
+
     if (this.engine === "chrome") {
       const parsed = this.viewportSize
         ? parseViewportSize(this.viewportSize)
@@ -714,7 +735,7 @@ export class PlaywrightMcpSession {
         const mcpPkgJsonPath = require_.resolve("@playwright/mcp/package.json");
         const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
-        const args = [cliPath, "--isolated"];
+        const args = this.cdpEndpoint ? [cliPath] : [cliPath, "--isolated"];
 
         const os = await import("node:os");
         const fsp = await import("node:fs/promises");
