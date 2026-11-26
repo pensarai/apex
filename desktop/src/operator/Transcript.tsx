@@ -159,6 +159,7 @@ export function Transcript({
             )}
             {message.role === "assistant" ? (
               <StreamingMarkdown
+                sessionId={sessionId}
                 text={message.content}
                 visible={visible}
                 fresh={!initialRows.current.has(row.key)}

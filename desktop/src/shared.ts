@@ -89,6 +89,7 @@ export type DesktopRPC = {
         >;
         deleteSession: Call<{ id: string }, void>;
         openSessionDirectory: Call<{ id: string }, void>;
+        openLocalFile: Call<{ path: string; sessionId?: string }, void>;
         skills: Call<void, SkillRow[]>;
         skillContent: Call<{ slug: string }, string>;
         openRunsCommand: Call<{ command: string }, RunLocation>;

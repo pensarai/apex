@@ -122,7 +122,7 @@ function SessionDetails({
       )}
       <h3>Pentest report</h3>
       {artifacts?.report ? (
-        <LocalMarkdown text={artifacts.report} />
+        <LocalMarkdown text={artifacts.report} sessionId={row.id} />
       ) : (
         <p>
           {artifacts

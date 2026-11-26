@@ -20,6 +20,7 @@ import { createOperatorWorkspace } from "../operator/workspace-host";
 import { createPentestRequests } from "../pentest/host";
 import { createSettingsHost } from "../settings/host";
 import type { DesktopRPC } from "../shared";
+import { createFileRequests } from "./files";
 import {
   openRuns,
   sessionArtifacts,
@@ -148,6 +149,11 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
         if (!Utils.openPath(session.rootPath))
           throw new Error("The session directory could not be opened.");
       },
+      ...createFileRequests({
+        cwd: () => cwd,
+        openPath: Utils.openPath,
+        requireAcceptance,
+      }),
       skills: async () => {
         await skills.load({ projectRoot: cwd });
         return skills.list().map((s) => ({
