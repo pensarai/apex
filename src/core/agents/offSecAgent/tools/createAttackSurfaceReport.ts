@@ -12,7 +12,10 @@ import type { ToolContext } from "./types";
  * Writes the final attack-surface report to the session directory
  * and fires persistence callbacks.
  */
-export function createAttackSurfaceReport(ctx: ToolContext) {
+export function createAttackSurfaceReport(
+  ctx: Pick<ToolContext, "session">,
+  onReportCreated?: () => void,
+) {
   return tool({
     description: `Provide attack surface analysis results to the orchestrator agent.
 
@@ -75,6 +78,7 @@ Call this at the END of your analysis with:
           topologyToMermaid(topology, { controls: true }),
         );
 
+      onReportCreated?.();
       return {
         success: true,
         resultsPath,
