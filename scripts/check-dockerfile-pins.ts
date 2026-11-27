@@ -38,15 +38,11 @@ const GLOBAL_INSTALL =
 const EXACT_PACKAGE =
   /^(?:@[^/@\s$]+\/)?[^/@\s$]+@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
-// Instructions that accept a heredoc, and only in their shell (not JSON) form.
-const HEREDOC_INSTRUCTIONS = new Set(["RUN", "COPY", "ADD"]);
-// `<<EOF`, `<<-EOF`, `<<"EOF"`, `<<'BUILD-SCRIPT'`: the delimiter is kept whole.
-const HEREDOC = /<<-?(["']?)([A-Za-z0-9_][\w.-]*)\1/g;
+// Instructions that can open a heredoc. Heredocs are banned outright (any `<<`),
+// so the check never has to find where one ends.
+const HEREDOC_INSTRUCTIONS = new Set(["RUN", "COPY", "ADD", "ONBUILD"]);
 
-/**
- * Joins continuation lines and drops comment lines, keeping each start line.
- * Heredoc bodies stay part of their instruction, so a URL in one counts.
- */
+/** Joins continuation lines and drops comment lines, keeping each start line. */
 export function parseDockerfile(text: string): Instruction[] {
   const out: Instruction[] = [];
   const lines = text.split("\n");
@@ -60,17 +56,6 @@ export function parseDockerfile(text: string): Instruction[] {
     const continued = /\\\s*$/.test(raw);
     buf += `${continued ? raw.replace(/\\\s*$/, "") : raw} `;
     if (continued) continue;
-    const head = /^\s*(\w+)\s*(.*)$/s.exec(buf.trim());
-    const form = (head?.[2] ?? "").replace(/^(?:--\S+\s+)*/, "");
-    if (
-      HEREDOC_INSTRUCTIONS.has((head?.[1] ?? "").toUpperCase()) &&
-      !form.startsWith("[")
-    ) {
-      for (const doc of buf.matchAll(HEREDOC)) {
-        while (++i < lines.length && (lines[i] ?? "").trim() !== doc[2])
-          buf += `\n${lines[i] ?? ""}`;
-      }
-    }
     const match = /^\s*(\w+)\s*(.*)$/s.exec(buf.trim());
     if (match)
       out.push({
@@ -133,6 +118,12 @@ export function checkDockerfile(path: string, text: string): Violation[] {
   };
 
   for (const { line, keyword, args } of parseDockerfile(text)) {
+    if (HEREDOC_INSTRUCTIONS.has(keyword) && args.includes("<<"))
+      report(
+        line,
+        `a heredoc (\`<<\`) in \`${keyword}\``,
+        "put the script in a committed file and `COPY` it in or bind-mount it with `RUN --mount`",
+      );
     if (keyword === "FROM") {
       const tokens = args.split(/\s+/).filter((t) => !t.startsWith("--"));
       const [image = "", as, name] = tokens;

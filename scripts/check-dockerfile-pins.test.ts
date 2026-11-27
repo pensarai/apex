@@ -33,39 +33,6 @@ describe("parseDockerfile", () => {
     ]);
     expect(parsed[1]?.args).toContain("apt-get install -y curl");
   });
-
-  it("keeps heredoc bodies in their instruction", () => {
-    const parsed = parseDockerfile(
-      ["FROM x", "RUN <<EOF", "echo one", "EOF", "RUN true"].join("\n"),
-    );
-    expect(parsed.map((i) => i.keyword)).toEqual(["FROM", "RUN", "RUN"]);
-    expect(parsed[1]?.args).toContain("echo one");
-  });
-});
-
-describe("parseDockerfile heredocs", () => {
-  const later = `FROM alpine:3`;
-
-  it.each([
-    ["a hyphenated delimiter", "RUN <<BUILD-SCRIPT\necho hi\nBUILD-SCRIPT"],
-    ["a quoted delimiter", "RUN <<'END.X'\necho hi\nEND.X"],
-    ["a <<- delimiter with an indented end", "RUN <<-EOF\n\techo hi\n\tEOF"],
-  ])("ends the heredoc at %s, so a later FROM is still checked", (_, run) => {
-    expect(problems(`${run}\n${later}`)).toEqual([
-      "4: base image `alpine:3` has no digest",
-    ]);
-  });
-
-  it("does not read a heredoc inside an exec-form RUN", () => {
-    expect(
-      parseDockerfile(`RUN ["sh", "-c", "cat <<EOF"]\n${later}`).map(
-        (i) => i.keyword,
-      ),
-    ).toEqual(["RUN", "FROM"]);
-    expect(problems(`RUN ["sh", "-c", "cat <<EOF"]\n${later}`)).toEqual([
-      "2: base image `alpine:3` has no digest",
-    ]);
-  });
 });
 
 describe("checkDockerfile", () => {
@@ -132,17 +99,13 @@ RUN --mount=type=bind,from=alpine:3,target=/a true`;
       ]);
     });
 
-    it("finds a URL in exec form, after RUN flags and in heredocs, whatever the shell does", () => {
+    it("finds a URL in exec form and after RUN flags, whatever the shell does", () => {
       const text = `FROM x@${DIGEST}
 RUN ["curl", "-o", "/tmp/b", "https://example.com/b"]
-RUN --mount=type=cache,target=/c curl -o /tmp/a https://example.com/a
-RUN bash <<EOF > /tmp/install.log
-cd /opt && curl -o tool https://example.com/tool
-EOF`;
+RUN --mount=type=cache,target=/c curl -o /tmp/a https://example.com/a`;
       expect(problems(text)).toEqual([
         "2: a URL in `RUN`",
         "3: a URL in `RUN`",
-        "4: a URL in `RUN`",
       ]);
     });
 
@@ -253,6 +216,27 @@ RUN ["bun", "install", "-g", "@pensar/apex@2.7.0", "--ignore-scripts"]`;
         "4: global install of `@pensar/apex@$APEX_VERSION` without a literal exact version",
       ]);
     });
+  });
+});
+
+describe("checkDockerfile heredocs", () => {
+  it.each([
+    ["RUN", "RUN <<EOF"],
+    ["RUN", `RUN cat <<-"BUILD-SCRIPT" > /tmp/x`],
+    ["RUN", "RUN [ -f /x ] && cat <<EOF"],
+    ["RUN", 'RUN ["sh", "-c", "cat <<EOF"]'],
+    ["RUN", `RUN echo "<<'END.X'"`],
+    ["COPY", "COPY <<EOF /etc/x"],
+    ["ADD", "ADD <<EOF /etc/x"],
+    ["ONBUILD", "ONBUILD RUN <<EOF"],
+  ])("rejects any << in %s: %s", (keyword, instruction) => {
+    expect(problems(`FROM x@${DIGEST}\n${instruction}`)).toContain(
+      `2: a heredoc (\`<<\`) in \`${keyword}\``,
+    );
+  });
+
+  it("accepts << outside RUN, COPY, ADD and ONBUILD", () => {
+    expect(problems(`FROM x@${DIGEST}\nLABEL note="a <<b>> c"`)).toEqual([]);
   });
 });
 
