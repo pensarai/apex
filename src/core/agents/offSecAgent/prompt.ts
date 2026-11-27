@@ -264,6 +264,7 @@ export interface BaseSystemPromptOptions {
   /** When true, include the "Stay in the session folder" instruction. Defaults to true. */
   sandboxMode?: boolean;
   findingPolicy?: FindingPolicy;
+  userManagedAuthentication?: boolean;
 }
 
 export function buildBaseSystemPrompt(
@@ -271,6 +272,12 @@ export function buildBaseSystemPrompt(
 ): string {
   const sandboxMode = options?.sandboxMode ?? true;
   const externalFindings = options?.findingPolicy === "external";
+  const delegatedAuthTool = options?.userManagedAuthentication
+    ? ""
+    : "- **delegate_to_auth_subagent** — Hand off authentication (form/JSON/Basic logins as well as complex flows like OAuth, SAML, CSRF-protected forms, and SPA logins) to a specialized auth sub-agent.\n";
+  const authenticationWorkRule = options?.userManagedAuthentication
+    ? "5. **Coordinate sign-in in this conversation.** When sign-in is needed, ask the user to complete it in the session browser if available and end the turn so they can interact. Wait for their confirmation. Do not delegate sign-in or ask the user to share secrets in chat."
+    : "5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Hand the login off to `delegate_to_auth_subagent`, which handles both simple (form/JSON/Basic) and complex flows (OAuth, SAML, CSRF-protected SPAs).";
 
   const exploitationCapability = externalFindings
     ? "- **Exploitation and proof development** — use the available tools only as far as the assigned objective requires"
@@ -332,8 +339,7 @@ ${reportingCapability}
 - **grep** — Search file contents by pattern with full grep flag support.
 
 ## Authentication
-- **delegate_to_auth_subagent** — Hand off authentication (form/JSON/Basic logins as well as complex flows like OAuth, SAML, CSRF-protected forms, and SPA logins) to a specialized auth sub-agent.
-- **detect_auth_scheme** — Analyze an endpoint to identify its authentication mechanism and detect barriers like CAPTCHA or rate limiting.
+${delegatedAuthTool}- **detect_auth_scheme** — Analyze an endpoint to identify its authentication mechanism and detect barriers like CAPTCHA or rate limiting.
 - **probe_auth_endpoints** — Probe common auth paths (/login, /token, /api/auth, etc.) to discover where and how to authenticate.
 
 ## Reconnaissance & Asset Discovery
@@ -392,7 +398,7 @@ Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI
 2. **Show your work.** Explain what you're doing and why as you go. Summarize results clearly after each step so the user can follow along and redirect you if needed.
 3. **Be thorough within the ask.** When given a task, see it through completely. Don't do half the work and ask whether to continue — finish the job, then report back.
 4. **Use the right level of automation.** For large tasks (e.g., "pentest this entire application"), use orchestration tools like \`spawn_recon_agent\` and \`spawn_pentest_swarm\` to parallelize the work. For focused tasks (e.g., "check if this parameter is vulnerable to XSS"), use \`http_request\`, \`execute_command\`, or the browser tools according to the available execution interface.
-5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Hand the login off to \`delegate_to_auth_subagent\`, which handles both simple (form/JSON/Basic) and complex flows (OAuth, SAML, CSRF-protected SPAs).
+${authenticationWorkRule}
 ${findingWorkRule}
 7. **Consult memories first.** When you begin testing a specific application, framework, or path, call \`list_memories\` to check for saved knowledge from previous sessions — past findings, useful payloads, endpoint patterns, or target-specific notes. Use relevant memories to inform your approach before starting from scratch.
 

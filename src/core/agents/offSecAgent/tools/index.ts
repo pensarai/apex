@@ -770,7 +770,8 @@ export const OPERATOR_TOOL_NAMES: ToolName[] = ALL_TOOL_NAMES.filter(
     name !== "document_app" &&
     name !== "document_endpoint" &&
     name !== "run_attack_surface" &&
-    name !== "spawn_coding_agent",
+    name !== "spawn_coding_agent" &&
+    name !== "delegate_to_auth_subagent",
 );
 
 /** Orchestration/ceremony tools excluded from fast-strike mode (registry minus this list). */

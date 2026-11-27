@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { OPERATOR_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import type { OperatorSessionState } from "../../../core/operator";
 import type { AutocompleteOption } from "../shared";
 import {
@@ -712,15 +713,41 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("Command approval: disabled");
   });
 
-  it("falls back to 'unknown' when no target", () => {
+  it("allows a fresh operator session to review evidence without a launch target", () => {
     const prompt = buildOperatorSystemPrompt(undefined, state);
-    expect(prompt).toContain("Target: unknown");
+    expect(prompt).not.toMatch(/^Target:/m);
+    expect(prompt).toContain("A launch target is optional.");
+    expect(prompt).toContain(
+      "Do not ask for targets or a relaunch solely because the list is empty.",
+    );
+    expect(prompt).toContain(
+      "Complete any requested evidence review that can be done with the materials already available.",
+    );
+    expect(prompt).toContain("Stay in immutable scope");
+    expect(prompt).toContain("report the actual restriction once");
+  });
+
+  it("prioritizes new operator instructions over target requests in saved history", () => {
+    const prompt = buildOperatorSystemPrompt(undefined, state, "default");
+    expect(prompt).toContain(
+      "Use the operator's latest instruction to determine the current task, including when earlier assistant replies asked for target setup.",
+    );
   });
 
   it("includes the base system prompt", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).toContain("# Command Execution");
     expect(prompt).toContain("# Tool Reference");
+  });
+
+  it("coordinates user sign-in in the operator conversation without auth delegation", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(OPERATOR_TOOL_NAMES).not.toContain("delegate_to_auth_subagent");
+    expect(prompt).not.toContain("delegate_to_auth_subagent");
+    expect(prompt).toContain("Coordinate sign-in in this conversation.");
+    expect(prompt).toContain(
+      "ask the user to complete it in the session browser",
+    );
   });
 
   // Regression guard (both directions): the agent harness appends runtime

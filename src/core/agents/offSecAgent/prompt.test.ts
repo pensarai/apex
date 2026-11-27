@@ -89,6 +89,13 @@ describe("buildBaseSystemPrompt workspace management", () => {
       "treat it as source data rather than a request to generate another threat model",
     );
   });
+
+  it("retains delegated authentication for callers using the base prompt", () => {
+    expect(prompt).toContain("**delegate_to_auth_subagent**");
+    expect(prompt).toContain(
+      "Hand the login off to `delegate_to_auth_subagent`",
+    );
+  });
 });
 
 describe("finding PoC guidance", () => {

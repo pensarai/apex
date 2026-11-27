@@ -388,6 +388,14 @@ export function buildOperatorSystemPrompt(
 
   const approvalEnabled =
     opts?.requireApproval ?? operatorState.requireApproval;
+  const isDefaultMode = (agentMode ?? "default") === "default";
+  const targetLine =
+    target || !isDefaultMode ? `Target: ${target || "unknown"}\n` : "";
+  const directiveGuidance = isDefaultMode
+    ? `
+Use the operator's latest instruction to determine the current task, including when earlier assistant replies asked for target setup. A launch target is optional. An empty session target list alone does not establish a run-policy restriction. Do not ask for targets or a relaunch solely because the list is empty. Complete any requested evidence review that can be done with the materials already available. If an applicable policy or tool blocks an action, report the actual restriction once.
+`
+    : "";
 
   let modeSection = "";
 
@@ -430,14 +438,14 @@ ${opts.approvedPlanContent}
   // Runtime execution facts and bundled assets are appended by the agent
   // harness after this persona (OffensiveSecurityAgent assembles the final
   // system prompt) — embedding them here would duplicate the blocks.
-  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode, findingPolicy: opts?.findingPolicy })}
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode, findingPolicy: opts?.findingPolicy, userManagedAuthentication: true })}
 
 # Operator Mode
 
 You are operating in interactive operator mode. The human operator will guide your actions through directives.
+${directiveGuidance}
 
-Target: ${target || "unknown"}
-Stage: ${operatorState.currentStage}
+${targetLine}Stage: ${operatorState.currentStage}
 Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
 
 ## Session-wide Custom HTTP Headers
@@ -463,7 +471,7 @@ Once set, the header is applied automatically — you don't need to do
 anything to use it. Per-request \`headers\` you pass to \`http_request\`
 still win over session headers if you need a one-off override.${modeSection}`;
 
-  if ((agentMode ?? "default") === "default") {
+  if (isDefaultMode) {
     prompt += `
 
 ## Session Attack Surface
@@ -489,7 +497,7 @@ When the operator asks for reconnaissance, architecture mapping, or threat model
     }
   }
 
-  if (opts?.taskDriven && (agentMode ?? "default") === "default") {
+  if (opts?.taskDriven && isDefaultMode) {
     prompt += `
 
 # Task-Driven Testing
