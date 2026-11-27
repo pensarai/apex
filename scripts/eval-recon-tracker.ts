@@ -13,7 +13,9 @@ import { loadTopology } from "../src/core/agents/offSecAgent/tools/topologyRecor
 import { type AIModel, onUsage, type UsageRecorder } from "../src/core/ai";
 import { runGeneralizedAttackSurface } from "../src/core/api/attackSurface";
 import { AgentEventBus } from "../src/core/eventBus";
+import { GOAL_LIMITS, readGoalFile } from "../src/core/goals";
 import { sessions } from "../src/core/session";
+import { runReconWithGoal } from "./recon-tracker/goal";
 import {
   csv,
   inspectTracker,
@@ -34,13 +36,15 @@ const { values } = parseArgs({
 if (
   !values.scope ||
   !values.output ||
-  !["baseline", "tracker"].includes(values.arm ?? "")
+  !["baseline", "tracker", "goal-tracker"].includes(values.arm ?? "")
 )
   throw new Error(
-    "Usage: --arm baseline|tracker --scope <csv> --output <new-directory> [--prepare-only]",
+    "Usage: --arm baseline|tracker|goal-tracker --scope <csv> --output <new-directory> [--prepare-only]",
   );
 const source = readFileSync(resolve(values.scope), "utf8");
 const scope = loadScope(source);
+const withTracker = values.arm !== "baseline";
+const withGoal = values.arm === "goal-tracker";
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output directory must be new");
 mkdirSync(output, { recursive: true });
@@ -58,7 +62,7 @@ const session = await sessions.create({
   name: `recon-csv-${values.arm}`,
   targets: scope.items.map((item) => item.origin),
   config: {
-    prompt: objective + (values.arm === "tracker" ? trackerGuidance : ""),
+    prompt: objective + (withTracker ? trackerGuidance : ""),
     enumerateSubdomains: false,
   },
 });
@@ -66,26 +70,38 @@ writeFileSync(
   join(session.rootPath, "scope.csv"),
   csv([["id", "domain"], ...scope.items.map((item) => [item.id, item.domain])]),
 );
-if (values.arm === "tracker")
+if (withTracker)
   writeFileSync(
     join(session.rootPath, "coverage.csv"),
     seedTracker(scope.items),
   );
 writeFileSync(join(output, "source.csv"), source);
 save("scope.json", scope);
-const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"])
+const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"], {
+  cwd: resolve(import.meta.dir, ".."),
+})
+  .stdout.toString()
+  .trim();
+const agentSourceTree = Bun.spawnSync(["git", "rev-parse", "HEAD:src"], {
+  cwd: resolve(import.meta.dir, ".."),
+})
   .stdout.toString()
   .trim();
 const inputs = {
   arm: values.arm,
   model: values.model,
   commit,
+  agentSourceTree,
   sourceSha256: createHash("sha256").update(source).digest("hex"),
   domains: scope.items.length,
   duplicates: scope.duplicates,
   session: { id: session.id, rootPath: session.rootPath },
   prompt: session.config?.prompt,
-  goalEnabled: false,
+  goalEnabled: withGoal,
+  goalLimits: withGoal ? GOAL_LIMITS : undefined,
+  goalImplementation: withGoal
+    ? "native src/core/goals + local recon adapter"
+    : undefined,
   auditEnabled: false,
   runtimeTrackerGate: false,
   toolPolicy: "apex-default",
@@ -188,14 +204,18 @@ const heartbeat = setInterval(
 let status = "completed",
   error: string | undefined;
 try {
-  await runGeneralizedAttackSurface({
+  const input = {
     target: scope.items[0].origin,
     model: values.model as AIModel,
     session,
     eventBus,
     abortSignal: controller.signal,
     usageRecorder: usage,
-  });
+  };
+  if (withGoal) {
+    const goal = await runReconWithGoal(input);
+    if (goal.status !== "complete") status = goal.status;
+  } else await runGeneralizedAttackSurface(input);
   if (controller.signal.aborted) status = "stopped";
 } catch (caught) {
   status = controller.signal.aborted ? "stopped" : "failed";
@@ -208,10 +228,15 @@ try {
 }
 const topology = loadTopology(session.rootPath);
 save("topology.json", topology);
-for (const file of ["attack-surface-results.json", "coverage.csv", "scope.csv"])
+for (const file of [
+  "attack-surface-results.json",
+  "coverage.csv",
+  "scope.csv",
+  "goal.json",
+])
   if (existsSync(join(session.rootPath, file)))
     cpSync(join(session.rootPath, file), join(output, file));
-if (values.arm === "tracker") {
+if (withTracker) {
   try {
     save(
       "tracker-check.json",
@@ -227,6 +252,7 @@ if (values.arm === "tracker") {
 const result = {
   status,
   error,
+  goal: withGoal ? readGoalFile(session.rootPath) : undefined,
   elapsedSeconds: (Date.now() - start) / 1000,
   calls,
   inputTokens,
@@ -237,8 +263,9 @@ const result = {
   ),
   costCaveat:
     "Catalog estimate of recorded usage, not an invoice. No evaluation time or cost cap. Agent/provider limits still apply.",
-  completionCaveat:
-    "Completed means the unmodified recon utility returned a report, not independently verified coverage.",
+  completionCaveat: withGoal
+    ? "Completed means native goal settlement accepted the model's cited tool outputs, not independently verified coverage or a current report."
+    : "Completed means the unmodified recon utility returned a report, not independently verified coverage.",
 };
 save("result.json", result);
 console.log(JSON.stringify({ output, ...result }));

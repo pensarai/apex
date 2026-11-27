@@ -6,12 +6,16 @@ import { assessTopology } from "./recon-tracker/assess";
 import { csv, type ScopeItem } from "./recon-tracker/scope";
 
 const { values } = parseArgs({
-  options: { baseline: { type: "string" }, tracker: { type: "string" } },
+  options: {
+    baseline: { type: "string" },
+    tracker: { type: "string" },
+    "goal-tracker": { type: "string" },
+  },
   strict: true,
 });
 if (!values.baseline)
   throw new Error(
-    "Usage: --baseline <run-directory> [--tracker <run-directory>]",
+    "Usage: --baseline <run-directory> [--tracker <run-directory>] [--goal-tracker <run-directory>]",
   );
 const read = (dir: string, file: string) =>
   JSON.parse(readFileSync(join(dir, file), "utf8"));
@@ -21,11 +25,22 @@ const escapeHtml = (value: unknown) =>
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-const runs = [values.baseline, values.tracker]
+const runs = [values.baseline, values.tracker, values["goal-tracker"]]
   .filter((dir): dir is string => Boolean(dir))
   .map((dir) => {
     dir = resolve(dir);
     const inputs = read(dir, "inputs.json");
+    if (!inputs.agentSourceTree) {
+      const revision = Bun.spawnSync(
+        ["git", "rev-parse", `${inputs.commit}:src`],
+        {
+          cwd: resolve(import.meta.dir, ".."),
+        },
+      );
+      if (revision.exitCode !== 0)
+        throw new Error(`Cannot resolve agent source for ${inputs.commit}`);
+      inputs.agentSourceTree = revision.stdout.toString().trim();
+    }
     const scope = read(dir, "scope.json") as { items: ScopeItem[] };
     const finished = existsSync(join(dir, "result.json"));
     const result = finished
@@ -153,18 +168,26 @@ const runs = [values.baseline, values.tracker]
       },
     };
   });
-if (runs.length === 2) {
+for (const run of runs.slice(1)) {
   for (const key of [
     "sourceSha256",
     "model",
-    "commit",
+    "agentSourceTree",
     "toolProtocol",
     "toolPolicy",
     "startMode",
   ])
-    if (runs[0].inputs[key] !== runs[1].inputs[key])
+    if (runs[0].inputs[key] !== run.inputs[key])
       throw new Error(`Unmatched comparison: ${key}`);
 }
+const trackerArms = runs.filter((run) =>
+  ["tracker", "goal-tracker"].includes(run.inputs.arm),
+);
+if (
+  trackerArms.length === 2 &&
+  trackerArms[0].inputs.prompt !== trackerArms[1].inputs.prompt
+)
+  throw new Error("Unmatched tracker instructions");
 console.log(
   JSON.stringify(
     runs.map(({ inputs, ...run }) => ({ arm: inputs.arm, ...run })),
