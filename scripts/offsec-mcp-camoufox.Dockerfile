@@ -8,34 +8,50 @@
 # build, plus bun + git so the smoke orchestrator can clone & install apex and
 # run its REAL MCP browser code inside the sandbox.
 
-FROM node:22.23.5-slim
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS bun
+
+FROM node:22.23.5-slim@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb
 
 # Same base apt set style as the prod deps layer. build-essential + python3: a
 # fallback for native modules without a prebuild (better-sqlite3 13, which
 # camoufox-js pulls in, ships prebuilt binaries and needs Node 22).
 # git: clone the apex branch at runtime. unzip/curl/wget: tooling.
+# libavcodec59: Camoufox decodes AAC audio with the system libavcodec. Newer
+# Playwright lists it among Firefox's Debian 12 deps; 1.53.1's install-deps
+# does not.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential \
     git curl wget ca-certificates unzip \
+    libavcodec59 \
     && rm -rf /var/lib/apt/lists/*
 
-# Bun, pinned to match console's prod base (packageManager).
-ARG BUN_VERSION=1.3.10
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
-ENV PATH="/root/.bun/bin:$PATH"
-RUN bun --version
+# Bun, the same release as console's (packageManager), copied from the
+# digest-pinned official image above.
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s bun /usr/local/bin/bunx && bun --version
 
-# Analog of prod's `playwright install --with-deps chrome`: install the Firefox
-# system libraries (GTK3, X, nss, fonts…). Camoufox is a patched Firefox.
-RUN npx --yes playwright install-deps firefox
-
-# Bake the Camoufox browser build into the image so the agent's ensureCamoufox()
-# finds it cached at /root/.cache/camoufox instead of fetching ~700MB on the
-# first pentest (the runtime fetch is the step that stalls). Install the pinned
-# camoufox-js locally and use its binary (not npx, which could resolve a
-# different build) — mirrors the sandbox Dockerfile and ensureCamoufox().
+# The locked browser packages (scripts/offsec-sandbox, scanned by the osv gate)
+# go to a scratch directory that is removed in the same layer.
 WORKDIR /tmp/camoufox-fetch
-RUN npm init -y --silent \
- && npm install --no-audit --no-fund --save-exact camoufox-js@0.13.0 playwright-core@1.53.1 \
- && node node_modules/camoufox-js/dist/__main__.js fetch \
- && cd / && rm -rf /tmp/camoufox-fetch
+COPY offsec-sandbox/package.json offsec-sandbox/package-lock.json ./
+
+# install-deps is the analog of prod's `playwright install --with-deps chrome`:
+# the Firefox system libraries (GTK3, X, nss, fonts…). Camoufox is a patched
+# Firefox.
+# Then bake the Camoufox browser build into the image so the agent's
+# ensureCamoufox() finds it cached at /root/.cache/camoufox instead of fetching
+# ~700MB on the first pentest (the runtime fetch is the step that stalls). Use
+# the locked camoufox-js binary (not npx, which could resolve a different
+# build) — mirrors the sandbox Dockerfile and ensureCamoufox().
+# camoufox-js pins the browser build and checks the zip against the SHA-256
+# GitHub publishes for it. It only warns when no SHA-256 is published, so fail
+# the build on that warning rather than install an unverified browser. tee
+# keeps the download progress streaming to the build log.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN npm ci --no-audit --no-fund \
+ && npx --no-install playwright-core install-deps firefox \
+ && node node_modules/camoufox-js/dist/__main__.js fetch 2>&1 | tee /tmp/camoufox-fetch.log \
+ && if grep -q "skipping verification" /tmp/camoufox-fetch.log; then \
+      echo "camoufox fetch did not verify the browser download" >&2; exit 1; \
+    fi \
+ && cd / && rm -rf /tmp/camoufox-fetch /tmp/camoufox-fetch.log
