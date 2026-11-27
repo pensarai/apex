@@ -27,3 +27,4 @@ Notes:
 - Use `network_mode: host` on Linux if you need full network reachability for scans.
 - The image includes nmap and other common tooling for convenience.
 - The container uses bun as the JavaScript runtime (required by @pensar/apex).
+- The build needs BuildKit (the default for `docker compose`) on Docker Engine 25 or newer. Node.js is downloaded by the builder itself (`ADD --checksum`), not by a command inside the build, so behind a proxy, set the proxy for the Docker daemon or Docker Desktop. Proxy settings that only reach build commands, such as `~/.docker/config.json` proxies or `--build-arg HTTPS_PROXY`, do not cover that download.
