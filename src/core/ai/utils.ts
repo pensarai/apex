@@ -28,6 +28,7 @@ import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
 import type { OllamaCatalog } from "../ollama";
 import { scopedLogger } from "../util/lazyLogger";
+import { providerFetch } from "../util/providerFetch";
 import {
   type AIModel,
   buildOpenRouterProviderOptions,
@@ -232,7 +233,9 @@ export function getProviderModel(
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
-        fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
+        fetch: /^gpt-5\.5-pro(?:-|$)/.test(model)
+          ? fetchOpenAIPro
+          : providerFetch,
       });
       // Stateless requests: ZDR orgs can't resolve item_reference ids from prior turns.
       providerModel = wrapLanguageModel({
@@ -264,7 +267,7 @@ export function getProviderModel(
     case "openrouter": {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
-        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : undefined,
+        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : providerFetch,
       });
       providerModel = openrouter(model);
       break;
@@ -290,6 +293,7 @@ export function getProviderModel(
         name: "inference",
         apiKey,
         baseURL: "https://api.inference.net/v1",
+        fetch: providerFetch,
         supportsStructuredOutputs: true,
         transformRequestBody: (body) => ({
           ...body,
@@ -309,6 +313,7 @@ export function getProviderModel(
         name: "inception",
         apiKey: inceptionApiKey,
         baseURL: "https://api.inceptionlabs.ai/v1",
+        fetch: providerFetch,
       });
       providerModel = inception("mercury-2");
       break;
@@ -323,7 +328,7 @@ export function getProviderModel(
         input: RequestInfo | URL,
         init?: RequestInit,
       ) => {
-        return globalThis.fetch(input, {
+        return providerFetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
         });
@@ -378,7 +383,7 @@ export function getProviderModel(
     case "bedrock-mantle": {
       const region = mantleRegion(model);
       const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
-        globalThis.fetch(input, {
+        providerFetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
         });
@@ -417,6 +422,7 @@ export function getProviderModel(
     case "google": {
       const google = createGoogleGenerativeAI({
         apiKey: googleAPIKey,
+        fetch: providerFetch,
       });
       providerModel = google(model);
       break;
@@ -476,12 +482,14 @@ export function getProviderModel(
       providerModel = createOpenAI({
         baseURL: localBaseURL,
         apiKey: "",
+        fetch: providerFetch,
       }).chat(model);
       break;
 
     default: {
       const anthropic = createAnthropic({
         apiKey: anthropicAPIKey,
+        fetch: providerFetch,
       });
       providerModel = anthropic(model);
       break;

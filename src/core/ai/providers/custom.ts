@@ -7,6 +7,7 @@ import {
   resolveCustomApiKey,
   resolveCustomModel,
 } from "../../config/customProviders";
+import { providerFetch } from "../../util/providerFetch";
 
 export function createCustomModel(
   id: string,
@@ -25,6 +26,7 @@ export function createCustomModel(
       baseURL: provider.baseUrl,
       apiKey: resolveCustomApiKey(provider),
       headers: provider.headers,
+      fetch: providerFetch,
     }).responses(model.id);
     return wrapLanguageModel({
       model: responsesModel,
@@ -61,6 +63,7 @@ export function createCustomModel(
     baseURL: provider.baseUrl,
     apiKey: resolveCustomApiKey(provider),
     headers: provider.headers,
+    fetch: providerFetch,
     transformRequestBody: (body) => ({
       ...body,
       ...provider.requestBody,

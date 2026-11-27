@@ -1,3 +1,5 @@
+import { providerFetch } from "../../util/providerFetch";
+
 export const OPENAI_PRO_TIMEOUT_MS = 35 * 60 * 1000;
 
 let dispatcher: import("undici").Agent | undefined;
@@ -13,7 +15,7 @@ export const fetchOpenAIPro = (async (
     : deadline;
   if (typeof Bun !== "undefined") {
     const options = { ...init, signal, timeout: false };
-    return globalThis.fetch(input, options);
+    return providerFetch(input, options);
   }
 
   const { Agent, fetch } = await import("undici");

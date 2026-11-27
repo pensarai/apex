@@ -9,6 +9,7 @@ import type {
 } from "@ai-sdk/provider";
 import { createLogger } from "../../logger/structured";
 import { scopedLogger } from "../../util/lazyLogger";
+import { providerFetch } from "../../util/providerFetch";
 import { isMantleResponsesModelId } from "../mantle";
 import { StreamTelemetry, wallNow } from "../streamTelemetry";
 import { buildStreamingFetchSignal } from "../utils";
@@ -283,7 +284,7 @@ export function createPensarModel(
 
       let response: Response;
       try {
-        response = await fetch(url, {
+        response = await providerFetch(url, {
           method: "POST",
           headers,
           signal: fetchSignal,

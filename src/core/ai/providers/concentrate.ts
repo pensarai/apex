@@ -5,6 +5,7 @@ import {
   type LanguageModelV3CallOptions,
 } from "@ai-sdk/provider";
 
+import { providerFetch } from "../../util/providerFetch";
 import { getClaudeCapabilities } from "../models";
 import type { ReasoningEffort } from "../reasoning";
 
@@ -158,7 +159,7 @@ function parseErrorBody(body: string): {
 }
 
 export function createConcentrateFetch(
-  fetchFn: ConcentrateFetch = (input, init) => globalThis.fetch(input, init),
+  fetchFn: ConcentrateFetch = providerFetch,
 ): ConcentrateFetch {
   return async (
     input: RequestInfo | URL,

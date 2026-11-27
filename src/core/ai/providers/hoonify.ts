@@ -5,6 +5,7 @@ import {
   type HoonifyModel,
   resolveHoonifyModel,
 } from "../../hoonify";
+import { providerFetch } from "../../util/providerFetch";
 
 export function createHoonifyModel(
   id: string,
@@ -18,6 +19,7 @@ export function createHoonifyModel(
     name: "hoonify",
     baseURL: HOONIFY_BASE_URL,
     apiKey,
+    fetch: providerFetch,
     supportsStructuredOutputs: true,
     transformRequestBody: (body) => ({
       ...body,

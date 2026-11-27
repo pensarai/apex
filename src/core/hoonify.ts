@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { providerFetch } from "./util/providerFetch";
 
 export const HOONIFY_BASE_URL = "https://api.hoonify.ai/v1";
 
@@ -97,7 +98,7 @@ async function fetchHoonifyModels(apiKey: string): Promise<HoonifyModel[]> {
   let response: Response;
   let body: unknown;
   try {
-    response = await fetch(`${HOONIFY_BASE_URL}/models`, {
+    response = await providerFetch(`${HOONIFY_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(15_000),
     });

@@ -1,6 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
+import { providerFetch } from "../../util/providerFetch";
 import { getClaudeCapabilities, getMaxOutputTokens } from "../models";
 
 export function createAnthropicModel(
@@ -8,7 +9,8 @@ export function createAnthropicModel(
   apiKey?: string,
 ): LanguageModelV3 {
   const capabilities = getClaudeCapabilities(modelId);
-  if (!capabilities) return createAnthropic({ apiKey }).chat(modelId);
+  if (!capabilities)
+    return createAnthropic({ apiKey, fetch: providerFetch }).chat(modelId);
 
   const model = createAnthropic({
     apiKey,
@@ -33,7 +35,7 @@ export function createAnthropicModel(
             .join(","),
         );
       }
-      return globalThis.fetch(input, {
+      return providerFetch(input, {
         ...init,
         headers,
         body: JSON.stringify(body),

@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { z } from "zod";
+import { providerFetch } from "./util/providerFetch";
 
 const modelSchema = z.object({
   name: z.string().trim().min(1),
@@ -55,7 +56,7 @@ export async function prepareOllamaModel(
     });
   const readRunning = async () => {
     try {
-      const response = await fetch(`${baseURL}/api/ps`, {
+      const response = await providerFetch(`${baseURL}/api/ps`, {
         signal: AbortSignal.any([requestSignal, AbortSignal.timeout(1_000)]),
         redirect: "error",
       });
@@ -76,7 +77,7 @@ export async function prepareOllamaModel(
       loading = true;
       report("loading");
       // An empty generation loads installed weights without generating or pulling.
-      const response = await fetch(`${baseURL}/api/generate`, {
+      const response = await providerFetch(`${baseURL}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: model.id, stream: false }),
@@ -134,7 +135,7 @@ export async function discoverOllama(
       ...(signal ? [signal] : []),
     ]);
     const read = async (endpoint: string) => {
-      const response = await fetch(`${baseURL}/api/${endpoint}`, {
+      const response = await providerFetch(`${baseURL}/api/${endpoint}`, {
         signal: requestSignal,
         redirect: "error",
       });

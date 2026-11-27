@@ -1,4 +1,5 @@
 import { loadHoonifyModels } from "../hoonify";
+import { providerFetch } from "../util/providerFetch";
 import type { ProviderType } from "./types";
 
 export interface VerifyResult {
@@ -15,7 +16,7 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await providerFetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
