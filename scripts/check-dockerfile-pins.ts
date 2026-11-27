@@ -38,6 +38,11 @@ const GLOBAL_INSTALL =
 const EXACT_PACKAGE =
   /^(?:@[^/@\s$]+\/)?[^/@\s$]+@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
+// Instructions that accept a heredoc, and only in their shell (not JSON) form.
+const HEREDOC_INSTRUCTIONS = new Set(["RUN", "COPY", "ADD"]);
+// `<<EOF`, `<<-EOF`, `<<"EOF"`, `<<'BUILD-SCRIPT'`: the delimiter is kept whole.
+const HEREDOC = /<<-?(["']?)([A-Za-z0-9_][\w.-]*)\1/g;
+
 /**
  * Joins continuation lines and drops comment lines, keeping each start line.
  * Heredoc bodies stay part of their instruction, so a URL in one counts.
@@ -55,9 +60,16 @@ export function parseDockerfile(text: string): Instruction[] {
     const continued = /\\\s*$/.test(raw);
     buf += `${continued ? raw.replace(/\\\s*$/, "") : raw} `;
     if (continued) continue;
-    for (const doc of buf.matchAll(/<<-?(["']?)(\w+)\1/g)) {
-      while (++i < lines.length && (lines[i] ?? "").trim() !== doc[2])
-        buf += `\n${lines[i] ?? ""}`;
+    const head = /^\s*(\w+)\s*(.*)$/s.exec(buf.trim());
+    const form = (head?.[2] ?? "").replace(/^(?:--\S+\s+)*/, "");
+    if (
+      HEREDOC_INSTRUCTIONS.has((head?.[1] ?? "").toUpperCase()) &&
+      !form.startsWith("[")
+    ) {
+      for (const doc of buf.matchAll(HEREDOC)) {
+        while (++i < lines.length && (lines[i] ?? "").trim() !== doc[2])
+          buf += `\n${lines[i] ?? ""}`;
+      }
     }
     const match = /^\s*(\w+)\s*(.*)$/s.exec(buf.trim());
     if (match)
@@ -89,6 +101,8 @@ export function checkDockerfile(path: string, text: string): Violation[] {
   const report = (line: number, problem: string, fix: string) =>
     violations.push({ path, line, problem, fix });
   const stages = new Set<string>();
+  // Each stage's name by position, so `COPY --from=<index>` resolves too.
+  const stageOrder: (string | undefined)[] = [];
   const downloadStages = new Set<string>();
   // A `FROM scratch AS <name>` stage still being read; it is a download stage
   // when its first instruction is an `ADD` of a URL.
@@ -129,6 +143,9 @@ export function checkDockerfile(path: string, text: string): Violation[] {
           ? name.toLowerCase()
           : undefined;
       if (as?.toLowerCase() === "as" && name) stages.add(name.toLowerCase());
+      stageOrder.push(
+        as?.toLowerCase() === "as" && name ? name.toLowerCase() : undefined,
+      );
       continue;
     }
     if (keyword === "ADD" && URL.test(args)) {
@@ -162,7 +179,10 @@ export function checkDockerfile(path: string, text: string): Violation[] {
       );
     if (keyword === "COPY") {
       const from = /(?:^|\s)--from=(\S+)/.exec(args)?.[1];
-      if (from && !/^\d+$/.test(from)) {
+      if (from && /^\d+$/.test(from)) {
+        const stage = stageOrder[Number(from)];
+        if (stage) noDownloadStage(line, stage, `\`COPY --from=${from}\``);
+      } else if (from) {
         checkImage(line, from, "COPY --from image");
         noDownloadStage(line, from, "`COPY --from`");
       }

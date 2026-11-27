@@ -43,6 +43,31 @@ describe("parseDockerfile", () => {
   });
 });
 
+describe("parseDockerfile heredocs", () => {
+  const later = `FROM alpine:3`;
+
+  it.each([
+    ["a hyphenated delimiter", "RUN <<BUILD-SCRIPT\necho hi\nBUILD-SCRIPT"],
+    ["a quoted delimiter", "RUN <<'END.X'\necho hi\nEND.X"],
+    ["a <<- delimiter with an indented end", "RUN <<-EOF\n\techo hi\n\tEOF"],
+  ])("ends the heredoc at %s, so a later FROM is still checked", (_, run) => {
+    expect(problems(`${run}\n${later}`)).toEqual([
+      "4: base image `alpine:3` has no digest",
+    ]);
+  });
+
+  it("does not read a heredoc inside an exec-form RUN", () => {
+    expect(
+      parseDockerfile(`RUN ["sh", "-c", "cat <<EOF"]\n${later}`).map(
+        (i) => i.keyword,
+      ),
+    ).toEqual(["RUN", "FROM"]);
+    expect(problems(`RUN ["sh", "-c", "cat <<EOF"]\n${later}`)).toEqual([
+      "2: base image `alpine:3` has no digest",
+    ]);
+  });
+});
+
 describe("checkDockerfile", () => {
   it("accepts the pinned pattern: digests, a download stage used by RUN --mount, locked installs", () => {
     const text = `FROM oven/bun:1.4.4@${DIGEST} AS bun
@@ -228,6 +253,24 @@ RUN ["bun", "install", "-g", "@pensar/apex@2.7.0", "--ignore-scripts"]`;
         "4: global install of `@pensar/apex@$APEX_VERSION` without a literal exact version",
       ]);
     });
+  });
+});
+
+describe("checkDockerfile numeric COPY --from", () => {
+  it("rejects a copy from a download stage named by its index", () => {
+    expect(
+      problems(
+        `${DOWNLOAD_STAGE}\nFROM node:22@${DIGEST} AS app\nCOPY --from=0 /tool-x86_64 /tool`,
+      ),
+    ).toEqual(["5: download stage `tool` is used through `COPY --from=0`"]);
+  });
+
+  it("accepts a copy from an ordinary stage named by its index", () => {
+    expect(
+      problems(
+        `FROM node:22@${DIGEST} AS build\nRUN true\nFROM node:22@${DIGEST}\nCOPY --from=0 /app /app`,
+      ),
+    ).toEqual([]);
   });
 });
 
