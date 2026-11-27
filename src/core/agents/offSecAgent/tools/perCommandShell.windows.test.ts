@@ -32,6 +32,30 @@ function fixture() {
 }
 
 describe("PerCommandShell Windows termination", () => {
+  it("uses the host command processor and preserves cmd quoting", async () => {
+    vi.stubEnv("ComSpec", String.raw`C:\Windows\System32\cmd.exe`);
+    try {
+      const { child, shell } = fixture();
+      const command = String.raw`"C:\Program Files\nodejs\node.exe" -e "console.log('ok')"`;
+      const pending = shell.execute(command, { env: { Path: "C:\\Tools" } });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.spawn).toHaveBeenCalledWith(
+        String.raw`C:\Windows\System32\cmd.exe`,
+        ["/d", "/s", "/c", `"${command}"`],
+        expect.objectContaining({
+          windowsVerbatimArguments: true,
+          env: expect.objectContaining({ PATH: "C:\\Tools" }),
+        }),
+      );
+      expect(mocks.spawn.mock.calls[0][2].env).not.toHaveProperty("Path");
+      child.emit("close", 0);
+      await expect(pending).resolves.toMatchObject({ exitCode: 0 });
+      await shell.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("passes a native script path as argv without cmd interpreting it", async () => {
     const { child, shell } = fixture();
     const path = String.raw`C:\Users\Ada O'Neil\My POCs\proof & %PATH% !.js`;

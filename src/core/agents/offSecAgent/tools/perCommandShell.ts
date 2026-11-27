@@ -5,6 +5,11 @@ import {
   captureText,
   makeCapture,
 } from "../../../tools/backends/capture";
+import {
+  curatedCommandEnv,
+  mergeCommandEnv,
+  windowsCommandShell,
+} from "./commandEnvironment";
 
 // Per-stream in-memory capture limit. The process is NEVER killed for output
 // volume — capture keeps draining and reports truncation flags instead.
@@ -157,13 +162,13 @@ export class PerCommandShell {
     const shell =
       typeof command === "string"
         ? isWin
-          ? "cmd"
+          ? windowsCommandShell(process.env)
           : "bash"
         : command.executable;
     const args =
       typeof command === "string"
         ? isWin
-          ? ["/d", "/s", "/c", command]
+          ? ["/d", "/s", "/c", `"${command}"`]
           : ["--norc", "--noprofile", "-c", command]
         : [...command.args];
 
@@ -176,23 +181,22 @@ export class PerCommandShell {
           // Own process group on posix: the terminating path signals THIS
           // group only — never another invocation or the session.
           detached: !isWin,
-          env: {
+          // cmd has its own quote rules; do not apply CRT argv escaping to
+          // command text. Native executeArgv calls retain normal argv quoting.
+          ...(isWin && typeof command === "string"
+            ? { windowsVerbatimArguments: true }
+            : {}),
+          env: mergeCommandEnv(
+            isWin,
             // Workspace-configured vars first (lowest precedence) so the
             // curated essentials and explicit agent extras always win —
             // arbitrary process.env is never inherited.
-            ...readSandboxAgentEnv(),
-            PATH: process.env.PATH ?? "",
-            HOME: process.env.HOME ?? "",
-            USER: process.env.USER ?? "",
-            LANG: process.env.LANG,
-            TMPDIR: process.env.TMPDIR,
-            ...this.extraEnv,
-            ...opts?.env,
-            PS1: "",
-            CI: "true",
-            TERM: "dumb",
-            NO_COLOR: "1",
-          } as Record<string, string | undefined> as NodeJS.ProcessEnv,
+            readSandboxAgentEnv(),
+            curatedCommandEnv(process.env, isWin),
+            this.extraEnv,
+            opts?.env,
+            { PS1: "", CI: "true", TERM: "dumb", NO_COLOR: "1" },
+          ),
         });
       } catch (err) {
         resolve(
