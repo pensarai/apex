@@ -1,0 +1,13 @@
+{
+  "name": "offsec-sandbox-playwright",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser packages baked into the offsec Camoufox sandbox images. Installed with npm ci.",
+  "dependencies": {
+    "camoufox-js": "0.13.0",
+    "fingerprint-generator": "2.1.90",
+    "generative-bayesian-network": "2.1.90",
+    "header-generator": "2.1.90",
+    "playwright-core": "1.53.1"
+  }
+}

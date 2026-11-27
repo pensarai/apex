@@ -85,7 +85,11 @@ export interface GateResult {
 }
 
 /** Lockfiles the gate blocks on, relative to the repository root. */
-export const GATED_LOCKFILES = ["bun.lock"];
+export const GATED_LOCKFILES = [
+  "bun.lock",
+  // Installed with `npm ci` into the offsec Camoufox sandbox images.
+  "scripts/offsec-sandbox/package-lock.json",
+];
 
 export interface LockfilePair {
   /** Path relative to the repo root, used in the summary and annotations. */
