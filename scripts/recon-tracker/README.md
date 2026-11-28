@@ -117,3 +117,5 @@ alternating arm order before claiming a reliable effect. Console integration and
 deterministic completion gate are follow-up decisions based on those results.
 
 Structured HTTP coverage credits valid starting URLs with recorded transport results, including failed attempts. Redirect destinations are not automatically credited; browser and shell probes require separate review. Malformed tracker files remain visible as errors without hiding topology output.
+
+Legacy archives cannot prove the absence of staged or untracked runtime edits: their comparison is explicitly labeled as committed-runtime provenance only. New runs require a clean runtime and record its fingerprint.

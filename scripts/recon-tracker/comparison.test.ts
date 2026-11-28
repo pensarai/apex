@@ -32,7 +32,7 @@ function fixture(arm = "baseline", fingerprint?: string) {
     commit: "unavailable-archived-commit",
     runtimeFingerprint: fingerprint,
   });
-  save("scope.json", loadScope("app.example"));
+  save("scope.json", loadScope("app.example\ninvalid.example"));
   save("result.json", {
     status: "completed",
     elapsedSeconds: 1,
@@ -55,7 +55,7 @@ function fixture(arm = "baseline", fingerprint?: string) {
   writeFileSync(join(root, "coverage.csv"), "broken,header\n");
   writeFileSync(
     join(root, "events.jsonl"),
-    ["app.example", "https://app.example/"]
+    ["invalid.example", "https://app.example/"]
       .flatMap((url, i) => [
         {
           event: "tool-call-complete",

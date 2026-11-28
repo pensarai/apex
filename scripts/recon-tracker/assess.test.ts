@@ -18,7 +18,7 @@ it("does not credit a parent, suffix match or threat prose as an endpoint mappin
       {
         id: "cmp_a",
         name: "Shared",
-        endpoints: ["https://a.example/login?return=https://b.example/"],
+        endpoints: ["a.example/login?return=https://b.example/"],
       },
     ],
     threats: [

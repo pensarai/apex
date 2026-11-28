@@ -27,7 +27,9 @@ export function assessTopology(
         component.endpoints.some((endpoint: unknown) => {
           if (typeof endpoint !== "string") return false;
           const url = URL.parse(
-            endpoint.includes("://") ? endpoint : `https://${endpoint}`,
+            /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)
+              ? endpoint
+              : `https://${endpoint}`,
           );
           return url?.hostname.toLowerCase().replace(/\.$/, "") === item.domain;
         }),

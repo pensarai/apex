@@ -16,6 +16,7 @@ import { AgentEventBus } from "../src/core/eventBus";
 import { GOAL_LIMITS, readGoalFile } from "../src/core/goals";
 import { sessions } from "../src/core/session";
 import { runReconWithGoal } from "./recon-tracker/goal";
+import { findPricing } from "./recon-tracker/pricing";
 import {
   assertCleanRuntime,
   runtimeFingerprint,
@@ -147,13 +148,7 @@ if (!catalogResponse.ok)
 const catalog = (await catalogResponse.json()) as {
   data: { id: string; pricing: Record<string, string> }[];
 };
-const candidates = catalog.data.filter(
-  (entry) =>
-    entry.id === values.model || entry.id.split("/").at(-1) === values.model,
-);
-const selected =
-  candidates.find((entry) => entry.id === values.model) ??
-  (candidates.length === 1 ? candidates[0] : undefined);
+const selected = findPricing(catalog.data, values.model);
 const price = selected?.pricing;
 save("pricing.json", { model: selected?.id ?? null, pricing: price ?? null });
 let calls = 0,
