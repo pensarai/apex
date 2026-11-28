@@ -26,10 +26,11 @@ export function assessTopology(
         Array.isArray(component.endpoints) &&
         component.endpoints.some((endpoint: unknown) => {
           if (typeof endpoint !== "string") return false;
+          const normalized = endpoint.trim();
           const url = URL.parse(
-            /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)
-              ? endpoint
-              : `https://${endpoint}`,
+            /^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)
+              ? normalized
+              : `https://${normalized}`,
           );
           return url?.hostname.toLowerCase().replace(/\.$/, "") === item.domain;
         }),

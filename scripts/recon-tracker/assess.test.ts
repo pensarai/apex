@@ -2,7 +2,11 @@ import { expect, it } from "vitest";
 import { assessTopology, mentionsHost } from "./assess";
 import { csv, loadScope, parseCsv, seedTracker } from "./scope";
 
-it("does not credit a parent, suffix match or threat prose as an endpoint mapping", () => {
+it.each([
+  "a.example/login?return=https://b.example/",
+  "https://a.example/login?return=https://b.example/",
+  " https://a.example/login?return=https://b.example/ ",
+])("credits only the serving host of %s", (endpoint) => {
   expect(mentionsHost("https://app.example/path", "app.example")).toBe(true);
   expect(mentionsHost("https://dev.app.example", "app.example")).toBe(false);
   expect(mentionsHost("https://app.example.evil.test", "app.example")).toBe(
@@ -18,7 +22,7 @@ it("does not credit a parent, suffix match or threat prose as an endpoint mappin
       {
         id: "cmp_a",
         name: "Shared",
-        endpoints: ["a.example/login?return=https://b.example/"],
+        endpoints: [endpoint],
       },
     ],
     threats: [
@@ -32,6 +36,16 @@ it("does not credit a parent, suffix match or threat prose as an endpoint mappin
   expect(result.endpointMappedDomains).toBe(1);
   expect(result.recordReferencedDomains).toBe(2);
   expect(result.domainsMappedToThreats).toBe(1);
+  expect(result.rows[0]).toMatchObject({
+    domain: "a.example",
+    componentIds: ["cmp_a"],
+    threatIds: ["thr_a"],
+  });
+  expect(result.rows[1]).toMatchObject({
+    domain: "b.example",
+    componentIds: [],
+    threatIds: [],
+  });
 });
 
 it.each([
