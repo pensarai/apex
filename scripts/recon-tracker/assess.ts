@@ -21,8 +21,16 @@ export function assessTopology(
     topology.threats,
   ].flat();
   const rows = items.map((item) => {
-    const components = topology.components.filter((component) =>
-      mentionsHost(JSON.stringify(component.endpoints ?? []), item.domain),
+    const components = topology.components.filter(
+      (component) =>
+        Array.isArray(component.endpoints) &&
+        component.endpoints.some((endpoint: unknown) => {
+          if (typeof endpoint !== "string") return false;
+          const url = URL.parse(
+            endpoint.includes("://") ? endpoint : `https://${endpoint}`,
+          );
+          return url?.hostname.toLowerCase().replace(/\.$/, "") === item.domain;
+        }),
     );
     const componentIds = components.map((component) => component.id);
     const threats = topology.threats.filter((threat) =>
@@ -61,8 +69,18 @@ export function assessTopology(
       ).length,
     };
   });
-  const trackerCheck =
-    tracker === undefined ? undefined : inspectTracker(tracker, items);
+  let trackerCheck:
+    | (Omit<ReturnType<typeof inspectTracker>, "pending"> & {
+        pending: number | null;
+      })
+    | undefined;
+  if (tracker !== undefined) {
+    try {
+      trackerCheck = inspectTracker(tracker, items);
+    } catch (error) {
+      trackerCheck = { rows: [], errors: [String(error)], pending: null };
+    }
+  }
   if (trackerCheck) {
     const componentIds = new Set(topology.components.map((c) => c.id));
     for (const row of trackerCheck.rows) {

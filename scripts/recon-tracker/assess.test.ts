@@ -15,7 +15,11 @@ it("does not credit a parent, suffix match or threat prose as an endpoint mappin
     flows: [],
     controls: [],
     components: [
-      { id: "cmp_a", name: "Shared", endpoints: ["https://a.example"] },
+      {
+        id: "cmp_a",
+        name: "Shared",
+        endpoints: ["https://a.example/login?return=https://b.example/"],
+      },
     ],
     threats: [
       {
@@ -28,6 +32,27 @@ it("does not credit a parent, suffix match or threat prose as an endpoint mappin
   expect(result.endpointMappedDomains).toBe(1);
   expect(result.recordReferencedDomains).toBe(2);
   expect(result.domainsMappedToThreats).toBe(1);
+});
+
+it.each([
+  "domain,renamed\na.example,pending",
+  '"unclosed',
+])("preserves topology review when the ledger cannot be parsed: %s", (tracker) => {
+  const result = assessTopology(
+    loadScope("a.example").items,
+    {
+      components: [{ id: "cmp_a", endpoints: ["A.EXAMPLE."] }],
+      threats: [],
+      boundaries: [],
+      flows: [],
+      controls: [],
+      retired: [],
+    },
+    tracker,
+  );
+  expect(result.endpointMappedDomains).toBe(1);
+  expect(result.trackerCheck?.errors.length).toBeGreaterThan(0);
+  expect(result.trackerCheck?.pending).toBeNull();
 });
 
 it("does not accept an invented component reference in the tracker", () => {

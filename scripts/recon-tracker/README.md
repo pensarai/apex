@@ -83,13 +83,13 @@ scope and keep customer inputs, transcripts and generated artifacts outside Git.
 The utility records the source hash, model, source commit, exact prompts, session
 paths, tool policy, tool events, HTTP outcomes, usage estimates, final topology and report. It
 retains the script snapshot and tracked patch. Cost uses the provider catalog and
-recorded usage, not billing reconciliation. Both root and worker usage is recorded.
+recorded usage, not billing reconciliation. Unambiguous native model aliases are resolved for pricing only; an unknown price is reported as unavailable without changing model routing. Both root and worker usage is recorded.
 
 The comparison produces an independent per-domain `domain-evidence.csv`, structural
 `assessment.json`, and a self-contained `review.html` exposing every component and
-threat. It refuses mismatched input hashes, models, agent source trees, protocols,
+threat. It refuses mismatched input hashes, models, runtime fingerprints (source, dependency manifest, lockfile and runtime config), protocols,
 policies or start modes, and mismatched instructions between the two tracker arms.
-Script-only commits can differ while the agent source stays identical. It can also
+Script-only commits can differ while runtime inputs stay identical. New runs require committed runtime inputs; archived comparisons inspect the saved tracked patch and resolve the recorded revision. Single-run review does not require Git history. It can also
 inspect a running baseline without a second arm.
 
 Compare these dimensions separately:
@@ -115,3 +115,5 @@ than coverage and useful depth. A single live pair is exploratory: changing targ
 responses, provider load and model randomness can affect results. Repeat with
 alternating arm order before claiming a reliable effect. Console integration and a
 deterministic completion gate are follow-up decisions based on those results.
+
+Structured HTTP coverage credits valid starting URLs with recorded transport results, including failed attempts. Redirect destinations are not automatically credited; browser and shell probes require separate review. Malformed tracker files remain visible as errors without hiding topology output.

@@ -17,6 +17,10 @@ import { GOAL_LIMITS, readGoalFile } from "../src/core/goals";
 import { sessions } from "../src/core/session";
 import { runReconWithGoal } from "./recon-tracker/goal";
 import {
+  assertCleanRuntime,
+  runtimeFingerprint,
+} from "./recon-tracker/revision";
+import {
   csv,
   inspectTracker,
   loadScope,
@@ -41,6 +45,7 @@ if (
   throw new Error(
     "Usage: --arm baseline|tracker|goal-tracker --scope <csv> --output <new-directory> [--prepare-only]",
   );
+assertCleanRuntime(resolve(import.meta.dir, ".."));
 const source = readFileSync(resolve(values.scope), "utf8");
 const scope = loadScope(source);
 const withTracker = values.arm !== "baseline";
@@ -92,6 +97,10 @@ const inputs = {
   model: values.model,
   commit,
   agentSourceTree,
+  runtimeFingerprint: runtimeFingerprint(
+    resolve(import.meta.dir, ".."),
+    commit,
+  ),
   sourceSha256: createHash("sha256").update(source).digest("hex"),
   domains: scope.items.length,
   duplicates: scope.duplicates,
@@ -123,7 +132,9 @@ cpSync(
 );
 writeFileSync(
   join(output, "implementation", "tracked.patch"),
-  Bun.spawnSync(["git", "diff", "--binary"]).stdout,
+  Bun.spawnSync(["git", "diff", "HEAD", "--binary"], {
+    cwd: resolve(import.meta.dir, ".."),
+  }).stdout,
 );
 if (values["prepare-only"]) {
   console.log(JSON.stringify(inputs));
@@ -136,26 +147,32 @@ if (!catalogResponse.ok)
 const catalog = (await catalogResponse.json()) as {
   data: { id: string; pricing: Record<string, string> }[];
 };
-const selected = catalog.data.find((entry) => entry.id === values.model);
-if (!selected) throw new Error(`No pricing for ${values.model}`);
-const price = selected.pricing;
-save("pricing.json", price);
+const candidates = catalog.data.filter(
+  (entry) =>
+    entry.id === values.model || entry.id.split("/").at(-1) === values.model,
+);
+const selected =
+  candidates.find((entry) => entry.id === values.model) ??
+  (candidates.length === 1 ? candidates[0] : undefined);
+const price = selected?.pricing;
+save("pricing.json", { model: selected?.id ?? null, pricing: price ?? null });
 let calls = 0,
   inputTokens = 0,
-  outputTokens = 0,
-  estimatedUsd = 0;
+  outputTokens = 0;
+let estimatedUsd: number | null = price ? 0 : null;
 const usage: UsageRecorder = (model, input, tokensOut, context) => {
   const cached = context?.cacheReadTokens ?? 0,
     written = context?.cacheWriteTokens ?? 0;
-  const estimate =
-    Math.max(0, input - cached - written) * Number(price.prompt) +
-    cached * Number(price.input_cache_read ?? price.prompt) +
-    written * Number(price.input_cache_write ?? price.prompt) +
-    tokensOut * Number(price.completion);
+  const estimate = price
+    ? Math.max(0, input - cached - written) * Number(price.prompt) +
+      cached * Number(price.input_cache_read ?? price.prompt) +
+      written * Number(price.input_cache_write ?? price.prompt) +
+      tokensOut * Number(price.completion)
+    : null;
   calls++;
   inputTokens += input;
   outputTokens += tokensOut;
-  estimatedUsd += estimate;
+  if (estimatedUsd !== null && estimate !== null) estimatedUsd += estimate;
   log("usage.jsonl", {
     model,
     input,
