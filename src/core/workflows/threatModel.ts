@@ -29,7 +29,7 @@ export interface ThreatModelWorkflowInput {
   /** Where to write the threat model markdown file */
   outputPath: string;
 
-  /** AI model (defaults to claude-sonnet-4-5) */
+  /** AI model (defaults to claude-sonnet-5-5) */
   model?: AIModel;
   reasoning?: import("../ai").ReasoningSetting;
 
@@ -61,7 +61,7 @@ export interface ThreatModelWorkflowResult {
 export async function runThreatModelWorkflow(
   input: ThreatModelWorkflowInput,
 ): Promise<ThreatModelWorkflowResult> {
-  const model: AIModel = input.model ?? "claude-sonnet-4-5";
+  const model: AIModel = input.model ?? "claude-sonnet-5-5";
 
   // Load skill content
   const registry = createSkillsRegistry();
